@@ -32,6 +32,7 @@ policyengine = [
 Repository = "https://github.com/CosilicoAI/microplex-us"
 
 [project.scripts]
+microplex-us-build-aca-ptc-multipliers = "microplex_us.targets.aca_ptc:main"
 microplex-us-backfill-pe-native-audit = "microplex_us.pipelines.backfill_pe_native_audit:main"
 microplex-us-backfill-pe-native-scores = "microplex_us.pipelines.backfill_pe_native_scores:main"
 microplex-us-check-site-snapshot = "microplex_us.pipelines.check_site_snapshot:main"

@@ -48,7 +48,9 @@ ARCH_SOURCE_ALIASES = {
     "census-stc": "CENSUS_STC",
     "usda-snap": "USDA_SNAP",
     "cms-aca": "CMS_ACA",
+    "cms-medicare": "CMS_MEDICARE",
     "cms-medicaid": "CMS_MEDICAID",
+    "federal-reserve": "FEDERAL_RESERVE",
     "hhs-acf-liheap": "HHS_ACF_LIHEAP",
     "hhs-acf-tanf": "HHS_ACF_TANF",
 }
@@ -134,6 +136,8 @@ ARCH_AMOUNT_VARIABLE_ALIASES = {
     "ssi_payments": "ssi",
     "ssi_total_payments": "ssi",
     "tanf_cash_assistance": "tanf",
+    "medicare_part_b_premiums": "medicare_part_b_premiums",
+    "net_worth": "net_worth",
 }
 
 ARCH_SELF_DOMAIN_AMOUNT_VARIABLES = frozenset(
@@ -408,6 +412,14 @@ ARCH_FACT_CONCEPT_TO_TARGET = {
         "self_employed_pension_contribution_ald",
         "AMOUNT",
     ),
+    "federal_reserve.z1.households_nonprofits_net_worth": (
+        "net_worth",
+        "AMOUNT",
+    ),
+    "cms_medicare.part_b_premium_income": (
+        "medicare_part_b_premiums",
+        "AMOUNT",
+    ),
     "census_decennial.resident_population": ("population", "COUNT"),
     "census_decennial.occupied_housing_units": ("household_count", "COUNT"),
     "census_pep.resident_population": ("population", "COUNT"),
@@ -570,6 +582,7 @@ ARCH_FACT_CONCEPT_TO_TARGET = {
 ARCH_FACT_DOMAIN_CONSTRAINTS = {
     "all_individual_income_tax_returns": (("is_tax_filer", "==", "1"),),
     "form_w2_items": (),
+    "household_balance_sheet": (),
     "individual_income_tax_returns": (("is_tax_filer", "==", "1"),),
     "individual_income_tax_returns_excluding_dependents": (
         ("is_dependent", "==", "0"),
@@ -584,6 +597,7 @@ ARCH_FACT_DOMAIN_CONSTRAINTS = {
     "aca_marketplace_effectuated_enrollment": (),
     "aca_marketplace_qhp_selections": (),
     "medicaid_chip_enrollment": (),
+    "medicare_financing": (),
     "national_health_expenditures": (),
     "personal_current_transfer_receipts": (),
     "personal_income": (),
@@ -607,10 +621,13 @@ ARCH_FACT_CONSTRAINT_VARIABLE_ALIASES = {
 ARCH_IGNORED_FACT_CONSTRAINT_VARIABLES = frozenset(
     {
         "administering_entity",
+        "amount_basis",
         "bea_nipa.series_code",
         "bea_regional.geo_name",
         "bea_regional.line_code",
         "bea_regional.table_name",
+        "medicare.financing_component",
+        "medicare.part",
         "program",
     }
 )
@@ -655,7 +672,9 @@ ARCH_ENTITY_HINTS = {
     "tip_income": EntityType.PERSON,
     "traditional_401k_contributions": EntityType.PERSON,
     "unemployment_compensation": EntityType.PERSON,
+    "medicare_part_b_premiums": EntityType.PERSON,
     "medicaid": EntityType.PERSON,
+    "net_worth": EntityType.HOUSEHOLD,
     "social_security": EntityType.PERSON,
     "social_security_dependents": EntityType.PERSON,
     "social_security_disability": EntityType.PERSON,
@@ -809,7 +828,9 @@ ARCH_MODEL_AMOUNT_VARIABLE_HINTS = {
     "income_tax_positive": "income_tax_liability",
     "income_tax_before_credits": "income_tax_before_credits_amount",
     "interest_deduction": "interest_paid_deduction_amount",
+    "medicare_part_b_premiums": "medicare_part_b_premiums",
     "net_capital_gains": "net_capital_gains_amount",
+    "net_worth": "net_worth",
     "real_estate_taxes": "real_estate_taxes_amount",
     "roth_401k_contributions": "roth_401k_contributions",
     "self_employed_pension_contribution_ald": (
@@ -886,8 +907,6 @@ ARCH_DEPRIORITIZED_SURVEY_OR_MODEL_GAP_VARIABLES = frozenset(
         "child_support_expense",
         "child_support_received",
         "health_insurance_premiums_without_medicare_part_b",
-        "medicare_part_b_premiums",
-        "net_worth",
         "other_medical_expenses",
         "over_the_counter_health_expenses",
         "rent",
@@ -5189,10 +5208,12 @@ def _arch_gap_queue_sort_key(row: ArchTargetGapQueueRow) -> tuple[Any, ...]:
         "CENSUS_ACS": 2,
         "CMS_ACA": 3,
         "CMS_MEDICAID": 4,
-        "USDA_SNAP": 5,
-        "SSA": 6,
-        "HHS_ACF_TANF": 7,
-        "HHS_ACF_LIHEAP": 8,
+        "CMS_MEDICARE": 5,
+        "USDA_SNAP": 6,
+        "SSA": 7,
+        "HHS_ACF_TANF": 8,
+        "HHS_ACF_LIHEAP": 9,
+        "FEDERAL_RESERVE": 10,
     }.get(str(row.expected_source), 99)
     return (
         row.covered,
@@ -5238,6 +5259,10 @@ def _arch_gap_expected_source(cell: dict[str, Any]) -> str | None:
         return "SSA"
     if variable == "state_income_tax":
         return "CENSUS_STC"
+    if variable == "medicare_part_b_premiums":
+        return "CMS_MEDICARE"
+    if variable == "net_worth":
+        return "FEDERAL_RESERVE"
     if variable == "person_count":
         if _normalize_geo_level(cell.get("geo_level")) in {"sldu", "sldl"}:
             return "CENSUS_DECENNIAL"
@@ -5483,6 +5508,10 @@ def _arch_gap_expected_source_table(
         return "CMS Marketplace Open Enrollment public-use files"
     if expected_source == "CMS_MEDICAID":
         return "CMS Medicaid enrollment and expenditure reports"
+    if expected_source == "CMS_MEDICARE":
+        return "CMS Medicare Trustees Report Part B premium income"
+    if expected_source == "FEDERAL_RESERVE":
+        return "Federal Reserve Financial Accounts Z.1 household net worth"
     if expected_source == "SSA":
         return "SSA Annual Statistical Supplement"
     if expected_source == "HHS_ACF_TANF":

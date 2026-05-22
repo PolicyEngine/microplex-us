@@ -808,25 +808,6 @@ PE_NATIVE_BROAD_SOURCE_BACKED_EXCLUDED_CELL_REASONS: dict[
         "aggregate source mapping is encoded for Arch."
     ),
     (
-        "medicare_part_b_premiums",
-        "national",
-        None,
-        None,
-    ): (
-        "PolicyEngine Medicare Part B premiums depend on person-level "
-        "enrollment and IRMAA status; no accepted aggregate source fact is "
-        "encoded for this modeled input."
-    ),
-    (
-        "net_worth",
-        "national",
-        None,
-        None,
-    ): (
-        "Net worth is a wealth survey/model input; no accepted primary "
-        "administrative aggregate source mapping is encoded for Arch."
-    ),
-    (
         "other_medical_expenses",
         "national",
         None,

@@ -370,10 +370,10 @@ def test_source_backed_profile_excludes_only_documented_non_source_cells() -> No
     }
 
     assert len(broad_cells) == 189
-    assert len(exclusion_reasons) == 17
+    assert len(exclusion_reasons) == 15
     assert all(reason for reason in exclusion_reasons.values())
     assert set(exclusion_reasons) <= broad_cells
-    assert len(source_backed_cells) == 172
+    assert len(source_backed_cells) == 174
     assert source_backed_cells == broad_cells - set(exclusion_reasons)
     assert (
         "childcare_expenses",
@@ -389,6 +389,18 @@ def test_source_backed_profile_excludes_only_documented_non_source_cells() -> No
     ) not in source_backed_cells
     assert (
         "employment_income",
+        "national",
+        None,
+        None,
+    ) in source_backed_cells
+    assert (
+        "medicare_part_b_premiums",
+        "national",
+        None,
+        None,
+    ) in source_backed_cells
+    assert (
+        "net_worth",
         "national",
         None,
         None,

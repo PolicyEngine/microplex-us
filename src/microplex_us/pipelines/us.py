@@ -83,6 +83,7 @@ from microplex_us.policyengine.us import (
 from microplex_us.policyengine.us import (
     subset_policyengine_tables_by_households as _subset_policyengine_tables_by_households,
 )
+from microplex_us.targets.arch import resolve_arch_sqlite_target_provider
 from microplex_us.variables import (
     PE_STYLE_PUF_IRS_DEMOGRAPHIC_PREDICTORS,
     DonorMatchStrategy,
@@ -1407,6 +1408,8 @@ class USMicroplexBuildConfig:
     policyengine_prefer_existing_tax_unit_ids: bool = False
     policyengine_quantity_targets: tuple[PolicyEngineUSQuantityTarget, ...] = ()
     policyengine_targets_db: str | None = None
+    arch_targets_db: str | tuple[str, ...] | None = None
+    calibration_target_source: Literal["policyengine", "arch"] = "policyengine"
     policyengine_target_period: int | None = None
     policyengine_target_variables: tuple[str, ...] = ()
     policyengine_target_domains: tuple[str, ...] = ()
@@ -1786,7 +1789,7 @@ class USMicroplexPipeline:
             rows=int(len(synthetic_data)),
             columns=int(len(synthetic_data.columns)),
         )
-        if self.config.policyengine_targets_db is not None:
+        if self._has_policyengine_calibration_targets():
             _emit_us_pipeline_progress(
                 "US microplex build: policyengine tables start",
                 rows=int(len(synthetic_data)),
@@ -2816,10 +2819,7 @@ class USMicroplexPipeline:
         tables: PolicyEngineUSEntityTableBundle,
     ) -> tuple[PolicyEngineUSEntityTableBundle, pd.DataFrame, dict[str, Any]]:
         """Calibrate household weights using PolicyEngine US target DB constraints."""
-        if self.config.policyengine_targets_db is None:
-            raise ValueError("policyengine_targets_db is required for DB calibration")
-
-        provider = PolicyEngineUSDBTargetProvider(self.config.policyengine_targets_db)
+        provider, _source = self._resolve_calibration_target_provider()
         target_period = (
             self.config.policyengine_target_period
             or self.config.policyengine_dataset_year
@@ -3629,9 +3629,33 @@ class USMicroplexPipeline:
             materialization_failures,
         )
 
+    def _has_policyengine_calibration_targets(self) -> bool:
+        if self.config.calibration_target_source == "arch":
+            return self.config.arch_targets_db is not None
+        return self.config.policyengine_targets_db is not None
+
+    def _resolve_calibration_target_provider(self):
+        if self.config.calibration_target_source == "arch":
+            if self.config.arch_targets_db is None:
+                raise ValueError(
+                    "arch_targets_db is required when calibration_target_source='arch'"
+                )
+            return (
+                resolve_arch_sqlite_target_provider(self.config.arch_targets_db),
+                "arch",
+            )
+        if self.config.policyengine_targets_db is None:
+            raise ValueError(
+                "policyengine_targets_db is required for PolicyEngine DB calibration"
+            )
+        return (
+            PolicyEngineUSDBTargetProvider(self.config.policyengine_targets_db),
+            "policyengine",
+        )
+
     def _load_policyengine_target_set(
         self,
-        provider: PolicyEngineUSDBTargetProvider,
+        provider: Any,
         *,
         bindings: dict[str, PolicyEngineUSVariableBinding],
         period: int,

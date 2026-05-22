@@ -12,6 +12,7 @@ from microplex_us.geography import US_STATE_ABBR_BY_FIPS
 from microplex_us.pipelines.us import USMicroplexBuildConfig, USMicroplexPipeline
 from microplex_us.policyengine.target_profiles import PolicyEngineUSTargetCell
 from microplex_us.targets import (
+    ArchConsumerFactJSONLTargetProvider,
     ArchSQLiteTargetProvider,
     summarize_arch_target_gap_queue,
     summarize_arch_target_profile_coverage,
@@ -2586,6 +2587,145 @@ def test_arch_provider_maps_medicaid_benefit_targets(tmp_path):
     target = target_set.targets[0]
     assert target.measure == "medicaid"
     assert target.entity is EntityType.PERSON
+
+
+def test_arch_consumer_fact_provider_maps_wealth_and_part_b_targets(tmp_path):
+    jsonl_path = tmp_path / "consumer_facts.jsonl"
+    rows = [
+        {
+            "schema_version": "arch.consumer_fact.v1",
+            "aggregate_fact_key": "arch.aggregate_fact.v2:net_worth",
+            "semantic_fact_key": "arch.semantic_fact.v2:net_worth",
+            "concept_alignment": {
+                "canonical_concept": (
+                    "federal_reserve.z1.households_nonprofits_net_worth"
+                ),
+                "source_concept": "federal_reserve.z1.fl152090005",
+                "relation": "source_label",
+                "authority": "arch-us",
+            },
+            "geography": {
+                "id": "0100000US",
+                "level": "country",
+            },
+            "label": "United States household net worth",
+            "observed_measure": {
+                "source_concept": "federal_reserve.z1.fl152090005",
+                "source_measure_id": "amount_outstanding",
+                "source_name": "federal_reserve",
+                "source_table": (
+                    "Z.1 B.101 Households and nonprofit organizations"
+                ),
+                "unit": "usd",
+            },
+            "period": {"type": "calendar_year", "value": 2024},
+            "source": {
+                "source_name": "federal_reserve",
+                "source_table": (
+                    "Z.1 B.101 Households and nonprofit organizations"
+                ),
+                "url": "https://www.federalreserve.gov/releases/z1/",
+            },
+            "universe_constraints": {"domain": "household_balance_sheet"},
+            "value": 169_619_200_000_000,
+        },
+        {
+            "schema_version": "arch.consumer_fact.v1",
+            "aggregate_fact_key": "arch.aggregate_fact.v2:part_b",
+            "semantic_fact_key": "arch.semantic_fact.v2:part_b",
+            "concept_alignment": {
+                "canonical_concept": "cms_medicare.part_b_premium_income",
+                "source_concept": "cms_medicare.part_b_premium_income",
+            },
+            "geography": {
+                "id": "0100000US",
+                "level": "country",
+            },
+            "label": "United States Medicare Part B premium income",
+            "observed_measure": {
+                "source_concept": "cms_medicare.part_b_premium_income",
+                "source_measure_id": "actual_amount",
+                "source_name": "cms_medicare",
+                "source_table": "2025 Medicare Trustees Report Table III.C3",
+                "unit": "usd",
+            },
+            "period": {"type": "calendar_year", "value": 2024},
+            "source": {
+                "source_name": "cms_medicare",
+                "source_table": "2025 Medicare Trustees Report Table III.C3",
+                "url": "https://www.cms.gov/oact/tr/2025",
+            },
+            "universe_constraints": {
+                "domain": "medicare_financing",
+                "constraints": [
+                    {
+                        "operator": "==",
+                        "role": "filter",
+                        "value": "actual",
+                        "variable": "amount_basis",
+                    },
+                    {
+                        "operator": "==",
+                        "role": "filter",
+                        "value": "part_b",
+                        "variable": "medicare.part",
+                    },
+                    {
+                        "operator": "==",
+                        "role": "filter",
+                        "value": "premiums_from_enrollees",
+                        "variable": "medicare.financing_component",
+                    },
+                ],
+            },
+            "value": 139_837_000_000,
+        },
+    ]
+    jsonl_path.write_text(
+        "".join(f"{json.dumps(row, sort_keys=True)}\n" for row in rows)
+    )
+
+    provider = ArchConsumerFactJSONLTargetProvider(jsonl_path)
+    target_set = provider.load_target_set(
+        TargetQuery(
+            period=2024,
+            provider_filters={
+                "target_cells": [
+                    {
+                        "variable": "net_worth",
+                        "geo_level": "national",
+                        "domain_variable": None,
+                    },
+                    {
+                        "variable": "medicare_part_b_premiums",
+                        "geo_level": "national",
+                        "domain_variable": None,
+                    },
+                ],
+            },
+        )
+    )
+
+    targets_by_measure = {target.measure: target for target in target_set.targets}
+    assert set(targets_by_measure) == {"medicare_part_b_premiums", "net_worth"}
+
+    net_worth = targets_by_measure["net_worth"]
+    assert net_worth.entity is EntityType.HOUSEHOLD
+    assert net_worth.aggregation is TargetAggregation.SUM
+    assert net_worth.value == pytest.approx(169_619_200_000_000)
+    assert net_worth.filters == ()
+    assert net_worth.metadata["source"] == "FEDERAL_RESERVE"
+    assert net_worth.metadata["arch_source_concept"] == (
+        "federal_reserve.z1.fl152090005"
+    )
+
+    part_b = targets_by_measure["medicare_part_b_premiums"]
+    assert part_b.entity is EntityType.PERSON
+    assert part_b.aggregation is TargetAggregation.SUM
+    assert part_b.value == pytest.approx(139_837_000_000)
+    assert part_b.filters == ()
+    assert part_b.metadata["source"] == "CMS_MEDICARE"
+    assert part_b.metadata["arch_concept"] == "cms_medicare.part_b_premium_income"
 
 
 def test_arch_provider_maps_ssa_benefit_targets(tmp_path):

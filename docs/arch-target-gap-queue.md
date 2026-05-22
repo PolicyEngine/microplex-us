@@ -53,8 +53,9 @@ It excludes only cells with explicit reasons in
 - SOI multi-domain cells that would require joint AGI, filing status, and
   positive income-tax-before-credits facts not currently published by the loaded
   SOI packages
-- survey-heavy or model-input cells such as rent, net worth, child support,
-  medical-premium subcomponents, SPM capped expenses, and `ssn_card_type`
+- survey-heavy or model-input cells such as rent, child support,
+  non-Part-B medical premium/expense components, SPM capped expenses, and
+  `ssn_card_type`
 - source-near but non-equivalent rows such as `childcare_expenses`, where IRS
   credit expenses and W-2 dependent-care benefits are narrower tax concepts
 - pregnancy stock by state, where live births are a flow rather than a direct
@@ -74,11 +75,13 @@ Inputs:
 - `/tmp/arch-suite-soi-historic-table-2-state-agi-2022/consumer_facts.jsonl`
 - `/tmp/arch-suite-soi-w2-statistics-2020/consumer_facts.jsonl`
 - `/tmp/arch-suite-soi-table-1-4-2023/consumer_facts.jsonl`
+- `/tmp/arch-suite-federal-reserve-z1-household-net-worth/consumer_facts.jsonl`
+- `/tmp/arch-suite-cms-medicare-trustees-report-2025-part-b-premium-income/consumer_facts.jsonl`
 
 Command:
 
 ```bash
-uv run microplex-us-arch-target-refresh \
+uv run --extra policyengine microplex-us-arch-target-refresh \
   --arch-targets-db /Users/maxghenis/CosilicoAI/arch/arch/fixtures/consumer_facts.jsonl \
   --arch-targets-db /Users/maxghenis/CosilicoAI/arch/macro/targets.db \
   --arch-targets-db /tmp/arch-suite-hhs-acf-tanf-caseload-2024/consumer_facts.jsonl \
@@ -87,38 +90,46 @@ uv run microplex-us-arch-target-refresh \
   --arch-targets-db /tmp/arch-suite-soi-historic-table-2-state-agi-2022/consumer_facts.jsonl \
   --arch-targets-db /tmp/arch-suite-soi-w2-statistics-2020/consumer_facts.jsonl \
   --arch-targets-db /tmp/arch-suite-soi-table-1-4-2023/consumer_facts.jsonl \
+  --arch-targets-db /tmp/arch-suite-federal-reserve-z1-household-net-worth/consumer_facts.jsonl \
+  --arch-targets-db /tmp/arch-suite-cms-medicare-trustees-report-2025-part-b-premium-income/consumer_facts.jsonl \
   --period 2024 \
   --profile pe_native_broad_source_backed \
-  --output-dir artifacts/arch-target-coverage
+  --output-dir artifacts/arch-target-coverage-source-backed
 ```
 
 Coverage:
 
-- 172 target cells in `pe_native_broad_source_backed`
-- 172 covered
+- 174 target cells in `pe_native_broad_source_backed`
+- 174 covered
 - 0 uncovered
 - 100.0% coverage
 
-The raw `pe_native_broad` profile remains at 172 of 189 covered with 17
-explicitly reviewed rows outside the source-backed boundary:
+The raw `pe_native_broad` profile is at 174 of 189 covered with 15 explicitly
+reviewed rows outside the source-backed boundary. Federal Reserve Z.1 household
+net worth and CMS Medicare Trustees Report Part B premium income are now
+source-backed.
 
 | Category | Rows |
 | --- | ---: |
-| `survey_or_model_input_deprioritized` | 12 |
 | `adapter_or_constraint_review` | 3 |
 | `source_mapping_review` | 2 |
+| `survey_or_model_input_deprioritized` | 10 |
 
 Generated outputs:
 
-- `artifacts/arch-target-coverage/pe_native_broad_source_backed_2024_coverage.json`
-- `artifacts/arch-target-coverage/pe_native_broad_source_backed_2024_gaps.json`
-- `artifacts/arch-target-coverage/pe_native_broad_source_backed_2024_gaps.csv`
-- `artifacts/arch-target-coverage/pe_native_broad_source_backed_2024_summary.md`
+- `artifacts/arch-target-coverage-source-backed/pe_native_broad_source_backed_2024_coverage.json`
+- `artifacts/arch-target-coverage-source-backed/pe_native_broad_source_backed_2024_gaps.json`
+- `artifacts/arch-target-coverage-source-backed/pe_native_broad_source_backed_2024_gaps.csv`
+- `artifacts/arch-target-coverage-source-backed/pe_native_broad_source_backed_2024_summary.md`
+- `artifacts/arch-target-coverage-broad-plus/pe_native_broad_2024_coverage.json`
+- `artifacts/arch-target-coverage-broad-plus/pe_native_broad_2024_gaps.json`
+- `artifacts/arch-target-coverage-broad-plus/pe_native_broad_2024_gaps.csv`
+- `artifacts/arch-target-coverage-broad-plus/pe_native_broad_2024_summary.md`
 
 Remaining work is concentrated in:
 
 - the raw `pe_native_broad` cells excluded from the source-backed profile, if a
   future primary publisher source can support them without changing semantics
-- UK profile parity, which should follow the same pattern: keep the raw PE
-  target surface intact and expose a source-backed profile with explicit
-  exclusions where source equivalence is not defensible
+- keeping the UK source-backed/raw boundary aligned with the same rule: leave
+  raw PE target rows visible, and exclude only rows where source equivalence is
+  not defensible

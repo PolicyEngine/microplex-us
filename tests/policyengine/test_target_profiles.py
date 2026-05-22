@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from microplex_us.policyengine.target_profiles import (
+    policyengine_us_target_profile_exclusion_reasons,
     policyengine_us_target_profile_names,
     resolve_policyengine_us_target_profile,
 )
@@ -9,6 +10,7 @@ from microplex_us.policyengine.target_profiles import (
 def test_policyengine_us_target_profile_names_include_no_state_aca_variant() -> None:
     assert "pe_native_broad" in policyengine_us_target_profile_names()
     assert "pe_native_broad_no_state_aca" in policyengine_us_target_profile_names()
+    assert "pe_native_broad_source_backed" in policyengine_us_target_profile_names()
 
 
 def test_broad_profile_includes_soi_employment_income_cells() -> None:
@@ -347,3 +349,47 @@ def test_no_state_aca_profile_excludes_only_state_aca_cells() -> None:
         "used_aca_ptc",
         None,
     ) not in no_state_aca_cells
+
+
+def test_source_backed_profile_excludes_only_documented_non_source_cells() -> None:
+    broad = resolve_policyengine_us_target_profile("pe_native_broad")
+    source_backed = resolve_policyengine_us_target_profile(
+        "pe_native_broad_source_backed"
+    )
+    exclusion_reasons = policyengine_us_target_profile_exclusion_reasons(
+        "pe_native_broad_source_backed"
+    )
+
+    broad_cells = {
+        (cell.variable, cell.geo_level, cell.domain_variable, cell.geographic_id)
+        for cell in broad
+    }
+    source_backed_cells = {
+        (cell.variable, cell.geo_level, cell.domain_variable, cell.geographic_id)
+        for cell in source_backed
+    }
+
+    assert len(broad_cells) == 189
+    assert len(exclusion_reasons) == 17
+    assert all(reason for reason in exclusion_reasons.values())
+    assert set(exclusion_reasons) <= broad_cells
+    assert len(source_backed_cells) == 172
+    assert source_backed_cells == broad_cells - set(exclusion_reasons)
+    assert (
+        "childcare_expenses",
+        "national",
+        None,
+        None,
+    ) not in source_backed_cells
+    assert (
+        "person_count",
+        "state",
+        "is_pregnant",
+        None,
+    ) not in source_backed_cells
+    assert (
+        "employment_income",
+        "national",
+        None,
+        None,
+    ) in source_backed_cells

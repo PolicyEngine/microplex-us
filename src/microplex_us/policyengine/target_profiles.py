@@ -23,6 +23,18 @@ class PolicyEngineUSTargetCell:
         }
 
 
+PolicyEngineUSTargetCellKey = tuple[str, str | None, str | None, str | None]
+
+
+def _target_cell_key(cell: PolicyEngineUSTargetCell) -> PolicyEngineUSTargetCellKey:
+    return (
+        cell.variable,
+        cell.geo_level,
+        cell.domain_variable,
+        cell.geographic_id,
+    )
+
+
 PE_NATIVE_BROAD_TARGET_CELLS: tuple[PolicyEngineUSTargetCell, ...] = (
     PolicyEngineUSTargetCell(
         "aca_ptc", geo_level="national", domain_variable="aca_ptc"
@@ -694,18 +706,200 @@ _PE_NATIVE_BROAD_NO_STATE_ACA_EXCLUDED_CELLS = frozenset(
 PE_NATIVE_BROAD_NO_STATE_ACA_TARGET_CELLS: tuple[PolicyEngineUSTargetCell, ...] = tuple(
     cell
     for cell in PE_NATIVE_BROAD_TARGET_CELLS
-    if (
-        cell.variable,
-        cell.geo_level,
-        cell.domain_variable,
-        cell.geographic_id,
-    )
-    not in _PE_NATIVE_BROAD_NO_STATE_ACA_EXCLUDED_CELLS
+    if _target_cell_key(cell) not in _PE_NATIVE_BROAD_NO_STATE_ACA_EXCLUDED_CELLS
+)
+
+PE_NATIVE_BROAD_SOURCE_BACKED_EXCLUDED_CELL_REASONS: dict[
+    PolicyEngineUSTargetCellKey,
+    str,
+] = {
+    (
+        "adjusted_gross_income",
+        "national",
+        "adjusted_gross_income,filing_status,income_tax_before_credits",
+        None,
+    ): (
+        "SOI source packages currently loaded by Arch do not publish adjusted "
+        "gross income jointly by AGI band, filing status, and returns with "
+        "positive income tax before credits."
+    ),
+    (
+        "adjusted_gross_income",
+        "national",
+        "adjusted_gross_income,income_tax_before_credits",
+        None,
+    ): (
+        "SOI source packages currently loaded by Arch publish AGI bands and "
+        "income-tax-before-credits returns separately, not AGI amounts "
+        "restricted to returns with positive income tax before credits."
+    ),
+    (
+        "tax_unit_count",
+        "national",
+        "adjusted_gross_income,filing_status,income_tax_before_credits",
+        None,
+    ): (
+        "SOI Historic Table 2 does not provide the full AGI by filing-status "
+        "by positive-income-tax-before-credits joint count required by this "
+        "PolicyEngine cell."
+    ),
+    (
+        "person_count",
+        "national",
+        "ssn_card_type",
+        None,
+    ): (
+        "PolicyEngine ssn_card_type is a modeled legal-status input; no "
+        "accepted primary aggregate source mapping is encoded for Arch."
+    ),
+    (
+        "person_count",
+        "state",
+        "is_pregnant",
+        None,
+    ): (
+        "The PolicyEngine cell is a pregnancy stock by state; live births are "
+        "a flow and are not a defensible direct source fact for this target."
+    ),
+    (
+        "alimony_expense",
+        "national",
+        None,
+        None,
+    ): (
+        "No accepted primary source mapping is encoded for this "
+        "survey/model-input expense variable."
+    ),
+    (
+        "child_support_expense",
+        "national",
+        None,
+        None,
+    ): (
+        "No accepted primary source mapping is encoded for this "
+        "survey/model-input expense variable."
+    ),
+    (
+        "child_support_received",
+        "national",
+        None,
+        None,
+    ): (
+        "No accepted primary source mapping is encoded for this "
+        "survey/model-input receipt variable."
+    ),
+    (
+        "childcare_expenses",
+        "national",
+        None,
+        None,
+    ): (
+        "IRS child-care credit expenses and W-2 dependent-care benefits are "
+        "narrower tax concepts than PolicyEngine childcare_expenses, so they "
+        "are not treated as source-equivalent."
+    ),
+    (
+        "health_insurance_premiums_without_medicare_part_b",
+        "national",
+        None,
+        None,
+    ): (
+        "This premium component is a modeled/survey input; no accepted primary "
+        "aggregate source mapping is encoded for Arch."
+    ),
+    (
+        "medicare_part_b_premiums",
+        "national",
+        None,
+        None,
+    ): (
+        "PolicyEngine Medicare Part B premiums depend on person-level "
+        "enrollment and IRMAA status; no accepted aggregate source fact is "
+        "encoded for this modeled input."
+    ),
+    (
+        "net_worth",
+        "national",
+        None,
+        None,
+    ): (
+        "Net worth is a wealth survey/model input; no accepted primary "
+        "administrative aggregate source mapping is encoded for Arch."
+    ),
+    (
+        "other_medical_expenses",
+        "national",
+        None,
+        None,
+    ): (
+        "This out-of-pocket medical expense component is a survey/model input "
+        "without an accepted primary aggregate source mapping."
+    ),
+    (
+        "over_the_counter_health_expenses",
+        "national",
+        None,
+        None,
+    ): (
+        "This out-of-pocket medical expense component is a survey/model input "
+        "without an accepted primary aggregate source mapping."
+    ),
+    (
+        "rent",
+        "national",
+        None,
+        None,
+    ): (
+        "PolicyEngine rent is a household survey/model input; ACS rent tables "
+        "do not provide a direct aggregate source fact for this exact variable."
+    ),
+    (
+        "spm_unit_capped_housing_subsidy",
+        "national",
+        None,
+        None,
+    ): (
+        "This is a capped SPM model amount rather than a direct publisher "
+        "source fact."
+    ),
+    (
+        "spm_unit_capped_work_childcare_expenses",
+        "national",
+        None,
+        None,
+    ): (
+        "This is a capped SPM model amount rather than a direct publisher "
+        "source fact."
+    ),
+}
+
+PE_NATIVE_BROAD_SOURCE_BACKED_TARGET_CELLS: tuple[
+    PolicyEngineUSTargetCell, ...
+] = tuple(
+    cell
+    for cell in PE_NATIVE_BROAD_TARGET_CELLS
+    if _target_cell_key(cell)
+    not in PE_NATIVE_BROAD_SOURCE_BACKED_EXCLUDED_CELL_REASONS
 )
 
 _TARGET_PROFILES: dict[str, tuple[PolicyEngineUSTargetCell, ...]] = {
     "pe_native_broad": PE_NATIVE_BROAD_TARGET_CELLS,
     "pe_native_broad_no_state_aca": PE_NATIVE_BROAD_NO_STATE_ACA_TARGET_CELLS,
+    "pe_native_broad_source_backed": PE_NATIVE_BROAD_SOURCE_BACKED_TARGET_CELLS,
+}
+
+_TARGET_PROFILE_EXCLUSION_REASONS: dict[
+    str,
+    dict[PolicyEngineUSTargetCellKey, str],
+] = {
+    "pe_native_broad": {},
+    "pe_native_broad_no_state_aca": {
+        cell_key: "State ACA cells are excluded from this profile variant."
+        for cell_key in _PE_NATIVE_BROAD_NO_STATE_ACA_EXCLUDED_CELLS
+    },
+    "pe_native_broad_source_backed": (
+        PE_NATIVE_BROAD_SOURCE_BACKED_EXCLUDED_CELL_REASONS
+    ),
 }
 
 
@@ -723,3 +917,14 @@ def resolve_policyengine_us_target_profile(
         raise ValueError(
             f"Unknown PolicyEngine US target profile '{name}'. Known profiles: {known}"
         ) from exc
+
+
+def policyengine_us_target_profile_exclusion_reasons(
+    name: str,
+) -> dict[PolicyEngineUSTargetCellKey, str]:
+    if name not in _TARGET_PROFILES:
+        known = ", ".join(policyengine_us_target_profile_names())
+        raise ValueError(
+            f"Unknown PolicyEngine US target profile '{name}'. Known profiles: {known}"
+        )
+    return dict(_TARGET_PROFILE_EXCLUSION_REASONS.get(name, {}))

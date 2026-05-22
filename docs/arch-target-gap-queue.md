@@ -40,65 +40,85 @@ source aging, reconciliation, activation, and model-variable aliases remain in
 `gap_category` for agent routing and `loader_status` for debugging why a cell
 landed there.
 
-## Current PolicyEngine Broad Profile Boundary
+## Current PolicyEngine Profile Boundary
 
-The current Arch-backed PE broad profile coverage intentionally stops before
-survey-heavy or model-input cells such as rent, net worth, child support,
-medical-premium subcomponents, SPM expenses, and `ssn_card_type`. Those rows are
-not ready for automated source-loader agents under the primary-source-first
-policy.
+`pe_native_broad` keeps the raw PolicyEngine parity surface intact. It includes
+all currently tracked broad target cells, including survey/model-input rows and
+cells whose publisher-source semantics still need review.
+
+`pe_native_broad_source_backed` is the Arch-backed calibration/profile boundary.
+It excludes only cells with explicit reasons in
+`src/microplex_us/policyengine/target_profiles.py`, such as:
+
+- SOI multi-domain cells that would require joint AGI, filing status, and
+  positive income-tax-before-credits facts not currently published by the loaded
+  SOI packages
+- survey-heavy or model-input cells such as rent, net worth, child support,
+  medical-premium subcomponents, SPM capped expenses, and `ssn_card_type`
+- source-near but non-equivalent rows such as `childcare_expenses`, where IRS
+  credit expenses and W-2 dependent-care benefits are narrower tax concepts
+- pregnancy stock by state, where live births are a flow rather than a direct
+  source fact for the PolicyEngine target
 
 ## Current Local Snapshot
 
-Snapshot date: 2026-05-19.
+Snapshot date: 2026-05-22.
 
 Inputs:
 
 - `/Users/maxghenis/CosilicoAI/arch/arch/fixtures/consumer_facts.jsonl`
 - `/Users/maxghenis/CosilicoAI/arch/macro/targets.db`
+- `/tmp/arch-suite-hhs-acf-tanf-caseload-2024/consumer_facts.jsonl`
+- `/tmp/arch-suite-soi-historic-table-2-2022/consumer_facts.jsonl`
+- `/tmp/arch-suite-hhs-acf-liheap-fy2024-national-profile/consumer_facts.jsonl`
+- `/tmp/arch-suite-soi-historic-table-2-state-agi-2022/consumer_facts.jsonl`
+- `/tmp/arch-suite-soi-w2-statistics-2020/consumer_facts.jsonl`
+- `/tmp/arch-suite-soi-table-1-4-2023/consumer_facts.jsonl`
 
 Command:
 
 ```bash
 uv run microplex-us-arch-target-refresh \
-  --artifact-root /Users/maxghenis/CosilicoAI/arch \
+  --arch-targets-db /Users/maxghenis/CosilicoAI/arch/arch/fixtures/consumer_facts.jsonl \
+  --arch-targets-db /Users/maxghenis/CosilicoAI/arch/macro/targets.db \
+  --arch-targets-db /tmp/arch-suite-hhs-acf-tanf-caseload-2024/consumer_facts.jsonl \
+  --arch-targets-db /tmp/arch-suite-soi-historic-table-2-2022/consumer_facts.jsonl \
+  --arch-targets-db /tmp/arch-suite-hhs-acf-liheap-fy2024-national-profile/consumer_facts.jsonl \
+  --arch-targets-db /tmp/arch-suite-soi-historic-table-2-state-agi-2022/consumer_facts.jsonl \
+  --arch-targets-db /tmp/arch-suite-soi-w2-statistics-2020/consumer_facts.jsonl \
+  --arch-targets-db /tmp/arch-suite-soi-table-1-4-2023/consumer_facts.jsonl \
   --period 2024 \
-  --profile pe_native_broad \
+  --profile pe_native_broad_source_backed \
   --output-dir artifacts/arch-target-coverage
 ```
 
 Coverage:
 
-- 189 target cells in `pe_native_broad`
-- 138 covered
-- 51 uncovered
-- 73.0% coverage
-- national: 79 of 116 covered
-- state: 59 of 73 covered
+- 172 target cells in `pe_native_broad_source_backed`
+- 172 covered
+- 0 uncovered
+- 100.0% coverage
 
-Gap categories:
+The raw `pe_native_broad` profile remains at 172 of 189 covered with 17
+explicitly reviewed rows outside the source-backed boundary:
 
 | Category | Rows |
 | --- | ---: |
-| `source_mapping_review` | 26 |
 | `survey_or_model_input_deprioritized` | 12 |
-| `adapter_or_constraint_review` | 10 |
-| `ready_rollup_or_geography` | 3 |
+| `adapter_or_constraint_review` | 3 |
+| `source_mapping_review` | 2 |
 
 Generated outputs:
 
-- `artifacts/arch-target-coverage/pe_native_broad_2024_coverage.json`
-- `artifacts/arch-target-coverage/pe_native_broad_2024_gaps.json`
-- `artifacts/arch-target-coverage/pe_native_broad_2024_gaps.csv`
-- `artifacts/arch-target-coverage/pe_native_broad_2024_summary.md`
+- `artifacts/arch-target-coverage/pe_native_broad_source_backed_2024_coverage.json`
+- `artifacts/arch-target-coverage/pe_native_broad_source_backed_2024_gaps.json`
+- `artifacts/arch-target-coverage/pe_native_broad_source_backed_2024_gaps.csv`
+- `artifacts/arch-target-coverage/pe_native_broad_source_backed_2024_summary.md`
 
 Remaining work is concentrated in:
 
-- source-mapping review for the newly expanded PE parity cells, especially
-  domains whose expected Arch concept is not yet encoded in the gap taxonomy
-- adapter or constraint review where Arch has the variable at the right
-  geography but the Microplex adapter does not yet match the PE target cell
-- a small rollup/geography queue for variables loaded in Arch but not at the
-  requested national or state target geography
-- survey/model-input proxy cells that remain deprioritized until a primary
-  publisher source is identified
+- the raw `pe_native_broad` cells excluded from the source-backed profile, if a
+  future primary publisher source can support them without changing semantics
+- UK profile parity, which should follow the same pattern: keep the raw PE
+  target surface intact and expose a source-backed profile with explicit
+  exclusions where source equivalence is not defensible

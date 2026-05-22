@@ -35,9 +35,7 @@ def test_build_aca_ptc_multiplier_rows_matches_policyengine_formula() -> None:
     row = rows[0]
     assert row.vol_mult == pytest.approx(1_795_695 / 1_701_375)
     assert row.val_mult == pytest.approx(526 / 459)
-    assert row.amount_mult == pytest.approx(
-        (1_795_695 / 1_701_375) * (526 / 459)
-    )
+    assert row.amount_mult == pytest.approx((1_795_695 / 1_701_375) * (526 / 459))
     assert row.target_factors() == {
         "tax_unit_count": pytest.approx(1_795_695 / 1_701_375),
         "aca_ptc": pytest.approx((1_795_695 / 1_701_375) * (526 / 459)),
@@ -179,8 +177,7 @@ def _oep_aptc_fact(
         value=value,
         concept=ACA_AVERAGE_MONTHLY_APTC_CONCEPT,
         source_record_id=(
-            f"cms_aca.oep{year}.state_marketplace."
-            f"{state_abbr}.average_monthly_aptc"
+            f"cms_aca.oep{year}.state_marketplace.{state_abbr}.average_monthly_aptc"
         ),
     )
 

@@ -4,11 +4,18 @@ from __future__ import annotations
 
 import argparse
 import csv
-import json
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
+
+from microplex.targets import (
+    arch_consumer_fact_concept,
+    arch_consumer_fact_numeric_value,
+    arch_consumer_fact_period,
+    arch_consumer_fact_source_record_id,
+    load_arch_consumer_fact_jsonl_rows,
+)
 
 ACAPTCBaseAPTCPolicy = Literal[
     "oep",
@@ -296,30 +303,6 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def load_arch_consumer_fact_jsonl_rows(
-    paths: Iterable[str | Path],
-) -> tuple[dict[str, Any], ...]:
-    """Load Arch consumer fact rows from one or more JSONL files."""
-
-    rows: list[dict[str, Any]] = []
-    for pathlike in paths:
-        path = Path(pathlike)
-        with path.open() as file:
-            for line_number, line in enumerate(file, start=1):
-                if not line.strip():
-                    continue
-                row = json.loads(line)
-                schema_version = row.get("schema_version")
-                if schema_version != "arch.consumer_fact.v1":
-                    raise ValueError(
-                        f"Unsupported Arch consumer fact schema {schema_version!r} "
-                        f"in {path} line {line_number}; expected "
-                        "'arch.consumer_fact.v1'."
-                    )
-                rows.append(row)
-    return tuple(rows)
-
-
 def _select_base_aptc_fact(
     state: str,
     *,
@@ -364,18 +347,11 @@ def _aca_state_fact_from_arch_consumer_fact(
 
 
 def _arch_consumer_fact_concept(row: Mapping[str, Any]) -> str | None:
-    concept_alignment = _mapping(row.get("concept_alignment"))
-    observed_measure = _mapping(row.get("observed_measure"))
-    concept = (
-        concept_alignment.get("canonical_concept")
-        or observed_measure.get("source_concept")
-    )
-    return str(concept) if concept is not None else None
+    return arch_consumer_fact_concept(row)
 
 
 def _arch_consumer_fact_period(row: Mapping[str, Any]) -> int:
-    period = _mapping(row.get("period"))
-    return int(period["value"])
+    return arch_consumer_fact_period(row)
 
 
 def _arch_consumer_fact_state(
@@ -394,9 +370,11 @@ def _arch_consumer_fact_state(
 
 
 def _arch_consumer_fact_source_record_id(row: Mapping[str, Any]) -> str | None:
-    lineage = _mapping(row.get("lineage"))
-    source_record_id = lineage.get("source_record_id") or row.get("source_record_id")
-    return str(source_record_id) if source_record_id else None
+    source_record_id = arch_consumer_fact_source_record_id(row)
+    if source_record_id is not None:
+        return source_record_id
+    fallback = row.get("source_record_id")
+    return str(fallback) if fallback else None
 
 
 def _aca_source_kind(row: Mapping[str, Any]) -> str | None:
@@ -420,9 +398,7 @@ def _validate_positive_source_value(value: float, label: str, state: str) -> Non
 
 
 def _json_numeric_value(value: Any) -> float:
-    if isinstance(value, bool) or value is None:
-        raise ValueError(f"Expected numeric ACA PTC source value, got {value!r}.")
-    return float(value)
+    return arch_consumer_fact_numeric_value(value)
 
 
 def _source_csv_number(value: float) -> float | int:

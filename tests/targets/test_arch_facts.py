@@ -1343,6 +1343,36 @@ def test_arch_consumer_fact_jsonl_provider_maps_us_admin_source_families(
             value=526,
             unit="usd",
         ),
+        _consumer_fact(
+            "w2-traditional-401k",
+            concept="irs_soi.form_w2_401k_elective_deferrals",
+            domain="form_w2_items",
+            source_name="irs_soi",
+            source_table="Form W-2 Statistics Table 4.B",
+            period={"type": "tax_year", "value": 2024},
+            value=277_859_181_000,
+            unit="usd",
+        ),
+        _consumer_fact(
+            "w2-roth-401k",
+            concept="irs_soi.form_w2_designated_roth_401k_contributions",
+            domain="form_w2_items",
+            source_name="irs_soi",
+            source_table="Form W-2 Statistics Table 4.B",
+            period={"type": "tax_year", "value": 2024},
+            value=32_302_509_000,
+            unit="usd",
+        ),
+        _consumer_fact(
+            "soi-keogh",
+            concept="irs_soi.payments_to_keogh_plan",
+            domain="all_individual_income_tax_returns",
+            source_name="irs_soi",
+            source_table="Publication 1304 Table 1.4",
+            period={"type": "tax_year", "value": 2024},
+            value=30_130_848_000,
+            unit="usd",
+        ),
     ]
     consumer_jsonl.write_text(
         "\n".join(json.dumps(row, sort_keys=True) for row in rows) + "\n"
@@ -1398,11 +1428,26 @@ def test_arch_consumer_fact_jsonl_provider_maps_us_admin_source_families(
                 "geo_level": "national",
                 "domain_variable": "age",
             },
+            {
+                "variable": "traditional_401k_contributions",
+                "geo_level": "national",
+                "domain_variable": None,
+            },
+            {
+                "variable": "roth_401k_contributions",
+                "geo_level": "national",
+                "domain_variable": None,
+            },
+            {
+                "variable": "self_employed_pension_contribution_ald",
+                "geo_level": "national",
+                "domain_variable": None,
+            },
         ),
     )
 
-    assert report.target_cell_count == 12
-    assert report.covered_cell_count == 12
+    assert report.target_cell_count == 15
+    assert report.covered_cell_count == 15
 
     target_set = provider.load_target_set(TargetQuery(period=2024))
     targets_by_arch_variable = {
@@ -1442,6 +1487,17 @@ def test_arch_consumer_fact_jsonl_provider_maps_us_admin_source_families(
         == "social_security_retirement"
     )
     assert targets_by_arch_variable["ssi_payments"].measure == "ssi"
+    traditional_401k = targets_by_arch_variable["traditional_401k_contributions"]
+    assert traditional_401k.measure == "traditional_401k_contributions"
+    assert traditional_401k.entity.value == "person"
+    roth_401k = targets_by_arch_variable["roth_401k_contributions"]
+    assert roth_401k.measure == "roth_401k_contributions"
+    assert roth_401k.entity.value == "person"
+    self_employed_pension = targets_by_arch_variable[
+        "self_employed_pension_contribution_ald"
+    ]
+    assert self_employed_pension.measure == "self_employed_pension_contribution_ald"
+    assert self_employed_pension.entity.value == "tax_unit"
     assert "aca_average_monthly_aptc" not in targets_by_arch_variable
 
 

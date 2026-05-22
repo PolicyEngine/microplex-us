@@ -3449,6 +3449,52 @@ def test_arch_target_gap_queue_points_energy_subsidy_households_to_liheap(
     assert row.gap_category == "ready_primary_loader"
 
 
+def test_arch_target_gap_queue_points_retirement_contributions_to_soi(
+    tmp_path,
+):
+    db_path = tmp_path / "arch_targets.db"
+    _create_arch_targets_db(db_path)
+
+    provider = ArchSQLiteTargetProvider(db_path)
+    report = summarize_arch_target_gap_queue(
+        provider,
+        period=2024,
+        profile_name="custom",
+        target_cells=(
+            PolicyEngineUSTargetCell(
+                "traditional_401k_contributions",
+                geo_level="national",
+            ),
+            PolicyEngineUSTargetCell("roth_401k_contributions", geo_level="national"),
+            PolicyEngineUSTargetCell(
+                "self_employed_pension_contribution_ald",
+                geo_level="national",
+            ),
+        ),
+    )
+
+    rows_by_variable = {row.variable: row for row in report.rows}
+    traditional = rows_by_variable["traditional_401k_contributions"]
+    roth = rows_by_variable["roth_401k_contributions"]
+    self_employed = rows_by_variable["self_employed_pension_contribution_ald"]
+
+    assert {row.expected_source for row in report.rows} == {"IRS_SOI"}
+    assert traditional.expected_source_table == "IRS SOI Form W-2 Statistics Table 4.B"
+    assert traditional.expected_arch_variable == "traditional_401k_contributions"
+    assert traditional.expected_entity == "person"
+    assert roth.expected_source_table == "IRS SOI Form W-2 Statistics Table 4.B"
+    assert roth.expected_arch_variable == "roth_401k_contributions"
+    assert roth.expected_entity == "person"
+    assert self_employed.expected_source_table == (
+        "IRS SOI Publication 1304 Table 1.4"
+    )
+    assert self_employed.expected_arch_variable == (
+        "self_employed_pension_contribution_ald"
+    )
+    assert self_employed.expected_entity == "tax_unit"
+    assert {row.gap_category for row in report.rows} == {"ready_primary_loader"}
+
+
 def test_arch_target_gap_queue_points_agi_person_counts_to_soi_table_2(tmp_path):
     db_path = tmp_path / "arch_targets.db"
     _create_arch_targets_db(db_path)

@@ -396,6 +396,18 @@ ARCH_FACT_CONCEPT_TO_TARGET = {
         "tip_income_taxpayers",
         "COUNT",
     ),
+    "irs_soi.form_w2_401k_elective_deferrals": (
+        "traditional_401k_contributions",
+        "AMOUNT",
+    ),
+    "irs_soi.form_w2_designated_roth_401k_contributions": (
+        "roth_401k_contributions",
+        "AMOUNT",
+    ),
+    "irs_soi.payments_to_keogh_plan": (
+        "self_employed_pension_contribution_ald",
+        "AMOUNT",
+    ),
     "census_decennial.resident_population": ("population", "COUNT"),
     "census_decennial.occupied_housing_units": ("household_count", "COUNT"),
     "census_pep.resident_population": ("population", "COUNT"),
@@ -630,7 +642,9 @@ ARCH_ENTITY_HINTS = {
     "short_term_capital_gains": EntityType.PERSON,
     "proprietors_income_amount": EntityType.PERSON,
     "rental_income": EntityType.PERSON,
+    "roth_401k_contributions": EntityType.PERSON,
     "self_employment_income": EntityType.PERSON,
+    "self_employed_pension_contribution_ald": EntityType.TAX_UNIT,
     "salt_refund_income": EntityType.PERSON,
     "state_income_tax": EntityType.TAX_UNIT,
     "taxable_ira_distributions": EntityType.PERSON,
@@ -639,6 +653,7 @@ ARCH_ENTITY_HINTS = {
     "taxable_pension_income": EntityType.PERSON,
     "taxable_social_security": EntityType.PERSON,
     "tip_income": EntityType.PERSON,
+    "traditional_401k_contributions": EntityType.PERSON,
     "unemployment_compensation": EntityType.PERSON,
     "medicaid": EntityType.PERSON,
     "social_security": EntityType.PERSON,
@@ -763,8 +778,13 @@ ARCH_VARIABLE_LABEL_OVERRIDES = {
     "tanf_family_count": "TANF family count",
     "tanf_recipient_count": "TANF recipient count",
     "tip_income": "Tip income",
+    "traditional_401k_contributions": "Traditional 401(k) contributions",
     "traditional_ira_contributions": "Traditional IRA contributions",
+    "roth_401k_contributions": "Roth 401(k) contributions",
     "roth_ira_contributions": "Roth IRA contributions",
+    "self_employed_pension_contribution_ald": (
+        "Self-employed pension contribution ALD"
+    ),
 }
 
 ARCH_AGI_BRACKET_LABELS = {
@@ -791,11 +811,16 @@ ARCH_MODEL_AMOUNT_VARIABLE_HINTS = {
     "interest_deduction": "interest_paid_deduction_amount",
     "net_capital_gains": "net_capital_gains_amount",
     "real_estate_taxes": "real_estate_taxes_amount",
+    "roth_401k_contributions": "roth_401k_contributions",
+    "self_employed_pension_contribution_ald": (
+        "self_employed_pension_contribution_ald"
+    ),
     "total_self_employment_income": "schedule_c_income_amount",
     "taxable_ira_distributions": "taxable_ira_distributions_amount",
     "taxable_pension_income": "taxable_pension_income_amount",
     "taxable_social_security": "taxable_social_security_amount",
     "tip_income": "tip_income",
+    "traditional_401k_contributions": "traditional_401k_contributions",
     "unemployment_compensation": "unemployment_compensation_amount",
 }
 
@@ -898,6 +923,8 @@ ARCH_GAP_SOURCE_TABLE_HINTS = {
     "population": "Census Population Estimates Program Vintage 2024 age-sex files",
     "real_estate_taxes": "IRS SOI itemized deduction tables or ACS state files",
     "roth_ira_contributions": "IRS SOI IRA contribution tables",
+    "roth_401k_contributions": "IRS SOI Form W-2 Statistics Table 4.B",
+    "self_employed_pension_contribution_ald": "IRS SOI Publication 1304 Table 1.4",
     "state_individual_income_tax_collections": (
         "Census State Tax Collections item T40"
     ),
@@ -919,6 +946,7 @@ ARCH_GAP_SOURCE_TABLE_HINTS = {
     "tanf_recipient_count": "ACF TANF Caseload Data",
     "tip_income": "IRS SOI Form W-2 Statistics",
     "traditional_ira_contributions": "IRS SOI IRA contribution tables",
+    "traditional_401k_contributions": "IRS SOI Form W-2 Statistics Table 4.B",
     "taxable_ira_distributions": "IRS SOI IRA accumulation/distribution tables",
     "taxable_pension_income": "IRS SOI Publication 1304 Table 1.4",
     "taxable_social_security": "IRS SOI Publication 1304 Table 1.4",

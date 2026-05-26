@@ -66,9 +66,9 @@ When reviewing recent changes here, check:
 
 For a quick review, read:
 
-1. [`/Users/maxghenis/CosilicoAI/microplex-us/AGENTS.md`](/Users/maxghenis/CosilicoAI/microplex-us/AGENTS.md)
-2. [`/Users/maxghenis/CosilicoAI/microplex-us/_WORKSPACE.md`](/Users/maxghenis/CosilicoAI/microplex-us/_WORKSPACE.md)
-3. [`/Users/maxghenis/CosilicoAI/microplex-us/_BUILD_LOG.md`](/Users/maxghenis/CosilicoAI/microplex-us/_BUILD_LOG.md)
+1. [`/Users/maxghenis/PolicyEngine/microplex-us/AGENTS.md`](/Users/maxghenis/PolicyEngine/microplex-us/AGENTS.md)
+2. [`/Users/maxghenis/PolicyEngine/microplex-us/_WORKSPACE.md`](/Users/maxghenis/PolicyEngine/microplex-us/_WORKSPACE.md)
+3. [`/Users/maxghenis/PolicyEngine/microplex-us/_BUILD_LOG.md`](/Users/maxghenis/PolicyEngine/microplex-us/_BUILD_LOG.md)
 
 Then inspect changed files and return findings first.
 
@@ -76,10 +76,10 @@ Then inspect changed files and return findings first.
 
 To avoid rebuilding long prompts in chat:
 
-1. Treat [`/Users/maxghenis/CosilicoAI/microplex-us/reviews/PENDING_CLAUDE_REVIEW.md`](/Users/maxghenis/CosilicoAI/microplex-us/reviews/PENDING_CLAUDE_REVIEW.md) as the current review request.
+1. Treat [`/Users/maxghenis/PolicyEngine/microplex-us/reviews/PENDING_CLAUDE_REVIEW.md`](/Users/maxghenis/PolicyEngine/microplex-us/reviews/PENDING_CLAUDE_REVIEW.md) as the current review request.
 2. Read that file after the standard repo context files above.
-3. Write the full review to a dated file under [`/Users/maxghenis/CosilicoAI/microplex-us/reviews/`](/Users/maxghenis/CosilicoAI/microplex-us/reviews/).
-4. Append only a concise summary to [`/Users/maxghenis/CosilicoAI/microplex-us/_BUILD_LOG.md`](/Users/maxghenis/CosilicoAI/microplex-us/_BUILD_LOG.md).
+3. Write the full review to a dated file under [`/Users/maxghenis/PolicyEngine/microplex-us/reviews/`](/Users/maxghenis/PolicyEngine/microplex-us/reviews/).
+4. Append only a concise summary to [`/Users/maxghenis/PolicyEngine/microplex-us/_BUILD_LOG.md`](/Users/maxghenis/PolicyEngine/microplex-us/_BUILD_LOG.md).
 
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence

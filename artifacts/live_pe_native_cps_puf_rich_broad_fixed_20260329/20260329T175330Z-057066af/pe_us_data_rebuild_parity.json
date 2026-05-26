@@ -1,5 +1,5 @@
 {
-  "artifactDir": "/Users/maxghenis/CosilicoAI/microplex-us/artifacts/live_pe_native_cps_puf_rich_broad_fixed_20260329/20260329T175330Z-057066af",
+  "artifactDir": "/Users/maxghenis/PolicyEngine/microplex-us/artifacts/live_pe_native_cps_puf_rich_broad_fixed_20260329/20260329T175330Z-057066af",
   "artifactId": "20260329T175330Z-057066af",
   "baselineSlice": {
     "baselineDatasetPath": "/Users/maxghenis/PolicyEngine/policyengine-us-data/policyengine_us_data/storage/enhanced_cps_2024.h5",

@@ -152,7 +152,7 @@ class TargetsDatabase:
             left_on=["name", "year"],
             right_on=["Variable", "Year"],
             how="outer",
-            suffixes=("_cosilico", "_pe"),
+            suffixes=("_policyengine", "_pe"),
         )
         comparison["difference"] = comparison["value"] - comparison["Value"]
         comparison["pct_difference"] = comparison["difference"] / comparison["Value"] * 100

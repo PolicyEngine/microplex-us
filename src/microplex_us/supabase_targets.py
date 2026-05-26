@@ -189,18 +189,18 @@ class SupabaseTargetLoader:
 
         Args:
             url: Supabase URL. Defaults to SUPABASE_URL env var.
-            key: Supabase key. Defaults to COSILICO_SUPABASE_SERVICE_KEY env var.
+            key: Supabase key. Defaults to POLICYENGINE_SUPABASE_SERVICE_KEY env var.
             schema: Schema to use. Defaults to 'microplex'.
         """
         self.url = url or os.environ.get(
             "SUPABASE_URL",
             "https://nsupqhfchdtqclomlrgs.supabase.co",
         )
-        self.key = key or os.environ.get("COSILICO_SUPABASE_SERVICE_KEY")
+        self.key = key or os.environ.get("POLICYENGINE_SUPABASE_SERVICE_KEY")
         if not self.key:
             raise ValueError(
                 "Supabase service key must be provided via the key argument or "
-                "COSILICO_SUPABASE_SERVICE_KEY."
+                "POLICYENGINE_SUPABASE_SERVICE_KEY."
             )
         self.base_url = f"{self.url}/rest/v1"
         self.headers = {

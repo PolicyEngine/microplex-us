@@ -287,7 +287,7 @@ def test_build_us_seed_stage_parity_audit_marks_zero_reference_numeric_ratios(tm
 
 
 def test_seed_stage_module_imports_without_duckdb(tmp_path) -> None:
-    repo_root = Path("/Users/maxghenis/CosilicoAI/microplex-us")
+    repo_root = Path(__file__).resolve().parents[2]
     code = """
 import builtins
 import sys

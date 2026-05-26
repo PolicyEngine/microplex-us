@@ -2,23 +2,23 @@
 
 Please do a focused code review of the current US state-program accuracy work across:
 
-- `/Users/maxghenis/CosilicoAI/microplex-us`
-- `/Users/maxghenis/CosilicoAI/microplex`
+- `/Users/maxghenis/PolicyEngine/microplex-us`
+- `/Users/maxghenis/PolicyEngine/microplex`
 
 Use agent teams if available in your environment.
 Suggested split:
-- one agent for `/Users/maxghenis/CosilicoAI/microplex-us`
-- one agent for `/Users/maxghenis/CosilicoAI/microplex`
+- one agent for `/Users/maxghenis/PolicyEngine/microplex-us`
+- one agent for `/Users/maxghenis/PolicyEngine/microplex`
 - one integrating agent to synthesize the calibration/benchmark conclusion
 
 ## Read first
 
-- `/Users/maxghenis/CosilicoAI/microplex-us/AGENTS.md`
-- `/Users/maxghenis/CosilicoAI/microplex-us/_WORKSPACE.md`
-- `/Users/maxghenis/CosilicoAI/microplex-us/_BUILD_LOG.md`
-- `/Users/maxghenis/CosilicoAI/microplex/AGENTS.md`
-- `/Users/maxghenis/CosilicoAI/microplex/_WORKSPACE.md`
-- `/Users/maxghenis/CosilicoAI/microplex/_BUILD_LOG.md`
+- `/Users/maxghenis/PolicyEngine/microplex-us/AGENTS.md`
+- `/Users/maxghenis/PolicyEngine/microplex-us/_WORKSPACE.md`
+- `/Users/maxghenis/PolicyEngine/microplex-us/_BUILD_LOG.md`
+- `/Users/maxghenis/PolicyEngine/microplex/AGENTS.md`
+- `/Users/maxghenis/PolicyEngine/microplex/_WORKSPACE.md`
+- `/Users/maxghenis/PolicyEngine/microplex/_BUILD_LOG.md`
 
 Then inspect recent changes with git diff/status and review the changed files and saved artifacts.
 
@@ -33,19 +33,19 @@ Then inspect recent changes with git diff/status and review the changed files an
 
 - We investigated the US `state_programs_core` gap against PE.
 - Earlier diagnosis leaned toward source/backbone support, but the recent diagnosis shifted toward calibration feasibility.
-- `microplex-us` now has a calibration feasibility filter and better weight-collapse diagnostics in `/Users/maxghenis/CosilicoAI/microplex-us/src/microplex_us/pipelines/us.py`.
-- Explicit semantic specs were added for `has_medicaid`, `public_assistance`, `ssi`, and `social_security` in `/Users/maxghenis/CosilicoAI/microplex-us/src/microplex_us/variables.py`.
-- A core synthesizer bug for all-zero zero-inflated variables was fixed in `/Users/maxghenis/CosilicoAI/microplex/src/microplex/transforms.py`.
-- A boolean-to-float support-fill bug was fixed in `ensure_target_support()` in `/Users/maxghenis/CosilicoAI/microplex-us/src/microplex_us/pipelines/us.py`.
+- `microplex-us` now has a calibration feasibility filter and better weight-collapse diagnostics in `/Users/maxghenis/PolicyEngine/microplex-us/src/microplex_us/pipelines/us.py`.
+- Explicit semantic specs were added for `has_medicaid`, `public_assistance`, `ssi`, and `social_security` in `/Users/maxghenis/PolicyEngine/microplex-us/src/microplex_us/variables.py`.
+- A core synthesizer bug for all-zero zero-inflated variables was fixed in `/Users/maxghenis/PolicyEngine/microplex/src/microplex/transforms.py`.
+- A boolean-to-float support-fill bug was fixed in `ensure_target_support()` in `/Users/maxghenis/PolicyEngine/microplex-us/src/microplex_us/pipelines/us.py`.
 - We ran corrected state-only reruns against the real PE-US-data calibration DB using:
   - variables: `household_count`, `person_count`
   - domains: `snap`, `medicaid_enrolled`
   - geography: `state`
 - Key artifacts:
-  - `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_state_programs_n2000_diagnostics_20260329.json`
-  - `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_cps_puf_rich_state_sweep_20260329.json`
-  - `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_state_programs_feasible_bootstrap_rerun_20260329.json`
-  - `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_state_programs_feasible_synth_rerun_20260329.json`
+  - `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_state_programs_n2000_diagnostics_20260329.json`
+  - `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_cps_puf_rich_state_sweep_20260329.json`
+  - `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_state_programs_feasible_bootstrap_rerun_20260329.json`
+  - `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_state_programs_feasible_synth_rerun_20260329.json`
 
 ## Current headline result to verify
 
@@ -97,9 +97,9 @@ Synthesizer rerun:
 ## After the review
 
 1. Write the full review to:
-   - `/Users/maxghenis/CosilicoAI/microplex-us/reviews/2026-03-29-claude-state-program-review.md`
+   - `/Users/maxghenis/PolicyEngine/microplex-us/reviews/2026-03-29-claude-state-program-review.md`
 2. Append a concise summary to:
-   - `/Users/maxghenis/CosilicoAI/microplex-us/_BUILD_LOG.md`
+   - `/Users/maxghenis/PolicyEngine/microplex-us/_BUILD_LOG.md`
 
 Keep the `_BUILD_LOG.md` append short:
 - date

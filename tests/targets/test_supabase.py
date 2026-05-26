@@ -81,9 +81,9 @@ def request_queue(monkeypatch: pytest.MonkeyPatch):
 
 
 def test_missing_service_key_raises(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("COSILICO_SUPABASE_SERVICE_KEY", raising=False)
+    monkeypatch.delenv("POLICYENGINE_SUPABASE_SERVICE_KEY", raising=False)
 
-    with pytest.raises(ValueError, match="COSILICO_SUPABASE_SERVICE_KEY"):
+    with pytest.raises(ValueError, match="POLICYENGINE_SUPABASE_SERVICE_KEY"):
         SupabaseTargetLoader(SUPABASE_URL)
 
 

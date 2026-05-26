@@ -56,7 +56,7 @@ Standard requirement at every target venue. Must state data source (HuggingFace 
 
 Author founded PolicyEngine and previously led Enhanced CPS work (cited extensively in this paper). The `AFFILIATION.md` rule is followed in the byline and acknowledgments, but silence on the prior affiliation is a disclosure gap. Per domain reviewer: "Silence on the question will read worse than acknowledgement."
 
-**Action**: add explicit COI statement. Template: "The author founded PolicyEngine and previously led work on Enhanced CPS [@ghenis2024ecps]. The present work is conducted at Cosilico, an independent commercial entity, and is not a joint product with PolicyEngine. PolicyEngine's Enhanced CPS is cited as the incumbent public tool against which microplex-us is measured."
+**Action**: add explicit COI statement. Template: "The author founded PolicyEngine and previously led work on Enhanced CPS [@ghenis2024ecps]. The present work is conducted at PolicyEngine, the non-profit organization that publishes Enhanced CPS. PolicyEngine's Enhanced CPS is cited as the incumbent public tool against which microplex-us is measured."
 
 ## High-priority revisions (before review circulation)
 

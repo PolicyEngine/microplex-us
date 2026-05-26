@@ -1,9 +1,9 @@
 """
-CPS ASEC -> cosilico-us variable mappings.
+CPS ASEC -> policyengine-us variable mappings.
 
-Maps Census CPS columns to statute-defined variables in cosilico-us.
+Maps Census CPS columns to statute-defined variables in policyengine-us.
 Each mapping documents:
-- The cosilico-us variable it maps to
+- The policyengine-us variable it maps to
 - The statutory reference (USC section)
 - CPS columns used
 - Coverage level (full, partial, derived, none)
@@ -17,7 +17,7 @@ import polars as pl
 
 
 class CoverageLevel(Enum):
-    """How well CPS covers a cosilico-us variable."""
+    """How well CPS covers a policyengine-us variable."""
 
     FULL = "full"  # CPS provides all required data
     PARTIAL = "partial"  # CPS provides some, with known gaps
@@ -37,9 +37,9 @@ class CoverageGap:
 
 @dataclass
 class VariableMapping:
-    """Metadata for a CPS -> cosilico-us variable mapping."""
+    """Metadata for a CPS -> policyengine-us variable mapping."""
 
-    cosilico_us_variable: str
+    policyengine_us_variable: str
     statute_ref: str
     cps_columns: list[str]
     coverage: CoverageLevel
@@ -58,7 +58,7 @@ _MAPPINGS: dict[str, VariableMapping] = {}
 
 def _register(mapping: VariableMapping) -> VariableMapping:
     """Register a mapping in the global registry."""
-    _MAPPINGS[mapping.cosilico_us_variable] = mapping
+    _MAPPINGS[mapping.policyengine_us_variable] = mapping
     return mapping
 
 
@@ -67,7 +67,7 @@ def _register(mapping: VariableMapping) -> VariableMapping:
 # =============================================================================
 
 _register(VariableMapping(
-    cosilico_us_variable="age",
+    policyengine_us_variable="age",
     statute_ref="26 USC 63(f), 24(c)(1)",
     cps_columns=["A_AGE"],
     coverage=CoverageLevel.FULL,
@@ -84,7 +84,7 @@ def map_age(persons: pl.DataFrame) -> pl.DataFrame:
 
 
 _register(VariableMapping(
-    cosilico_us_variable="household_size",
+    policyengine_us_variable="household_size",
     statute_ref="7 USC 2014(c)",
     cps_columns=["H_NUMPER"],
     coverage=CoverageLevel.FULL,
@@ -105,7 +105,7 @@ def map_household_size(households: pl.DataFrame) -> pl.DataFrame:
 # =============================================================================
 
 _register(VariableMapping(
-    cosilico_us_variable="earned_income",
+    policyengine_us_variable="earned_income",
     statute_ref="26 USC 32(c)(2) - Earned income defined",
     cps_columns=["WSAL_VAL", "SEMP_VAL"],
     coverage=CoverageLevel.FULL,
@@ -132,7 +132,7 @@ def map_earned_income(persons: pl.DataFrame) -> pl.DataFrame:
 # =============================================================================
 
 _register(VariableMapping(
-    cosilico_us_variable="filing_status",
+    policyengine_us_variable="filing_status",
     statute_ref="26 USC 1 (tax rates by status), 2 (definitions)",
     cps_columns=["A_MARITL", "A_AGE", "A_EXPRRP"],
     coverage=CoverageLevel.DERIVED,
@@ -193,7 +193,7 @@ def map_filing_status(persons: pl.DataFrame) -> pl.DataFrame:
 # =============================================================================
 
 _register(VariableMapping(
-    cosilico_us_variable="is_blind",
+    policyengine_us_variable="is_blind",
     statute_ref="26 USC 63(f)(2) - Additional standard deduction for blind",
     cps_columns=["PEDISEYE"],
     coverage=CoverageLevel.FULL,
@@ -216,7 +216,7 @@ def map_is_blind(persons: pl.DataFrame) -> pl.DataFrame:
 # =============================================================================
 
 _register(VariableMapping(
-    cosilico_us_variable="is_dependent",
+    policyengine_us_variable="is_dependent",
     statute_ref="26 USC 152 - Dependent defined",
     cps_columns=["A_EXPRRP", "A_AGE", "WSAL_VAL"],
     coverage=CoverageLevel.DERIVED,
@@ -262,7 +262,7 @@ def map_is_dependent(persons: pl.DataFrame) -> pl.DataFrame:
 # =============================================================================
 
 _register(VariableMapping(
-    cosilico_us_variable="ctc_qualifying_children",
+    policyengine_us_variable="ctc_qualifying_children",
     statute_ref="26 USC 24(c) - Qualifying child (under 17, per 152(c))",
     cps_columns=["A_AGE", "A_EXPRRP", "PH_SEQ", "A_LINENO"],
     coverage=CoverageLevel.DERIVED,
@@ -334,7 +334,7 @@ def map_ctc_qualifying_children(persons: pl.DataFrame) -> pl.DataFrame:
 # =============================================================================
 
 _register(VariableMapping(
-    cosilico_us_variable="adjusted_gross_income",
+    policyengine_us_variable="adjusted_gross_income",
     statute_ref="26 USC 62(a) - Adjusted gross income defined",
     cps_columns=["WSAL_VAL", "SEMP_VAL", "INT_VAL", "DIV_VAL", "PNSN_VAL"],
     coverage=CoverageLevel.PARTIAL,
@@ -436,6 +436,6 @@ def coverage_summary() -> dict[str, list[str]]:
     result = {level.value: [] for level in CoverageLevel}
 
     for mapping in _MAPPINGS.values():
-        result[mapping.coverage.value].append(mapping.cosilico_us_variable)
+        result[mapping.coverage.value].append(mapping.policyengine_us_variable)
 
     return result

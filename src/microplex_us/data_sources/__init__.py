@@ -54,7 +54,7 @@ _EXPORTS: dict[str, tuple[str, str]] = {
         "microplex_us.data_sources.cps_transform",
         (
             "TransformedDataset",
-            "transform_cps_to_cosilico",
+            "transform_cps_to_policyengine",
         ),
     ),
     **_exports(

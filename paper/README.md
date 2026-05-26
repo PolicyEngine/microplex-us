@@ -4,7 +4,7 @@ Quarto manuscript and supporting materials.
 
 ## Affiliation
 
-Cosilico-only. See `AFFILIATION.md` — this work is intentionally independent of PolicyEngine for tax-and-organization reasons.
+PolicyEngine-only. See `AFFILIATION.md` — this work is intentionally independent of PolicyEngine for tax-and-organization reasons.
 
 ## Contents
 

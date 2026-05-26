@@ -147,7 +147,7 @@ If ordering is preserved in latent space: stage-1 finding is robust. If it chang
 import pandas as pd
 import numpy as np
 
-df = pd.read_parquet("~/CosilicoAI/microplex/data/stacked_comprehensive.parquet")
+df = pd.read_parquet("~/PolicyEngine/microplex/data/stacked_comprehensive.parquet")
 exclude = {"weight", "person_id", "household_id", "interview_number"}
 
 survey_dfs = {}

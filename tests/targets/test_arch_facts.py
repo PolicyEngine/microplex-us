@@ -936,6 +936,17 @@ def _consumer_fact(
     }
 
 
+def _target_filter_tuples(target: Any) -> set[tuple[str, str, str]]:
+    return {
+        (
+            str(target_filter.feature),
+            str(getattr(target_filter.operator, "value", target_filter.operator)),
+            str(target_filter.value),
+        )
+        for target_filter in target.filters
+    }
+
+
 def _normalize_target_behavior(target_set) -> list[tuple[Any, ...]]:
     rows = []
     for target in target_set.targets:
@@ -1189,6 +1200,139 @@ def test_arch_consumer_fact_jsonl_provider_maps_historic_table_2_concepts(
     tax_filer_individuals = targets_by_arch_variable["tax_filer_individual_count"]
     assert tax_filer_individuals.metadata["variable"] == "person_count"
     assert tax_filer_individuals.aggregation.value == "count"
+
+
+def test_arch_consumer_fact_jsonl_provider_maps_state_soi_rows(
+    tmp_path: Path,
+) -> None:
+    consumer_jsonl = tmp_path / "consumer_facts.jsonl"
+    rows = [
+        _consumer_fact(
+            "state-ca-agi-50k-75k",
+            concept="irs_soi.adjusted_gross_income",
+            domain="all_individual_income_tax_returns",
+            source_name="irs_soi",
+            source_table="Historic Table 2 state AGI facts",
+            period={"type": "tax_year", "value": 2022},
+            geography={"level": "state", "id": "0400000US06", "name": "California"},
+            value=123_456_000_000,
+            unit="usd",
+            constraints=(
+                {
+                    "variable": "us:statutes/26/62#adjusted_gross_income",
+                    "operator": ">=",
+                    "value": 50_000,
+                    "unit": "usd",
+                    "role": "filter",
+                },
+                {
+                    "variable": "us:statutes/26/62#adjusted_gross_income",
+                    "operator": "<",
+                    "value": 75_000,
+                    "unit": "usd",
+                    "role": "filter",
+                },
+            ),
+        ),
+        _consumer_fact(
+            "state-ca-eitc-amount",
+            concept="irs_soi.earned_income_credit",
+            domain="individual_income_tax_returns",
+            source_name="irs_soi",
+            source_table="Historic Table 2 state EITC totals",
+            period={"type": "tax_year", "value": 2022},
+            geography={"level": "state", "id": "0400000US06", "name": "California"},
+            value=5_770_703_000,
+            unit="usd",
+        ),
+    ]
+    consumer_jsonl.write_text(
+        "\n".join(json.dumps(row, sort_keys=True) for row in rows) + "\n"
+    )
+
+    target_set = ArchConsumerFactJSONLTargetProvider(consumer_jsonl).load_target_set(
+        TargetQuery(period=2022)
+    )
+    targets_by_arch_variable = {
+        target.metadata["arch_variable"]: target for target in target_set.targets
+    }
+
+    agi = targets_by_arch_variable["adjusted_gross_income"]
+    assert agi.metadata["variable"] == "adjusted_gross_income"
+    assert agi.metadata["geo_level"] == "state"
+    assert agi.metadata["geography_id"] == "0400000US06"
+    assert agi.measure == "adjusted_gross_income"
+    assert agi.aggregation.value == "sum"
+    assert _target_filter_tuples(agi) == {
+        ("tax_unit_is_filer", "==", "1"),
+        ("adjusted_gross_income", ">=", "50000"),
+        ("adjusted_gross_income", "<", "75000"),
+        ("state_fips", "==", "06"),
+    }
+
+    eitc = targets_by_arch_variable["eitc_amount"]
+    assert eitc.metadata["variable"] == "eitc"
+    assert eitc.metadata["geo_level"] == "state"
+    assert eitc.measure == "eitc"
+    assert eitc.aggregation.value == "sum"
+    assert _target_filter_tuples(eitc) == {
+        ("tax_unit_is_filer", "==", "1"),
+        ("state_fips", "==", "06"),
+    }
+
+
+def test_arch_consumer_fact_jsonl_provider_maps_eitc_by_agi_and_children(
+    tmp_path: Path,
+) -> None:
+    consumer_jsonl = tmp_path / "consumer_facts.jsonl"
+    row = _consumer_fact(
+        "eitc-three-child-50k-75k-returns",
+        concept="irs_soi.returns_with_total_earned_income_credit",
+        domain="individual_income_tax_returns_with_earned_income_credit",
+        source_name="irs_soi",
+        source_table="Publication 1304 Table 2.5 EITC by AGI and qualifying children",
+        period={"type": "tax_year", "value": 2022},
+        value=97_411,
+        constraints=(
+            {
+                "variable": "us:statutes/26/62#adjusted_gross_income",
+                "operator": ">=",
+                "value": 50_000,
+                "unit": "usd",
+                "role": "filter",
+            },
+            {
+                "variable": "us:statutes/26/62#adjusted_gross_income",
+                "operator": "<",
+                "value": 75_000,
+                "unit": "usd",
+                "role": "filter",
+            },
+            {
+                "variable": "us.tax.earned_income_credit_qualifying_children",
+                "operator": "==",
+                "value": 3,
+                "unit": "count",
+                "role": "filter",
+            },
+        ),
+    )
+    consumer_jsonl.write_text(json.dumps(row, sort_keys=True) + "\n")
+
+    target_set = ArchConsumerFactJSONLTargetProvider(consumer_jsonl).load_target_set(
+        TargetQuery(period=2022)
+    )
+    target = target_set.targets[0]
+
+    assert target.metadata["arch_variable"] == "eitc_claims"
+    assert target.metadata["variable"] == "eitc"
+    assert target.aggregation.value == "count"
+    assert _target_filter_tuples(target) == {
+        ("eitc", ">", "0"),
+        ("adjusted_gross_income", ">=", "50000"),
+        ("adjusted_gross_income", "<", "75000"),
+        ("eitc_child_count", "==", "3"),
+    }
 
 
 def test_arch_consumer_fact_jsonl_provider_maps_us_admin_source_families(

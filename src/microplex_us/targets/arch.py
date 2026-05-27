@@ -4789,7 +4789,7 @@ def _dedupe_target_filters(filters: list[TargetFilter]) -> tuple[TargetFilter, .
     deduped: list[TargetFilter] = []
     for target_filter in filters:
         operator = getattr(target_filter.operator, "value", target_filter.operator)
-        key = (str(target_filter.feature), str(operator), target_filter.value)
+        key = (str(target_filter.feature), str(operator), str(target_filter.value))
         if key in seen:
             continue
         seen.add(key)

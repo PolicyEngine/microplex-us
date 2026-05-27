@@ -25,7 +25,7 @@ jobs:
       - name: Check out core microplex
         uses: actions/checkout@v4
         with:
-          repository: CosilicoAI/microplex
+          repository: PolicyEngine/microplex
           ref: main
           path: microplex
 

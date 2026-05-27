@@ -32,11 +32,11 @@ import argparse
 import json
 import logging
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import numpy as np
-import pandas as pd
 from sklearn.metrics import brier_score_loss, log_loss, roc_auc_score
 
 from microplex_us.bakeoff.local_methods import (
@@ -47,9 +47,9 @@ from microplex_us.bakeoff.local_methods import (
 )
 from microplex_us.bakeoff.scale_up import (
     DEFAULT_CONDITION_COLS,
+    DEFAULT_ENHANCED_CPS_PATH,
     DEFAULT_TARGET_COLS,
     _load_enhanced_cps,
-    DEFAULT_ENHANCED_CPS_PATH,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -146,7 +146,7 @@ def main(argv: list[str] | None = None) -> int:
         "--output",
         type=Path,
         default=Path(
-            "/Users/maxghenis/CosilicoAI/microplex-us/artifacts/"
+            "/Users/maxghenis/PolicyEngine/microplex-us/artifacts/"
             "zi_classifier_isolated_eval.json"
         ),
     )

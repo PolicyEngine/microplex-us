@@ -1,6 +1,6 @@
-/* Generated from the exported Cosilico design tokens.
-   Source: cosilico.ai/packages/config/theme.css
-   Re-run: python scripts/sync_cosilico_theme.py
+/* Generated from the exported PolicyEngine design tokens.
+   Source: policyengine.org/packages/config/theme.css
+   Re-run: python scripts/sync_policyengine_theme.py
 */
 :root {
 --color-void: #06070a;

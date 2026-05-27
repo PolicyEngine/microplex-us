@@ -3,8 +3,8 @@ title: "Identity-preserving synthesis and calibration for US tax-benefit microda
 short-title: "microplex-us"
 author:
   - name: Max Ghenis
-    affiliation: Cosilico
-    email: max@cosilico.ai
+    affiliation: PolicyEngine
+    email: max@policyengine.org
 date: last-modified
 abstract: |
   Tax and benefit microsimulation depends on synthetic microdata whose
@@ -339,7 +339,7 @@ The cross-section benchmark uses PolicyEngine's Enhanced CPS as both the input s
 
 # Code and data availability {#sec-availability}
 
-All code is open-source under the MIT license at `https://github.com/CosilicoAI/microplex-us` (commit hash of the submitted version will be noted in the camera-ready). The benchmark harness, scripts, and Quarto source for this paper are in that repository. Supporting infrastructure in `microplex` core (`https://github.com/CosilicoAI/microplex`) is also open-source.
+All code is open-source under the MIT license at `https://github.com/PolicyEngine/microplex-us` (commit hash of the submitted version will be noted in the camera-ready). The benchmark harness, scripts, and Quarto source for this paper are in that repository. Supporting infrastructure in `microplex` core (`https://github.com/PolicyEngine/microplex`) is also open-source.
 
 The Enhanced CPS 2024 dataset used as the evaluation substrate is the `enhanced_cps_2024.h5` HDF5 file published by PolicyEngine on Hugging Face (`https://huggingface.co/policyengine/policyengine-us-data`). The file is freely downloadable without credentials and is ~43 MB on disk. The specific revision used for all benchmarks in this paper will be pinned to a Hugging Face dataset revision hash or mirrored to Zenodo in the camera-ready version.
 
@@ -349,7 +349,7 @@ Reproduction environment for the results reported here: Python 3.14.0, macOS 14 
 
 # Disclosures {#sec-disclosures}
 
-I founded PolicyEngine, a separate non-profit organization that publishes the Enhanced CPS 2024 data product this paper uses as an evaluation substrate, and previously led the work reported in @ghenis2024ecps. The present research is conducted at Cosilico, an independent commercial entity, and is neither a joint product with PolicyEngine nor supported by PolicyEngine funding. PolicyEngine's Enhanced CPS is cited throughout as the incumbent public tool against which `microplex-us` is measured. I have no other competing interests to disclose.
+I founded PolicyEngine, the non-profit organization that publishes the Enhanced CPS 2024 data product this paper uses as an evaluation substrate, and previously led the work reported in @ghenis2024ecps. The present research is conducted at PolicyEngine. PolicyEngine's Enhanced CPS is cited throughout as the incumbent public tool against which `microplex-us` is measured. I have no other competing interests to disclose.
 
 # Conclusion {#sec-conclusion}
 

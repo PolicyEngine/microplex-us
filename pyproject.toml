@@ -9,7 +9,7 @@ description = "US-specific adapters, pipelines, and PolicyEngine integration for
 readme = "README.md"
 license = "MIT"
 authors = [
-    { name = "Cosilico", email = "hello@cosilico.ai" }
+    { name = "PolicyEngine", email = "hello@policyengine.org" }
 ]
 requires-python = ">=3.13"
 dependencies = [
@@ -34,7 +34,7 @@ policyengine = [
 ]
 
 [project.urls]
-Repository = "https://github.com/CosilicoAI/microplex-us"
+Repository = "https://github.com/PolicyEngine/microplex-us"
 
 [project.scripts]
 microplex-us-arch-target-coverage = "microplex_us.targets.arch:main_coverage"

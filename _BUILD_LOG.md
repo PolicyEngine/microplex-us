@@ -504,7 +504,7 @@ Append-only notes for agents working in `microplex-us`.
   - Canonical website input now lives at `artifacts/site_snapshot_us.json`, not in `tmp_*.json` diagnostics.
   - New blessed version-bump benchmark command:
     - `uv run microplex-us-version-bump-benchmark --output-root ... --cps-parquet-dir ... --targets-db ... --baseline-dataset ...`
-  - The command can also refresh the canonical site snapshot with `--site-snapshot-path /Users/maxghenis/CosilicoAI/microplex-us/artifacts/site_snapshot_us.json`.
+  - The command can also refresh the canonical site snapshot with `--site-snapshot-path /Users/maxghenis/PolicyEngine/microplex-us/artifacts/site_snapshot_us.json`.
 - Enforcement direction:
   - scratch diagnostics can still exist, but the website should only read the canonical snapshot file
   - versioned benchmark runs should emit manifest + harness + registry entry, then optionally refresh the canonical snapshot
@@ -709,7 +709,7 @@ Append-only notes for agents working in `microplex-us`.
   - full Claude reviews should be written under `reviews/`
   - `_BUILD_LOG.md` should keep only concise review summaries
   - intended short Claude instruction is now just:
-    - `Please execute the pending review request in /Users/maxghenis/CosilicoAI/microplex-us/reviews/PENDING_CLAUDE_REVIEW.md`
+    - `Please execute the pending review request in /Users/maxghenis/PolicyEngine/microplex-us/reviews/PENDING_CLAUDE_REVIEW.md`
 
 2026-03-29
 - Follow-up after focused review findings:
@@ -849,7 +849,7 @@ Append-only notes for agents working in `microplex-us`.
 
 2026-03-29
 - Corrected broad PE-native result (`cps+puf-rich`, `sample_n=500`, `n_synthetic=2000`):
-  - artifact: `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/live_pe_native_cps_puf_rich_broad_fixed_20260329/20260329T175330Z-057066af`
+  - artifact: `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/live_pe_native_cps_puf_rich_broad_fixed_20260329/20260329T175330Z-057066af`
   - the scope is now correct: `policyengine_target_profile='pe_native_broad'` with no extra variable/geo filters
   - PE-native broad loss is still far from PE:
     - candidate native loss `0.95856`
@@ -863,7 +863,7 @@ Append-only notes for agents working in `microplex-us`.
     - mean error `0.9234`
   - implication: the PE-native mission is still primarily a scale/support problem; fixing the profile bug was necessary, but not enough
 - Next live run:
-  - launched a larger broad mission candidate at `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/live_pe_native_cps_puf_rich_broad_scaled_20260329`
+  - launched a larger broad mission candidate at `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/live_pe_native_cps_puf_rich_broad_scaled_20260329`
   - config: `sample_n=5000`, `n_synthetic=10000`, `target_profile='pe_native_broad'`, native loss only
 
 2026-03-29
@@ -900,11 +900,11 @@ Append-only notes for agents working in `microplex-us`.
   - Ruff clean on touched core + US files
 - Mission follow-up:
   - attempted a broad sparse-vs-entropy sweep at `sample_n=5000`, `n_synthetic=10000`, but the first broad PE-native score alone was slow enough that it is not a practical overnight tuning loop yet
-  - replaced it with a smaller first broad sparse diagnostic at `sample_n=1000`, `n_synthetic=2000`, `target_sparsity=0.1`; result pending in `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_pe_native_broad_sparse_n2000_20260329.json`
+  - replaced it with a smaller first broad sparse diagnostic at `sample_n=1000`, `n_synthetic=2000`, `target_sparsity=0.1`; result pending in `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_pe_native_broad_sparse_n2000_20260329.json`
 
 2026-03-29
 - First broad sparse PE-native diagnostic landed:
-  - artifact: `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_pe_native_broad_sparse_n2000_20260329.json`
+  - artifact: `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_pe_native_broad_sparse_n2000_20260329.json`
   - result is much worse than entropy on the mission surface:
     - candidate native loss `633.9884`
     - PE baseline native loss `0.0202`
@@ -942,7 +942,7 @@ Append-only notes for agents working in `microplex-us`.
   - `tests/pipelines/test_artifacts.py::TestSaveUSMicroplexArtifacts::test_can_defer_policyengine_harness_generation`
   - Ruff clean on touched artifact/experiment files
  - Current live run:
-   - relaunched the four-way PE-native broad compare on the no-harness path at `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/live_pe_native_broad_entropy_batch_noharness_20260329`
+   - relaunched the four-way PE-native broad compare on the no-harness path at `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/live_pe_native_broad_entropy_batch_noharness_20260329`
    - matrix:
      - `cps-only-bootstrap`
      - `cps-only-synthesizer`
@@ -961,7 +961,7 @@ Append-only notes for agents working in `microplex-us`.
     - `qrf` / `zi_qrf` use a new columnwise forest-based donor imputer rather than the existing flow-based `Synthesizer`
   - added focused route coverage in `tests/pipelines/test_us.py`
 - Smoke-test result on `cps_asec_2023 + puf_2024`, `sample_n=500`, `n_synthetic=2000`, `target_profile='pe_native_broad'`, `calibration_backend='entropy'`:
-  - artifact: `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_donor_backend_ab_pe_native_broad_20260329.json`
+  - artifact: `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_donor_backend_ab_pe_native_broad_20260329.json`
   - `maf`:
     - candidate native loss `0.8958`
     - baseline native loss `0.02024`
@@ -981,7 +981,7 @@ Append-only notes for agents working in `microplex-us`.
   - translation caveat is likely real: the runtime donor-imputed variables on this path are mostly PUF tax variables (`capital_gains`, `dividends`, `interest`, `pension`, etc.), not the broader survey-support surfaces emphasized by the widened eval
   - next control is plain `qrf` on the same path to see whether the miss is the zero-inflated gate or the whole forest donor-imputer branch
 - Plain `qrf` control on the same config:
-  - artifact: `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_donor_backend_qrf_pe_native_broad_20260329.json`
+  - artifact: `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_donor_backend_qrf_pe_native_broad_20260329.json`
   - candidate native loss `0.8931`
   - baseline native loss `0.02024`
   - delta `+0.8728`
@@ -993,7 +993,7 @@ Append-only notes for agents working in `microplex-us`.
   - `zi_qrf` is worse than both (`0.9278`)
   - none of these are remotely close to PE yet, so this is only a runtime-direction result, not a candidate-frontier change
 - QRF control on the same live path:
-  - artifact: `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_donor_backend_qrf_pe_native_broad_20260329.json`
+  - artifact: `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_donor_backend_qrf_pe_native_broad_20260329.json`
   - `qrf`:
     - candidate native loss `0.8931`
     - baseline native loss `0.02024`
@@ -1010,7 +1010,7 @@ Append-only notes for agents working in `microplex-us`.
 2026-03-29
 - Broad PE-native family diagnosis:
   - the huge broad-loss gap is not primarily a donor-imputer issue
-  - in `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/live_pe_native_broad_entropy_batch_noharness_20260329/20260329T210427Z-057066af/policyengine_native_scores.json`, the top loss contributors are:
+  - in `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/live_pe_native_broad_entropy_batch_noharness_20260329/20260329T210427Z-057066af/policyengine_native_scores.json`, the top loss contributors are:
     - `national_irs_other` `+0.2839`
     - `state_agi_distribution` `+0.1893`
     - `state_age_distribution` `+0.1860`
@@ -1022,11 +1022,11 @@ Append-only notes for agents working in `microplex-us`.
 - Failed bootstrap-target-scope experiments:
   - tried auto-inferencing profile-driven bootstrap strata from `pe_native_broad`
   - full profile strata (`state_fips`, `age_group`, `income_bracket`) made broad loss worse:
-    - artifact: `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_qrf_profile_strata_pe_native_broad_20260329.json`
+    - artifact: `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_qrf_profile_strata_pe_native_broad_20260329.json`
     - candidate native loss `0.9371`
     - delta `+0.9169`
   - narrower state-only profile strata also made broad loss worse:
-    - artifact: `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_qrf_state_strata_pe_native_broad_20260329.json`
+    - artifact: `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_qrf_state_strata_pe_native_broad_20260329.json`
     - candidate native loss `0.9373`
     - delta `+0.9170`
  - conclusion: bootstrap stratification is not the missing broad-native lever here; the attempted default inference was reverted after the smoke tests
@@ -1074,7 +1074,7 @@ Append-only notes for agents working in `microplex-us`.
 2026-03-29
 - Broad PE-native rescore on repaired `cps+puf` export:
   - persisted repaired export:
-    - `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_cps_puf_broad_relationship_entity_fix_20260329.h5`
+    - `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_cps_puf_broad_relationship_entity_fix_20260329.h5`
   - direct PE-native broad scoring under `policyengine-us-data` showed:
     - candidate loss `0.9386384097643049`
     - same kept-target surface as before (`2817` = `641` national + `2176` state)
@@ -1093,9 +1093,9 @@ Append-only notes for agents working in `microplex-us`.
     - `src/microplex_us/pipelines/pre_sim_parity.py`
     - `tests/pipelines/test_pre_sim_parity.py`
   - real audit artifact written to:
-    - `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_pre_sim_parity_audit_20260329.json`
+    - `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_pre_sim_parity_audit_20260329.json`
   - saved broad candidate audited:
-    - `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/live_pe_native_broad_entropy_batch_noharness_20260329/20260329T210427Z-057066af/policyengine_us.h5`
+    - `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/live_pe_native_broad_entropy_batch_noharness_20260329/20260329T210427Z-057066af/policyengine_us.h5`
   - key findings:
     - candidate schema recall vs PE pre-sim input surface is only `35 / 165 = 21.2%`
     - missing critical pre-sim inputs include:
@@ -1128,11 +1128,11 @@ Append-only notes for agents working in `microplex-us`.
 - PE pre-sim parity follow-up:
   - re-exported the saved broad candidate under current code to isolate export/handoff vs upstream candidate quality:
     - candidate source tables:
-      - `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/live_pe_native_broad_entropy_batch_noharness_20260329/20260329T210427Z-057066af/calibrated_data.parquet`
+      - `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/live_pe_native_broad_entropy_batch_noharness_20260329/20260329T210427Z-057066af/calibrated_data.parquet`
     - re-exported H5:
-      - `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_pre_sim_parity_reexport_20260329.h5`
+      - `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_pre_sim_parity_reexport_20260329.h5`
     - updated audit:
-      - `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_pre_sim_parity_reexport_20260329.json`
+      - `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_pre_sim_parity_reexport_20260329.json`
   - compared with the original saved candidate H5 audit:
     - common PE pre-sim vars improved from `35` to `39`
     - schema recall improved from `0.2121` to `0.2364`
@@ -1166,9 +1166,9 @@ Append-only notes for agents working in `microplex-us`.
 - Fresh current-code parity audit correction:
   - the earlier `tmp_pre_sim_parity_reexport_20260329.h5/json` pair turned out to be stale for entity-structure conclusions
   - rebuilt a fresh current-code export directly from the saved broad `calibrated_data.parquet`:
-    - `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_tax_unit_recheck_20260329.h5`
+    - `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_tax_unit_recheck_20260329.h5`
     - audit:
-      - `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_pre_sim_parity_reexport_fresh_20260329.json`
+      - `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_pre_sim_parity_reexport_fresh_20260329.json`
   - corrected fresh-audit findings:
     - schema overlap is unchanged from the re-export check:
       - `39 / 165` common PE pre-sim vars
@@ -1239,11 +1239,11 @@ Append-only notes for agents working in `microplex-us`.
     - Ruff clean on touched CPS / pipeline / PE-export files
 - fresh current-code re-export from the saved broad candidate:
   - candidate H5:
-    - `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_pre_sim_parity_export_fix_candidate_20260329.h5`
+    - `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_pre_sim_parity_export_fix_candidate_20260329.h5`
   - parity audit:
-    - `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_pre_sim_parity_export_fix_audit_20260329.json`
+    - `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_pre_sim_parity_export_fix_audit_20260329.json`
   - native score:
-    - `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_pre_sim_parity_export_fix_native_score_20260329.json`
+    - `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_pre_sim_parity_export_fix_native_score_20260329.json`
   - key results:
     - schema recall remains `0.2364` (`39 / 165`)
     - missing critical vars are now:
@@ -1271,18 +1271,18 @@ Append-only notes for agents working in `microplex-us`.
 2026-03-29
 - current-code CPS-only broad PE-native drilldown:
   - built and exported the exact current-code CPS-only candidate H5:
-    - `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_cps_only_currentcode_candidate_20260329.h5`
+    - `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_cps_only_currentcode_candidate_20260329.h5`
   - broad smoke result:
-    - `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_cps_only_currentcode_pe_native_broad_20260329.json`
+    - `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_cps_only_currentcode_pe_native_broad_20260329.json`
     - candidate broad PE-native loss `0.9159877997083388`
     - PE baseline `0.020243908529428433`
     - delta `+0.8957438911789103`
   - exact worst targets:
-    - `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_pe_native_broad_worst_targets_currentcode_cps_20260329.json`
+    - `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_pe_native_broad_worst_targets_currentcode_cps_20260329.json`
   - pre-sim surface compare against PE's source-imputed CPS:
-    - `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_pre_sim_surface_compare_currentcode_cps_20260329.json`
+    - `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_pre_sim_surface_compare_currentcode_cps_20260329.json`
   - state-mass compare:
-    - `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_state_mass_compare_currentcode_cps_20260329.json`
+    - `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_state_mass_compare_currentcode_cps_20260329.json`
 - main findings:
   - `state_age_distribution` is a real large driver, not a scorer artifact:
     - current-code candidate has only `434` nonempty `(state, 5-year-age-bin)` cells vs `911` in PE's source-imputed CPS
@@ -1361,7 +1361,7 @@ Append-only notes for agents working in `microplex-us`.
 ## 2026-03-29 weighted-source scale checkpoint
 
 - broad PE-native result on weighted `cps+puf + qrf + bootstrap` with `sample_n=1000`, `n_synthetic=2000`:
-  - artifact: `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_qrf_weighted_sample1000_pe_native_broad_20260329.json`
+  - artifact: `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_qrf_weighted_sample1000_pe_native_broad_20260329.json`
   - candidate loss `0.8696287975`
   - PE baseline `0.0202439085`
   - delta `+0.8493848890`
@@ -1385,7 +1385,7 @@ Append-only notes for agents working in `microplex-us`.
 ## 2026-03-29 broad-loop reversal checkpoint
 
 - weighted `cps+puf + qrf + bootstrap` with `sample_n=1000`, `n_synthetic=5000` regressed materially:
-  - artifact: `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_qrf_weighted_sample1000_n5000_pe_native_broad_20260329.json`
+  - artifact: `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_qrf_weighted_sample1000_n5000_pe_native_broad_20260329.json`
   - candidate loss `0.8907772820` vs the stronger `sample_n=1000`, `n_synthetic=2000` result `0.8696287975`
   - calibration feasibility looked *broader* but fit quality got worse:
     - dropped constraints improved to `1807 / 3611` (`50.0%`)
@@ -1412,7 +1412,7 @@ Append-only notes for agents working in `microplex-us`.
 ## 2026-03-29 source-mix and donor-path checkpoint
 
 - weighted `cps+puf + qrf + bootstrap` with `sample_n=2000`, `n_synthetic=2000` was worse, not better:
-  - artifact: `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_qrf_weighted_sample2000_pe_native_broad_20260329.json`
+  - artifact: `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_qrf_weighted_sample2000_pe_native_broad_20260329.json`
   - candidate loss `0.9251676593`
   - supported constraints `1280` vs `1310` on the better `1000/2000` run
   - household calibrated weight total `6.24M` vs `10.37M` on the better `1000/2000` run
@@ -1434,7 +1434,7 @@ Append-only notes for agents working in `microplex-us`.
     - `unemployment_compensation`
   - importantly, `state_fips` is *not* entering the PUF donor match
 - `cps-only` isolation at the same `sample_n=2000`, `n_synthetic=2000` size:
-  - artifact: `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_cps_only_sample2000_pe_native_broad_20260329.json`
+  - artifact: `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_cps_only_sample2000_pe_native_broad_20260329.json`
   - candidate loss `0.8846092807`
   - this is much better than `cps+puf` at the same size (`0.9251676593`)
   - but still worse than the best current broad run (`cps+puf`, `1000/2000`, `0.8696287975`)
@@ -1461,15 +1461,15 @@ Append-only notes for agents working in `microplex-us`.
 - direct ablation still running:
   - `cps+puf`, weighted `qrf + bootstrap`, `sample_n=1000`, `n_synthetic=2000`
   - but skip donor integration of `filing_status_code`
-  - output target: `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_qrf_no_filing_status_pe_native_broad_20260329.json`
+  - output target: `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_qrf_no_filing_status_pe_native_broad_20260329.json`
 - this is the cleanest immediate test of the current filer-structure hypothesis.
 
 ## 2026-03-29 filing-status donor checkpoint
 
 - the `filing_status_code` ablation landed and improved the real mission metric:
-  - baseline broad run: `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_qrf_weighted_sample1000_pe_native_broad_20260329.json`
+  - baseline broad run: `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_qrf_weighted_sample1000_pe_native_broad_20260329.json`
     - candidate loss `0.8696287975`
-  - no-filing ablation: `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_qrf_no_filing_status_pe_native_broad_20260329.json`
+  - no-filing ablation: `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_qrf_no_filing_status_pe_native_broad_20260329.json`
     - candidate loss `0.8596198236`
   - improvement: `-0.010009`
 - the gains are concentrated in the same broad families we already care about:
@@ -1508,7 +1508,7 @@ Append-only notes for agents working in `microplex-us`.
 ## 2026-03-29 filing-status reproducibility warning
 
 - the supported-path rerun of the same broad `qrf + bootstrap` idea with opt-in exclusion
-  - artifact: `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_qrf_excluded_filing_status_config_pe_native_broad_20260329.json`
+  - artifact: `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_qrf_excluded_filing_status_config_pe_native_broad_20260329.json`
   - candidate loss `1.3717579152`
   - this is much worse than both:
     - the earlier one-off no-filing artifact `0.8596198236`
@@ -1552,8 +1552,8 @@ Append-only notes for agents working in `microplex-us`.
   - `tests/test_puf_source_provider.py::test_puf_source_provider_age_imputation_is_reproducible_with_same_seed`
 - validation after the patch:
   - two same-seed exported H5s from the broad baseline path
-    - `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_qrf_postfix_rebuild_a_20260329.h5`
-    - `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_qrf_postfix_rebuild_b_20260329.h5`
+    - `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_qrf_postfix_rebuild_a_20260329.h5`
+    - `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_qrf_postfix_rebuild_b_20260329.h5`
   - have identical pre-sim parity metrics:
     - state-age nonempty cells `571`
     - state-age support recall `0.6220`
@@ -1567,7 +1567,7 @@ Append-only notes for agents working in `microplex-us`.
 ## 2026-03-30 filing-status exclusion confirmed on deterministic path
 
 - direct PE-native broad rescoring of the deterministic no-filing artifact:
-  - artifact: `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_qrf_postfix_no_filing_20260329.h5`
+  - artifact: `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_qrf_postfix_no_filing_20260329.h5`
   - candidate loss `0.8677052580`
   - PE baseline `0.0202439085`
   - delta `+0.8474613495`
@@ -1593,7 +1593,7 @@ Append-only notes for agents working in `microplex-us`.
 
 ## 2026-03-30 leafified default PE export surface
 
-- tightened `SAFE_POLICYENGINE_US_EXPORT_VARIABLES` in `/Users/maxghenis/CosilicoAI/microplex-us/src/microplex_us/policyengine/us.py`
+- tightened `SAFE_POLICYENGINE_US_EXPORT_VARIABLES` in `/Users/maxghenis/PolicyEngine/microplex-us/src/microplex_us/policyengine/us.py`
   - dropped default export of PE computed/add variables that already have leaf inputs on our surface:
     - `employment_income`
     - `self_employment_income`
@@ -1604,7 +1604,7 @@ Append-only notes for agents working in `microplex-us`.
     - `capital_gains`
     - `filing_status`
   - kept leaf replacements already present on the surface, plus `rent` as the deliberate stored-input exception
-- added a regression in `/Users/maxghenis/CosilicoAI/microplex-us/tests/policyengine/test_us.py`
+- added a regression in `/Users/maxghenis/PolicyEngine/microplex-us/tests/policyengine/test_us.py`
   - default export-map test no longer expects tax-unit `filing_status`
   - new guard checks that the default export whitelist does not overlap PE formula/add/subtract variables except the explicit `rent` exception
 - focused verification:
@@ -1618,19 +1618,19 @@ Append-only notes for agents working in `microplex-us`.
 
 ## 2026-03-30 scorer env fix + leafified/state-floor follow-up
 
-- fixed a real PE-native rescoring portability bug in `/Users/maxghenis/CosilicoAI/microplex-us/src/microplex_us/pipelines/pe_native_scores.py`
+- fixed a real PE-native rescoring portability bug in `/Users/maxghenis/PolicyEngine/microplex-us/src/microplex_us/pipelines/pe_native_scores.py`
   - the scorer now automatically includes a sibling `/Users/maxghenis/PolicyEngine/microimpute` checkout on `PYTHONPATH` when resolving a local `policyengine-us-data` repo
-  - added regression coverage in `/Users/maxghenis/CosilicoAI/microplex-us/tests/pipelines/test_pe_native_scores.py`
+  - added regression coverage in `/Users/maxghenis/PolicyEngine/microplex-us/tests/pipelines/test_pe_native_scores.py`
 - focused verification:
   - `pytest -q tests/pipelines/test_pe_native_scores.py tests/test_cps_source_provider.py` -> `12 passed`
   - `ruff check src/microplex_us/pipelines/pe_native_scores.py src/microplex_us/data_sources/cps.py tests/pipelines/test_pe_native_scores.py tests/test_cps_source_provider.py` -> clean
 - direct candidate-only PE-native broad rescoring of the leafified export:
-  - artifact: `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_qrf_leafified_export_pe_native_broad_20260330.h5`
+  - artifact: `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_qrf_leafified_export_pe_native_broad_20260330.h5`
   - candidate loss `0.8892950182`
   - this is worse than the deterministic no-filing checkpoint `0.8677052580`
   - interpretation: leafifying the export surface is the right correctness/control-surface fix, but it does not improve the mission metric by itself
 - checked a CPS source-sampling state-floor experiment and reverted it
-  - temporary artifact: `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_qrf_leafified_statefloor_export_pe_native_broad_20260330.h5`
+  - temporary artifact: `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_qrf_leafified_statefloor_export_pe_native_broad_20260330.h5`
   - pre-sim effect:
     - all `51` states survive through seed, synthetic, and calibrated tables
     - exported H5 state-age support recall improved from about `0.5708` to `0.5871`
@@ -1646,7 +1646,7 @@ Append-only notes for agents working in `microplex-us`.
 
 - the remaining scorer-helper failure under nested `uv run` was not mainly a `PYTHONPATH` problem
 - root cause:
-  - `/Users/maxghenis/CosilicoAI/microplex-us/src/microplex_us/pipelines/pe_native_scores.py` was calling `.resolve()` on `/Users/maxghenis/PolicyEngine/policyengine-us-data/.venv/bin/python`
+  - `/Users/maxghenis/PolicyEngine/microplex-us/src/microplex_us/pipelines/pe_native_scores.py` was calling `.resolve()` on `/Users/maxghenis/PolicyEngine/policyengine-us-data/.venv/bin/python`
   - that followed the venv symlink to the underlying Homebrew/system Python binary and silently stripped the venv context
   - effect: the helper subprocess imported global `policyengine_us`, then failed deep inside local `microimpute` with missing `statsmodels`
 - fixes now in place:
@@ -1658,13 +1658,13 @@ Append-only notes for agents working in `microplex-us`.
     - sibling `microimpute` inclusion on `PYTHONPATH`
     - preservation of the `.venv/bin/python` symlink path
 - direct candidate-only broad rescoring remains the trustworthy numeric checkpoint for the leafified export:
-  - candidate artifact `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_qrf_leafified_export_pe_native_broad_20260330.h5`
+  - candidate artifact `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_qrf_leafified_export_pe_native_broad_20260330.h5`
   - candidate loss `0.8892950182`
 
 ## 2026-03-30 joint-return A/B + export direct-override path
 
 - ruled out a tempting but wrong IRS fix on the live broad path
-  - artifact: `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_joint_allocation_head_preserving_ab_20260330.json`
+  - artifact: `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_joint_allocation_head_preserving_ab_20260330.json`
   - config: `cps_asec_2023 + irs_soi_puf_2024`, `sample_n=1000`, `n_synthetic=2000`, `bootstrap + qrf + entropy`, `donor_imputer_excluded_variables=('filing_status_code',)`
   - result:
     - current split baseline: candidate loss `0.8659920427`
@@ -1676,10 +1676,10 @@ Append-only notes for agents working in `microplex-us`.
   - the leafified candidate does **not** lose overall tax-unit dependents or HOH-eligible mass relative to the older better candidate
   - the regressions are therefore about AGI mass allocation within filing statuses, not a simple collapse of dependent/HOH structure
 - added first-class direct-export override plumbing for PE-native experiments
-  - `/Users/maxghenis/CosilicoAI/microplex-us/src/microplex_us/pipelines/us.py`
+  - `/Users/maxghenis/PolicyEngine/microplex-us/src/microplex_us/pipelines/us.py`
     - `USMicroplexBuildConfig` now includes `policyengine_direct_override_variables`
     - `export_policyengine_dataset(...)` accepts explicit `direct_override_variables` and defaults to the build config value
-  - `/Users/maxghenis/CosilicoAI/microplex-us/src/microplex_us/pipelines/performance.py`
+  - `/Users/maxghenis/PolicyEngine/microplex-us/src/microplex_us/pipelines/performance.py`
     - PE-native scoring path now forwards `build_config.policyengine_direct_override_variables` into export
   - focused verification:
     - `pytest -q tests/pipelines/test_performance.py -k 'native_loss or export_direct_overrides'` -> passed
@@ -1690,8 +1690,8 @@ Append-only notes for agents working in `microplex-us`.
     - default leafified export
     - leafified export + explicit direct override `('filing_status',)`
   - exported datasets already written:
-    - `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_leaf_default_export_ab_20260330.h5`
-    - `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_leaf_filing_override_export_ab_20260330.h5`
+    - `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_leaf_default_export_ab_20260330.h5`
+    - `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_leaf_filing_override_export_ab_20260330.h5`
   - broad PE-native scores are still running; this is the cleanest test of whether `filing_status` should remain a temporary deliberate exception while deeper tax-unit structure is fixed
 
 ## 2026-03-30 repeatability + exact-target diagnosis + parity-input patch
@@ -1701,7 +1701,7 @@ Append-only notes for agents working in `microplex-us`.
     - loss `0.8643217352`, `n_constraints=1234`, `mean_error=0.77098`
     - loss `0.8810677038`, `n_constraints=1252`, `mean_error=0.79746`
   - implication: there is still a real nondeterminism bug in the live build path, not just scorer noise
-- exact broad target deltas on the current best saved H5 (`/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_best_broad_target_deltas_20260330.json`) show many hard-zero regressions against PE's enhanced CPS, including:
+- exact broad target deltas on the current best saved H5 (`/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_best_broad_target_deltas_20260330.json`) show many hard-zero regressions against PE's enhanced CPS, including:
   - `nation/irs/aca_spending/la`
   - `nation/census/medicare_part_b_premiums/age_20_to_29`
   - `nation/irs/aca_spending/nh`
@@ -1734,7 +1734,7 @@ Append-only notes for agents working in `microplex-us`.
   - excluding `eitc_children`, `exemptions_count`, and `is_male` in addition to `filing_status_code` worsened broad loss from `0.8791992898` to `0.9247766974`
   - implication: do not generalize a blanket “exclude count/binary donor vars” policy
 - current pending mission run:
-  - `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_parity_inputs_broad_pe_native_20260330.json`
+  - `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_parity_inputs_broad_pe_native_20260330.json`
   - same broad config as the current best path, but with the new CPS/PUF parity inputs on the runtime surface
 
 ## 2026-03-30 CPS repeatability fix
@@ -1742,17 +1742,17 @@ Append-only notes for agents working in `microplex-us`.
 - isolated the remaining same-seed drift to the CPS provider rather than PUF or the PE-native scorer
   - repeated `CPSASECSourceProvider(year=2023)` loads with `sample_n=1000`, `random_seed=42` were producing different household/person samples from the same cached processed parquet
   - root cause: household sampling depended on unstable row order from derived CPS households; same `random_state` on different row order yields different samples
-- fixed `/Users/maxghenis/CosilicoAI/microplex-us/src/microplex_us/data_sources/cps.py`
+- fixed `/Users/maxghenis/PolicyEngine/microplex-us/src/microplex_us/data_sources/cps.py`
   - canonicalize household order by `household_id` before sampling
   - canonicalize person order by `household_id`, `person_id`, `person_number` before sampling
   - sort sampled household/person outputs before returning
-- added regression coverage in `/Users/maxghenis/CosilicoAI/microplex-us/tests/test_cps_source_provider.py`
+- added regression coverage in `/Users/maxghenis/PolicyEngine/microplex-us/tests/test_cps_source_provider.py`
   - repeated same-seed loads from cached processed CPS data now return identical household/person selections
 - direct repeatability check after the patch:
-  - provider repeatability artifact `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_provider_repeatability_20260330.json`
+  - provider repeatability artifact `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_provider_repeatability_20260330.json`
     - CPS: `same_households=true`, `same_persons=true`
     - PUF: `same_households=true`, `same_persons=true`
-  - pre-calibration repeatability artifact `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_qrf_repeatability_precal_20260330.json`
+  - pre-calibration repeatability artifact `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_qrf_repeatability_precal_20260330.json`
     - `same_seed_same_seed_data=true`
     - `same_seed_same_integrated_seed=true`
     - `same_seed_same_synthetic=true`
@@ -1760,13 +1760,13 @@ Append-only notes for agents working in `microplex-us`.
   - `pytest -q tests/test_cps_source_provider.py -k 'sampling or deterministic or derives_policyengine_value_inputs'` -> `4 passed`
   - `ruff check src/microplex_us/data_sources/cps.py tests/test_cps_source_provider.py` -> clean
 - current pending mission rerun:
-  - `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_parity_inputs_broad_pe_native_20260330.json`
+  - `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_parity_inputs_broad_pe_native_20260330.json`
   - this is the first broad PE-native rerun on a deterministic `cps+puf + qrf + bootstrap + entropy` path after the parity-input patch
 
 ## 2026-03-30 parity-input broad blow-up + stale CPS cache diagnosis
 
 - the first deterministic broad rerun after the parity-input patch landed at:
-  - `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_parity_inputs_broad_pe_native_20260330.json`
+  - `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_parity_inputs_broad_pe_native_20260330.json`
   - candidate broad PE-native loss `7.433075015991533`
   - PE baseline `0.020243908529428433`
   - delta `+7.412831107462105`
@@ -1781,7 +1781,7 @@ Append-only notes for agents working in `microplex-us`.
   - `/Users/maxghenis/.cache/microplex/cps_asec_2023_processed.parquet` was stale relative to the new CPS loader contract
   - `load_cps_asec()` cache validation only required the older geography / coverage columns, so it silently reused a processed cache that predated the new PE-native derived inputs
 - fix now in place:
-  - `/Users/maxghenis/CosilicoAI/microplex-us/src/microplex_us/data_sources/cps.py`
+  - `/Users/maxghenis/PolicyEngine/microplex-us/src/microplex_us/data_sources/cps.py`
     - extended `PERSON_CACHE_REQUIRED_COLUMNS` to require:
       - `alimony_income`
       - `child_support_received`
@@ -1790,7 +1790,7 @@ Append-only notes for agents working in `microplex-us`.
       - `other_medical_expenses`
       - `over_the_counter_health_expenses`
       - `medicare_part_b_premiums`
-  - `/Users/maxghenis/CosilicoAI/microplex-us/tests/test_cps_source_provider.py`
+  - `/Users/maxghenis/PolicyEngine/microplex-us/tests/test_cps_source_provider.py`
     - updated stale-cache and deterministic-cache fixtures to match the stricter processed-cache contract
     - focused verification:
       - `pytest -q tests/test_cps_source_provider.py -k 'deterministic or stale_processed_cache_without_pe_presim_inputs or derives_policyengine_value_inputs'` -> passed
@@ -1801,7 +1801,7 @@ Append-only notes for agents working in `microplex-us`.
     - `child_support_received` is now present in `seed_data`, `synthetic_data`, and `calibrated_data`
     - `disability_benefits` is now present in `seed_data`, `synthetic_data`, and `calibrated_data`
 - current pending clean rerun:
-  - `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_parity_inputs_broad_pe_native_20260330_v2.json`
+  - `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_parity_inputs_broad_pe_native_20260330_v2.json`
   - this is the first broad PE-native rerun on:
     - deterministic CPS sampling
     - rebuilt live CPS processed cache
@@ -1859,9 +1859,9 @@ Append-only notes for agents working in `microplex-us`.
     - `calibration_backend='entropy'`
     - `calibration_max_iter=1000`
   - output target:
-    - `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_qrf_weighted_sample2000_iter1000_pe_native_broad_20260330.json`
+    - `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_qrf_weighted_sample2000_iter1000_pe_native_broad_20260330.json`
 - Result:
-  - `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_qrf_weighted_sample2000_iter1000_pe_native_broad_20260330.json`
+  - `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_qrf_weighted_sample2000_iter1000_pe_native_broad_20260330.json`
   - candidate PE-native broad loss: `0.8830832791543215`
   - PE baseline: `0.020243908529428433`
   - delta: `+0.862839370624893`
@@ -1889,7 +1889,7 @@ Append-only notes for agents working in `microplex-us`.
   - `pytest -q tests/pipelines/test_performance.py -k 'household_budget_selection or full_source_queries or preserves_target_profiles or native_loss'` -> `4 passed`
   - `ruff check src/microplex_us/pipelines/us.py src/microplex_us/pipelines/performance.py tests/pipelines/test_us.py tests/pipelines/test_performance.py` -> clean
 - PE-scale source-subsampled comparison point:
-  - `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_qrf_weighted_sample29999_n29999_pe_native_broad_20260330.json`
+  - `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_qrf_weighted_sample29999_n29999_pe_native_broad_20260330.json`
   - config:
     - `sample_n=29999`
     - `n_synthetic=29999`
@@ -1905,7 +1905,7 @@ Append-only notes for agents working in `microplex-us`.
     - matching PE's row count by source-side weighted subsampling is worse than the smaller deterministic broad path
     - the better next experiment is full CPS + full PUF support, then prune to `29,999` households with the new sparse selection stage
 - Running now:
-  - `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_fullsource_seed_sparse29999_pe_native_broad_20260330.json`
+  - `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_fullsource_seed_sparse29999_pe_native_broad_20260330.json`
   - config:
     - `sample_n=None` (full sources)
     - `synthesis_backend='seed'`
@@ -1929,11 +1929,11 @@ Append-only notes for agents working in `microplex-us`.
   - `ruff check src/microplex_us/pipelines/pe_native_optimization.py src/microplex_us/pipelines/performance.py src/microplex_us/pipelines/__init__.py tests/pipelines/test_pe_native_optimization.py tests/pipelines/test_performance.py` -> clean
 - First same-candidate direct-objective A/B:
   - input candidate:
-    - `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/live_pe_native_broad_entropy_batch_noharness_20260329/20260329T210427Z-057066af/policyengine_us.h5`
+    - `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/live_pe_native_broad_entropy_batch_noharness_20260329/20260329T210427Z-057066af/policyengine_us.h5`
   - optimized output:
-    - `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_pe_native_direct_opt_20260331.h5`
+    - `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_pe_native_direct_opt_20260331.h5`
   - summary:
-    - `/Users/maxghenis/CosilicoAI/microplex-us/artifacts/tmp_pe_native_direct_opt_20260331.json`
+    - `/Users/maxghenis/PolicyEngine/microplex-us/artifacts/tmp_pe_native_direct_opt_20260331.json`
   - result:
     - raw candidate PE-native broad loss: `0.9233365911702252`
     - direct-objective optimized loss: `0.9229024219474923`

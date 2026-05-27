@@ -5,8 +5,8 @@ project:
 title: "Identity-preserving synthesis and calibration for US tax-benefit microdata"
 author:
   - name: Max Ghenis
-    affiliation: Cosilico
-    email: max@cosilico.ai
+    affiliation: PolicyEngine
+    email: max@policyengine.org
 
 date: last-modified
 abstract: |

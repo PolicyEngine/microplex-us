@@ -8,11 +8,11 @@ This file is the durable local context for `microplex-us`.
 
 Core repo:
 
-- [`/Users/maxghenis/CosilicoAI/microplex`](/Users/maxghenis/CosilicoAI/microplex)
+- [`/Users/maxghenis/PolicyEngine/microplex`](/Users/maxghenis/PolicyEngine/microplex)
 
 Sibling country pack:
 
-- [`/Users/maxghenis/CosilicoAI/microplex-uk`](/Users/maxghenis/CosilicoAI/microplex-uk)
+- [`/Users/maxghenis/PolicyEngine/microplex-uk`](/Users/maxghenis/PolicyEngine/microplex-uk)
 
 ## Current high-value modules
 
@@ -97,7 +97,7 @@ If the same helper starts appearing in both PE-US and PE-UK benchmark/reweightin
 ## Review handoff
 
 - Current durable Claude request:
-  - `/Users/maxghenis/CosilicoAI/microplex-us/reviews/PENDING_CLAUDE_REVIEW.md`
+  - `/Users/maxghenis/PolicyEngine/microplex-us/reviews/PENDING_CLAUDE_REVIEW.md`
 - Full saved reviews belong under:
-  - `/Users/maxghenis/CosilicoAI/microplex-us/reviews/`
+  - `/Users/maxghenis/PolicyEngine/microplex-us/reviews/`
 - `_BUILD_LOG.md` should only keep a concise review summary, not the full review body.

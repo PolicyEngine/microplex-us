@@ -225,7 +225,13 @@ jobs:
                   handle.extractall(extract_root, filter="data")
           elif zipfile.is_zipfile(archive):
               with zipfile.ZipFile(archive) as handle:
-                  handle.extractall(extract_root)
+                  for member in handle.infolist():
+                      destination = (extract_root / member.filename).resolve()
+                      if not destination.is_relative_to(extract_root.resolve()):
+                          raise SystemExit(
+                              f"zip archive member escapes artifact root: {member.filename}"
+                          )
+                      handle.extract(member, extract_root)
           else:
               raise SystemExit("artifact_archive_url must point to a tar or zip archive")
 

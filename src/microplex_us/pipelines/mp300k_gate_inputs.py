@@ -17,6 +17,7 @@ def package_mp300k_gate_inputs(
     output_dir: str | Path,
     *,
     candidate_dataset_path: str | Path | None = None,
+    baseline_dataset_path: str | Path | None = None,
     ecps_comparison_path: str | Path | None = None,
     runtime_smoke_path: str | Path | None = None,
     benchmark_manifest_path: str | Path | None = None,
@@ -39,6 +40,11 @@ def package_mp300k_gate_inputs(
     )
     if not candidate_dataset.exists():
         raise FileNotFoundError(f"candidate dataset not found: {candidate_dataset}")
+    baseline_dataset = _resolve_baseline_dataset_path(
+        artifact_root,
+        manifest,
+        baseline_dataset_path,
+    )
 
     output_root.mkdir(parents=True, exist_ok=True)
     archive_path = output_root / archive_name
@@ -56,12 +62,26 @@ def package_mp300k_gate_inputs(
     staged_candidate = stage_root / candidate_relpath
     staged_candidate.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(candidate_dataset, staged_candidate)
+    baseline_relpath = None
+    if baseline_dataset is not None:
+        if not baseline_dataset.exists():
+            raise FileNotFoundError(f"baseline dataset not found: {baseline_dataset}")
+        baseline_relpath = _baseline_archive_relpath(
+            manifest,
+            baseline_dataset=baseline_dataset,
+            explicit_baseline_path=baseline_dataset_path,
+        )
+        staged_baseline = stage_root / baseline_relpath
+        staged_baseline.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(baseline_dataset, staged_baseline)
 
     staged_manifest = _manifest_for_archive(
         manifest,
         source_artifact_dir=artifact_root,
         source_candidate_dataset=candidate_dataset,
         candidate_relpath=candidate_relpath,
+        source_baseline_dataset=baseline_dataset,
+        baseline_relpath=baseline_relpath,
     )
     _write_json(stage_root / "manifest.json", staged_manifest)
     _write_archive(archive_path, stage_root)
@@ -86,6 +106,9 @@ def package_mp300k_gate_inputs(
         "source_artifact_dir": str(artifact_root.resolve()),
         "source_manifest": _file_descriptor(manifest_path),
         "source_candidate_dataset": _file_descriptor(candidate_dataset),
+        "source_baseline_dataset": (
+            _file_descriptor(baseline_dataset) if baseline_dataset is not None else None
+        ),
         "artifact_archive": _file_descriptor(archive_path),
         "evidence": evidence,
         "workflow_call": {
@@ -124,6 +147,24 @@ def _resolve_candidate_dataset_path(
     return dataset_path
 
 
+def _resolve_baseline_dataset_path(
+    artifact_root: Path,
+    manifest: dict[str, Any],
+    explicit_path: str | Path | None,
+) -> Path | None:
+    if explicit_path is not None:
+        return Path(explicit_path).expanduser()
+    value = dict(manifest.get("config", {})).get("policyengine_baseline_dataset")
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value:
+        raise ValueError("config.policyengine_baseline_dataset must be a path string")
+    baseline_path = Path(value).expanduser()
+    if not baseline_path.is_absolute():
+        baseline_path = artifact_root / baseline_path
+    return baseline_path
+
+
 def _candidate_archive_relpath(
     manifest: dict[str, Any],
     *,
@@ -140,21 +181,48 @@ def _candidate_archive_relpath(
     return Path(candidate_dataset.name)
 
 
+def _baseline_archive_relpath(
+    manifest: dict[str, Any],
+    *,
+    baseline_dataset: Path,
+    explicit_baseline_path: str | Path | None,
+) -> Path:
+    if explicit_baseline_path is not None:
+        return Path("baseline") / baseline_dataset.name
+    value = dict(manifest.get("config", {})).get("policyengine_baseline_dataset")
+    if isinstance(value, str) and value:
+        relpath = Path(value)
+        if not relpath.is_absolute():
+            return relpath
+    return Path("baseline") / baseline_dataset.name
+
+
 def _manifest_for_archive(
     manifest: dict[str, Any],
     *,
     source_artifact_dir: Path,
     source_candidate_dataset: Path,
     candidate_relpath: Path,
+    source_baseline_dataset: Path | None,
+    baseline_relpath: Path | None,
 ) -> dict[str, Any]:
     updated = dict(manifest)
     artifacts = dict(updated.get("artifacts", {}))
     artifacts["policyengine_dataset"] = str(candidate_relpath)
     updated["artifacts"] = artifacts
+    config = dict(updated.get("config", {}))
+    if baseline_relpath is not None:
+        config["policyengine_baseline_dataset"] = str(baseline_relpath)
+    updated["config"] = config
     updated["mp300k_gate_inputs"] = {
         "packaged_at": datetime.now(UTC).isoformat(),
         "source_artifact_dir": str(source_artifact_dir.resolve()),
         "source_candidate_dataset": str(source_candidate_dataset.resolve()),
+        "source_baseline_dataset": (
+            str(source_baseline_dataset.resolve())
+            if source_baseline_dataset is not None
+            else None
+        ),
     }
     return updated
 
@@ -205,6 +273,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--artifact-dir", required=True)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--candidate-dataset")
+    parser.add_argument("--baseline-dataset")
     parser.add_argument("--ecps-comparison-json")
     parser.add_argument("--runtime-smoke-json")
     parser.add_argument("--benchmark-manifest")
@@ -215,6 +284,7 @@ def main(argv: list[str] | None = None) -> int:
         args.artifact_dir,
         args.output_dir,
         candidate_dataset_path=args.candidate_dataset,
+        baseline_dataset_path=args.baseline_dataset,
         ecps_comparison_path=args.ecps_comparison_json,
         runtime_smoke_path=args.runtime_smoke_json,
         benchmark_manifest_path=args.benchmark_manifest,

@@ -63,7 +63,7 @@ def build_mp300k_artifact_gate_report(
     baseline_dataset = (
         Path(baseline_dataset_path).expanduser()
         if baseline_dataset_path is not None
-        else _manifest_baseline_dataset(manifest)
+        else _manifest_baseline_dataset(artifact_root, manifest)
     )
 
     candidate_gate = _candidate_artifact_gate(
@@ -191,12 +191,17 @@ def _resolve_candidate_dataset_path(
     return dataset_path
 
 
-def _manifest_baseline_dataset(manifest: dict[str, Any]) -> Path | None:
+def _manifest_baseline_dataset(
+    artifact_root: Path, manifest: dict[str, Any]
+) -> Path | None:
     config = dict(manifest.get("config", {}))
     value = config.get("policyengine_baseline_dataset")
     if value is None:
         return None
-    return Path(value).expanduser()
+    baseline_path = Path(value).expanduser()
+    if not baseline_path.is_absolute():
+        baseline_path = artifact_root / baseline_path
+    return baseline_path
 
 
 def _candidate_artifact_gate(
@@ -368,9 +373,27 @@ def _ecps_comparison_gate(
     candidate_loss = summary.get("candidate_enhanced_cps_native_loss")
     baseline_loss = summary.get("baseline_enhanced_cps_native_loss")
     loss_delta = summary.get("enhanced_cps_native_loss_delta")
-    candidate_beats = summary.get("candidate_beats_baseline")
-    if candidate_beats is None and loss_delta is not None:
+    reported_candidate_beats = summary.get("candidate_beats_baseline")
+    details: dict[str, Any] = {}
+    if candidate_loss is not None and baseline_loss is not None:
+        computed_loss_delta = float(candidate_loss) - float(baseline_loss)
+        if (
+            loss_delta is not None
+            and abs(float(loss_delta) - computed_loss_delta) > 1e-12
+        ):
+            details["reported_loss_delta"] = loss_delta
+            details["computed_loss_delta"] = computed_loss_delta
+        loss_delta = computed_loss_delta
+    candidate_beats = None
+    if loss_delta is not None:
         candidate_beats = float(loss_delta) < 0.0
+    if (
+        reported_candidate_beats is not None
+        and candidate_beats is not None
+        and bool(reported_candidate_beats) != candidate_beats
+    ):
+        details["reported_candidate_beats_baseline"] = reported_candidate_beats
+        details["computed_candidate_beats_baseline"] = candidate_beats
     status: GateStatus
     if candidate_beats is None:
         status = "unmeasured"
@@ -393,6 +416,7 @@ def _ecps_comparison_gate(
             "enhanced_cps_native_loss_delta": loss_delta,
             "n_targets_kept": summary.get("n_targets_kept"),
         },
+        details=details,
     )
 
 
@@ -447,12 +471,11 @@ def _runtime_gate(
     if ratio is None and candidate_seconds is not None and baseline_seconds:
         ratio = float(candidate_seconds) / float(baseline_seconds)
     passes = payload.get("passes_runtime_gate")
-    if passes is None and ratio is not None:
-        passes = float(ratio) <= threshold
-    if passes is None:
+    details: dict[str, Any] = {}
+    if ratio is None:
         return _gate(
             "unmeasured",
-            "runtime smoke payload is missing ratio or pass/fail result",
+            "runtime smoke payload is missing ratio or candidate/baseline seconds",
             metrics={
                 "candidate_seconds": candidate_seconds,
                 "baseline_seconds": baseline_seconds,
@@ -460,11 +483,15 @@ def _runtime_gate(
                 "runtime_ratio_threshold": threshold,
             },
         )
+    derived_passes = float(ratio) <= threshold
+    if passes is not None and bool(passes) != derived_passes:
+        details["reported_passes_runtime_gate"] = passes
+        details["computed_passes_runtime_gate"] = derived_passes
     return _gate(
-        "pass" if bool(passes) else "fail",
+        "pass" if derived_passes else "fail",
         (
             "candidate runtime is inside the smoke benchmark threshold"
-            if bool(passes)
+            if derived_passes
             else "candidate runtime exceeds the smoke benchmark threshold"
         ),
         metrics={
@@ -473,6 +500,7 @@ def _runtime_gate(
             "runtime_ratio": ratio,
             "runtime_ratio_threshold": threshold,
         },
+        details=details,
     )
 
 

@@ -7,6 +7,7 @@ from pathlib import Path
 
 import h5py
 import numpy as np
+import pytest
 
 from microplex_us.pipelines.mp300k_artifact_gates import (
     main,
@@ -258,3 +259,74 @@ def test_ecps_comparison_accepts_existing_broad_loss_array_payload(tmp_path):
         ]
         == 0.25
     )
+
+
+def test_runtime_gate_ignores_contradictory_producer_verdict(tmp_path):
+    artifact_dir = tmp_path / "artifact"
+    artifact_dir.mkdir()
+    _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
+    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    benchmark_manifest = tmp_path / "benchmark_manifest.json"
+    benchmark_manifest.write_text(json.dumps({"schema_version": 1}))
+    _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
+
+    report_path = write_mp300k_artifact_gate_report(
+        artifact_dir,
+        ecps_comparison_payload={
+            "summary": {
+                "candidate_enhanced_cps_native_loss": 0.1,
+                "baseline_enhanced_cps_native_loss": 0.2,
+            }
+        },
+        runtime_smoke_payload={
+            "runtime_ratio": 10.0,
+            "runtime_ratio_threshold": 1.25,
+            "passes_runtime_gate": True,
+        },
+        benchmark_manifest_path=benchmark_manifest,
+        compute_native_scores=False,
+        update_manifest=False,
+    )
+
+    record = json.loads(report_path.read_text())
+    runtime_gate = record["gates"]["runtime"]
+
+    assert record["summary"]["status"] == "failed"
+    assert runtime_gate["status"] == "fail"
+    assert runtime_gate["details"]["reported_passes_runtime_gate"] is True
+    assert runtime_gate["details"]["computed_passes_runtime_gate"] is False
+
+
+def test_ecps_gate_derives_verdict_from_losses_not_producer_flag(tmp_path):
+    artifact_dir = tmp_path / "artifact"
+    artifact_dir.mkdir()
+    _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
+    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    benchmark_manifest = tmp_path / "benchmark_manifest.json"
+    benchmark_manifest.write_text(json.dumps({"schema_version": 1}))
+    _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
+
+    report_path = write_mp300k_artifact_gate_report(
+        artifact_dir,
+        ecps_comparison_payload={
+            "summary": {
+                "candidate_enhanced_cps_native_loss": 0.3,
+                "baseline_enhanced_cps_native_loss": 0.2,
+                "enhanced_cps_native_loss_delta": -0.1,
+                "candidate_beats_baseline": True,
+            }
+        },
+        runtime_smoke_payload={"runtime_ratio": 1.0},
+        benchmark_manifest_path=benchmark_manifest,
+        compute_native_scores=False,
+        update_manifest=False,
+    )
+
+    record = json.loads(report_path.read_text())
+    ecps_gate = record["gates"]["ecps_comparison"]
+
+    assert record["summary"]["status"] == "failed"
+    assert ecps_gate["status"] == "fail"
+    assert ecps_gate["metrics"]["enhanced_cps_native_loss_delta"] == pytest.approx(0.1)
+    assert ecps_gate["details"]["reported_candidate_beats_baseline"] is True
+    assert ecps_gate["details"]["computed_candidate_beats_baseline"] is False

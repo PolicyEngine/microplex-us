@@ -1,0 +1,219 @@
+name: mp-300k Artifact Gates
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      artifact_archive_url:
+        description: URL to a .zip, .tar, or .tar.gz artifact bundle containing manifest.json.
+        required: true
+        type: string
+      ecps_comparison_url:
+        description: Optional URL to precomputed PE-native eCPS comparison JSON.
+        required: false
+        type: string
+      runtime_smoke_url:
+        description: Optional URL to runtime smoke benchmark JSON.
+        required: false
+        type: string
+      benchmark_manifest_url:
+        description: Optional URL to the frozen microsimulation benchmark manifest.
+        required: false
+        type: string
+      target_period:
+        description: PolicyEngine period to validate.
+        required: false
+        default: "2024"
+        type: string
+      runtime_ratio_threshold:
+        description: Maximum candidate/baseline runtime ratio.
+        required: false
+        default: "1.25"
+        type: string
+      artifact_size_ratio_threshold:
+        description: Maximum candidate/baseline H5 size ratio.
+        required: false
+        default: "2.0"
+        type: string
+      require_ecps_comparison:
+        description: Keep the eCPS comparison as a blocking gate.
+        required: false
+        default: true
+        type: boolean
+  workflow_call:
+    inputs:
+      artifact_archive_url:
+        required: true
+        type: string
+      ecps_comparison_url:
+        required: false
+        type: string
+      runtime_smoke_url:
+        required: false
+        type: string
+      benchmark_manifest_url:
+        required: false
+        type: string
+      target_period:
+        required: false
+        default: "2024"
+        type: string
+      runtime_ratio_threshold:
+        required: false
+        default: "1.25"
+        type: string
+      artifact_size_ratio_threshold:
+        required: false
+        default: "2.0"
+        type: string
+      require_ecps_comparison:
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  implementation-tests:
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: microplex-us
+    steps:
+      - name: Check out microplex-us
+        uses: actions/checkout@v4
+        with:
+          path: microplex-us
+
+      - name: Check out core microplex
+        uses: actions/checkout@v4
+        with:
+          repository: PolicyEngine/microplex
+          ref: main
+          path: microplex
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Test artifact gate implementation
+        run: |
+          uv run --python 3.13 --extra dev --with pydantic --with-editable ../microplex pytest -q \
+            tests/pipelines/test_mp300k_artifact_gates.py
+
+  artifact-gates:
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: microplex-us
+    steps:
+      - name: Check out microplex-us
+        uses: actions/checkout@v4
+        with:
+          path: microplex-us
+
+      - name: Check out core microplex
+        uses: actions/checkout@v4
+        with:
+          repository: PolicyEngine/microplex
+          ref: main
+          path: microplex
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Download artifact and evidence
+        run: |
+          mkdir -p ../gate-inputs/evidence
+          curl --fail --location "${{ inputs.artifact_archive_url }}" --output ../gate-inputs/artifact-archive
+
+          if [ -n "${{ inputs.ecps_comparison_url }}" ]; then
+            curl --fail --location "${{ inputs.ecps_comparison_url }}" --output ../gate-inputs/evidence/ecps_comparison.json
+          fi
+          if [ -n "${{ inputs.runtime_smoke_url }}" ]; then
+            curl --fail --location "${{ inputs.runtime_smoke_url }}" --output ../gate-inputs/evidence/runtime_smoke.json
+          fi
+          if [ -n "${{ inputs.benchmark_manifest_url }}" ]; then
+            curl --fail --location "${{ inputs.benchmark_manifest_url }}" --output ../gate-inputs/evidence/benchmark_manifest.json
+          fi
+
+      - name: Resolve artifact directory
+        run: |
+          uv run --python 3.13 python - <<'PY'
+          import tarfile
+          import zipfile
+          from pathlib import Path
+
+          archive = Path("../gate-inputs/artifact-archive")
+          extract_root = Path("../gate-inputs/artifact-root")
+          extract_root.mkdir(parents=True, exist_ok=True)
+
+          if tarfile.is_tarfile(archive):
+              with tarfile.open(archive) as handle:
+                  handle.extractall(extract_root, filter="data")
+          elif zipfile.is_zipfile(archive):
+              with zipfile.ZipFile(archive) as handle:
+                  handle.extractall(extract_root)
+          else:
+              raise SystemExit("artifact_archive_url must point to a tar or zip archive")
+
+          manifests = sorted(
+              extract_root.rglob("manifest.json"),
+              key=lambda path: len(path.relative_to(extract_root).parts),
+          )
+          if not manifests:
+              raise SystemExit("artifact archive does not contain manifest.json")
+          Path("../gate-inputs/artifact_dir.txt").write_text(str(manifests[0].parent.resolve()))
+          PY
+
+      - name: Run artifact gates
+        run: |
+          artifact_dir="$(cat ../gate-inputs/artifact_dir.txt)"
+          args=(
+            --artifact-dir "$artifact_dir"
+            --target-period "${{ inputs.target_period }}"
+            --artifact-size-ratio-threshold "${{ inputs.artifact_size_ratio_threshold }}"
+            --runtime-ratio-threshold "${{ inputs.runtime_ratio_threshold }}"
+            --output-json ../gate-inputs/mp300k_artifact_gates.json
+            --no-update-manifest
+          )
+
+          if [ -f ../gate-inputs/evidence/ecps_comparison.json ]; then
+            args+=(--ecps-comparison-json ../gate-inputs/evidence/ecps_comparison.json)
+          else
+            args+=(--skip-ecps-computation)
+          fi
+          if [ -f ../gate-inputs/evidence/runtime_smoke.json ]; then
+            args+=(--runtime-smoke-json ../gate-inputs/evidence/runtime_smoke.json)
+          fi
+          if [ -f ../gate-inputs/evidence/benchmark_manifest.json ]; then
+            args+=(--benchmark-manifest ../gate-inputs/evidence/benchmark_manifest.json)
+          fi
+          if [ "${{ inputs.require_ecps_comparison }}" != "true" ]; then
+            args+=(--no-require-ecps-comparison)
+          fi
+
+          uv run --python 3.13 --extra dev --with pydantic --with-editable ../microplex \
+            microplex-us-mp300k-artifact-gates "${args[@]}"
+
+      - name: Upload gate report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mp300k-artifact-gates
+          path: gate-inputs/mp300k_artifact_gates.json

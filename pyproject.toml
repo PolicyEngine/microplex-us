@@ -15,6 +15,7 @@ requires-python = ">=3.13"
 dependencies = [
     "microplex[calibrate]",
     "duckdb>=1.2",
+    "h5py>=3.10",
     "requests>=2.31",
 ]
 
@@ -35,6 +36,7 @@ Repository = "https://github.com/PolicyEngine/microplex-us"
 microplex-us-backfill-pe-native-audit = "microplex_us.pipelines.backfill_pe_native_audit:main"
 microplex-us-backfill-pe-native-scores = "microplex_us.pipelines.backfill_pe_native_scores:main"
 microplex-us-check-site-snapshot = "microplex_us.pipelines.check_site_snapshot:main"
+microplex-us-mp300k-artifact-gates = "microplex_us.pipelines.mp300k_artifact_gates:main"
 microplex-us-pe-native-target-diagnostics = "microplex_us.pipelines.pe_native_scores:main_target_diagnostics"
 microplex-us-score-pe-native-loss = "microplex_us.pipelines.pe_native_scores:main"
 microplex-us-version-bump-benchmark = "microplex_us.pipelines.version_benchmark:main"

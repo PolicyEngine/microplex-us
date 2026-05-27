@@ -37,6 +37,7 @@ microplex-us-backfill-pe-native-audit = "microplex_us.pipelines.backfill_pe_nati
 microplex-us-backfill-pe-native-scores = "microplex_us.pipelines.backfill_pe_native_scores:main"
 microplex-us-check-site-snapshot = "microplex_us.pipelines.check_site_snapshot:main"
 microplex-us-mp300k-artifact-gates = "microplex_us.pipelines.mp300k_artifact_gates:main"
+microplex-us-package-mp300k-gate-inputs = "microplex_us.pipelines.mp300k_gate_inputs:main"
 microplex-us-pe-native-target-diagnostics = "microplex_us.pipelines.pe_native_scores:main_target_diagnostics"
 microplex-us-score-pe-native-loss = "microplex_us.pipelines.pe_native_scores:main"
 microplex-us-version-bump-benchmark = "microplex_us.pipelines.version_benchmark:main"

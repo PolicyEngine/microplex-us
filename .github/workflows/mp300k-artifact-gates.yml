@@ -7,9 +7,15 @@ on:
       - main
   workflow_dispatch:
     inputs:
+      gate_inputs_artifact:
+        description: Optional Actions artifact name containing artifact.tar.gz and evidence JSONs.
+        required: false
+        default: ""
+        type: string
       artifact_archive_url:
         description: URL to a .zip, .tar, or .tar.gz artifact bundle containing manifest.json.
-        required: true
+        required: false
+        default: ""
         type: string
       ecps_comparison_url:
         description: Optional URL to precomputed PE-native eCPS comparison JSON.
@@ -45,8 +51,13 @@ on:
         type: boolean
   workflow_call:
     inputs:
+      gate_inputs_artifact:
+        required: false
+        default: ""
+        type: string
       artifact_archive_url:
-        required: true
+        required: false
+        default: ""
         type: string
       ecps_comparison_url:
         required: false
@@ -75,6 +86,7 @@ on:
         type: boolean
 
 permissions:
+  actions: read
   contents: read
 
 jobs:
@@ -108,7 +120,8 @@ jobs:
       - name: Test artifact gate implementation
         run: |
           uv run --python 3.13 --extra dev --with pydantic --with-editable ../microplex pytest -q \
-            tests/pipelines/test_mp300k_artifact_gates.py
+            tests/pipelines/test_mp300k_artifact_gates.py \
+            tests/pipelines/test_mp300k_gate_inputs.py
 
   artifact-gates:
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call'
@@ -137,9 +150,21 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v6
 
-      - name: Download artifact and evidence
+      - name: Download packaged gate inputs
+        if: inputs.gate_inputs_artifact != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.gate_inputs_artifact }}
+          path: gate-inputs
+
+      - name: Download artifact and evidence from URLs
+        if: inputs.gate_inputs_artifact == ''
         run: |
           mkdir -p ../gate-inputs/evidence
+          if [ -z "${{ inputs.artifact_archive_url }}" ]; then
+            echo "Either gate_inputs_artifact or artifact_archive_url is required."
+            exit 1
+          fi
           curl --fail --location "${{ inputs.artifact_archive_url }}" --output ../gate-inputs/artifact-archive
 
           if [ -n "${{ inputs.ecps_comparison_url }}" ]; then
@@ -151,6 +176,38 @@ jobs:
           if [ -n "${{ inputs.benchmark_manifest_url }}" ]; then
             curl --fail --location "${{ inputs.benchmark_manifest_url }}" --output ../gate-inputs/evidence/benchmark_manifest.json
           fi
+
+      - name: Normalize gate inputs
+        run: |
+          uv run --python 3.13 python - <<'PY'
+          import shutil
+          from pathlib import Path
+
+          root = Path("../gate-inputs")
+          evidence_dir = root / "evidence"
+          evidence_dir.mkdir(parents=True, exist_ok=True)
+
+          archive_target = root / "artifact-archive"
+          if not archive_target.exists():
+              archive_candidates = []
+              for pattern in ("artifact.tar.gz", "artifact.tgz", "artifact.tar", "artifact.zip", "*.tar.gz", "*.tgz", "*.tar", "*.zip"):
+                  archive_candidates.extend(root.glob(pattern))
+              archive_candidates = [
+                  path for path in archive_candidates if path.is_file()
+              ]
+              if not archive_candidates:
+                  raise SystemExit(
+                      "Packaged gate inputs did not contain artifact.tar.gz, "
+                      "artifact.tgz, artifact.tar, or artifact.zip"
+                  )
+              shutil.copyfile(archive_candidates[0], archive_target)
+
+          for name in ("ecps_comparison", "runtime_smoke", "benchmark_manifest"):
+              source = root / f"{name}.json"
+              destination = evidence_dir / f"{name}.json"
+              if source.exists() and not destination.exists():
+                  shutil.copyfile(source, destination)
+          PY
 
       - name: Resolve artifact directory
         run: |

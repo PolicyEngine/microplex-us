@@ -28,16 +28,21 @@ def _write_minimal_policyengine_dataset(path: Path, *, period: int = 2024) -> Pa
     return write_policyengine_us_time_period_dataset(arrays, path)
 
 
-def _write_manifest(artifact_dir: Path) -> None:
+def _write_manifest(
+    artifact_dir: Path,
+    *,
+    candidate_path: str = "policyengine_us.h5",
+    baseline_path: str = "baseline/enhanced_cps_2024.h5",
+) -> None:
     (artifact_dir / "manifest.json").write_text(
         json.dumps(
             {
                 "created_at": "2026-05-27T00:00:00+00:00",
                 "config": {
                     "policyengine_dataset_year": 2024,
-                    "policyengine_baseline_dataset": "baseline/enhanced_cps_2024.h5",
+                    "policyengine_baseline_dataset": baseline_path,
                 },
-                "artifacts": {"policyengine_dataset": "policyengine_us.h5"},
+                "artifacts": {"policyengine_dataset": candidate_path},
             }
         )
     )
@@ -129,9 +134,13 @@ def test_main_packages_gate_inputs(tmp_path, capsys):
 def test_packaged_inputs_run_gates_from_clean_extract(tmp_path):
     artifact_dir = tmp_path / "artifact"
     artifact_dir.mkdir()
-    _write_manifest(artifact_dir)
-    external_candidate = _write_minimal_policyengine_dataset(tmp_path / "candidate.h5")
-    external_baseline = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    _write_manifest(
+        artifact_dir,
+        candidate_path="../candidate.h5",
+        baseline_path="../baseline.h5",
+    )
+    _write_minimal_policyengine_dataset(tmp_path / "candidate.h5")
+    _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
     benchmark_manifest = tmp_path / "benchmark.json"
     benchmark_manifest.write_text(json.dumps({"schema_version": 1}))
     output_dir = tmp_path / "gate-inputs"
@@ -139,11 +148,15 @@ def test_packaged_inputs_run_gates_from_clean_extract(tmp_path):
     package_mp300k_gate_inputs(
         artifact_dir,
         output_dir,
-        candidate_dataset_path=external_candidate,
-        baseline_dataset_path=external_baseline,
         benchmark_manifest_path=benchmark_manifest,
     )
 
+    packaged_manifest = _archive_manifest(output_dir / "artifact.tar.gz")
+    assert packaged_manifest["artifacts"]["policyengine_dataset"] == "candidate.h5"
+    assert (
+        packaged_manifest["config"]["policyengine_baseline_dataset"]
+        == "baseline/baseline.h5"
+    )
     extract_root = tmp_path / "extract"
     with tarfile.open(output_dir / "artifact.tar.gz") as archive:
         archive.extractall(extract_root, filter="data")
@@ -168,5 +181,6 @@ def test_packaged_inputs_run_gates_from_clean_extract(tmp_path):
     report = json.loads(report_path.read_text())
 
     assert report["summary"]["status"] == "passed"
+    assert report["candidate_dataset"]["path"].startswith(str(packaged_artifact_dir))
     assert report["baseline_dataset"]["path"].startswith(str(packaged_artifact_dir))
     assert report["gates"]["artifact_size"]["status"] == "pass"

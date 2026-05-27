@@ -280,10 +280,11 @@ def test_runtime_gate_ignores_contradictory_producer_verdict(tmp_path):
         },
         runtime_smoke_payload={
             "runtime_ratio": 10.0,
-            "runtime_ratio_threshold": 1.25,
+            "runtime_ratio_threshold": 100.0,
             "passes_runtime_gate": True,
         },
         benchmark_manifest_path=benchmark_manifest,
+        runtime_ratio_threshold=1.25,
         compute_native_scores=False,
         update_manifest=False,
     )
@@ -293,6 +294,9 @@ def test_runtime_gate_ignores_contradictory_producer_verdict(tmp_path):
 
     assert record["summary"]["status"] == "failed"
     assert runtime_gate["status"] == "fail"
+    assert runtime_gate["metrics"]["runtime_ratio_threshold"] == 1.25
+    assert runtime_gate["details"]["reported_runtime_ratio_threshold"] == 100.0
+    assert runtime_gate["details"]["enforced_runtime_ratio_threshold"] == 1.25
     assert runtime_gate["details"]["reported_passes_runtime_gate"] is True
     assert runtime_gate["details"]["computed_passes_runtime_gate"] is False
 

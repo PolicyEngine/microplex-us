@@ -165,6 +165,15 @@ def _resolve_baseline_dataset_path(
     return baseline_path
 
 
+def _safe_archive_relpath(candidate: Path, *, fallback: Path) -> Path:
+    if candidate.is_absolute() or ".." in candidate.parts:
+        return fallback
+    normalized_parts = [part for part in candidate.parts if part not in ("", ".")]
+    if not normalized_parts:
+        return fallback
+    return Path(*normalized_parts)
+
+
 def _candidate_archive_relpath(
     manifest: dict[str, Any],
     *,
@@ -175,9 +184,10 @@ def _candidate_archive_relpath(
         return Path(candidate_dataset.name)
     dataset_name = dict(manifest.get("artifacts", {})).get("policyengine_dataset")
     if isinstance(dataset_name, str) and dataset_name:
-        relpath = Path(dataset_name)
-        if not relpath.is_absolute():
-            return relpath
+        return _safe_archive_relpath(
+            Path(dataset_name),
+            fallback=Path(candidate_dataset.name),
+        )
     return Path(candidate_dataset.name)
 
 
@@ -191,9 +201,10 @@ def _baseline_archive_relpath(
         return Path("baseline") / baseline_dataset.name
     value = dict(manifest.get("config", {})).get("policyengine_baseline_dataset")
     if isinstance(value, str) and value:
-        relpath = Path(value)
-        if not relpath.is_absolute():
-            return relpath
+        return _safe_archive_relpath(
+            Path(value),
+            fallback=Path("baseline") / baseline_dataset.name,
+        )
     return Path("baseline") / baseline_dataset.name
 
 

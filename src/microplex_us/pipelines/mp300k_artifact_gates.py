@@ -464,7 +464,7 @@ def _runtime_gate(
     if runtime_smoke_payload is None:
         return _gate("unmeasured", "runtime smoke benchmark has not been attached")
     payload = dict(runtime_smoke_payload)
-    threshold = float(payload.get("runtime_ratio_threshold", runtime_ratio_threshold))
+    threshold = float(runtime_ratio_threshold)
     ratio = payload.get("runtime_ratio")
     candidate_seconds = payload.get("candidate_seconds")
     baseline_seconds = payload.get("baseline_seconds")
@@ -472,6 +472,15 @@ def _runtime_gate(
         ratio = float(candidate_seconds) / float(baseline_seconds)
     passes = payload.get("passes_runtime_gate")
     details: dict[str, Any] = {}
+    reported_threshold = payload.get("runtime_ratio_threshold")
+    reported_threshold_matches = False
+    try:
+        reported_threshold_matches = float(reported_threshold) == threshold
+    except (TypeError, ValueError):
+        pass
+    if reported_threshold is not None and not reported_threshold_matches:
+        details["reported_runtime_ratio_threshold"] = reported_threshold
+        details["enforced_runtime_ratio_threshold"] = threshold
     if ratio is None:
         return _gate(
             "unmeasured",

@@ -10,6 +10,19 @@ the machine-readable saved-run overlay for the stage taxonomy. It records the
 canonical stages, status for the current run, artifact paths, diagnostics owned
 by each stage, and the current resume posture.
 
+## Legacy run-contract IDs
+
+Older run-contract summaries and dashboard payloads used operational labels
+such as `preflight`, `seed_build`, `donor_integration`,
+`policyengine_materialization`, `calibration`, and `finalization`. New saved-run
+views should report the canonical 9-stage IDs while preserving the old labels as
+legacy provenance when present.
+
+`canonicalize_us_pipeline_stage_id` maps those historical IDs into the stage
+registry. The dashboard applies that mapping when reading `run_summary.json`, so
+old and new runs sort into the same stage taxonomy instead of creating a second
+parallel lifecycle.
+
 ## Resume artifacts
 
 The first implementation is explicit rather than automatic. It writes reusable

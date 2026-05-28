@@ -3,6 +3,7 @@
 import pytest
 
 from microplex_us.pipelines.stage_contracts import (
+    canonicalize_us_pipeline_stage_id,
     default_us_pipeline_stage_contracts,
     get_us_pipeline_stage_contract,
     serialize_us_pipeline_stage_contracts,
@@ -56,3 +57,15 @@ def test_serialize_us_pipeline_stage_contracts_is_json_ready():
     assert payload["contractVersion"] == "us-runtime-stages-v1"
     assert len(payload["stages"]) == 9
     assert payload["stages"][5]["id"] == "06_policyengine_entities"
+
+
+def test_canonicalize_us_pipeline_stage_id_maps_legacy_runtime_ids():
+    assert (
+        canonicalize_us_pipeline_stage_id("policyengine_materialization")
+        == "06_policyengine_entities"
+    )
+    assert canonicalize_us_pipeline_stage_id("target_build") == "07_calibration"
+    assert canonicalize_us_pipeline_stage_id("finalization") == "08_dataset_assembly"
+    assert canonicalize_us_pipeline_stage_id("benchmark") == "09_validation_benchmarking"
+    assert canonicalize_us_pipeline_stage_id("08_dataset_assembly") == "08_dataset_assembly"
+    assert canonicalize_us_pipeline_stage_id("custom-stage") == "custom-stage"

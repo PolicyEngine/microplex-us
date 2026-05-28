@@ -15,6 +15,56 @@ StageResumeMode = Literal[
     "post_artifact_evidence",
 ]
 
+US_CANONICAL_STAGE_IDS = (
+    "01_run_profile",
+    "02_source_loading",
+    "03_source_planning",
+    "04_seed_scaffold",
+    "05_donor_integration_synthesis",
+    "06_policyengine_entities",
+    "07_calibration",
+    "08_dataset_assembly",
+    "09_validation_benchmarking",
+)
+
+US_LEGACY_STAGE_ID_ALIASES = {
+    # Historical run_contract.py IDs from the US Microplex build path.
+    "preflight": "01_run_profile",
+    "source_loading": "02_source_loading",
+    "source_planning": "03_source_planning",
+    "seed_scaffold": "04_seed_scaffold",
+    "seed_build": "05_donor_integration_synthesis",
+    "donor_integration": "05_donor_integration_synthesis",
+    "synthesis": "05_donor_integration_synthesis",
+    "support_enforcement": "05_donor_integration_synthesis",
+    "policyengine_materialization": "06_policyengine_entities",
+    "target_build": "07_calibration",
+    "calibration": "07_calibration",
+    "dataset_assembly": "08_dataset_assembly",
+    "finalization": "08_dataset_assembly",
+    "validation": "09_validation_benchmarking",
+    "benchmark": "09_validation_benchmarking",
+    "scoring": "09_validation_benchmarking",
+    "policyengine_native_scores": "09_validation_benchmarking",
+    # Historical PE-US-data parity plan IDs used in Microplex docs/snapshots.
+    "source-contracts": "02_source_loading",
+    "cps-construction": "02_source_loading",
+    "puf-ingestion-uprating": "02_source_loading",
+    "extended-cps-qrf": "05_donor_integration_synthesis",
+    "family-imputation-parity": "05_donor_integration_synthesis",
+    "entity-export-parity": "06_policyengine_entities",
+    "weighting-backend": "07_calibration",
+    "targets-and-eval": "09_validation_benchmarking",
+}
+
+
+def canonicalize_us_pipeline_stage_id(stage_id: str) -> str:
+    """Return the canonical US runtime stage ID for a current or legacy ID."""
+
+    if stage_id in US_CANONICAL_STAGE_IDS:
+        return stage_id
+    return US_LEGACY_STAGE_ID_ALIASES.get(stage_id, stage_id)
+
 
 @dataclass(frozen=True)
 class USStageArtifactContract:
@@ -435,10 +485,13 @@ def serialize_us_pipeline_stage_contracts() -> dict[str, object]:
 
 
 __all__ = [
+    "US_CANONICAL_STAGE_IDS",
+    "US_LEGACY_STAGE_ID_ALIASES",
     "US_STAGE_CONTRACT_VERSION",
     "USPipelineStageContract",
     "USStageArtifactContract",
     "USStageValidationContract",
+    "canonicalize_us_pipeline_stage_id",
     "default_us_pipeline_stage_contracts",
     "get_us_pipeline_stage_contract",
     "serialize_us_pipeline_stage_contracts",

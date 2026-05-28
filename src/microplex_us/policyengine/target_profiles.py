@@ -762,6 +762,15 @@ PE_NATIVE_BROAD_SOURCE_BACKED_EXCLUDED_CELL_REASONS: dict[
         "a flow and are not a defensible direct source fact for this target."
     ),
     (
+        "person_count",
+        "state",
+        "adjusted_gross_income",
+        None,
+    ): (
+        "Loaded SOI state AGI sources provide return counts and AGI amounts, "
+        "not filer-person counts by AGI band."
+    ),
+    (
         "alimony_expense",
         "national",
         None,
@@ -833,6 +842,71 @@ PE_NATIVE_BROAD_SOURCE_BACKED_EXCLUDED_CELL_REASONS: dict[
     ): (
         "PolicyEngine rent is a household survey/model input; ACS rent tables "
         "do not provide a direct aggregate source fact for this exact variable."
+    ),
+    (
+        "salt",
+        "national",
+        "salt",
+        None,
+    ): (
+        "SOI Table 2.1 itemized deduction sources cover itemizers; "
+        "PolicyEngine salt can be positive outside the itemizer domain."
+    ),
+    (
+        "tax_unit_count",
+        "national",
+        "salt",
+        None,
+    ): (
+        "SOI Table 2.1 publishes separate component counts, not the union "
+        "count of tax units with positive PolicyEngine salt."
+    ),
+    (
+        "tax_unit_count",
+        "national",
+        "salt,tax_unit_itemizes",
+        None,
+    ): (
+        "SOI Table 2.1 publishes separate component counts, not the union "
+        "count of itemizing tax units with positive PolicyEngine salt."
+    ),
+    (
+        "salt",
+        "state",
+        "salt",
+        None,
+    ): (
+        "Loaded state SOI sources do not provide an exact state-level "
+        "PolicyEngine salt amount; total state/local taxes also include "
+        "personal property taxes."
+    ),
+    (
+        "salt",
+        "state",
+        "salt,tax_unit_itemizes",
+        None,
+    ): (
+        "Loaded state SOI sources do not provide state-level itemizer salt "
+        "as income-or-sales tax plus real estate tax without personal "
+        "property taxes."
+    ),
+    (
+        "tax_unit_count",
+        "state",
+        "salt",
+        None,
+    ): (
+        "Loaded state SOI sources do not provide the union count of tax units "
+        "with positive PolicyEngine salt."
+    ),
+    (
+        "tax_unit_count",
+        "state",
+        "salt,tax_unit_itemizes",
+        None,
+    ): (
+        "Loaded state SOI sources do not provide the union count of itemizing "
+        "tax units with positive PolicyEngine salt."
     ),
     (
         "spm_unit_capped_housing_subsidy",

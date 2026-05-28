@@ -4545,6 +4545,9 @@ def _arch_consumer_fact_constraint(
     variable = str(constraint["variable"])
     if variable in ARCH_IGNORED_FACT_CONSTRAINT_VARIABLES:
         return None
+    value = _json_scalar_text(constraint.get("value"))
+    if variable == "sex":
+        return _arch_sex_constraint(str(constraint["operator"]), value)
     try:
         mapped_variable = ARCH_FACT_CONSTRAINT_VARIABLE_ALIASES[variable]
     except KeyError as exc:
@@ -4554,7 +4557,7 @@ def _arch_consumer_fact_constraint(
     return (
         mapped_variable,
         str(constraint["operator"]),
-        _json_scalar_text(constraint.get("value")),
+        value,
     )
 
 
@@ -4689,6 +4692,13 @@ def _arch_fact_constraint(row: sqlite3.Row) -> tuple[str, str, str] | None:
     variable = str(row["constraint_variable"])
     if variable in ARCH_IGNORED_FACT_CONSTRAINT_VARIABLES:
         return None
+    value = _sqlite_json_scalar_text(
+        row["constraint_value_text"],
+        row["constraint_value_numeric"],
+        row["constraint_value_json"],
+    )
+    if variable == "sex":
+        return _arch_sex_constraint(str(row["constraint_operator"]), value)
     try:
         mapped_variable = ARCH_FACT_CONSTRAINT_VARIABLE_ALIASES[variable]
     except KeyError as exc:
@@ -4698,11 +4708,25 @@ def _arch_fact_constraint(row: sqlite3.Row) -> tuple[str, str, str] | None:
     return (
         mapped_variable,
         str(row["constraint_operator"]),
-        _sqlite_json_scalar_text(
-            row["constraint_value_text"],
-            row["constraint_value_numeric"],
-            row["constraint_value_json"],
-        ),
+        value,
+    )
+
+
+def _arch_sex_constraint(operator: str, value: str) -> tuple[str, str, str]:
+    canonical_operator = _canonical_arch_constraint_operator(operator)
+    value_text = str(value).strip().lower()
+    if value_text in {"female", "f", "2", "2.0"}:
+        is_female_value = "1"
+    elif value_text in {"male", "m", "1", "1.0"}:
+        is_female_value = "0"
+    else:
+        raise ValueError(f"No Microplex Arch sex constraint mapping for value {value!r}")
+    if canonical_operator == "==":
+        return ("is_female", "==", is_female_value)
+    if canonical_operator == "!=":
+        return ("is_female", "==", "0" if is_female_value == "1" else "1")
+    raise ValueError(
+        f"No Microplex Arch sex constraint mapping for operator {operator!r}"
     )
 
 

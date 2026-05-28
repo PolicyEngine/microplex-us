@@ -1281,6 +1281,93 @@ def test_arch_consumer_fact_jsonl_provider_maps_state_soi_rows(
     }
 
 
+def test_arch_consumer_fact_jsonl_provider_maps_state_broad_soi_concepts(
+    tmp_path: Path,
+) -> None:
+    consumer_jsonl = tmp_path / "consumer_facts.jsonl"
+    geography = {"level": "state", "id": "0400000US06", "name": "California"}
+    rows = [
+        _consumer_fact(
+            "state-ca-qualified-dividends",
+            concept="irs_soi.qualified_dividends",
+            domain="all_individual_income_tax_returns",
+            source_name="irs_soi",
+            source_table="Historic Table 2 state broad totals",
+            period={"type": "tax_year", "value": 2022},
+            geography=geography,
+            value=93_000_000_000,
+            unit="usd",
+        ),
+        _consumer_fact(
+            "state-ca-schedule-c-returns",
+            concept="irs_soi.returns_with_schedule_c_income",
+            domain="all_individual_income_tax_returns",
+            source_name="irs_soi",
+            source_table="Historic Table 2 state broad totals",
+            period={"type": "tax_year", "value": 2022},
+            geography=geography,
+            value=3_617_080,
+        ),
+        _consumer_fact(
+            "state-ca-partnership-scorp",
+            concept="irs_soi.partnership_scorp_income",
+            domain="all_individual_income_tax_returns",
+            source_name="irs_soi",
+            source_table="Historic Table 2 state broad totals",
+            period={"type": "tax_year", "value": 2022},
+            geography=geography,
+            value=125_930_370_000,
+            unit="usd",
+        ),
+        _consumer_fact(
+            "state-ca-medical-dental",
+            concept="irs_soi.medical_dental_expense_deduction",
+            domain="all_individual_income_tax_returns",
+            source_name="irs_soi",
+            source_table="Historic Table 2 state broad totals",
+            period={"type": "tax_year", "value": 2022},
+            geography=geography,
+            value=11_456_144_000,
+            unit="usd",
+        ),
+    ]
+    consumer_jsonl.write_text(
+        "\n".join(json.dumps(row, sort_keys=True) for row in rows) + "\n"
+    )
+
+    target_set = ArchConsumerFactJSONLTargetProvider(consumer_jsonl).load_target_set(
+        TargetQuery(period=2022)
+    )
+    targets_by_arch_variable = {
+        target.metadata["arch_variable"]: target for target in target_set.targets
+    }
+
+    qualified_dividends = targets_by_arch_variable["qualified_dividends_amount"]
+    assert qualified_dividends.metadata["variable"] == "qualified_dividend_income"
+    assert qualified_dividends.measure == "qualified_dividend_income"
+    assert _target_filter_tuples(qualified_dividends) == {
+        ("tax_unit_is_filer", "==", "1"),
+        ("state_fips", "==", "06"),
+    }
+
+    schedule_c_returns = targets_by_arch_variable["schedule_c_income_returns"]
+    assert schedule_c_returns.metadata["variable"] == "self_employment_income"
+    assert schedule_c_returns.aggregation.value == "count"
+    assert ("self_employment_income", ">", "0") in _target_filter_tuples(
+        schedule_c_returns
+    )
+
+    partnership = targets_by_arch_variable["partnership_scorp_income_amount"]
+    assert (
+        partnership.metadata["variable"] == "tax_unit_partnership_s_corp_income"
+    )
+    assert partnership.measure == "tax_unit_partnership_s_corp_income"
+
+    medical = targets_by_arch_variable["medical_dental_expense_amount"]
+    assert medical.metadata["variable"] == "medical_expense_deduction"
+    assert medical.measure == "medical_expense_deduction"
+
+
 def test_arch_consumer_fact_jsonl_provider_maps_eitc_by_agi_and_children(
     tmp_path: Path,
 ) -> None:

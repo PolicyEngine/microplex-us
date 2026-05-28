@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 from microplex.targets import TargetQuery
 
+import microplex_us.targets.arch as arch_module
 from microplex_us.pipelines.us import USMicroplexBuildConfig, USMicroplexPipeline
 from microplex_us.policyengine.target_profiles import PolicyEngineUSTargetCell
 from microplex_us.targets import (
@@ -1121,6 +1122,206 @@ def test_arch_consumer_fact_jsonl_provider_maps_income_tax_after_credits_returns
         ("income_tax", ">", "0"),
         ("tax_unit_is_filer", "==", "1"),
     }
+
+
+def test_arch_consumer_fact_jsonl_provider_maps_tax_exempt_interest(
+    tmp_path: Path,
+) -> None:
+    consumer_jsonl = tmp_path / "consumer_facts.jsonl"
+    _write_consumer_fact_jsonl(consumer_jsonl)
+    template = json.loads(consumer_jsonl.read_text().splitlines()[0])
+    rows = []
+    for suffix, concept, measure_id, value, unit in (
+        (
+            "qualified-dividends-returns",
+            "irs_soi.returns_with_qualified_dividends",
+            "qualified_dividends_returns",
+            38_000_000,
+            "count",
+        ),
+        (
+            "qualified-dividends-amount",
+            "irs_soi.qualified_dividends",
+            "qualified_dividends_amount",
+            350_000_000_000,
+            "usd",
+        ),
+        (
+            "returns",
+            "irs_soi.returns_with_tax_exempt_interest",
+            "tax_exempt_interest_returns",
+            6_837_120,
+            "count",
+        ),
+        (
+            "amount",
+            "irs_soi.tax_exempt_interest",
+            "tax_exempt_interest_amount",
+            89_000_000_000,
+            "usd",
+        ),
+    ):
+        row = json.loads(json.dumps(template))
+        row["aggregate_fact_key"] = f"arch.aggregate_fact.v2:tax-exempt-{suffix}"
+        row["semantic_fact_key"] = f"arch.semantic_fact.v2:tax-exempt-{suffix}"
+        row["legacy_fact_key"] = f"arch.fact.v1:tax-exempt-{suffix}"
+        row["period"] = {"type": "tax_year", "value": 2022}
+        row["value"] = value
+        row["source"] = {**row["source"], "source_table": "Historic Table 2"}
+        row["observed_measure"] = {
+            **row["observed_measure"],
+            "source_concept": concept,
+            "source_measure_id": measure_id,
+            "source_table": "Historic Table 2",
+            "unit": unit,
+        }
+        row["aggregation"] = {"method": "count" if unit == "count" else "sum"}
+        row["lineage"]["source_record_id"] = (
+            f"irs_soi.ty2022.historic_table_2.us.all.{measure_id}"
+        )
+        rows.append(row)
+    consumer_jsonl.write_text(
+        "\n".join(json.dumps(row, sort_keys=True) for row in rows) + "\n"
+    )
+
+    target_set = ArchConsumerFactJSONLTargetProvider(consumer_jsonl).load_target_set(
+        TargetQuery(period=2022)
+    )
+    targets_by_arch_variable = {
+        target.metadata["arch_variable"]: target for target in target_set.targets
+    }
+    returns = targets_by_arch_variable["tax_exempt_interest_returns"]
+    amount = targets_by_arch_variable["tax_exempt_interest_amount"]
+    qualified_returns = targets_by_arch_variable["qualified_dividends_returns"]
+    qualified_amount = targets_by_arch_variable["qualified_dividends_amount"]
+
+    assert returns.metadata["variable"] == "tax_exempt_interest_income"
+    assert returns.aggregation.value == "count"
+    assert {
+        (
+            target_filter.feature,
+            str(getattr(target_filter.operator, "value", target_filter.operator)),
+            str(target_filter.value),
+        )
+        for target_filter in returns.filters
+    } == {
+        ("tax_exempt_interest_income", ">", "0"),
+        ("tax_unit_is_filer", "==", "1"),
+    }
+    assert amount.metadata["variable"] == "tax_exempt_interest_income"
+    assert amount.measure == "tax_exempt_interest_income"
+    assert qualified_returns.metadata["variable"] == "qualified_dividend_income"
+    assert qualified_returns.aggregation.value == "count"
+    assert {
+        (
+            target_filter.feature,
+            str(getattr(target_filter.operator, "value", target_filter.operator)),
+            str(target_filter.value),
+        )
+        for target_filter in qualified_returns.filters
+    } == {
+        ("qualified_dividend_income", ">", "0"),
+        ("tax_unit_is_filer", "==", "1"),
+    }
+    assert qualified_amount.metadata["variable"] == "qualified_dividend_income"
+    assert qualified_amount.measure == "qualified_dividend_income"
+
+
+def test_arch_consumer_fact_jsonl_provider_maps_schedule_c_self_employment(
+    tmp_path: Path,
+) -> None:
+    consumer_jsonl = tmp_path / "consumer_facts.jsonl"
+    rows = [
+        _consumer_fact(
+            "soi-schedule-c-returns",
+            concept="irs_soi.returns_with_schedule_c_income",
+            domain="all_individual_income_tax_returns",
+            source_name="irs_soi",
+            source_table="Historic Table 2",
+            period={"type": "tax_year", "value": 2022},
+            value=28_000_000,
+            unit="count",
+        ),
+        _consumer_fact(
+            "soi-schedule-c-income",
+            concept="irs_soi.schedule_c_income",
+            domain="all_individual_income_tax_returns",
+            source_name="irs_soi",
+            source_table="Historic Table 2",
+            period={"type": "tax_year", "value": 2022},
+            value=512_000_000_000,
+            unit="usd",
+        ),
+        _consumer_fact(
+            "soi-partnership-scorp-returns",
+            concept="irs_soi.returns_with_partnership_scorp_income",
+            domain="all_individual_income_tax_returns",
+            source_name="irs_soi",
+            source_table="Historic Table 2",
+            period={"type": "tax_year", "value": 2022},
+            value=12_000_000,
+            unit="count",
+        ),
+        _consumer_fact(
+            "soi-partnership-scorp-income",
+            concept="irs_soi.partnership_scorp_income",
+            domain="all_individual_income_tax_returns",
+            source_name="irs_soi",
+            source_table="Historic Table 2",
+            period={"type": "tax_year", "value": 2022},
+            value=1_200_000_000_000,
+            unit="usd",
+        ),
+    ]
+    consumer_jsonl.write_text(
+        "\n".join(json.dumps(row, sort_keys=True) for row in rows) + "\n"
+    )
+
+    target_set = ArchConsumerFactJSONLTargetProvider(consumer_jsonl).load_target_set(
+        TargetQuery(period=2022)
+    )
+    targets_by_arch_variable = {
+        target.metadata["arch_variable"]: target for target in target_set.targets
+    }
+    returns = targets_by_arch_variable["schedule_c_income_returns"]
+    amount = targets_by_arch_variable["schedule_c_income_amount"]
+    partnership_returns = targets_by_arch_variable["partnership_scorp_income_returns"]
+    partnership_amount = targets_by_arch_variable["partnership_scorp_income_amount"]
+
+    assert returns.metadata["variable"] == "self_employment_income"
+    assert {
+        (
+            target_filter.feature,
+            str(getattr(target_filter.operator, "value", target_filter.operator)),
+            str(target_filter.value),
+        )
+        for target_filter in returns.filters
+    } == {
+        ("self_employment_income", ">", "0"),
+        ("tax_unit_is_filer", "==", "1"),
+    }
+    assert amount.metadata["variable"] == "self_employment_income"
+    assert amount.measure == "self_employment_income"
+    assert (
+        partnership_returns.metadata["variable"]
+        == "tax_unit_partnership_s_corp_income"
+    )
+    assert {
+        (
+            target_filter.feature,
+            str(getattr(target_filter.operator, "value", target_filter.operator)),
+            str(target_filter.value),
+        )
+        for target_filter in partnership_returns.filters
+    } == {
+        ("tax_unit_is_filer", "==", "1"),
+        ("tax_unit_partnership_s_corp_income", ">", "0"),
+    }
+    assert (
+        partnership_amount.metadata["variable"]
+        == "tax_unit_partnership_s_corp_income"
+    )
+    assert partnership_amount.measure == "tax_unit_partnership_s_corp_income"
 
 
 def test_arch_consumer_fact_jsonl_provider_maps_historic_table_2_concepts(
@@ -2475,6 +2676,79 @@ def test_arch_consumer_fact_jsonl_provider_maps_us_admin_source_families(
     assert "aca_average_monthly_aptc" not in targets_by_arch_variable
 
 
+def test_arch_consumer_fact_jsonl_provider_maps_medicare_part_b_premiums(
+    tmp_path: Path,
+) -> None:
+    consumer_jsonl = tmp_path / "consumer_facts.jsonl"
+    rows = [
+        _consumer_fact(
+            "cms-medicare-part-b-premiums",
+            concept="cms_medicare.part_b_premium_income",
+            domain="medicare_financing",
+            source_name="cms_medicare",
+            source_table="2025 Medicare Trustees Report Table III.C3",
+            period={"type": "calendar_year", "value": 2024},
+            value=139_837_000_000,
+            unit="usd",
+            constraints=(
+                {"variable": "amount_basis", "operator": "==", "value": "actual"},
+                {"variable": "medicare.part", "operator": "==", "value": "part_b"},
+                {
+                    "variable": "medicare.financing_component",
+                    "operator": "==",
+                    "value": "premiums_from_enrollees",
+                },
+            ),
+        ),
+    ]
+    consumer_jsonl.write_text(
+        "\n".join(json.dumps(row, sort_keys=True) for row in rows) + "\n"
+    )
+
+    target_set = ArchConsumerFactJSONLTargetProvider(consumer_jsonl).load_target_set(
+        TargetQuery(period=2024)
+    )
+
+    target = target_set.targets[0]
+    assert target.metadata["arch_variable"] == "medicare_part_b_premiums"
+    assert target.metadata["variable"] == "medicare_part_b_premiums"
+    assert target.measure == "medicare_part_b_premiums"
+    assert target.entity.value == "person"
+    assert target.filters == ()
+
+
+def test_arch_consumer_fact_jsonl_provider_maps_fed_household_net_worth(
+    tmp_path: Path,
+) -> None:
+    consumer_jsonl = tmp_path / "consumer_facts.jsonl"
+    rows = [
+        _consumer_fact(
+            "fed-z1-net-worth",
+            concept="federal_reserve.z1.households_nonprofits_net_worth",
+            domain="household_balance_sheet",
+            source_name="federal_reserve",
+            source_table="Z.1 B.101 Households and nonprofit organizations",
+            period={"type": "calendar_year", "value": 2024},
+            value=169_619_200_000_000,
+            unit="usd",
+        ),
+    ]
+    consumer_jsonl.write_text(
+        "\n".join(json.dumps(row, sort_keys=True) for row in rows) + "\n"
+    )
+
+    target_set = ArchConsumerFactJSONLTargetProvider(consumer_jsonl).load_target_set(
+        TargetQuery(period=2024)
+    )
+
+    target = target_set.targets[0]
+    assert target.metadata["arch_variable"] == "net_worth_amount"
+    assert target.metadata["variable"] == "net_worth"
+    assert target.measure == "net_worth"
+    assert target.entity.value == "household"
+    assert target.filters == ()
+
+
 def test_arch_consumer_fact_jsonl_provider_maps_decennial_sld_facts(
     tmp_path: Path,
 ) -> None:
@@ -2563,6 +2837,183 @@ def test_arch_consumer_fact_jsonl_provider_maps_decennial_sld_facts(
     } == {("sldl_id", "==", "CA-SLDL-080")}
 
 
+def test_arch_consumer_fact_jsonl_provider_maps_acs_cd_age_population(
+    tmp_path: Path,
+) -> None:
+    consumer_jsonl = tmp_path / "consumer_facts.jsonl"
+    rows = [
+        _consumer_fact(
+            "acs-cd119-age-population",
+            concept="census_acs.person_count",
+            domain="total_population",
+            source_name="census_acs",
+            source_table="ACS 2024 1-year subject table S0101",
+            geography={
+                "level": "congressional_district",
+                "id": "5001900US0101",
+                "name": "Alabama Congressional District 1",
+            },
+            value=39_908,
+            constraints=(
+                {"variable": "age", "operator": ">=", "value": 0, "unit": "years"},
+                {"variable": "age", "operator": "<", "value": 5, "unit": "years"},
+            ),
+        ),
+        _consumer_fact(
+            "acs-cd119-households",
+            concept="census_acs.household_count",
+            domain="households",
+            source_name="census_acs",
+            source_table="ACS 2024 1-year subject table S2201",
+            geography={
+                "level": "congressional_district",
+                "id": "5001900US0101",
+                "name": "Alabama Congressional District 1",
+            },
+            value=300_636,
+        ),
+        _consumer_fact(
+            "acs-cd119-snap-households",
+            concept="census_acs.household_count",
+            domain="households",
+            source_name="census_acs",
+            source_table="ACS 2024 1-year subject table S2201",
+            geography={
+                "level": "congressional_district",
+                "id": "5001900US0101",
+                "name": "Alabama Congressional District 1",
+            },
+            value=34_742,
+            constraints=(
+                {
+                    "variable": "snap_receipt_status",
+                    "operator": "==",
+                    "value": "receiving_food_stamps_snap",
+                },
+            ),
+        ),
+    ]
+    consumer_jsonl.write_text(
+        "\n".join(json.dumps(row, sort_keys=True) for row in rows) + "\n"
+    )
+
+    provider = ArchConsumerFactJSONLTargetProvider(consumer_jsonl)
+    report = summarize_arch_target_profile_coverage(
+        provider,
+        period=2024,
+        profile_name="custom",
+        target_cells=(
+            {
+                "variable": "person_count",
+                "geo_level": "district",
+                "geographic_id": "0101",
+                "domain_variable": "age",
+            },
+            {
+                "variable": "household_count",
+                "geo_level": "district",
+                "geographic_id": "0101",
+                "domain_variable": None,
+            },
+            {
+                "variable": "household_count",
+                "geo_level": "district",
+                "geographic_id": "0101",
+                "domain_variable": "snap",
+            },
+        ),
+    )
+
+    assert report.covered_cell_count == 3
+    target_set = provider.load_target_set(TargetQuery(period=2024))
+    targets_by_key = {
+        target.metadata["arch_source_record_id"]: target
+        for target in target_set.targets
+    }
+    target = targets_by_key["census_acs.acs-cd119-age-population"]
+    households = targets_by_key["census_acs.acs-cd119-households"]
+    snap_households = targets_by_key["census_acs.acs-cd119-snap-households"]
+
+    assert target.metadata["source"] == "CENSUS_ACS"
+    assert target.metadata["arch_variable"] == "population"
+    assert target.metadata["variable"] == "person_count"
+    assert target.metadata["geo_level"] == "district"
+    assert {
+        (
+            target_filter.feature,
+            str(getattr(target_filter.operator, "value", target_filter.operator)),
+            str(target_filter.value),
+        )
+        for target_filter in target.filters
+    } == {
+        ("age", ">=", "0"),
+        ("age", "<", "5"),
+        ("congressional_district_geoid", "==", "0101"),
+    }
+    assert households.metadata["arch_variable"] == "household_count"
+    assert households.metadata["variable"] == "household_count"
+    assert {
+        (
+            target_filter.feature,
+            str(getattr(target_filter.operator, "value", target_filter.operator)),
+            str(target_filter.value),
+        )
+        for target_filter in households.filters
+    } == {("congressional_district_geoid", "==", "0101")}
+    assert snap_households.metadata["arch_variable"] == "household_count"
+    assert {
+        (
+            target_filter.feature,
+            str(getattr(target_filter.operator, "value", target_filter.operator)),
+            str(target_filter.value),
+        )
+        for target_filter in snap_households.filters
+    } == {
+        ("congressional_district_geoid", "==", "0101"),
+        ("snap", ">", "0"),
+    }
+
+
+def test_arch_consumer_fact_jsonl_provider_maps_census_population_projection(
+    tmp_path: Path,
+) -> None:
+    consumer_jsonl = tmp_path / "consumer_facts.jsonl"
+    rows = [
+        _consumer_fact(
+            "census-popproj-age-0",
+            concept="census.population_projection",
+            domain="population_projection",
+            source_name="census_population_projections",
+            source_table="2023 National Population Projections Main Series",
+            period={"type": "calendar_year", "value": 2024},
+            value=3_636_897,
+            constraints=(
+                {"variable": "age", "operator": ">=", "value": 0, "unit": "years"},
+                {"variable": "age", "operator": "<", "value": 1, "unit": "years"},
+            ),
+        ),
+    ]
+    consumer_jsonl.write_text(
+        "\n".join(json.dumps(row, sort_keys=True) for row in rows) + "\n"
+    )
+
+    target_set = ArchConsumerFactJSONLTargetProvider(consumer_jsonl).load_target_set(
+        TargetQuery(period=2024)
+    )
+
+    target = target_set.targets[0]
+    assert target.metadata["arch_variable"] == "population"
+    assert target.metadata["variable"] == "person_count"
+    assert {
+        (
+            target_filter.feature,
+            str(getattr(target_filter.operator, "value", target_filter.operator)),
+            str(target_filter.value),
+        )
+        for target_filter in target.filters
+    } == {("age", ">=", "0"), ("age", "<", "1")}
+
+
 def test_arch_consumer_fact_jsonl_provider_normalizes_legacy_sld_ids(
     tmp_path: Path,
 ) -> None:
@@ -2638,7 +3089,13 @@ def test_arch_consumer_fact_jsonl_provider_normalizes_legacy_sld_ids(
 
 def test_arch_consumer_fact_jsonl_provider_maps_bea_full_population_amounts(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(
+        arch_module,
+        "ARCH_NATIONAL_ROLLUP_STATE_FIPS",
+        frozenset({"06", "36"}),
+    )
     consumer_jsonl = tmp_path / "consumer_facts.jsonl"
     rows = [
         _consumer_fact(
@@ -2687,6 +3144,76 @@ def test_arch_consumer_fact_jsonl_provider_maps_bea_full_population_amounts(
             source_table="SAINC5N",
             geography={"level": "state", "id": "0400000US06", "name": "California"},
             value=1_500_000_000_000,
+            unit="usd",
+        ),
+        _consumer_fact(
+            "bea-regional-ca-supplements",
+            concept="bea_regional.supplements_to_wages_and_salaries",
+            domain="personal_income",
+            source_name="bea",
+            source_table="SAINC5N",
+            geography={"level": "state", "id": "0400000US06", "name": "California"},
+            value=300_000_000_000,
+            unit="usd",
+        ),
+        _consumer_fact(
+            "bea-regional-ca-contributions",
+            concept="bea_regional.contributions_for_government_social_insurance",
+            domain="personal_income",
+            source_name="bea",
+            source_table="SAINC5N",
+            geography={"level": "state", "id": "0400000US06", "name": "California"},
+            value=200_000_000_000,
+            unit="usd",
+        ),
+        _consumer_fact(
+            "bea-regional-ca-residence",
+            concept="bea_regional.residence_adjustment",
+            domain="personal_income",
+            source_name="bea",
+            source_table="SAINC5N",
+            geography={"level": "state", "id": "0400000US06", "name": "California"},
+            value=40_000_000_000,
+            unit="usd",
+        ),
+        _consumer_fact(
+            "bea-regional-ny-wages",
+            concept="bea_regional.wages_and_salaries",
+            domain="personal_income",
+            source_name="bea",
+            source_table="SAINC5N",
+            geography={"level": "state", "id": "0400000US36", "name": "New York"},
+            value=2_000_000_000_000,
+            unit="usd",
+        ),
+        _consumer_fact(
+            "bea-regional-ny-supplements",
+            concept="bea_regional.supplements_to_wages_and_salaries",
+            domain="personal_income",
+            source_name="bea",
+            source_table="SAINC5N",
+            geography={"level": "state", "id": "0400000US36", "name": "New York"},
+            value=400_000_000_000,
+            unit="usd",
+        ),
+        _consumer_fact(
+            "bea-regional-ny-contributions",
+            concept="bea_regional.contributions_for_government_social_insurance",
+            domain="personal_income",
+            source_name="bea",
+            source_table="SAINC5N",
+            geography={"level": "state", "id": "0400000US36", "name": "New York"},
+            value=100_000_000_000,
+            unit="usd",
+        ),
+        _consumer_fact(
+            "bea-regional-ny-residence",
+            concept="bea_regional.residence_adjustment",
+            domain="personal_income",
+            source_name="bea",
+            source_table="SAINC5N",
+            geography={"level": "state", "id": "0400000US36", "name": "New York"},
+            value=-50_000_000_000,
             unit="usd",
         ),
         _consumer_fact(
@@ -2767,12 +3294,12 @@ def test_arch_consumer_fact_jsonl_provider_maps_bea_full_population_amounts(
         profile_name="custom",
         target_cells=(
             {
-                "variable": "employment_income",
+                "variable": "employment_income_before_lsr",
                 "geo_level": "national",
                 "domain_variable": None,
             },
             {
-                "variable": "employment_income",
+                "variable": "employment_income_before_lsr",
                 "geo_level": "state",
                 "domain_variable": None,
             },
@@ -2821,7 +3348,8 @@ def test_arch_consumer_fact_jsonl_provider_maps_bea_full_population_amounts(
     assert set(targets_by_source_record) == {
         "bea.bea-nipa-wages",
         "bea.bea-nipa-proprietors",
-        "bea.bea-regional-ca-wages",
+        "microplex.derived.bea_state_wages.2024.06",
+        "microplex.derived.bea_state_wages.2024.36",
         "bea.bea-regional-ca-proprietors",
         "bea.bea-nipa-dividends",
         "bea.bea-nipa-rental",
@@ -2830,11 +3358,11 @@ def test_arch_consumer_fact_jsonl_provider_maps_bea_full_population_amounts(
         "bea.bea-nipa-ui",
     }
     assert targets_by_source_record["bea.bea-nipa-wages"].measure == (
-        "employment_income"
+        "employment_income_before_lsr"
     )
     assert (
         targets_by_source_record["bea.bea-nipa-wages"].metadata["arch_variable"]
-        == "wages_salaries_amount"
+        == "employment_income_before_lsr_amount"
     )
     assert targets_by_source_record["bea.bea-nipa-wages"].filters == ()
     assert targets_by_source_record["bea.bea-nipa-proprietors"].measure == (
@@ -2846,12 +3374,29 @@ def test_arch_consumer_fact_jsonl_provider_maps_bea_full_population_amounts(
         "bea_nipa.proprietors_income_with_inventory_valuation_and_capital_consumption_adjustments"
     )
     assert targets_by_source_record["bea.bea-nipa-proprietors"].filters == ()
-    assert targets_by_source_record["bea.bea-regional-ca-wages"].measure == (
-        "employment_income"
+    ca_state_wages = targets_by_source_record[
+        "microplex.derived.bea_state_wages.2024.06"
+    ]
+    ny_state_wages = targets_by_source_record[
+        "microplex.derived.bea_state_wages.2024.36"
+    ]
+    assert ca_state_wages.measure == (
+        "employment_income_before_lsr"
     )
-    assert (
-        targets_by_source_record["bea.bea-regional-ca-wages"].metadata["arch_variable"]
-        == "wages_salaries_amount"
+    assert ca_state_wages.metadata["arch_variable"] == (
+        "employment_income_before_lsr_amount"
+    )
+    ca_adjusted = 1_500_000_000_000 + 40_000_000_000 * (
+        1_500_000_000_000 / 2_000_000_000_000
+    )
+    ny_adjusted = 2_000_000_000_000 - 50_000_000_000 * (
+        2_000_000_000_000 / 2_500_000_000_000
+    )
+    scale = 11_000_000_000_000 / (ca_adjusted + ny_adjusted)
+    assert ca_state_wages.value == pytest.approx(ca_adjusted * scale)
+    assert ny_state_wages.value == pytest.approx(ny_adjusted * scale)
+    assert ca_state_wages.value + ny_state_wages.value == pytest.approx(
+        11_000_000_000_000
     )
     assert targets_by_source_record["bea.bea-regional-ca-proprietors"].measure == (
         "proprietors_income_amount"
@@ -2862,12 +3407,14 @@ def test_arch_consumer_fact_jsonl_provider_maps_bea_full_population_amounts(
             str(getattr(target_filter.operator, "value", target_filter.operator)),
             str(target_filter.value),
         )
-        for target_filter in targets_by_source_record[
-            "bea.bea-regional-ca-wages"
-        ].filters
+        for target_filter in ca_state_wages.filters
     } == {("state_fips", "==", "06")}
     assert targets_by_source_record["bea.bea-nipa-dividends"].source == "BEA"
     assert "bea.bea-regional-us-wages" not in targets_by_source_record
+    assert "bea.bea-regional-ca-wages" not in targets_by_source_record
+    assert "bea.bea-regional-ca-supplements" not in targets_by_source_record
+    assert "bea.bea-regional-ca-contributions" not in targets_by_source_record
+    assert "bea.bea-regional-ca-residence" not in targets_by_source_record
     assert "bea.bea-regional-us-proprietors" not in targets_by_source_record
     assert not provider.load_target_set(
         TargetQuery(
@@ -2881,13 +3428,35 @@ def test_arch_consumer_fact_jsonl_provider_maps_bea_full_population_amounts(
     )
 
 
-def test_arch_consumer_fact_jsonl_provider_skips_cbo_projection_reference_facts(
+def test_arch_consumer_fact_jsonl_provider_skips_cbo_projection_concepts(
     tmp_path: Path,
 ) -> None:
     consumer_jsonl = tmp_path / "consumer_facts.jsonl"
-    rows = [
-        _consumer_fact(
-            f"cbo-{concept.rsplit('.', 1)[-1]}",
+    control = _consumer_fact(
+        "soi-wages",
+        concept="irs_soi.total_wages",
+        domain="all_individual_income_tax_returns",
+        source_name="irs_soi",
+        source_table="Publication 1304 Table 1.1",
+        period={"type": "tax_year", "value": 2024},
+        value=10_000_000_000_000,
+        unit="usd",
+    )
+    cbo_concepts = (
+        "cbo.adjusted_gross_income_projection",
+        "cbo.wages_and_salaries_projection",
+        (
+            "cbo.taxable_interest_and_ordinary_dividends_excluding_qualified_"
+            "dividends_projection"
+        ),
+        "cbo.qualified_dividend_income_projection",
+        "cbo.net_capital_gain_projection",
+        "cbo.net_business_income_projection",
+    )
+    rows = [control]
+    for concept in cbo_concepts:
+        row = _consumer_fact(
+            concept.rsplit(".", 1)[-1],
             concept=concept,
             domain="individual_income_tax_returns",
             source_name="cbo",
@@ -2895,18 +3464,18 @@ def test_arch_consumer_fact_jsonl_provider_skips_cbo_projection_reference_facts(
                 "Revenue Projections, by Category, February 2026, "
                 "sheet 3.Individual Income Tax Details"
             ),
+            period={"type": "tax_year", "value": 2024},
             value=1_000_000_000,
             unit="usd",
         )
-        for concept in (
-            "cbo.adjusted_gross_income_projection",
-            "cbo.wages_and_salaries_projection",
-            "cbo.taxable_interest_and_ordinary_dividends_excluding_qualified_dividends_projection",
-            "cbo.qualified_dividend_income_projection",
-            "cbo.net_capital_gain_projection",
-            "cbo.net_business_income_projection",
-        )
-    ]
+        row["concept_alignment"] = {
+            "canonical_concept": concept,
+            "source_concept": concept.replace("_projection", ""),
+            "relation": "source_label",
+            "authority": "cbo",
+            "evidence_notes": "Projection fixture.",
+        }
+        rows.append(row)
     consumer_jsonl.write_text(
         "\n".join(json.dumps(row, sort_keys=True) for row in rows) + "\n"
     )
@@ -2915,7 +3484,11 @@ def test_arch_consumer_fact_jsonl_provider_skips_cbo_projection_reference_facts(
         TargetQuery(period=2024)
     )
 
-    assert target_set.targets == []
+    assert len(target_set.targets) == 1
+    target = target_set.targets[0]
+    assert target.metadata["arch_variable"] == "wages_salaries_amount"
+    assert target.measure == "employment_income"
+    assert target.metadata["arch_source_concept"] == "irs_soi.total_wages"
 
 
 def test_arch_target_smoke_cli_reports_consumer_fact_jsonl_counts(

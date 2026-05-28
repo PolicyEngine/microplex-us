@@ -400,7 +400,7 @@ def save_us_microplex_artifacts(
         if policyengine_entity_tables_path is not None:
             write_us_policyengine_entity_stage_artifact(
                 result.policyengine_tables,
-                policyengine_entity_tables_path.parent,
+                output_dir,
             )
         period = result.config.policyengine_dataset_year or 2024
         USMicroplexPipeline(result.config).export_policyengine_dataset(

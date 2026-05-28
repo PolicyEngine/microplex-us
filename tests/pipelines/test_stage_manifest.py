@@ -140,8 +140,32 @@ def test_policyengine_entity_stage_artifact_round_trips_partial_bundle(tmp_path)
     manifest_path = write_us_policyengine_entity_stage_artifact(bundle, tmp_path)
     loaded, metadata = load_us_policyengine_entity_stage_artifact(manifest_path)
 
+    assert manifest_path == (
+        tmp_path / "stage_artifacts" / "06_policyengine_entities" / "metadata.json"
+    )
     assert metadata["stageId"] == "06_policyengine_entities"
     assert metadata["stage"] == "post_microsim"
     pd.testing.assert_frame_equal(loaded.households, bundle.households)
     pd.testing.assert_frame_equal(loaded.persons, bundle.persons)
     assert loaded.tax_units is None
+
+
+def test_policyengine_entity_stage_artifact_does_not_replace_run_root(tmp_path):
+    pytest.importorskip("pyarrow")
+
+    (tmp_path / "manifest.json").write_text("{}")
+    bundle = PolicyEngineUSEntityTableBundle(
+        households=pd.DataFrame({"household_id": [1], "household_weight": [1.0]}),
+        persons=pd.DataFrame({"person_id": [10], "household_id": [1]}),
+        tax_units=None,
+        spm_units=None,
+        families=None,
+        marital_units=None,
+    )
+
+    write_us_policyengine_entity_stage_artifact(bundle, tmp_path)
+
+    assert (tmp_path / "manifest.json").exists()
+    assert (
+        tmp_path / "stage_artifacts" / "06_policyengine_entities" / "metadata.json"
+    ).exists()

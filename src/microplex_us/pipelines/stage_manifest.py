@@ -208,13 +208,13 @@ def stage_summary_for_data_flow_snapshot(
 
 def write_us_policyengine_entity_stage_artifact(
     bundle: PolicyEngineUSEntityTableBundle,
-    artifact_dir: str | Path,
+    artifact_root: str | Path,
 ) -> Path:
-    """Persist a Stage 6 PE entity-table bundle as a pipeline checkpoint."""
+    """Persist a Stage 6 PE entity-table checkpoint under a saved-run root."""
 
     stage_dir = save_us_pipeline_checkpoint(
         bundle,
-        artifact_dir,
+        Path(artifact_root) / US_STAGE_ARTIFACT_ROOT / US_POLICYENGINE_ENTITY_STAGE_ID,
         stage="post_microsim",
     )
     metadata_path = stage_dir / "metadata.json"

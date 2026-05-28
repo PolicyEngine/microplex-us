@@ -771,15 +771,6 @@ PE_NATIVE_BROAD_SOURCE_BACKED_EXCLUDED_CELL_REASONS: dict[
         "not filer-person counts by AGI band."
     ),
     (
-        "alimony_expense",
-        "national",
-        None,
-        None,
-    ): (
-        "No accepted primary source mapping is encoded for this "
-        "survey/model-input expense variable."
-    ),
-    (
         "child_support_expense",
         "national",
         None,

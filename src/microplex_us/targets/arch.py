@@ -92,6 +92,7 @@ ARCH_AMOUNT_VARIABLE_ALIASES = {
     "taxable_interest_amount": "taxable_interest_income",
     "tax_exempt_interest_amount": "tax_exempt_interest_income",
     "alimony_received_amount": "alimony_income",
+    "alimony_paid_amount": "alimony_expense",
     "personal_dividend_income_amount": "dividend_income",
     "ordinary_dividends_amount": "dividend_income",
     "qualified_dividends_amount": "qualified_dividend_income",
@@ -275,6 +276,16 @@ ARCH_COUNT_VARIABLE_ALIASES = {
     ),
     "tanf_family_count": ("spm_unit_count", EntityType.SPM_UNIT, "tanf"),
     "tanf_recipient_count": ("person_count", EntityType.PERSON, "tanf"),
+    "alimony_received_returns": (
+        "tax_unit_count",
+        EntityType.TAX_UNIT,
+        "alimony_income",
+    ),
+    "alimony_paid_returns": (
+        "tax_unit_count",
+        EntityType.TAX_UNIT,
+        "alimony_expense",
+    ),
 }
 
 ARCH_FACT_CONCEPT_TO_TARGET = {
@@ -300,6 +311,16 @@ ARCH_FACT_CONCEPT_TO_TARGET = {
         "taxable_social_security_returns",
         "COUNT",
     ),
+    "irs_soi.returns_with_alimony_received": (
+        "alimony_received_returns",
+        "COUNT",
+    ),
+    "irs_soi.alimony_received": ("alimony_received_amount", "AMOUNT"),
+    "irs_soi.returns_with_alimony_paid": (
+        "alimony_paid_returns",
+        "COUNT",
+    ),
+    "irs_soi.alimony_paid": ("alimony_paid_amount", "AMOUNT"),
     "irs_soi.returns_with_income_tax_after_credits": (
         "income_tax_liability_returns",
         "COUNT",
@@ -1067,7 +1088,6 @@ ARCH_IRS_SOI_GAP_VARIABLES = frozenset(
 
 ARCH_DEPRIORITIZED_SURVEY_OR_MODEL_GAP_VARIABLES = frozenset(
     {
-        "alimony_expense",
         "child_support_expense",
         "child_support_received",
         "health_insurance_premiums_without_medicare_part_b",

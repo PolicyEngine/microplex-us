@@ -907,6 +907,19 @@ def test_arch_provider_matches_current_profile_aliases(tmp_path):
             (
                 9,
                 2,
+                "alimony_paid_amount",
+                2023,
+                25.0,
+                "AMOUNT",
+                None,
+                "IRS_SOI",
+                "SOI",
+                None,
+                None,
+            ),
+            (
+                10,
+                2,
                 "schedule_c_income_amount",
                 2023,
                 30.0,
@@ -918,7 +931,7 @@ def test_arch_provider_matches_current_profile_aliases(tmp_path):
                 None,
             ),
             (
-                10,
+                11,
                 1,
                 "medicaid_total_enrollment",
                 2024,
@@ -931,7 +944,7 @@ def test_arch_provider_matches_current_profile_aliases(tmp_path):
                 None,
             ),
             (
-                11,
+                12,
                 2,
                 "wages_salaries_amount",
                 2023,
@@ -944,7 +957,7 @@ def test_arch_provider_matches_current_profile_aliases(tmp_path):
                 None,
             ),
             (
-                12,
+                13,
                 2,
                 "wages_salaries_returns",
                 2023,
@@ -957,7 +970,7 @@ def test_arch_provider_matches_current_profile_aliases(tmp_path):
                 None,
             ),
             (
-                13,
+                14,
                 2,
                 "schedule_c_income_returns",
                 2023,
@@ -982,6 +995,11 @@ def test_arch_provider_matches_current_profile_aliases(tmp_path):
                 "target_cells": [
                     {
                         "variable": "alimony_income",
+                        "geo_level": "national",
+                        "domain_variable": None,
+                    },
+                    {
+                        "variable": "alimony_expense",
                         "geo_level": "national",
                         "domain_variable": None,
                     },
@@ -1027,6 +1045,7 @@ def test_arch_provider_matches_current_profile_aliases(tmp_path):
         11,
         12,
         13,
+        14,
     }
     variables_by_id = {
         target.metadata["target_id"]: target.metadata["variable"]
@@ -1034,11 +1053,12 @@ def test_arch_provider_matches_current_profile_aliases(tmp_path):
     }
     assert variables_by_id == {
         8: "alimony_income",
-        9: "self_employment_income",
-        10: "person_count",
-        11: "employment_income",
+        9: "alimony_expense",
+        10: "self_employment_income",
+        11: "person_count",
         12: "employment_income",
-        13: "self_employment_income",
+        13: "employment_income",
+        14: "self_employment_income",
     }
 
 

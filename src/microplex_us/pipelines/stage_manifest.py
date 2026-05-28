@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, TypedDict, cast
 
 from microplex_us.pipelines.stage_contracts import (
     US_STAGE_CONTRACT_VERSION,
     USPipelineStageContract,
+    USStageArtifactContract,
     default_us_pipeline_stage_contracts,
 )
 from microplex_us.policyengine.us import (
@@ -21,6 +23,94 @@ US_STAGE_MANIFEST_SCHEMA_VERSION = 1
 US_STAGE_ARTIFACT_ROOT = "stage_artifacts"
 US_POLICYENGINE_ENTITY_STAGE_ID = "06_policyengine_entities"
 US_VALIDATION_STAGE_ID = "09_validation_benchmarking"
+
+
+USStageStatus = Literal["ready", "deferred", "missing"]
+
+
+class USStageMetric(TypedDict):
+    """One compact metric shown for a saved stage."""
+
+    label: str
+    value: Any
+
+
+class USStageArtifactRecord(TypedDict):
+    """Saved-run view of one stage artifact contract."""
+
+    key: str
+    description: str
+    path_hint: str | None
+    required: bool
+    resume_role: str | None
+    path: Any
+    exists: bool
+
+
+class USStageResumeRecord(TypedDict):
+    """Saved-run resume metadata for one stage."""
+
+    mode: str
+    notes: str
+
+
+class USStageRecord(TypedDict):
+    """One stage entry in a US stage manifest."""
+
+    id: str
+    step: str
+    title: str
+    purpose: str
+    status: USStageStatus
+    consumes: list[str]
+    produces: list[str]
+    artifacts: list[USStageArtifactRecord]
+    diagnostics: list[str]
+    validations: list[dict[str, object]]
+    resume: USStageResumeRecord
+    metrics: list[USStageMetric]
+
+
+class USStageManifest(TypedDict):
+    """Canonical saved-run stage manifest."""
+
+    schemaVersion: int
+    contractVersion: str
+    generatedAt: Any
+    pipeline: str
+    artifactRoot: str
+    manifest: Any
+    stages: list[USStageRecord]
+
+
+class USDataFlowStageSummary(TypedDict):
+    """Stage summary embedded in the site-facing data-flow snapshot."""
+
+    id: Any
+    step: Any
+    title: Any
+    summary: Any
+    status: Any
+    metrics: list[Any]
+    outputs: list[Any]
+    resumeMode: Any
+
+
+class USValidationEvidenceRecord(TypedDict):
+    """One validation or benchmarking evidence sidecar."""
+
+    key: str
+    path: Any
+    exists: bool
+
+
+class USValidationEvidenceManifest(TypedDict):
+    """Stage 9 evidence index."""
+
+    formatVersion: int
+    stageId: str
+    evidence: list[USValidationEvidenceRecord]
+    summaries: dict[str, Any]
 
 
 def write_us_stage_manifest(
@@ -43,7 +133,7 @@ def write_us_stage_manifest(
     return destination
 
 
-def load_us_stage_manifest(path: str | Path) -> dict[str, Any]:
+def load_us_stage_manifest(path: str | Path) -> USStageManifest:
     """Load a saved stage manifest and validate its schema version."""
 
     manifest_path = Path(path)
@@ -53,14 +143,14 @@ def load_us_stage_manifest(path: str | Path) -> dict[str, Any]:
             "Unsupported US stage manifest schema: "
             f"{payload.get('schemaVersion')!r}"
         )
-    return payload
+    return cast(USStageManifest, payload)
 
 
 def build_us_stage_manifest(
     artifact_dir: str | Path,
     *,
     manifest_payload: dict[str, Any],
-) -> dict[str, Any]:
+) -> USStageManifest:
     """Build the canonical stage manifest from a saved artifact manifest."""
 
     artifact_root = Path(artifact_dir)
@@ -82,11 +172,11 @@ def build_us_stage_manifest(
 
 
 def stage_summary_for_data_flow_snapshot(
-    stage_manifest: dict[str, Any],
-) -> list[dict[str, Any]]:
+    stage_manifest: USStageManifest | dict[str, Any],
+) -> list[USDataFlowStageSummary]:
     """Return site-facing stage summaries from a canonical stage manifest."""
 
-    summaries: list[dict[str, Any]] = []
+    summaries: list[USDataFlowStageSummary] = []
     for stage in stage_manifest.get("stages", ()):
         if not isinstance(stage, dict):
             continue
@@ -145,7 +235,7 @@ def build_us_validation_evidence_manifest(
     artifact_dir: str | Path,
     *,
     manifest_payload: dict[str, Any],
-) -> dict[str, Any]:
+) -> USValidationEvidenceManifest:
     """Build a compact Stage 9 evidence index from a saved artifact manifest."""
 
     artifact_root = Path(artifact_dir)
@@ -238,7 +328,7 @@ def _stage_record(
     *,
     artifact_root: Path,
     manifest: dict[str, Any],
-) -> dict[str, Any]:
+) -> USStageRecord:
     artifacts = [
         _artifact_record(artifact, artifact_root=artifact_root, manifest=manifest)
         for artifact in contract.artifacts
@@ -263,11 +353,11 @@ def _stage_record(
 
 
 def _artifact_record(
-    artifact: Any,
+    artifact: USStageArtifactContract,
     *,
     artifact_root: Path,
     manifest: dict[str, Any],
-) -> dict[str, Any]:
+) -> USStageArtifactRecord:
     artifacts = dict(manifest.get("artifacts", {}))
     path = artifacts.get(artifact.key) or artifact.path_hint
     exists = False
@@ -287,8 +377,8 @@ def _stage_status(
     stage_id: str,
     *,
     manifest: dict[str, Any],
-    artifacts: list[dict[str, Any]],
-) -> str:
+    artifacts: list[USStageArtifactRecord],
+) -> USStageStatus:
     artifact_map = dict(manifest.get("artifacts", {}))
     synthesis = dict(manifest.get("synthesis", {}))
     calibration = dict(manifest.get("calibration", {}))
@@ -342,7 +432,7 @@ def _stage_status(
     return "missing"
 
 
-def _stage_metrics(stage_id: str, *, manifest: dict[str, Any]) -> list[dict[str, Any]]:
+def _stage_metrics(stage_id: str, *, manifest: dict[str, Any]) -> list[USStageMetric]:
     synthesis = dict(manifest.get("synthesis", {}))
     calibration = dict(manifest.get("calibration", {}))
     artifacts = dict(manifest.get("artifacts", {}))
@@ -393,17 +483,25 @@ def _stage_metrics(stage_id: str, *, manifest: dict[str, Any]) -> list[dict[str,
     return []
 
 
-def _write_json_atomically(path: Path, payload: dict[str, Any]) -> None:
+def _write_json_atomically(path: Path, payload: Mapping[str, Any]) -> None:
     temporary = path.with_suffix(path.suffix + ".tmp")
     temporary.write_text(json.dumps(payload, indent=2, sort_keys=True))
     temporary.replace(path)
 
 
 __all__ = [
+    "USDataFlowStageSummary",
     "US_POLICYENGINE_ENTITY_STAGE_ID",
     "US_STAGE_ARTIFACT_ROOT",
     "US_STAGE_MANIFEST_SCHEMA_VERSION",
+    "USStageArtifactRecord",
+    "USStageManifest",
+    "USStageMetric",
+    "USStageRecord",
+    "USStageStatus",
     "US_VALIDATION_STAGE_ID",
+    "USValidationEvidenceManifest",
+    "USValidationEvidenceRecord",
     "build_us_stage_manifest",
     "build_us_validation_evidence_manifest",
     "load_us_policyengine_entity_stage_artifact",

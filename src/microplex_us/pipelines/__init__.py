@@ -259,6 +259,14 @@ _EXPORT_MODULES: dict[str, str] = {
     **_exports(
         "microplex_us.pipelines.stage_manifest",
         (
+            "USDataFlowStageSummary",
+            "USStageArtifactRecord",
+            "USStageManifest",
+            "USStageMetric",
+            "USStageRecord",
+            "USStageStatus",
+            "USValidationEvidenceManifest",
+            "USValidationEvidenceRecord",
             "build_us_validation_evidence_manifest",
             "build_us_stage_manifest",
             "load_us_policyengine_entity_stage_artifact",

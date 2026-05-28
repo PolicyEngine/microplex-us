@@ -300,6 +300,13 @@ ARCH_FACT_CONCEPT_TO_TARGET = {
     "irs_soi.earned_income_credit": ("eitc_amount", "AMOUNT"),
     "irs_soi.total_earned_income_credit": ("eitc_amount", "AMOUNT"),
     "irs_soi.returns_with_total_earned_income_credit": ("eitc_claims", "COUNT"),
+    "irs_soi.returns_with_child_tax_credit": ("ctc_claims", "COUNT"),
+    "irs_soi.child_tax_credit": ("ctc_amount", "AMOUNT"),
+    "irs_soi.returns_with_additional_child_tax_credit": (
+        "actc_claims",
+        "COUNT",
+    ),
+    "irs_soi.additional_child_tax_credit": ("actc_amount", "AMOUNT"),
     "irs_soi.returns_with_real_estate_taxes": (
         "real_estate_taxes_claims",
         "COUNT",

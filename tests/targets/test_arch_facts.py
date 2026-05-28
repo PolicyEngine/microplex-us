@@ -1492,6 +1492,148 @@ def test_arch_consumer_fact_jsonl_provider_maps_state_soi_rows(
     }
 
 
+def test_arch_consumer_fact_jsonl_provider_maps_acs_district_age_rows(
+    tmp_path: Path,
+) -> None:
+    consumer_jsonl = tmp_path / "consumer_facts.jsonl"
+    rows = [
+        _consumer_fact(
+            "acs-cd-al01-age-0-4",
+            concept="census_acs.person_count",
+            domain="total_population",
+            source_name="census_acs",
+            source_table="ACS S0101 congressional district age",
+            period={"type": "calendar_year", "value": 2024},
+            geography={
+                "level": "congressional_district",
+                "id": "5001900US0101",
+                "name": "Congressional District 1 (119th Congress), Alabama",
+            },
+            value=39_908,
+            constraints=(
+                {
+                    "variable": "age",
+                    "operator": ">=",
+                    "value": 0,
+                    "unit": "years",
+                    "role": "filter",
+                },
+                {
+                    "variable": "age",
+                    "operator": "<",
+                    "value": 5,
+                    "unit": "years",
+                    "role": "filter",
+                },
+            ),
+        ),
+    ]
+    consumer_jsonl.write_text(
+        "\n".join(json.dumps(row, sort_keys=True) for row in rows) + "\n"
+    )
+
+    target_set = ArchConsumerFactJSONLTargetProvider(consumer_jsonl).load_target_set(
+        TargetQuery(
+            period=2024,
+            provider_filters={
+                "sources": ["CENSUS_ACS"],
+                "target_cells": [
+                    {
+                        "variable": "person_count",
+                        "geo_level": "district",
+                        "geographic_id": "0101",
+                        "domain_variable": "age",
+                    },
+                ],
+            },
+        )
+    )
+
+    assert len(target_set.targets) == 1
+    target = target_set.targets[0]
+    assert target.value == 39_908
+    assert target.metadata["variable"] == "person_count"
+    assert target.metadata["geo_level"] == "district"
+    assert target.metadata["source"] == "CENSUS_ACS"
+    assert _target_filter_tuples(target) == {
+        ("age", ">=", "0"),
+        ("age", "<", "5"),
+        ("congressional_district_geoid", "==", "0101"),
+    }
+
+
+def test_arch_consumer_fact_jsonl_provider_maps_acs_district_snap_rows(
+    tmp_path: Path,
+) -> None:
+    consumer_jsonl = tmp_path / "consumer_facts.jsonl"
+    geography = {
+        "level": "congressional_district",
+        "id": "5001900US0101",
+        "name": "Congressional District 1 (119th Congress), Alabama",
+    }
+    rows = [
+        _consumer_fact(
+            "acs-cd-al01-households-total",
+            concept="census_acs.household_count",
+            domain="households",
+            source_name="census_acs",
+            source_table="ACS S2201 congressional district SNAP households",
+            period={"type": "calendar_year", "value": 2024},
+            geography=geography,
+            value=300_636,
+        ),
+        _consumer_fact(
+            "acs-cd-al01-households-snap",
+            concept="census_acs.household_count",
+            domain="households",
+            source_name="census_acs",
+            source_table="ACS S2201 congressional district SNAP households",
+            period={"type": "calendar_year", "value": 2024},
+            geography=geography,
+            value=34_742,
+            constraints=(
+                {
+                    "variable": "snap_receipt_status",
+                    "operator": "==",
+                    "value": "receiving_food_stamps_snap",
+                    "role": "filter",
+                },
+            ),
+        ),
+    ]
+    consumer_jsonl.write_text(
+        "\n".join(json.dumps(row, sort_keys=True) for row in rows) + "\n"
+    )
+
+    target_set = ArchConsumerFactJSONLTargetProvider(consumer_jsonl).load_target_set(
+        TargetQuery(
+            period=2024,
+            provider_filters={
+                "sources": ["CENSUS_ACS"],
+                "target_cells": [
+                    {
+                        "variable": "household_count",
+                        "geo_level": "district",
+                        "geographic_id": "0101",
+                        "domain_variable": "snap",
+                    },
+                ],
+            },
+        )
+    )
+
+    assert len(target_set.targets) == 1
+    target = target_set.targets[0]
+    assert target.value == 34_742
+    assert target.metadata["variable"] == "household_count"
+    assert target.metadata["geo_level"] == "district"
+    assert target.metadata["source"] == "CENSUS_ACS"
+    assert _target_filter_tuples(target) == {
+        ("congressional_district_geoid", "==", "0101"),
+        ("snap", ">", "0"),
+    }
+
+
 def test_arch_consumer_fact_jsonl_provider_maps_state_broad_soi_concepts(
     tmp_path: Path,
 ) -> None:

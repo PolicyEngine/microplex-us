@@ -469,6 +469,55 @@ def test_dashboard_payload_reads_mp300k_artifact_gate_reports(tmp_path):
             }
         )
     )
+    blocked_dir = artifacts / "mp120k_better_fit_blocked"
+    blocked_dir.mkdir(parents=True)
+    (blocked_dir / "mp300k_artifact_gates.json").write_text(
+        json.dumps(
+            {
+                "artifact_id": "mp120k_better_fit_blocked",
+                "product": "mp-120k",
+                "period": 2024,
+                "summary": {
+                    "status": "failed",
+                    "passing_required_gate_count": 5,
+                    "failed_required_gate_count": 1,
+                    "unmeasured_required_gate_count": 0,
+                    "failed_required_gates": ["runtime"],
+                    "unmeasured_required_gates": [],
+                },
+                "candidate_dataset": {
+                    "path": "/tmp/better_fit_candidate.h5",
+                    "size_bytes": 150_658_539,
+                },
+                "gates": {
+                    "compatibility": {
+                        "status": "pass",
+                        "metrics": {
+                            "household_count": 120_000,
+                            "person_count": 261_177,
+                        },
+                    },
+                    "artifact_size": {
+                        "status": "pass",
+                        "metrics": {"artifact_size_ratio": 1.36},
+                    },
+                    "runtime": {
+                        "status": "fail",
+                        "metrics": {"runtime_ratio": 1.31},
+                    },
+                    "ecps_comparison": {
+                        "status": "pass",
+                        "metrics": {
+                            "candidate_enhanced_cps_native_loss": 0.0836,
+                            "baseline_enhanced_cps_native_loss": 0.1664,
+                            "enhanced_cps_native_loss_delta": -0.0828,
+                            "n_targets_kept": 2818,
+                        },
+                    },
+                },
+            }
+        )
+    )
 
     payload = build_dashboard_payload(
         artifact_root=artifacts,
@@ -477,10 +526,25 @@ def test_dashboard_payload_reads_mp300k_artifact_gate_reports(tmp_path):
     )
 
     reports = payload["run_board"]["mp300k_artifact_gate_reports"]
-    assert len(reports) == 1
-    assert reports[0]["status"] == "passed"
-    assert reports[0]["product"] == "mp-120k"
-    assert reports[0]["candidate_households"] == 120_000
-    assert reports[0]["artifact_size_ratio"] == 1.36
-    assert reports[0]["runtime_ratio"] == 1.19
-    assert reports[0]["candidate_loss"] == 0.0936
+    assert len(reports) == 2
+    passed_report = next(row for row in reports if row["status"] == "passed")
+    assert passed_report["product"] == "mp-120k"
+    assert passed_report["candidate_households"] == 120_000
+    assert passed_report["artifact_size_ratio"] == 1.36
+    assert passed_report["runtime_ratio"] == 1.19
+    assert passed_report["candidate_loss"] == 0.0936
+
+    readiness = payload["run_board"]["release_readiness"]
+    assert len(readiness) == 1
+    assert readiness[0]["product"] == "mp-120k"
+    assert readiness[0]["metric_runtime"] == "latest_policyengine_us"
+    assert readiness[0]["status"] == "release_ready"
+    assert readiness[0]["passed_artifact_count"] == 1
+    assert readiness[0]["failed_artifact_count"] == 1
+    assert readiness[0]["best_passing_artifact"]["artifact_id"] == "mp120k_release"
+    assert (
+        readiness[0]["best_fit_artifact"]["artifact_id"] == "mp120k_better_fit_blocked"
+    )
+    assert readiness[0]["best_fit_is_release_ready"] is False
+    assert readiness[0]["best_fit_release_blockers"] == ["runtime"]
+    assert readiness[0]["fit_loss_gap_to_best_passing"] == pytest.approx(0.01)

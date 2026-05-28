@@ -12,6 +12,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from microplex_us.pipelines.stage_contracts import (
+    canonicalize_us_pipeline_stage_id,
+)
+
 _ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_ARTIFACT_ROOT = _ROOT / "artifacts"
 _DEFAULT_OUTPUT_PATH = _DEFAULT_ARTIFACT_ROOT / "microplex_dashboard_current.json"
@@ -179,6 +183,14 @@ def collect_run_contracts(artifact_root: str | Path) -> list[dict[str, Any]]:
         if not isinstance(summary, dict):
             continue
         manifest = _read_json(path.parent / "run_manifest.json") or {}
+        completed_stages = _canonicalize_run_contract_stage_list(
+            summary.get("completed_stages") or []
+        )
+        legacy_completed_stages = [
+            stage
+            for stage in summary.get("completed_stages") or []
+            if canonicalize_us_pipeline_stage_id(str(stage)) != stage
+        ]
         contracts.append(
             {
                 "artifact_dir": str(path.parent),
@@ -189,15 +201,22 @@ def collect_run_contracts(artifact_root: str | Path) -> list[dict[str, Any]]:
                 "run_id": summary.get("run_id") or manifest.get("run_id"),
                 "attempt_id": summary.get("attempt_id") or manifest.get("attempt_id"),
                 "status": summary.get("status"),
-                "active": summary.get("active"),
+                "active": _canonicalize_run_contract_stage_ref(
+                    summary.get("active")
+                ),
                 "started_at": summary.get("started_at"),
                 "updated_at": summary.get("updated_at"),
                 "failed_at": summary.get("failed_at"),
                 "completed_at": summary.get("completed_at"),
                 "failed_event_id": summary.get("failed_event_id"),
-                "failure": summary.get("failure"),
-                "restart": summary.get("restart"),
-                "completed_stages": summary.get("completed_stages") or [],
+                "failure": _canonicalize_run_contract_stage_ref(
+                    summary.get("failure")
+                ),
+                "restart": _canonicalize_run_contract_stage_ref(
+                    summary.get("restart")
+                ),
+                "completed_stages": completed_stages,
+                "legacy_completed_stages": legacy_completed_stages,
             }
         )
     return sorted(
@@ -205,6 +224,34 @@ def collect_run_contracts(artifact_root: str | Path) -> list[dict[str, Any]]:
         key=lambda row: str(row.get("updated_at") or ""),
         reverse=True,
     )
+
+
+def _canonicalize_run_contract_stage_list(value: Any) -> list[str]:
+    canonical_stages: list[str] = []
+    seen: set[str] = set()
+    if not isinstance(value, list | tuple):
+        return canonical_stages
+    for item in value:
+        canonical = canonicalize_us_pipeline_stage_id(str(item))
+        if canonical in seen:
+            continue
+        seen.add(canonical)
+        canonical_stages.append(canonical)
+    return canonical_stages
+
+
+def _canonicalize_run_contract_stage_ref(value: Any) -> Any:
+    if not isinstance(value, dict):
+        return value
+    ref = dict(value)
+    stage_id = ref.get("stage_id")
+    if stage_id is None:
+        return ref
+    canonical = canonicalize_us_pipeline_stage_id(str(stage_id))
+    if canonical != stage_id and "legacy_stage_id" not in ref:
+        ref["legacy_stage_id"] = stage_id
+    ref["stage_id"] = canonical
+    return ref
 
 
 def collect_mp300k_artifact_gate_reports(

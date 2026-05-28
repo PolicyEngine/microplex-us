@@ -203,7 +203,6 @@ def test_dashboard_payload_reads_release_smoke_for_record_tiers(tmp_path):
                     "period": 2024,
                     "summary": {
                         "baseline_enhanced_cps_native_loss": 0.1664,
-                        "candidate_beats_baseline": True,
                         "candidate_enhanced_cps_native_loss": 0.0936,
                         "enhanced_cps_native_loss_delta": -0.0728,
                         "n_targets_kept": 2818,
@@ -254,6 +253,7 @@ def test_dashboard_payload_reads_release_smoke_for_record_tiers(tmp_path):
     assert score_run["release_smoke"]["median_runtime_ratio"] == 1.19
     assert score_run["release_smoke"]["passes_file_size_ratio_2x"] is True
     assert score_run["release_smoke"]["passes_runtime_ratio_1_25x"] is True
+    assert score_run["candidate_beats_baseline"] is True
     current_best = next(
         row
         for row in payload["run_board"]["comparison_matrix"]
@@ -264,6 +264,21 @@ def test_dashboard_payload_reads_release_smoke_for_record_tiers(tmp_path):
     assertions = payload["run_board"]["assertions"]
     assert assertions["microplex_current_best_has_release_smoke"] is True
     assert assertions["microplex_current_best_release_smoke_passes"] is True
+    readiness = payload["run_board"]["release_readiness"]
+    assert len(readiness) == 1
+    assert readiness[0]["product"] == "mp-120k"
+    assert readiness[0]["metric_runtime"] == "latest_policyengine_us"
+    assert readiness[0]["status"] == "incomplete"
+    assert readiness[0]["best_passing_artifact"] is None
+    assert readiness[0]["release_blockers"] == ["full_gate_report"]
+    assert readiness[0]["best_fit_artifact"]["artifact_id"] == (
+        "mp120k_latest_us_data_refit"
+    )
+    assert readiness[0]["best_fit_artifact"]["compatibility_status"] == (
+        "smoke_only"
+    )
+    assert readiness[0]["best_fit_artifact"]["candidate_households"] == 120_000
+    assert readiness[0]["best_fit_release_blockers"] == ["full_gate_report"]
 
 
 def test_dashboard_payload_wires_materialized_pe_l0_score_jsons(tmp_path):
@@ -469,6 +484,41 @@ def test_dashboard_payload_reads_mp300k_artifact_gate_reports(tmp_path):
             }
         )
     )
+    (gate_dir / "scores.json").write_text(
+        json.dumps(
+            [
+                {
+                    "summary": {
+                        "baseline_enhanced_cps_native_loss": 0.1664,
+                        "candidate_enhanced_cps_native_loss": 0.0936,
+                        "n_targets_kept": 2818,
+                    },
+                    "broad_loss": {
+                        "candidate_dataset": str(gate_dir / "pe_l0_candidate.h5"),
+                        "baseline_dataset": "enhanced_cps_2024.h5",
+                    },
+                }
+            ]
+        )
+    )
+    (gate_dir / "runtime_smoke_loader.json").write_text(
+        json.dumps(
+            {
+                "file_size_ratio": 1.36,
+                "median_runtime_ratio": 1.19,
+                "candidate": {
+                    "file_size_bytes": 150_658_539,
+                    "households": 120_000,
+                    "median_elapsed_seconds": 0.137,
+                },
+                "baseline": {
+                    "file_size_bytes": 110_717_166,
+                    "households": 41_314,
+                    "median_elapsed_seconds": 0.115,
+                },
+            }
+        )
+    )
     blocked_dir = artifacts / "mp120k_better_fit_blocked"
     blocked_dir.mkdir(parents=True)
     (blocked_dir / "mp300k_artifact_gates.json").write_text(
@@ -542,6 +592,9 @@ def test_dashboard_payload_reads_mp300k_artifact_gate_reports(tmp_path):
     assert readiness[0]["passed_artifact_count"] == 1
     assert readiness[0]["failed_artifact_count"] == 1
     assert readiness[0]["best_passing_artifact"]["artifact_id"] == "mp120k_release"
+    assert readiness[0]["best_passing_artifact"]["artifact_path"].endswith(
+        "mp300k_artifact_gates.json"
+    )
     assert (
         readiness[0]["best_fit_artifact"]["artifact_id"] == "mp120k_better_fit_blocked"
     )

@@ -2748,6 +2748,89 @@ def test_arch_consumer_fact_provider_maps_wealth_and_part_b_targets(tmp_path):
     assert part_b.metadata["arch_concept"] == "cms_medicare.part_b_premium_income"
 
 
+def test_arch_consumer_fact_provider_maps_population_projection_targets(tmp_path):
+    jsonl_path = tmp_path / "consumer_facts.jsonl"
+    rows = [
+        {
+            "schema_version": "arch.consumer_fact.v1",
+            "aggregate_fact_key": "arch.aggregate_fact.v2:age_0",
+            "semantic_fact_key": "arch.semantic_fact.v2:age_0",
+            "concept_alignment": {
+                "canonical_concept": "census.population_projection",
+                "source_concept": "census.POP_0",
+                "relation": "source_label",
+                "authority": "census",
+            },
+            "geography": {
+                "id": "0100000US",
+                "level": "country",
+            },
+            "label": "United States projected population age 0",
+            "observed_measure": {
+                "source_concept": "census.POP_0",
+                "source_measure_id": "population",
+                "source_name": "census_population_projections",
+                "source_table": (
+                    "2023 National Population Projections Main Series, middle series"
+                ),
+                "unit": "count",
+            },
+            "period": {"type": "calendar_year", "value": 2025},
+            "source": {
+                "source_name": "census_population_projections",
+                "source_table": (
+                    "2023 National Population Projections Main Series, middle series"
+                ),
+                "source_file": "np2023_d5_mid.csv",
+                "url": (
+                    "https://www2.census.gov/programs-surveys/popproj/datasets/"
+                    "2023/2023-popproj/np2023_d5_mid.csv"
+                ),
+            },
+            "universe_constraints": {
+                "domain": "population_projection",
+                "constraints": [
+                    {
+                        "operator": "<",
+                        "role": "filter",
+                        "unit": "years",
+                        "value": 1,
+                        "variable": "age",
+                    },
+                    {
+                        "operator": ">=",
+                        "role": "filter",
+                        "unit": "years",
+                        "value": 0,
+                        "variable": "age",
+                    },
+                ],
+            },
+            "value": 3_641_659,
+        },
+    ]
+    jsonl_path.write_text(
+        "".join(f"{json.dumps(row, sort_keys=True)}\n" for row in rows)
+    )
+
+    provider = ArchConsumerFactJSONLTargetProvider(jsonl_path)
+    target_set = provider.load_target_set(TargetQuery(period=2025))
+
+    assert len(target_set.targets) == 1
+    target = target_set.targets[0]
+    assert target.measure is None
+    assert target.entity is EntityType.PERSON
+    assert target.aggregation is TargetAggregation.COUNT
+    assert target.value == pytest.approx(3_641_659)
+    assert {
+        (target_filter.feature, target_filter.operator.value, target_filter.value)
+        for target_filter in target.filters
+    } == {("age", "<", "1"), ("age", ">=", "0")}
+    assert target.metadata["source"] == "CENSUS_POPULATION_PROJECTIONS"
+    assert target.metadata["arch_concept"] == "census.population_projection"
+    assert target.metadata["arch_source_concept"] == "census.POP_0"
+
+
 def test_arch_provider_maps_ssa_benefit_targets(tmp_path):
     db_path = tmp_path / "arch_targets.db"
     _create_arch_targets_db(db_path)

@@ -43,6 +43,7 @@ ARCH_SOURCE_ALIASES = {
     "bea-regional": "BEA",
     "cbo": "CBO",
     "census-decennial": "CENSUS_DECENNIAL",
+    "census_population_projections": "CENSUS_POPULATION_PROJECTIONS",
     "irs-soi": "IRS_SOI",
     "census-acs": "CENSUS_ACS",
     "census-pep": "CENSUS_PEP",
@@ -578,6 +579,7 @@ ARCH_FACT_CONCEPT_TO_TARGET = {
     "census_decennial.resident_population": ("population", "COUNT"),
     "census_decennial.occupied_housing_units": ("household_count", "COUNT"),
     "census_pep.resident_population": ("population", "COUNT"),
+    "census.population_projection": ("population", "COUNT"),
     "census_stc.individual_income_tax_collections": (
         "state_individual_income_tax_collections",
         "AMOUNT",
@@ -776,6 +778,7 @@ ARCH_FACT_DOMAIN_CONSTRAINTS = {
     "national_health_expenditures": (),
     "personal_current_transfer_receipts": (),
     "personal_income": (),
+    "population_projection": (),
     "resident_population": (),
     "social_security_and_ssi_payments": (),
     "state_government_tax_collections": (),

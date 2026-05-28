@@ -9,6 +9,7 @@ import pytest
 from microplex.targets import TargetQuery
 
 from microplex_us.pipelines.us import USMicroplexBuildConfig, USMicroplexPipeline
+from microplex_us.policyengine.target_profiles import PolicyEngineUSTargetCell
 from microplex_us.targets import (
     ArchCompositeSQLiteTargetProvider,
     ArchConsumerFactJSONLTargetProvider,
@@ -1200,6 +1201,188 @@ def test_arch_consumer_fact_jsonl_provider_maps_historic_table_2_concepts(
     tax_filer_individuals = targets_by_arch_variable["tax_filer_individual_count"]
     assert tax_filer_individuals.metadata["variable"] == "person_count"
     assert tax_filer_individuals.aggregation.value == "count"
+
+
+def test_arch_consumer_fact_jsonl_provider_maps_table_2_1_itemized_details(
+    tmp_path: Path,
+) -> None:
+    consumer_jsonl = tmp_path / "consumer_facts.jsonl"
+    period = {"type": "tax_year", "value": 2023}
+    source_table = "Publication 1304 Table 2.1"
+    domain = "individual_income_tax_returns_with_itemized_deductions"
+    rows = [
+        _consumer_fact(
+            "soi-charitable-deduction",
+            concept="irs_soi.contributions_deduction",
+            domain=domain,
+            source_name="irs_soi",
+            source_table=source_table,
+            value=211_975_123_000,
+            period=period,
+            unit="usd",
+        ),
+        _consumer_fact(
+            "soi-charitable-returns",
+            concept="irs_soi.returns_with_contributions_deduction",
+            domain=domain,
+            source_name="irs_soi",
+            source_table=source_table,
+            value=11_747_949,
+            period=period,
+        ),
+        _consumer_fact(
+            "soi-interest-deduction",
+            concept="irs_soi.interest_paid_deduction",
+            domain=domain,
+            source_name="irs_soi",
+            source_table=source_table,
+            value=208_176_768_000,
+            period=period,
+            unit="usd",
+        ),
+        _consumer_fact(
+            "soi-state-local-total",
+            concept="irs_soi.state_and_local_taxes",
+            domain=domain,
+            source_name="irs_soi",
+            source_table=source_table,
+            value=331_823_221_000,
+            period=period,
+            unit="usd",
+        ),
+        _consumer_fact(
+            "soi-state-local-income-sales",
+            concept="irs_soi.state_local_income_or_sales_taxes",
+            domain=domain,
+            source_name="irs_soi",
+            source_table=source_table,
+            value=218_543_083_000,
+            period=period,
+            unit="usd",
+        ),
+        _consumer_fact(
+            "soi-mortgage-financial",
+            concept="irs_soi.home_mortgage_interest_paid_to_financial_institutions",
+            domain=domain,
+            source_name="irs_soi",
+            source_table=source_table,
+            value=167_675_863_000,
+            period=period,
+            unit="usd",
+        ),
+        _consumer_fact(
+            "soi-mortgage-individual",
+            concept="irs_soi.home_mortgage_interest_paid_to_individuals",
+            domain=domain,
+            source_name="irs_soi",
+            source_table=source_table,
+            value=3_688_924_000,
+            period=period,
+            unit="usd",
+        ),
+        _consumer_fact(
+            "soi-deductible-points",
+            concept="irs_soi.deductible_points",
+            domain=domain,
+            source_name="irs_soi",
+            source_table=source_table,
+            value=1_027_127_000,
+            period=period,
+            unit="usd",
+        ),
+        _consumer_fact(
+            "soi-investment-interest",
+            concept="irs_soi.investment_interest_expense_deduction",
+            domain=domain,
+            source_name="irs_soi",
+            source_table=source_table,
+            value=35_768_354_000,
+            period=period,
+            unit="usd",
+        ),
+    ]
+    consumer_jsonl.write_text(
+        "\n".join(json.dumps(row, sort_keys=True) for row in rows) + "\n"
+    )
+
+    target_set = ArchConsumerFactJSONLTargetProvider(consumer_jsonl).load_target_set(
+        TargetQuery(period=2023)
+    )
+    targets_by_arch_variable = {
+        target.metadata["arch_variable"]: target for target in target_set.targets
+    }
+
+    charitable = targets_by_arch_variable["charitable_amount"]
+    assert charitable.measure == "charitable_deduction"
+    assert charitable.entity.value == "tax_unit"
+    assert charitable.value == 211_975_123_000
+    assert ("itemized_deductions", ">", "0") in _target_filter_tuples(charitable)
+
+    charitable_count = targets_by_arch_variable["charitable_returns"]
+    assert charitable_count.metadata["variable"] == "charitable_deduction"
+    assert charitable_count.aggregation.value == "count"
+    assert ("charitable_deduction", ">", "0") in _target_filter_tuples(
+        charitable_count
+    )
+    assert ("itemized_deductions", ">", "0") in _target_filter_tuples(
+        charitable_count
+    )
+
+    assert targets_by_arch_variable["interest_paid_deduction_amount"].measure == (
+        "interest_deduction"
+    )
+    assert "total_state_local_taxes_amount" not in targets_by_arch_variable
+    state_local_income_sales = targets_by_arch_variable[
+        "state_local_income_or_sales_tax_amount"
+    ]
+    assert state_local_income_sales.measure == "state_and_local_sales_or_income_tax"
+    assert targets_by_arch_variable["mortgage_interest_paid_amount"].measure == (
+        "deductible_mortgage_interest"
+    )
+    assert targets_by_arch_variable["home_mortgage_personal_seller_amount"].measure == (
+        "deductible_mortgage_interest"
+    )
+    assert targets_by_arch_variable["deductible_points_amount"].measure == (
+        "deductible_mortgage_interest"
+    )
+    assert targets_by_arch_variable["investment_interest_paid_amount"].measure == (
+        "investment_interest_expense"
+    )
+
+    coverage = summarize_arch_target_profile_coverage(
+        ArchConsumerFactJSONLTargetProvider(consumer_jsonl),
+        period=2023,
+        profile_name="custom",
+        target_cells=(
+            PolicyEngineUSTargetCell(
+                "charitable_deduction",
+                geo_level="national",
+            ),
+            PolicyEngineUSTargetCell(
+                "charitable_deduction",
+                geo_level="national",
+                domain_variable="charitable_deduction,tax_unit_itemizes",
+            ),
+            PolicyEngineUSTargetCell(
+                "tax_unit_count",
+                geo_level="national",
+                domain_variable="charitable_deduction,tax_unit_itemizes",
+            ),
+            PolicyEngineUSTargetCell(
+                "interest_deduction",
+                geo_level="national",
+            ),
+            PolicyEngineUSTargetCell(
+                "deductible_mortgage_interest",
+                geo_level="national",
+            ),
+            PolicyEngineUSTargetCell(
+                "state_and_local_sales_or_income_tax",
+                geo_level="national",
+            ),
+        ),
+    )
+    assert coverage.covered_cell_count == coverage.target_cell_count
 
 
 def test_arch_consumer_fact_jsonl_provider_maps_state_soi_rows(

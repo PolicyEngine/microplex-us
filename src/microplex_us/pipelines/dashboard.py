@@ -93,6 +93,7 @@ def build_dashboard_payload(
     pe_l0_models = collect_policyengine_l0_models(policyengine_us_data_repo)
     actual_l0_runs = collect_actual_l0_objective_runs(artifact_root)
     materialized_l0_scores = collect_materialized_policyengine_l0_scores(artifact_root)
+    artifact_gate_reports = collect_mp300k_artifact_gate_reports(artifact_root)
     run_contracts = collect_run_contracts(artifact_root)
     active_logs = collect_recent_log_summaries(artifact_root)
     tmux_sessions = collect_tmux_sessions() if include_tmux else []
@@ -114,6 +115,7 @@ def build_dashboard_payload(
             "policyengine_l0_models": pe_l0_models,
             "actual_l0_objective_runs": actual_l0_runs,
             "materialized_policyengine_l0_scores": materialized_l0_scores,
+            "mp300k_artifact_gate_reports": artifact_gate_reports,
             "run_contracts": run_contracts,
             "active_logs": active_logs,
             "tmux_sessions": tmux_sessions,
@@ -195,6 +197,100 @@ def collect_run_contracts(artifact_root: str | Path) -> list[dict[str, Any]]:
         key=lambda row: str(row.get("updated_at") or ""),
         reverse=True,
     )
+
+
+def collect_mp300k_artifact_gate_reports(
+    artifact_root: str | Path,
+) -> list[dict[str, Any]]:
+    """Read persisted mp-300k release-gate reports under ``artifact_root``."""
+
+    artifact_root = Path(artifact_root)
+    reports: list[dict[str, Any]] = []
+    for path in sorted(artifact_root.rglob("mp300k_artifact_gates.json")):
+        payload = _read_json(path)
+        if not isinstance(payload, dict):
+            continue
+        summary = payload.get("summary")
+        gates = payload.get("gates")
+        candidate_dataset = payload.get("candidate_dataset")
+        if not isinstance(summary, dict) or not isinstance(gates, dict):
+            continue
+        compatibility = _gate_report_gate(gates, "compatibility")
+        artifact_size = _gate_report_gate(gates, "artifact_size")
+        runtime = _gate_report_gate(gates, "runtime")
+        ecps = _gate_report_gate(gates, "ecps_comparison")
+        compatibility_metrics = compatibility.get("metrics", {})
+        reports.append(
+            {
+                "artifact_path": str(path),
+                "artifact_dir": str(path.parent),
+                "artifact_id": payload.get("artifact_id") or path.parent.name,
+                "product": payload.get("product"),
+                "period": payload.get("period"),
+                "status": summary.get("status"),
+                "passing_required_gate_count": summary.get(
+                    "passing_required_gate_count"
+                ),
+                "failed_required_gate_count": summary.get("failed_required_gate_count"),
+                "unmeasured_required_gate_count": summary.get(
+                    "unmeasured_required_gate_count"
+                ),
+                "failed_required_gates": summary.get("failed_required_gates") or [],
+                "unmeasured_required_gates": summary.get("unmeasured_required_gates")
+                or [],
+                "candidate_dataset_path": (
+                    candidate_dataset.get("path")
+                    if isinstance(candidate_dataset, dict)
+                    else None
+                ),
+                "candidate_size_bytes": (
+                    candidate_dataset.get("size_bytes")
+                    if isinstance(candidate_dataset, dict)
+                    else None
+                ),
+                "candidate_households": compatibility_metrics.get("household_count"),
+                "candidate_persons": compatibility_metrics.get("person_count"),
+                "compatibility_status": compatibility.get("status"),
+                "artifact_size_status": artifact_size.get("status"),
+                "artifact_size_ratio": _gate_metric(
+                    artifact_size,
+                    "artifact_size_ratio",
+                ),
+                "runtime_status": runtime.get("status"),
+                "runtime_ratio": _gate_metric(runtime, "runtime_ratio"),
+                "ecps_comparison_status": ecps.get("status"),
+                "candidate_loss": _gate_metric(
+                    ecps,
+                    "candidate_enhanced_cps_native_loss",
+                ),
+                "baseline_loss": _gate_metric(
+                    ecps,
+                    "baseline_enhanced_cps_native_loss",
+                ),
+                "loss_delta": _gate_metric(ecps, "enhanced_cps_native_loss_delta"),
+            }
+        )
+    return sorted(
+        reports,
+        key=lambda row: (
+            row.get("status") != "passed",
+            row.get("candidate_loss") is None,
+            row.get("candidate_loss") or float("inf"),
+            row.get("artifact_path") or "",
+        ),
+    )
+
+
+def _gate_report_gate(gates: dict[str, Any], name: str) -> dict[str, Any]:
+    gate = gates.get(name)
+    return gate if isinstance(gate, dict) else {}
+
+
+def _gate_metric(gate: dict[str, Any], metric: str) -> Any:
+    metrics = gate.get("metrics")
+    if not isinstance(metrics, dict):
+        return None
+    return metrics.get(metric)
 
 
 def collect_local_target_screens(artifact_root: str | Path) -> list[dict[str, Any]]:

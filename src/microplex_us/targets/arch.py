@@ -148,6 +148,7 @@ ARCH_SELF_DOMAIN_AMOUNT_VARIABLES = frozenset(
 ARCH_IRS_SOI_ITEMIZED_DEDUCTION_AMOUNT_VARIABLES = frozenset(
     {
         "medical_amount",
+        "medical_dental_expense_amount",
         "real_estate_taxes_amount",
         "salt_amount",
     }

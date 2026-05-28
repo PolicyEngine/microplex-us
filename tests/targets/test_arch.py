@@ -3205,6 +3205,65 @@ def test_arch_target_profile_coverage_accepts_soi_itemized_domain(tmp_path):
     }
 
 
+def test_arch_target_profile_coverage_accepts_soi_medical_dental_domain(
+    tmp_path,
+):
+    db_path = tmp_path / "arch_targets.db"
+    _create_arch_targets_db(db_path)
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        """
+        INSERT INTO targets (
+            id,
+            stratum_id,
+            variable,
+            period,
+            value,
+            target_type,
+            geographic_level,
+            source,
+            source_table,
+            source_url,
+            notes
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            800,
+            2,
+            "medical_dental_expense_amount",
+            2023,
+            100.0,
+            "AMOUNT",
+            None,
+            "IRS_SOI",
+            "SOI Historic Table 2 state broad totals",
+            None,
+            None,
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+    provider = ArchSQLiteTargetProvider(db_path)
+    report = summarize_arch_target_profile_coverage(
+        provider,
+        period=2024,
+        profile_name="custom",
+        target_cells=(
+            PolicyEngineUSTargetCell(
+                "medical_expense_deduction",
+                geo_level="national",
+                domain_variable=(
+                    "medical_expense_deduction,tax_unit_itemizes"
+                ),
+            ),
+        ),
+    )
+
+    assert report.covered_cell_count == 1
+    assert report.cells[0].target_ids == (800,)
+
+
 def test_arch_target_profile_coverage_rolls_complete_state_targets_to_national(
     tmp_path,
 ):

@@ -15,6 +15,7 @@ requires-python = ">=3.13"
 dependencies = [
     "microplex[calibrate] @ git+https://github.com/PolicyEngine/microplex.git@1e0627182f9df40aacd7043c96956c2895bf9d30",
     "duckdb>=1.2",
+    "h5py>=3.10",
     "requests>=2.31",
 ]
 
@@ -45,6 +46,8 @@ microplex-us-build-aca-ptc-multipliers = "microplex_us.targets.aca_ptc:main"
 microplex-us-backfill-pe-native-audit = "microplex_us.pipelines.backfill_pe_native_audit:main"
 microplex-us-backfill-pe-native-scores = "microplex_us.pipelines.backfill_pe_native_scores:main"
 microplex-us-check-site-snapshot = "microplex_us.pipelines.check_site_snapshot:main"
+microplex-us-mp300k-artifact-gates = "microplex_us.pipelines.mp300k_artifact_gates:main"
+microplex-us-package-mp300k-gate-inputs = "microplex_us.pipelines.mp300k_gate_inputs:main"
 microplex-us-pe-dataset-readiness = "microplex_us.pipelines.pe_us_dataset_readiness:main"
 microplex-us-dashboard = "microplex_us.pipelines.dashboard:main"
 microplex-us-pe-native-calibration-benchmark = "microplex_us.pipelines.pe_native_calibration_benchmark:main"

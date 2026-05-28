@@ -813,6 +813,7 @@ version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "duckdb" },
+    { name = "h5py" },
     { name = "microplex", extra = ["calibrate"] },
     { name = "requests" },
 ]
@@ -835,6 +836,7 @@ r2 = [
 requires-dist = [
     { name = "boto3", marker = "extra == 'r2'", specifier = ">=1.34" },
     { name = "duckdb", specifier = ">=1.2" },
+    { name = "h5py", specifier = ">=3.10" },
     { name = "microimpute", marker = "python_full_version >= '3.12' and python_full_version < '3.15' and extra == 'policyengine'", specifier = "==1.15.1" },
     { name = "microplex", extras = ["calibrate"], git = "https://github.com/PolicyEngine/microplex.git?rev=1e0627182f9df40aacd7043c96956c2895bf9d30" },
     { name = "policyengine-us", marker = "python_full_version >= '3.11' and python_full_version < '3.15' and extra == 'policyengine'", specifier = "==1.587.0" },

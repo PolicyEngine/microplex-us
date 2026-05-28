@@ -573,6 +573,8 @@ ARCH_FACT_CONCEPT_TO_TARGET = {
         "medicare_part_b_premiums",
         "AMOUNT",
     ),
+    "census_acs.household_count": ("household_count", "COUNT"),
+    "census_acs.person_count": ("population", "COUNT"),
     "census_decennial.resident_population": ("population", "COUNT"),
     "census_decennial.occupied_housing_units": ("household_count", "COUNT"),
     "census_pep.resident_population": ("population", "COUNT"),
@@ -781,10 +783,12 @@ ARCH_FACT_DOMAIN_CONSTRAINTS = {
     "tanf_cash_assistance": (),
     "tanf_caseload": (),
     "liheap_state_programs": (),
+    "total_population": (),
 }
 
 ARCH_FACT_CONSTRAINT_VARIABLE_ALIASES = {
     "age": "age",
+    "snap_receipt_status": "snap_receipt_status",
     "us.tax.earned_income_credit_qualifying_children": "eitc_child_count",
     "us_social_security_and_ssi.program_payment_type": "program_payment_type",
     "us:statutes/26/62#adjusted_gross_income": "adjusted_gross_income",
@@ -4870,6 +4874,11 @@ def _arch_constraint_display_label(
         return f"state senate district {value_text}"
     if variable == "sldl_id" and canonical_operator == "==":
         return f"state house district {value_text}"
+    if variable == "snap_receipt_status" and canonical_operator == "==":
+        if value_text == "receiving_food_stamps_snap":
+            return "SNAP > 0"
+        if value_text == "not_receiving_food_stamps_snap":
+            return "SNAP = 0"
     positive_feature = ARCH_POSITIVE_CONSTRAINT_ALIASES.get(variable)
     if positive_feature is not None and canonical_operator == "==":
         feature_label = _humanize_snake_label(positive_feature)
@@ -4936,6 +4945,13 @@ def _canonical_filters_for_arch_constraints(
                 )
             )
             continue
+        if variable == "snap_receipt_status":
+            if value == "receiving_food_stamps_snap" and canonical_operator == "==":
+                filters.append(TargetFilter(feature="snap", operator=">", value=0))
+                continue
+            if value == "not_receiving_food_stamps_snap" and canonical_operator == "==":
+                filters.append(TargetFilter(feature="snap", operator="==", value=0))
+                continue
         positive_feature = ARCH_POSITIVE_CONSTRAINT_ALIASES.get(variable)
         if positive_feature is not None:
             filters.append(
@@ -5017,7 +5033,7 @@ def _county_fips_from_arch_geography_id(geography_id: Any) -> str:
 
 def _congressional_district_from_arch_geography_id(geography_id: Any) -> str:
     raw = str(geography_id)
-    if raw.startswith("5001800US"):
+    if raw.startswith(("5001800US", "5001900US")):
         return raw[-4:]
     return raw
 
@@ -5662,6 +5678,12 @@ def _arch_gap_expected_source(cell: dict[str, Any]) -> str | None:
         return "BEA"
     if variable == "tax_unit_count" and "aca_ptc" in domain_variables:
         return "IRS_SOI"
+    if (
+        variable in {"household_count", "person_count"}
+        and "snap" in domain_variables
+        and _normalize_geo_level(cell.get("geo_level")) == "district"
+    ):
+        return "CENSUS_ACS"
     if variable == "snap" or "snap" in domain_variables:
         return "USDA_SNAP"
     if variable == "tanf" or "tanf" in domain_variables:
@@ -5683,6 +5705,11 @@ def _arch_gap_expected_source(cell: dict[str, Any]) -> str | None:
     if variable == "person_count":
         if _normalize_geo_level(cell.get("geo_level")) in {"sldu", "sldl"}:
             return "CENSUS_DECENNIAL"
+        if (
+            _normalize_geo_level(cell.get("geo_level")) == "district"
+            and "age" in domain_variables
+        ):
+            return "CENSUS_ACS"
         if "adjusted_gross_income" in domain_variables:
             return "IRS_SOI"
         if "age" in domain_variables or not domain_variables:

@@ -10,6 +10,8 @@ from microplex_us.pipelines.data_flow_snapshot import (
 def test_build_us_microplex_data_flow_snapshot_reads_manifest_runtime_mix(tmp_path):
     artifact_dir = tmp_path / "run-1"
     artifact_dir.mkdir()
+    (artifact_dir / "policyengine_us.h5").write_text("dataset")
+    (artifact_dir / "policyengine_harness.json").write_text("{}")
     (artifact_dir / "manifest.json").write_text(
         json.dumps(
             {

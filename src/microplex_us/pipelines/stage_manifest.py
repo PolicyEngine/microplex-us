@@ -25,7 +25,13 @@ US_POLICYENGINE_ENTITY_STAGE_ID = "06_policyengine_entities"
 US_VALIDATION_STAGE_ID = "09_validation_benchmarking"
 
 
-USStageStatus = Literal["ready", "deferred", "missing"]
+USStageStatus = Literal[
+    "ready",
+    "metadata_only",
+    "deferred",
+    "incomplete",
+    "missing",
+]
 
 
 class USStageMetric(TypedDict):
@@ -45,6 +51,7 @@ class USStageArtifactRecord(TypedDict):
     resume_role: str | None
     path: Any
     exists: bool
+    referenced: bool
 
 
 class USStageResumeRecord(TypedDict):
@@ -338,7 +345,12 @@ def _stage_record(
         "step": contract.step,
         "title": contract.title,
         "purpose": contract.purpose,
-        "status": _stage_status(contract.id, manifest=manifest, artifacts=artifacts),
+        "status": _stage_status(
+            contract.id,
+            artifact_root=artifact_root,
+            manifest=manifest,
+            artifacts=artifacts,
+        ),
         "consumes": list(contract.consumes),
         "produces": list(contract.produces),
         "artifacts": artifacts,
@@ -359,10 +371,11 @@ def _artifact_record(
     manifest: dict[str, Any],
 ) -> USStageArtifactRecord:
     artifacts = dict(manifest.get("artifacts", {}))
-    path = artifacts.get(artifact.key) or artifact.path_hint
+    manifest_path = artifacts.get(artifact.key)
+    path = manifest_path or artifact.path_hint
     exists = False
     if path:
-        resolved = Path(path)
+        resolved = Path(str(path))
         if not resolved.is_absolute():
             resolved = artifact_root / resolved
         exists = resolved.exists()
@@ -370,12 +383,14 @@ def _artifact_record(
         **artifact.to_dict(),
         "path": path,
         "exists": exists,
+        "referenced": manifest_path is not None,
     }
 
 
 def _stage_status(
     stage_id: str,
     *,
+    artifact_root: Path,
     manifest: dict[str, Any],
     artifacts: list[USStageArtifactRecord],
 ) -> USStageStatus:
@@ -384,52 +399,134 @@ def _stage_status(
     calibration = dict(manifest.get("calibration", {}))
     rows = dict(manifest.get("rows", {}))
     if stage_id == "01_run_profile":
-        return "ready" if manifest.get("config") else "missing"
+        if _referenced_artifact_missing(artifacts):
+            return "incomplete"
+        if _artifact_exists(artifacts, "manifest"):
+            return "ready"
+        return "metadata_only" if manifest.get("config") else "missing"
     if stage_id == "02_source_loading":
-        return "ready" if synthesis.get("source_names") else "missing"
+        return "metadata_only" if synthesis.get("source_names") else "missing"
     if stage_id == "03_source_planning":
-        return "ready" if synthesis.get("scaffold_source") else "missing"
+        if _referenced_artifact_missing(artifacts):
+            return "incomplete"
+        if _artifact_exists(artifacts, "source_plan"):
+            return "ready"
+        return "metadata_only" if synthesis.get("scaffold_source") else "missing"
     if stage_id == "04_seed_and_donors":
-        return "ready" if artifact_map.get("seed_data") or rows.get("seed") else "missing"
+        if _referenced_artifact_missing(artifacts, required_only=True):
+            return "incomplete"
+        if _required_artifacts_exist(artifacts):
+            return "ready"
+        return "metadata_only" if rows.get("seed") else "missing"
     if stage_id == "05_synthesis":
-        return (
-            "ready"
-            if artifact_map.get("synthetic_data") or rows.get("synthetic")
-            else "missing"
-        )
+        if _referenced_artifact_missing(artifacts, required_only=True):
+            return "incomplete"
+        if _required_artifacts_exist(artifacts):
+            return "ready"
+        return "metadata_only" if rows.get("synthetic") else "missing"
     if stage_id == "06_policyengine_entities":
-        return (
-            "ready"
-            if artifact_map.get("policyengine_entity_tables")
-            or artifact_map.get("policyengine_dataset")
-            else "missing"
-        )
+        if _referenced_artifact_missing(artifacts):
+            return "incomplete"
+        if _artifact_exists(artifacts, "policyengine_entity_tables"):
+            return "ready"
+        if _manifest_artifact_exists(
+            manifest,
+            artifact_root,
+            "policyengine_dataset",
+        ):
+            return "metadata_only"
+        return "missing"
     if stage_id == "07_calibration":
-        return (
-            "ready"
-            if calibration and (artifact_map.get("calibrated_data") or rows.get("calibrated"))
-            else "missing"
-        )
+        if _referenced_artifact_missing(artifacts, required_only=True):
+            return "incomplete"
+        if calibration and _required_artifacts_exist(artifacts):
+            return "ready"
+        return "metadata_only" if calibration and rows.get("calibrated") else "missing"
     if stage_id == "08_dataset_assembly":
-        return "ready" if artifact_map.get("policyengine_dataset") else "missing"
+        if _manifest_artifact_missing(
+            manifest,
+            artifact_root,
+            ("policyengine_dataset", "stage_manifest", "data_flow_snapshot"),
+        ):
+            return "incomplete"
+        if _manifest_artifact_exists(manifest, artifact_root, "policyengine_dataset"):
+            return "ready"
+        return "metadata_only" if artifact_map.get("stage_manifest") else "missing"
     if stage_id == "09_validation_benchmarking":
+        evidence_keys = (
+            "policyengine_harness",
+            "policyengine_native_scores",
+            "policyengine_native_audit",
+            "imputation_ablation",
+            "validation_evidence",
+        )
+        if _manifest_artifact_missing(manifest, artifact_root, evidence_keys):
+            return "incomplete"
         has_evidence = any(
-            artifact_map.get(key)
-            for key in (
-                "policyengine_harness",
-                "policyengine_native_scores",
-                "policyengine_native_audit",
-                "imputation_ablation",
-            )
+            _manifest_artifact_exists(manifest, artifact_root, key)
+            for key in evidence_keys
         )
         if has_evidence:
             return "ready"
-        if artifact_map.get("policyengine_dataset"):
+        if _manifest_artifact_exists(manifest, artifact_root, "policyengine_dataset"):
             return "deferred"
         return "missing"
     if any(artifact.get("exists") for artifact in artifacts):
         return "ready"
     return "missing"
+
+
+def _required_artifacts_exist(artifacts: list[USStageArtifactRecord]) -> bool:
+    required = [artifact for artifact in artifacts if bool(artifact.get("required"))]
+    return bool(required) and all(bool(artifact.get("exists")) for artifact in required)
+
+
+def _artifact_exists(artifacts: list[USStageArtifactRecord], key: str) -> bool:
+    return any(
+        artifact.get("key") == key and bool(artifact.get("exists"))
+        for artifact in artifacts
+    )
+
+
+def _referenced_artifact_missing(
+    artifacts: list[USStageArtifactRecord],
+    *,
+    required_only: bool = False,
+) -> bool:
+    return any(
+        bool(artifact.get("referenced"))
+        and not bool(artifact.get("exists"))
+        and (not required_only or bool(artifact.get("required")))
+        for artifact in artifacts
+    )
+
+
+def _manifest_artifact_exists(
+    manifest: dict[str, Any],
+    artifact_root: Path,
+    artifact_key: str,
+) -> bool:
+    artifacts = dict(manifest.get("artifacts", {}))
+    filename = artifacts.get(artifact_key)
+    if not filename:
+        return False
+    path = Path(str(filename))
+    if not path.is_absolute():
+        path = artifact_root / path
+    return path.exists()
+
+
+def _manifest_artifact_missing(
+    manifest: dict[str, Any],
+    artifact_root: Path,
+    artifact_keys: tuple[str, ...],
+) -> bool:
+    artifacts = dict(manifest.get("artifacts", {}))
+    return any(
+        bool(artifacts.get(key))
+        and not _manifest_artifact_exists(manifest, artifact_root, key)
+        for key in artifact_keys
+    )
 
 
 def _stage_metrics(stage_id: str, *, manifest: dict[str, Any]) -> list[USStageMetric]:

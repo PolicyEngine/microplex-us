@@ -17,6 +17,7 @@ from microplex_us.policyengine import PolicyEngineUSEntityTableBundle
 
 
 def test_build_us_stage_manifest_reports_nine_stage_statuses(tmp_path):
+    (tmp_path / "manifest.json").write_text("{}")
     (tmp_path / "seed_data.parquet").write_text("seed")
     (tmp_path / "synthetic_data.parquet").write_text("synthetic")
     (tmp_path / "calibrated_data.parquet").write_text("calibrated")
@@ -58,8 +59,40 @@ def test_build_us_stage_manifest_reports_nine_stage_statuses(tmp_path):
         "09_validation_benchmarking",
     ]
     statuses = {stage["id"]: stage["status"] for stage in payload["stages"]}
+    assert statuses["01_run_profile"] == "ready"
+    assert statuses["02_source_loading"] == "metadata_only"
+    assert statuses["03_source_planning"] == "metadata_only"
+    assert statuses["04_seed_and_donors"] == "ready"
+    assert statuses["05_synthesis"] == "ready"
+    assert statuses["06_policyengine_entities"] == "metadata_only"
+    assert statuses["07_calibration"] == "ready"
     assert statuses["08_dataset_assembly"] == "ready"
     assert statuses["09_validation_benchmarking"] == "deferred"
+
+
+def test_build_us_stage_manifest_reports_incomplete_referenced_artifacts(tmp_path):
+    manifest = {
+        "created_at": "2026-05-28T00:00:00+00:00",
+        "config": {"calibration_backend": "entropy"},
+        "rows": {"seed": 1, "synthetic": 1},
+        "synthesis": {
+            "source_names": ["cps_asec_2023"],
+            "scaffold_source": "cps_asec_2023",
+            "backend": "seed",
+        },
+        "artifacts": {
+            "seed_data": "seed_data.parquet",
+            "synthetic_data": "synthetic_data.parquet",
+            "policyengine_harness": "policyengine_harness.json",
+        },
+    }
+
+    payload = build_us_stage_manifest(tmp_path, manifest_payload=manifest)
+
+    statuses = {stage["id"]: stage["status"] for stage in payload["stages"]}
+    assert statuses["04_seed_and_donors"] == "incomplete"
+    assert statuses["05_synthesis"] == "incomplete"
+    assert statuses["09_validation_benchmarking"] == "incomplete"
 
 
 def test_write_us_stage_manifest_and_resolve_artifact_path(tmp_path):

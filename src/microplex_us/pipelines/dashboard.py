@@ -116,6 +116,7 @@ def build_dashboard_payload(
             "actual_l0_objective_runs": actual_l0_runs,
             "materialized_policyengine_l0_scores": materialized_l0_scores,
             "mp300k_artifact_gate_reports": artifact_gate_reports,
+            "release_readiness": build_release_readiness(artifact_gate_reports),
             "run_contracts": run_contracts,
             "active_logs": active_logs,
             "tmux_sessions": tmux_sessions,
@@ -220,6 +221,15 @@ def collect_mp300k_artifact_gate_reports(
         runtime = _gate_report_gate(gates, "runtime")
         ecps = _gate_report_gate(gates, "ecps_comparison")
         compatibility_metrics = compatibility.get("metrics", {})
+        candidate_loss = _gate_metric(
+            ecps,
+            "candidate_enhanced_cps_native_loss",
+        )
+        baseline_loss = _gate_metric(
+            ecps,
+            "baseline_enhanced_cps_native_loss",
+        )
+        n_targets_kept = _gate_metric(ecps, "n_targets_kept")
         reports.append(
             {
                 "artifact_path": str(path),
@@ -259,15 +269,17 @@ def collect_mp300k_artifact_gate_reports(
                 "runtime_status": runtime.get("status"),
                 "runtime_ratio": _gate_metric(runtime, "runtime_ratio"),
                 "ecps_comparison_status": ecps.get("status"),
-                "candidate_loss": _gate_metric(
-                    ecps,
-                    "candidate_enhanced_cps_native_loss",
-                ),
-                "baseline_loss": _gate_metric(
-                    ecps,
-                    "baseline_enhanced_cps_native_loss",
-                ),
+                "candidate_loss": candidate_loss,
+                "baseline_loss": baseline_loss,
                 "loss_delta": _gate_metric(ecps, "enhanced_cps_native_loss_delta"),
+                "n_targets_kept": n_targets_kept,
+                "metric_runtime": _infer_metric_runtime(
+                    path,
+                    {
+                        "baseline_enhanced_cps_native_loss": baseline_loss,
+                        "n_targets_kept": n_targets_kept,
+                    },
+                ),
             }
         )
     return sorted(
@@ -279,6 +291,145 @@ def collect_mp300k_artifact_gate_reports(
             row.get("artifact_path") or "",
         ),
     )
+
+
+def build_release_readiness(
+    artifact_gate_reports: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Summarize release readiness by product and target surface."""
+
+    grouped: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for report in artifact_gate_reports:
+        product = str(report.get("product") or "unknown")
+        metric_runtime = str(report.get("metric_runtime") or "unknown")
+        grouped.setdefault((product, metric_runtime), []).append(report)
+
+    readiness: list[dict[str, Any]] = []
+    for (product, metric_runtime), reports in grouped.items():
+        passing = [row for row in reports if row.get("status") == "passed"]
+        failed = [row for row in reports if row.get("status") == "failed"]
+        incomplete = [row for row in reports if row.get("status") == "incomplete"]
+        best_passing = min(passing, key=_release_artifact_sort_key) if passing else None
+        best_fit = min(reports, key=_release_artifact_sort_key)
+        readiness.append(
+            {
+                "product": product,
+                "metric_runtime": metric_runtime,
+                "target_surface": _target_surface_label(metric_runtime),
+                "status": _release_status(passing, failed, incomplete),
+                "artifact_count": len(reports),
+                "passed_artifact_count": len(passing),
+                "failed_artifact_count": len(failed),
+                "incomplete_artifact_count": len(incomplete),
+                "best_passing_artifact": (
+                    _release_artifact_summary(best_passing)
+                    if best_passing is not None
+                    else None
+                ),
+                "best_fit_artifact": _release_artifact_summary(best_fit),
+                "best_fit_is_release_ready": best_fit.get("status") == "passed",
+                "best_fit_release_blockers": _release_blockers(best_fit),
+                "release_blockers": _group_release_blockers(reports)
+                if best_passing is None
+                else [],
+                "fit_loss_gap_to_best_passing": _fit_loss_gap(
+                    best_passing,
+                    best_fit,
+                ),
+            }
+        )
+    return sorted(
+        readiness,
+        key=lambda row: (
+            row.get("status") != "release_ready",
+            row.get("product") or "",
+            row.get("metric_runtime") or "",
+        ),
+    )
+
+
+def _release_artifact_sort_key(row: dict[str, Any]) -> tuple[bool, float, str]:
+    return (
+        row.get("candidate_loss") is None,
+        row.get("candidate_loss") or float("inf"),
+        row.get("artifact_path") or "",
+    )
+
+
+def _release_status(
+    passing: list[dict[str, Any]],
+    failed: list[dict[str, Any]],
+    incomplete: list[dict[str, Any]],
+) -> str:
+    if passing:
+        return "release_ready"
+    if failed:
+        return "blocked"
+    if incomplete:
+        return "incomplete"
+    return "unmeasured"
+
+
+def _target_surface_label(metric_runtime: str) -> str:
+    if metric_runtime == "latest_policyengine_us":
+        return "latest-us-data targets"
+    if metric_runtime == "legacy_or_patched_runtime":
+        return "legacy/patched targets"
+    return "unknown targets"
+
+
+def _release_artifact_summary(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "artifact_id": row.get("artifact_id"),
+        "artifact_path": row.get("artifact_path"),
+        "artifact_dir": row.get("artifact_dir"),
+        "status": row.get("status"),
+        "candidate_dataset_path": row.get("candidate_dataset_path"),
+        "candidate_loss": row.get("candidate_loss"),
+        "baseline_loss": row.get("baseline_loss"),
+        "loss_delta": row.get("loss_delta"),
+        "n_targets_kept": row.get("n_targets_kept"),
+        "candidate_households": row.get("candidate_households"),
+        "candidate_persons": row.get("candidate_persons"),
+        "compatibility_status": row.get("compatibility_status"),
+        "artifact_size_status": row.get("artifact_size_status"),
+        "artifact_size_ratio": row.get("artifact_size_ratio"),
+        "runtime_status": row.get("runtime_status"),
+        "runtime_ratio": row.get("runtime_ratio"),
+        "ecps_comparison_status": row.get("ecps_comparison_status"),
+        "failed_required_gates": row.get("failed_required_gates") or [],
+        "unmeasured_required_gates": row.get("unmeasured_required_gates") or [],
+    }
+
+
+def _release_blockers(row: dict[str, Any]) -> list[str]:
+    return sorted(
+        {
+            str(name)
+            for name in (row.get("failed_required_gates") or [])
+            + (row.get("unmeasured_required_gates") or [])
+        }
+    )
+
+
+def _group_release_blockers(reports: list[dict[str, Any]]) -> list[str]:
+    blockers: set[str] = set()
+    for report in reports:
+        blockers.update(_release_blockers(report))
+    return sorted(blockers)
+
+
+def _fit_loss_gap(
+    best_passing: dict[str, Any] | None,
+    best_fit: dict[str, Any],
+) -> float | None:
+    if best_passing is None:
+        return None
+    passing_loss = _number_or_none(best_passing.get("candidate_loss"))
+    fit_loss = _number_or_none(best_fit.get("candidate_loss"))
+    if passing_loss is None or fit_loss is None:
+        return None
+    return passing_loss - fit_loss
 
 
 def _gate_report_gate(gates: dict[str, Any], name: str) -> dict[str, Any]:

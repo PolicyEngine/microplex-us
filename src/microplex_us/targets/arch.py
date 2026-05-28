@@ -331,6 +331,11 @@ ARCH_FACT_CONCEPT_TO_TARGET = {
         "COUNT",
     ),
     "irs_soi.qualified_dividends": ("qualified_dividends_amount", "AMOUNT"),
+    "irs_soi.returns_with_qualified_business_income_deduction": (
+        "qbi_claims",
+        "COUNT",
+    ),
+    "irs_soi.qualified_business_income_deduction": ("qbi_amount", "AMOUNT"),
     "irs_soi.returns_with_taxable_interest": (
         "taxable_interest_returns",
         "COUNT",

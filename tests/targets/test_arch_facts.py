@@ -1330,6 +1330,27 @@ def test_arch_consumer_fact_jsonl_provider_maps_state_broad_soi_concepts(
             value=11_456_144_000,
             unit="usd",
         ),
+        _consumer_fact(
+            "state-ca-qbi-returns",
+            concept="irs_soi.returns_with_qualified_business_income_deduction",
+            domain="all_individual_income_tax_returns",
+            source_name="irs_soi",
+            source_table="Historic Table 2 state broad totals",
+            period={"type": "tax_year", "value": 2022},
+            geography=geography,
+            value=499_080,
+        ),
+        _consumer_fact(
+            "state-ca-qbi",
+            concept="irs_soi.qualified_business_income_deduction",
+            domain="all_individual_income_tax_returns",
+            source_name="irs_soi",
+            source_table="Historic Table 2 state broad totals",
+            period={"type": "tax_year", "value": 2022},
+            geography=geography,
+            value=4_400_400_000,
+            unit="usd",
+        ),
     ]
     consumer_jsonl.write_text(
         "\n".join(json.dumps(row, sort_keys=True) for row in rows) + "\n"
@@ -1366,6 +1387,22 @@ def test_arch_consumer_fact_jsonl_provider_maps_state_broad_soi_concepts(
     medical = targets_by_arch_variable["medical_dental_expense_amount"]
     assert medical.metadata["variable"] == "medical_expense_deduction"
     assert medical.measure == "medical_expense_deduction"
+
+    qbi = targets_by_arch_variable["qbi_amount"]
+    assert qbi.metadata["variable"] == "qualified_business_income_deduction"
+    assert qbi.measure == "qualified_business_income_deduction"
+
+    qbi_claims = targets_by_arch_variable["qbi_claims"]
+    assert (
+        qbi_claims.metadata["variable"]
+        == "qualified_business_income_deduction"
+    )
+    assert qbi_claims.aggregation.value == "count"
+    assert (
+        "qualified_business_income_deduction",
+        ">",
+        "0",
+    ) in _target_filter_tuples(qbi_claims)
 
 
 def test_arch_consumer_fact_jsonl_provider_maps_eitc_by_agi_and_children(

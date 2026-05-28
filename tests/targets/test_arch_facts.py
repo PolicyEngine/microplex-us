@@ -2631,6 +2631,43 @@ def test_arch_consumer_fact_jsonl_provider_maps_bea_full_population_amounts(
     )
 
 
+def test_arch_consumer_fact_jsonl_provider_skips_cbo_projection_reference_facts(
+    tmp_path: Path,
+) -> None:
+    consumer_jsonl = tmp_path / "consumer_facts.jsonl"
+    rows = [
+        _consumer_fact(
+            f"cbo-{concept.rsplit('.', 1)[-1]}",
+            concept=concept,
+            domain="individual_income_tax_returns",
+            source_name="cbo",
+            source_table=(
+                "Revenue Projections, by Category, February 2026, "
+                "sheet 3.Individual Income Tax Details"
+            ),
+            value=1_000_000_000,
+            unit="usd",
+        )
+        for concept in (
+            "cbo.adjusted_gross_income_projection",
+            "cbo.wages_and_salaries_projection",
+            "cbo.taxable_interest_and_ordinary_dividends_excluding_qualified_dividends_projection",
+            "cbo.qualified_dividend_income_projection",
+            "cbo.net_capital_gain_projection",
+            "cbo.net_business_income_projection",
+        )
+    ]
+    consumer_jsonl.write_text(
+        "\n".join(json.dumps(row, sort_keys=True) for row in rows) + "\n"
+    )
+
+    target_set = ArchConsumerFactJSONLTargetProvider(consumer_jsonl).load_target_set(
+        TargetQuery(period=2024)
+    )
+
+    assert target_set.targets == []
+
+
 def test_arch_target_smoke_cli_reports_consumer_fact_jsonl_counts(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],

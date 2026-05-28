@@ -785,7 +785,7 @@ wheels = [
 [[package]]
 name = "microplex"
 version = "0.2.0"
-source = { editable = "../microplex" }
+source = { git = "https://github.com/PolicyEngine/microplex.git?rev=1e0627182f9df40aacd7043c96956c2895bf9d30#1e0627182f9df40aacd7043c96956c2895bf9d30" }
 dependencies = [
     { name = "httpx" },
     { name = "huggingface-hub" },
@@ -807,41 +807,6 @@ calibrate = [
     { name = "microcalibrate" },
 ]
 
-[package.metadata]
-requires-dist = [
-    { name = "cvxpy", marker = "extra == 'cvxpy'", specifier = ">=1.3" },
-    { name = "httpx", specifier = ">=0.25" },
-    { name = "huggingface-hub", specifier = ">=0.20" },
-    { name = "jupyter-book", marker = "extra == 'docs'", specifier = ">=0.15" },
-    { name = "l0-python", marker = "extra == 'l0'", specifier = ">=0.4" },
-    { name = "matplotlib", marker = "extra == 'benchmark'", specifier = ">=3.7" },
-    { name = "microcalibrate", marker = "python_full_version >= '3.13' and extra == 'calibrate'", specifier = ">=0.22" },
-    { name = "microplex", extras = ["dev", "benchmark", "docs", "calibrate"], marker = "extra == 'all'" },
-    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.0" },
-    { name = "myst-nb", marker = "extra == 'docs'", specifier = ">=0.17" },
-    { name = "numpy", specifier = ">=1.24" },
-    { name = "pandas", specifier = ">=2.0" },
-    { name = "polars", specifier = ">=0.20" },
-    { name = "prdc", specifier = ">=0.1" },
-    { name = "pyarrow", specifier = ">=14.0" },
-    { name = "pydantic", specifier = ">=2.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0" },
-    { name = "pyyaml", specifier = ">=6.0" },
-    { name = "quantile-forest", specifier = ">=1.3" },
-    { name = "responses", marker = "extra == 'dev'", specifier = ">=0.20" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1" },
-    { name = "scikit-learn", specifier = ">=1.3" },
-    { name = "scikit-learn", marker = "extra == 'benchmark'", specifier = ">=1.3" },
-    { name = "scipy", specifier = ">=1.10" },
-    { name = "sdv", marker = "extra == 'benchmark'", specifier = ">=1.0" },
-    { name = "seaborn", marker = "extra == 'benchmark'", specifier = ">=0.12" },
-    { name = "sphinx", marker = "extra == 'docs'", specifier = ">=6.0" },
-    { name = "sphinx-autodoc-typehints", marker = "extra == 'docs'", specifier = ">=1.23" },
-    { name = "torch", specifier = ">=2.0" },
-]
-provides-extras = ["dev", "cvxpy", "statmatch", "l0", "calibrate", "benchmark", "docs", "all"]
-
 [[package]]
 name = "microplex-us"
 version = "0.2.0"
@@ -849,7 +814,6 @@ source = { editable = "." }
 dependencies = [
     { name = "duckdb" },
     { name = "microplex", extra = ["calibrate"] },
-    { name = "microunit" },
     { name = "requests" },
 ]
 
@@ -872,8 +836,7 @@ requires-dist = [
     { name = "boto3", marker = "extra == 'r2'", specifier = ">=1.34" },
     { name = "duckdb", specifier = ">=1.2" },
     { name = "microimpute", marker = "python_full_version >= '3.12' and python_full_version < '3.15' and extra == 'policyengine'", specifier = "==1.15.1" },
-    { name = "microplex", extras = ["calibrate"], editable = "../microplex" },
-    { name = "microunit", editable = "../microunit" },
+    { name = "microplex", extras = ["calibrate"], git = "https://github.com/PolicyEngine/microplex.git?rev=1e0627182f9df40aacd7043c96956c2895bf9d30" },
     { name = "policyengine-us", marker = "python_full_version >= '3.11' and python_full_version < '3.15' and extra == 'policyengine'", specifier = "==1.587.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0" },
     { name = "requests", specifier = ">=2.31" },
@@ -881,22 +844,6 @@ requires-dist = [
     { name = "spm-calculator", marker = "extra == 'policyengine'", specifier = ">=0.3.1" },
 ]
 provides-extras = ["dev", "r2", "policyengine"]
-
-[[package]]
-name = "microunit"
-version = "0.1.0"
-source = { editable = "../microunit" }
-dependencies = [
-    { name = "pandas" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "pandas", specifier = ">=2.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1" },
-]
-provides-extras = ["dev"]
 
 [[package]]
 name = "mpmath"

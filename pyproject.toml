@@ -13,8 +13,7 @@ authors = [
 ]
 requires-python = ">=3.13"
 dependencies = [
-    "microplex[calibrate]>=0.2.0",
-    "microunit>=0.1.0",
+    "microplex[calibrate] @ git+https://github.com/PolicyEngine/microplex.git@1e0627182f9df40aacd7043c96956c2895bf9d30",
     "duckdb>=1.2",
     "requests>=2.31",
 ]
@@ -58,6 +57,9 @@ microplex-us-version-bump-benchmark = "microplex_us.pipelines.version_benchmark:
 [tool.hatch.build.targets.wheel]
 packages = ["src/microplex_us"]
 
+[tool.hatch.metadata]
+allow-direct-references = true
+
 [tool.hatch.build.targets.wheel.force-include]
 "src/microplex_us/pipelines/pe_native_scores.py" = "microplex_us/pipelines/pe_native_scores.py"
 
@@ -81,7 +83,3 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "examples/**/*.py" = ["E402"]
 "tests/**/*.py" = ["E402", "N802"]
-
-[tool.uv.sources]
-microplex = { path = "../microplex", editable = true }
-microunit = { path = "../microunit", editable = true }

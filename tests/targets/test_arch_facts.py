@@ -1562,6 +1562,59 @@ def test_arch_consumer_fact_jsonl_provider_maps_acs_district_age_rows(
     }
 
 
+def test_arch_consumer_fact_jsonl_provider_normalizes_117th_district_geos(
+    tmp_path: Path,
+) -> None:
+    consumer_jsonl = tmp_path / "consumer_facts.jsonl"
+    rows = [
+        _consumer_fact(
+            "soi-cd-al01-agi",
+            concept="us:statutes/26/62#adjusted_gross_income",
+            domain="all_individual_income_tax_returns",
+            source_name="irs_soi",
+            source_table="SOI Congressional District Data 2022",
+            period={"type": "tax_year", "value": 2022},
+            geography={
+                "level": "congressional_district",
+                "id": "5001700US0101",
+                "name": "Alabama Congressional District 1",
+            },
+            value=22_915_824_000,
+            unit="usd",
+        ),
+    ]
+    consumer_jsonl.write_text(
+        "\n".join(json.dumps(row, sort_keys=True) for row in rows) + "\n"
+    )
+
+    target_set = ArchConsumerFactJSONLTargetProvider(consumer_jsonl).load_target_set(
+        TargetQuery(
+            period=2022,
+            provider_filters={
+                "sources": ["IRS_SOI"],
+                "target_cells": [
+                    {
+                        "variable": "adjusted_gross_income",
+                        "geo_level": "district",
+                        "geographic_id": "0101",
+                        "domain_variable": None,
+                    },
+                ],
+            },
+        )
+    )
+
+    assert len(target_set.targets) == 1
+    target = target_set.targets[0]
+    assert target.value == 22_915_824_000
+    assert target.metadata["variable"] == "adjusted_gross_income"
+    assert target.metadata["geo_level"] == "district"
+    assert _target_filter_tuples(target) == {
+        ("tax_unit_is_filer", "==", "1"),
+        ("congressional_district_geoid", "==", "0101"),
+    }
+
+
 def test_arch_consumer_fact_jsonl_provider_maps_acs_state_age_sex_rows(
     tmp_path: Path,
 ) -> None:

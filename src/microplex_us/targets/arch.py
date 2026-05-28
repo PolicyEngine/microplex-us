@@ -5074,6 +5074,15 @@ def _target_domain_variables_match(
 
     model_variable = str(target.metadata.get("variable") or "")
     if (
+        target.aggregation is TargetAggregation.SUM
+        and model_variable
+        and model_variable in effective_target_domain_variables
+        and cell_domain_variables
+        == effective_target_domain_variables - {model_variable}
+    ):
+        return True
+
+    if (
         target.aggregation is TargetAggregation.COUNT
         and model_variable
         and cell_domain_variables

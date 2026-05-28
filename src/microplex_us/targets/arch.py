@@ -41,6 +41,7 @@ ARCH_SOURCE_ALIASES = {
     "bea": "BEA",
     "bea-nipa": "BEA",
     "bea-regional": "BEA",
+    "cbo": "CBO",
     "census-decennial": "CENSUS_DECENNIAL",
     "irs-soi": "IRS_SOI",
     "census-acs": "CENSUS_ACS",
@@ -236,6 +237,8 @@ ARCH_BROAD_BUSINESS_INCOME_SELF_EMPLOYMENT_BLOCKLIST = frozenset(
         "bea_nipa.a041rc_proprietors_income_with_inventory_valuation_and_capital_consumption_adjustments",
         "bea_regional.proprietors_income",
         "bea_regional.sainc5n_line_70_proprietors_income",
+        "cbo.net_business_income",
+        "cbo.net_business_income_projection",
         "cbo.income_source:net_business_income",
     }
 )
@@ -737,6 +740,15 @@ ARCH_FACT_CONCEPTS_TO_SKIP = frozenset(
         # source-native concept is not exposed as a Microplex target.
         "irs_soi.returns_with_state_and_local_taxes",
         "irs_soi.state_and_local_taxes",
+        # CBO revenue projections are useful Arch reference facts, but they are
+        # forecast concepts rather than current-year Microplex calibration
+        # targets. Map them only through an explicit adapter.
+        "cbo.adjusted_gross_income_projection",
+        "cbo.wages_and_salaries_projection",
+        "cbo.taxable_interest_and_ordinary_dividends_excluding_qualified_dividends_projection",
+        "cbo.qualified_dividend_income_projection",
+        "cbo.net_capital_gain_projection",
+        "cbo.net_business_income_projection",
     }
 )
 

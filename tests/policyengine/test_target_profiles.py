@@ -60,7 +60,7 @@ def test_broad_profile_includes_bea_full_population_amount_cells() -> None:
         None,
     ) in broad_cells
     assert (
-        "employment_income",
+        "employment_income_before_lsr",
         "national",
         None,
         None,
@@ -78,7 +78,7 @@ def test_broad_profile_includes_bea_full_population_amount_cells() -> None:
         None,
     ) in broad_cells
     assert (
-        "employment_income",
+        "employment_income_before_lsr",
         "state",
         None,
         None,
@@ -369,11 +369,11 @@ def test_source_backed_profile_excludes_only_documented_non_source_cells() -> No
         for cell in source_backed
     }
 
-    assert len(broad_cells) == 189
-    assert len(exclusion_reasons) == 22
+    assert len(broad_cells) == 220
+    assert len(exclusion_reasons) == 50
     assert all(reason for reason in exclusion_reasons.values())
     assert set(exclusion_reasons) <= broad_cells
-    assert len(source_backed_cells) == 167
+    assert len(source_backed_cells) == 170
     assert source_backed_cells == broad_cells - set(exclusion_reasons)
     assert (
         "childcare_expenses",
@@ -412,7 +412,7 @@ def test_source_backed_profile_excludes_only_documented_non_source_cells() -> No
         None,
     ) not in source_backed_cells
     assert (
-        "employment_income",
+        "employment_income_before_lsr",
         "national",
         None,
         None,

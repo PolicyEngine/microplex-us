@@ -66,7 +66,7 @@ PE_NATIVE_BROAD_TARGET_CELLS: tuple[PolicyEngineUSTargetCell, ...] = (
     PolicyEngineUSTargetCell(
         "dividend_income", geo_level="national", domain_variable="dividend_income"
     ),
-    PolicyEngineUSTargetCell("employment_income", geo_level="national"),
+    PolicyEngineUSTargetCell("employment_income_before_lsr", geo_level="national"),
     PolicyEngineUSTargetCell(
         "employment_income", geo_level="national", domain_variable="employment_income"
     ),
@@ -97,7 +97,9 @@ PE_NATIVE_BROAD_TARGET_CELLS: tuple[PolicyEngineUSTargetCell, ...] = (
         domain_variable="income_tax_before_credits",
     ),
     PolicyEngineUSTargetCell("income_tax_positive", geo_level="national"),
+    PolicyEngineUSTargetCell("investment_interest_expense", geo_level="national"),
     PolicyEngineUSTargetCell("interest_deduction", geo_level="national"),
+    PolicyEngineUSTargetCell("long_term_capital_gains", geo_level="national"),
     PolicyEngineUSTargetCell("medicaid", geo_level="national"),
     PolicyEngineUSTargetCell("medical_expense_deduction", geo_level="national"),
     PolicyEngineUSTargetCell(
@@ -135,6 +137,21 @@ PE_NATIVE_BROAD_TARGET_CELLS: tuple[PolicyEngineUSTargetCell, ...] = (
     ),
     PolicyEngineUSTargetCell(
         "person_count", geo_level="national", domain_variable="medicaid"
+    ),
+    PolicyEngineUSTargetCell(
+        "person_count", geo_level="national", domain_variable="snap"
+    ),
+    PolicyEngineUSTargetCell(
+        "person_count", geo_level="national", domain_variable="ssi"
+    ),
+    PolicyEngineUSTargetCell(
+        "person_count", geo_level="national", domain_variable="ssi,is_ssi_aged"
+    ),
+    PolicyEngineUSTargetCell(
+        "person_count", geo_level="national", domain_variable="ssi,is_blind"
+    ),
+    PolicyEngineUSTargetCell(
+        "person_count", geo_level="national", domain_variable="ssi,is_ssi_disabled"
     ),
     PolicyEngineUSTargetCell(
         "person_count", geo_level="national", domain_variable="ssn_card_type"
@@ -183,6 +200,7 @@ PE_NATIVE_BROAD_TARGET_CELLS: tuple[PolicyEngineUSTargetCell, ...] = (
         "salt", geo_level="national", domain_variable="salt,tax_unit_itemizes"
     ),
     PolicyEngineUSTargetCell("salt_deduction", geo_level="national"),
+    PolicyEngineUSTargetCell("salt_refund_income", geo_level="national"),
     PolicyEngineUSTargetCell(
         "self_employed_pension_contribution_ald", geo_level="national"
     ),
@@ -194,6 +212,10 @@ PE_NATIVE_BROAD_TARGET_CELLS: tuple[PolicyEngineUSTargetCell, ...] = (
         "self_employment_income",
         geo_level="national",
         domain_variable="self_employment_income",
+    ),
+    PolicyEngineUSTargetCell("short_term_capital_gains", geo_level="national"),
+    PolicyEngineUSTargetCell(
+        "household_count", geo_level="national", domain_variable="snap"
     ),
     PolicyEngineUSTargetCell("snap", geo_level="national"),
     PolicyEngineUSTargetCell("social_security", geo_level="national"),
@@ -209,6 +231,15 @@ PE_NATIVE_BROAD_TARGET_CELLS: tuple[PolicyEngineUSTargetCell, ...] = (
         "spm_unit_count", geo_level="national", domain_variable="tanf"
     ),
     PolicyEngineUSTargetCell("ssi", geo_level="national"),
+    PolicyEngineUSTargetCell(
+        "ssi", geo_level="national", domain_variable="ssi,is_ssi_aged"
+    ),
+    PolicyEngineUSTargetCell(
+        "ssi", geo_level="national", domain_variable="ssi,is_blind"
+    ),
+    PolicyEngineUSTargetCell(
+        "ssi", geo_level="national", domain_variable="ssi,is_ssi_disabled"
+    ),
     PolicyEngineUSTargetCell("tanf", geo_level="national"),
     PolicyEngineUSTargetCell("tanf", geo_level="national", domain_variable="tanf"),
     PolicyEngineUSTargetCell(
@@ -275,6 +306,16 @@ PE_NATIVE_BROAD_TARGET_CELLS: tuple[PolicyEngineUSTargetCell, ...] = (
     PolicyEngineUSTargetCell(
         "tax_unit_count",
         geo_level="national",
+        domain_variable="investment_interest_expense",
+    ),
+    PolicyEngineUSTargetCell(
+        "tax_unit_count",
+        geo_level="national",
+        domain_variable="long_term_capital_gains",
+    ),
+    PolicyEngineUSTargetCell(
+        "tax_unit_count",
+        geo_level="national",
         domain_variable="medical_expense_deduction",
     ),
     PolicyEngineUSTargetCell(
@@ -326,12 +367,22 @@ PE_NATIVE_BROAD_TARGET_CELLS: tuple[PolicyEngineUSTargetCell, ...] = (
     PolicyEngineUSTargetCell(
         "tax_unit_count",
         geo_level="national",
+        domain_variable="salt_refund_income",
+    ),
+    PolicyEngineUSTargetCell(
+        "tax_unit_count",
+        geo_level="national",
         domain_variable="salt,tax_unit_itemizes",
     ),
     PolicyEngineUSTargetCell(
         "tax_unit_count",
         geo_level="national",
         domain_variable="self_employment_income",
+    ),
+    PolicyEngineUSTargetCell(
+        "tax_unit_count",
+        geo_level="national",
+        domain_variable="short_term_capital_gains",
     ),
     PolicyEngineUSTargetCell(
         "tax_unit_count",
@@ -423,7 +474,7 @@ PE_NATIVE_BROAD_TARGET_CELLS: tuple[PolicyEngineUSTargetCell, ...] = (
     PolicyEngineUSTargetCell(
         "dividend_income", geo_level="state", domain_variable="dividend_income"
     ),
-    PolicyEngineUSTargetCell("employment_income", geo_level="state"),
+    PolicyEngineUSTargetCell("employment_income_before_lsr", geo_level="state"),
     PolicyEngineUSTargetCell(
         "employment_income", geo_level="state", domain_variable="employment_income"
     ),
@@ -441,6 +492,8 @@ PE_NATIVE_BROAD_TARGET_CELLS: tuple[PolicyEngineUSTargetCell, ...] = (
         geo_level="state",
         domain_variable="income_tax_before_credits",
     ),
+    PolicyEngineUSTargetCell("investment_interest_expense", geo_level="state"),
+    PolicyEngineUSTargetCell("long_term_capital_gains", geo_level="state"),
     PolicyEngineUSTargetCell(
         "medical_expense_deduction",
         geo_level="state",
@@ -477,6 +530,17 @@ PE_NATIVE_BROAD_TARGET_CELLS: tuple[PolicyEngineUSTargetCell, ...] = (
     PolicyEngineUSTargetCell(
         "person_count", geo_level="state", domain_variable="medicaid_enrolled"
     ),
+    PolicyEngineUSTargetCell("person_count", geo_level="state", domain_variable="snap"),
+    PolicyEngineUSTargetCell("person_count", geo_level="state", domain_variable="ssi"),
+    PolicyEngineUSTargetCell(
+        "person_count", geo_level="state", domain_variable="ssi,is_ssi_aged"
+    ),
+    PolicyEngineUSTargetCell(
+        "person_count", geo_level="state", domain_variable="ssi,is_blind"
+    ),
+    PolicyEngineUSTargetCell(
+        "person_count", geo_level="state", domain_variable="ssi,is_ssi_disabled"
+    ),
     PolicyEngineUSTargetCell(
         "qualified_business_income_deduction",
         geo_level="state",
@@ -505,6 +569,7 @@ PE_NATIVE_BROAD_TARGET_CELLS: tuple[PolicyEngineUSTargetCell, ...] = (
     PolicyEngineUSTargetCell(
         "salt", geo_level="state", domain_variable="salt,tax_unit_itemizes"
     ),
+    PolicyEngineUSTargetCell("salt_refund_income", geo_level="state"),
     PolicyEngineUSTargetCell(
         "self_employment_income",
         geo_level="state",
@@ -514,10 +579,12 @@ PE_NATIVE_BROAD_TARGET_CELLS: tuple[PolicyEngineUSTargetCell, ...] = (
         geo_level="state",
         domain_variable="self_employment_income",
     ),
+    PolicyEngineUSTargetCell("short_term_capital_gains", geo_level="state"),
     PolicyEngineUSTargetCell("snap", geo_level="state", domain_variable="snap"),
     PolicyEngineUSTargetCell(
         "spm_unit_count", geo_level="state", domain_variable="tanf"
     ),
+    PolicyEngineUSTargetCell("ssi", geo_level="state"),
     PolicyEngineUSTargetCell("state_income_tax", geo_level="state"),
     PolicyEngineUSTargetCell("tanf", geo_level="state", domain_variable="tanf"),
     PolicyEngineUSTargetCell(
@@ -547,6 +614,16 @@ PE_NATIVE_BROAD_TARGET_CELLS: tuple[PolicyEngineUSTargetCell, ...] = (
         "tax_unit_count",
         geo_level="state",
         domain_variable="income_tax_before_credits",
+    ),
+    PolicyEngineUSTargetCell(
+        "tax_unit_count",
+        geo_level="state",
+        domain_variable="investment_interest_expense",
+    ),
+    PolicyEngineUSTargetCell(
+        "tax_unit_count",
+        geo_level="state",
+        domain_variable="long_term_capital_gains",
     ),
     PolicyEngineUSTargetCell(
         "tax_unit_count",
@@ -594,6 +671,11 @@ PE_NATIVE_BROAD_TARGET_CELLS: tuple[PolicyEngineUSTargetCell, ...] = (
     PolicyEngineUSTargetCell(
         "tax_unit_count",
         geo_level="state",
+        domain_variable="salt_refund_income",
+    ),
+    PolicyEngineUSTargetCell(
+        "tax_unit_count",
+        geo_level="state",
         domain_variable="salt,tax_unit_itemizes",
     ),
     PolicyEngineUSTargetCell(
@@ -605,6 +687,11 @@ PE_NATIVE_BROAD_TARGET_CELLS: tuple[PolicyEngineUSTargetCell, ...] = (
         "tax_unit_count",
         geo_level="state",
         domain_variable="self_employment_income",
+    ),
+    PolicyEngineUSTargetCell(
+        "tax_unit_count",
+        geo_level="state",
+        domain_variable="short_term_capital_gains",
     ),
     PolicyEngineUSTargetCell(
         "tax_unit_count",
@@ -905,8 +992,7 @@ PE_NATIVE_BROAD_SOURCE_BACKED_EXCLUDED_CELL_REASONS: dict[
         None,
         None,
     ): (
-        "This is a capped SPM model amount rather than a direct publisher "
-        "source fact."
+        "This is a capped SPM model amount rather than a direct publisher source fact."
     ),
     (
         "spm_unit_capped_work_childcare_expenses",
@@ -914,18 +1000,102 @@ PE_NATIVE_BROAD_SOURCE_BACKED_EXCLUDED_CELL_REASONS: dict[
         None,
         None,
     ): (
-        "This is a capped SPM model amount rather than a direct publisher "
-        "source fact."
+        "This is a capped SPM model amount rather than a direct publisher source fact."
     ),
 }
 
-PE_NATIVE_BROAD_SOURCE_BACKED_TARGET_CELLS: tuple[
-    PolicyEngineUSTargetCell, ...
-] = tuple(
-    cell
-    for cell in PE_NATIVE_BROAD_TARGET_CELLS
-    if _target_cell_key(cell)
-    not in PE_NATIVE_BROAD_SOURCE_BACKED_EXCLUDED_CELL_REASONS
+_PENDING_SSI_DETAIL_SOURCE_REASON = (
+    "Current Arch SSA source packages cover broad SSI payment totals but do not "
+    "yet encode exact recipient-count, state-level, aged, blind, or disabled "
+    "SSI source facts for this PolicyEngine cell."
+)
+
+_PENDING_IRS_DETAIL_SOURCE_REASON = (
+    "Current Arch IRS SOI source packages do not yet encode an exact source "
+    "fact for this detailed PolicyEngine tax cell at the requested geography "
+    "and domain."
+)
+
+_PENDING_BEA_STATE_WAGE_SOURCE_REASON = (
+    "Current Arch BEA state packages do not yet include the full component "
+    "panel needed to derive state residence-adjusted employment income before "
+    "legal-social-responsibility adjustments."
+)
+
+_PENDING_ARCH_SOURCE_BACKED_CELL_REASONS: dict[
+    PolicyEngineUSTargetCellKey,
+    str,
+] = {
+    **{
+        ("person_count", geo_level, domain_variable, None): (
+            _PENDING_SSI_DETAIL_SOURCE_REASON
+        )
+        for geo_level in ("national", "state")
+        for domain_variable in (
+            "ssi",
+            "ssi,is_ssi_aged",
+            "ssi,is_blind",
+            "ssi,is_ssi_disabled",
+        )
+    },
+    **{
+        ("ssi", geo_level, domain_variable, None): (
+            _PENDING_SSI_DETAIL_SOURCE_REASON
+        )
+        for geo_level, domain_variable in (
+            ("national", "ssi,is_ssi_aged"),
+            ("national", "ssi,is_blind"),
+            ("national", "ssi,is_ssi_disabled"),
+            ("state", None),
+        )
+    },
+    **{
+        (variable, geo_level, None, None): _PENDING_IRS_DETAIL_SOURCE_REASON
+        for variable in (
+            "long_term_capital_gains",
+            "salt_refund_income",
+            "short_term_capital_gains",
+        )
+        for geo_level in ("national", "state")
+    },
+    (
+        "investment_interest_expense",
+        "state",
+        None,
+        None,
+    ): _PENDING_IRS_DETAIL_SOURCE_REASON,
+    (
+        "employment_income_before_lsr",
+        "state",
+        None,
+        None,
+    ): _PENDING_BEA_STATE_WAGE_SOURCE_REASON,
+    **{
+        ("tax_unit_count", geo_level, domain_variable, None): (
+            _PENDING_IRS_DETAIL_SOURCE_REASON
+        )
+        for geo_level in ("national", "state")
+        for domain_variable in (
+            "investment_interest_expense",
+            "long_term_capital_gains",
+            "salt_refund_income",
+            "short_term_capital_gains",
+        )
+    },
+}
+
+PE_NATIVE_BROAD_SOURCE_BACKED_EXCLUDED_CELL_REASONS = {
+    **PE_NATIVE_BROAD_SOURCE_BACKED_EXCLUDED_CELL_REASONS,
+    **_PENDING_ARCH_SOURCE_BACKED_CELL_REASONS,
+}
+
+PE_NATIVE_BROAD_SOURCE_BACKED_TARGET_CELLS: tuple[PolicyEngineUSTargetCell, ...] = (
+    tuple(
+        cell
+        for cell in PE_NATIVE_BROAD_TARGET_CELLS
+        if _target_cell_key(cell)
+        not in PE_NATIVE_BROAD_SOURCE_BACKED_EXCLUDED_CELL_REASONS
+    )
 )
 
 _TARGET_PROFILES: dict[str, tuple[PolicyEngineUSTargetCell, ...]] = {

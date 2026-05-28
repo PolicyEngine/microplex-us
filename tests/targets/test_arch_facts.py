@@ -1562,6 +1562,61 @@ def test_arch_consumer_fact_jsonl_provider_maps_acs_district_age_rows(
     }
 
 
+def test_arch_consumer_fact_jsonl_provider_maps_acs_state_age_sex_rows(
+    tmp_path: Path,
+) -> None:
+    consumer_jsonl = tmp_path / "consumer_facts.jsonl"
+    row = _consumer_fact(
+        "acs-ca-female-40-44",
+        concept="census_acs.person_count",
+        domain="total_population",
+        source_name="census_acs",
+        source_table="ACS B01001 state female age",
+        period={"type": "calendar_year", "value": 2023},
+        geography={"level": "state", "id": "0400000US06", "name": "California"},
+        value=1_300_307,
+        constraints=(
+            {
+                "variable": "age",
+                "operator": ">=",
+                "value": 40,
+                "unit": "years",
+                "role": "filter",
+            },
+            {
+                "variable": "age",
+                "operator": "<",
+                "value": 45,
+                "unit": "years",
+                "role": "filter",
+            },
+            {
+                "variable": "sex",
+                "operator": "==",
+                "value": "female",
+                "role": "filter",
+            },
+        ),
+    )
+    consumer_jsonl.write_text(json.dumps(row, sort_keys=True) + "\n")
+
+    target_set = ArchConsumerFactJSONLTargetProvider(consumer_jsonl).load_target_set(
+        TargetQuery(period=2023)
+    )
+
+    assert len(target_set.targets) == 1
+    target = target_set.targets[0]
+    assert target.value == 1_300_307
+    assert target.metadata["variable"] == "person_count"
+    assert target.metadata["geo_level"] == "state"
+    assert _target_filter_tuples(target) == {
+        ("age", ">=", "40"),
+        ("age", "<", "45"),
+        ("is_female", "==", "1"),
+        ("state_fips", "==", "06"),
+    }
+
+
 def test_arch_consumer_fact_jsonl_provider_maps_acs_district_snap_rows(
     tmp_path: Path,
 ) -> None:

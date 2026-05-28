@@ -1,6 +1,9 @@
 # microplex-us docs
 
 - [Architecture](./architecture.md)
+- [Canonical pipeline stages](./pipeline-stages.md)
+- [Stage contracts and manifests](./stage-contracts.md)
+- [API reference](./api.md)
 - [Source semantics](./source-semantics.md)
 - [Imputation conditioning contract](./imputation-conditioning-contract.md)
 - [Benchmarking](./benchmarking.md)

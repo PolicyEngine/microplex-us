@@ -25,16 +25,24 @@ from microplex_us.pipelines.index_db import (
 from microplex_us.pipelines.pe_native_scores import (
     compute_us_pe_native_scores,
 )
-from microplex_us.pipelines.summarize_child_tax_unit_agi_drift import (
-    DEFAULT_VARIABLES as DEFAULT_CHILD_TAX_UNIT_AGI_DRIFT_VARIABLES,
-    summarize_child_tax_unit_agi_drift,
-)
 from microplex_us.pipelines.registry import (
     FrontierMetric,
     append_us_microplex_run_registry_entry,
     build_us_microplex_run_registry_entry,
     load_us_microplex_run_registry,
     select_us_microplex_frontier_entry,
+)
+from microplex_us.pipelines.stage_manifest import (
+    US_STAGE_ARTIFACT_ROOT,
+    write_us_policyengine_entity_stage_artifact,
+    write_us_stage_manifest,
+    write_us_validation_evidence_manifest,
+)
+from microplex_us.pipelines.summarize_child_tax_unit_agi_drift import (
+    DEFAULT_VARIABLES as DEFAULT_CHILD_TAX_UNIT_AGI_DRIFT_VARIABLES,
+)
+from microplex_us.pipelines.summarize_child_tax_unit_agi_drift import (
+    summarize_child_tax_unit_agi_drift,
 )
 from microplex_us.pipelines.us import (
     USMicroplexBuildConfig,
@@ -70,6 +78,11 @@ class USMicroplexArtifactPaths:
     synthesizer: Path | None = None
     policyengine_dataset: Path | None = None
     data_flow_snapshot: Path | None = None
+    stage_manifest: Path | None = None
+    source_plan: Path | None = None
+    policyengine_entity_tables: Path | None = None
+    calibration_summary: Path | None = None
+    validation_evidence: Path | None = None
     policyengine_harness: Path | None = None
     policyengine_native_scores: Path | None = None
     policyengine_native_audit: Path | None = None
@@ -240,6 +253,45 @@ def _resolve_saved_artifact_file(
     return path
 
 
+def _write_us_source_plan_artifact(
+    result: USMicroplexBuildResult,
+    output_path: Path,
+) -> None:
+    synthesis = dict(result.synthesis_metadata)
+    source_names = tuple(
+        dict.fromkeys(
+            value
+            for value in (
+                *list(synthesis.get("source_names", ())),
+                synthesis.get("scaffold_source"),
+            )
+            if isinstance(value, str) and value
+        )
+    )
+    payload = {
+        "formatVersion": 1,
+        "stageId": "03_source_planning",
+        "sourceNames": list(source_names),
+        "scaffoldSource": synthesis.get("scaffold_source"),
+        "donorIntegratedVariables": list(
+            synthesis.get("donor_integrated_variables", ())
+        ),
+        "conditionVars": list(synthesis.get("condition_vars", ())),
+        "targetVars": list(synthesis.get("target_vars", ())),
+        "donorAuthoritativeOverrideVariables": list(
+            synthesis.get("donor_authoritative_override_variables", ())
+        ),
+        "donorExcludedVariables": list(
+            synthesis.get("donor_excluded_variables", ())
+        ),
+    }
+    if result.fusion_plan is not None:
+        payload["fusionPlan"] = {
+            "sourceNames": list(result.fusion_plan.source_names),
+        }
+    _write_json_atomically(output_path, payload)
+
+
 def _summarize_child_tax_unit_agi_drift_ratios(
     payload: dict[str, Any],
     *,
@@ -302,6 +354,22 @@ def save_us_microplex_artifacts(
         output_dir / "policyengine_us.h5" if result.policyengine_tables is not None else None
     )
     data_flow_snapshot_path = output_dir / "data_flow_snapshot.json"
+    stage_manifest_path = output_dir / "stage_manifest.json"
+    stage_artifact_root = output_dir / US_STAGE_ARTIFACT_ROOT
+    source_plan_path = stage_artifact_root / "03_source_planning" / "source_plan.json"
+    policyengine_entity_tables_path = (
+        stage_artifact_root / "06_policyengine_entities" / "metadata.json"
+        if result.policyengine_tables is not None
+        else None
+    )
+    calibration_summary_path = (
+        stage_artifact_root / "07_calibration" / "calibration_summary.json"
+    )
+    validation_evidence_path = (
+        stage_artifact_root / "09_validation_benchmarking" / "evidence_manifest.json"
+        if result.policyengine_tables is not None
+        else None
+    )
     policyengine_harness_path = None
     policyengine_native_scores_path = None
     resolved_run_registry_path = None
@@ -325,7 +393,15 @@ def save_us_microplex_artifacts(
     if result.synthesizer is not None and synthesizer_path is not None:
         result.synthesizer.save(synthesizer_path)
 
+    _write_us_source_plan_artifact(result, source_plan_path)
+    _write_json_atomically(calibration_summary_path, result.calibration_summary)
+
     if result.policyengine_tables is not None and policyengine_dataset_path is not None:
+        if policyengine_entity_tables_path is not None:
+            write_us_policyengine_entity_stage_artifact(
+                result.policyengine_tables,
+                policyengine_entity_tables_path.parent,
+            )
         period = result.config.policyengine_dataset_year or 2024
         USMicroplexPipeline(result.config).export_policyengine_dataset(
             result,
@@ -463,10 +539,25 @@ def save_us_microplex_artifacts(
             "calibrated_data": calibrated_data_path.name,
             "targets": targets_path.name,
             "synthesizer": synthesizer_path.name if synthesizer_path else None,
+            "source_plan": str(source_plan_path.relative_to(output_dir)),
+            "calibration_summary": str(
+                calibration_summary_path.relative_to(output_dir)
+            ),
+            "policyengine_entity_tables": (
+                str(policyengine_entity_tables_path.relative_to(output_dir))
+                if policyengine_entity_tables_path is not None
+                else None
+            ),
             "policyengine_dataset": (
                 policyengine_dataset_path.name if policyengine_dataset_path else None
             ),
             "data_flow_snapshot": data_flow_snapshot_path.name,
+            "stage_manifest": stage_manifest_path.name,
+            "validation_evidence": (
+                str(validation_evidence_path.relative_to(output_dir))
+                if validation_evidence_path is not None
+                else None
+            ),
             "policyengine_harness": (
                 policyengine_harness_path.name if policyengine_harness_path else None
             ),
@@ -527,11 +618,12 @@ def save_us_microplex_artifacts(
             "path": str(resolved_run_index_path),
             "artifact_id": recorded_entry.artifact_id,
         }
-    write_us_microplex_data_flow_snapshot(
-        output_dir,
-        data_flow_snapshot_path,
-        manifest_payload=manifest,
-    )
+    if validation_evidence_path is not None:
+        write_us_validation_evidence_manifest(
+            output_dir,
+            validation_evidence_path,
+            manifest_payload=manifest,
+        )
     assert_valid_benchmark_artifact_manifest(
         manifest,
         artifact_dir=output_dir,
@@ -561,6 +653,21 @@ def save_us_microplex_artifacts(
         ),
     )
     _write_json_atomically(manifest_path, manifest)
+    write_us_stage_manifest(
+        output_dir,
+        stage_manifest_path,
+        manifest_payload=manifest,
+    )
+    write_us_microplex_data_flow_snapshot(
+        output_dir,
+        data_flow_snapshot_path,
+        manifest_payload=manifest,
+    )
+    write_us_stage_manifest(
+        output_dir,
+        stage_manifest_path,
+        manifest_payload=manifest,
+    )
 
     return USMicroplexArtifactPaths(
         output_dir=output_dir,
@@ -573,6 +680,11 @@ def save_us_microplex_artifacts(
         synthesizer=synthesizer_path,
         policyengine_dataset=policyengine_dataset_path,
         data_flow_snapshot=data_flow_snapshot_path,
+        stage_manifest=stage_manifest_path,
+        source_plan=source_plan_path,
+        policyengine_entity_tables=policyengine_entity_tables_path,
+        calibration_summary=calibration_summary_path,
+        validation_evidence=validation_evidence_path,
         policyengine_harness=policyengine_harness_path,
         policyengine_native_scores=policyengine_native_scores_path,
         policyengine_native_audit=None,
@@ -995,6 +1107,7 @@ def _finalize_versioned_build_artifacts(
 
 
 def _write_json_atomically(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     temp_path = path.with_name(f".{path.name}.tmp")
     temp_path.write_text(json.dumps(payload, indent=2, sort_keys=True))
     temp_path.replace(path)

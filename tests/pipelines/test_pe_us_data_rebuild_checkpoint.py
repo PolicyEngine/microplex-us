@@ -988,7 +988,9 @@ def test_attach_policyengine_us_data_rebuild_checkpoint_evidence_updates_manifes
         (artifact_dir / "data_flow_snapshot.json").read_text()
     )
     benchmark_stage = next(
-        stage for stage in refreshed_snapshot["stages"] if stage["id"] == "benchmark"
+        stage
+        for stage in refreshed_snapshot["stages"]
+        if stage["id"] == "09_validation_benchmarking"
     )
     registry_entries = load_us_microplex_run_registry(tmp_path / "run_registry.jsonl")
     assert result.harness_path == artifact_dir / "policyengine_harness.json"

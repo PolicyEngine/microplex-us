@@ -79,6 +79,18 @@ def test_build_us_microplex_data_flow_snapshot_reads_manifest_runtime_mix(tmp_pa
         and highlight["hasDonorTransform"] is True
         for highlight in snapshot["semanticHighlights"]
     )
+    assert [stage["id"] for stage in snapshot["stages"]] == [
+        "01_run_profile",
+        "02_source_loading",
+        "03_source_planning",
+        "04_seed_and_donors",
+        "05_synthesis",
+        "06_policyengine_entities",
+        "07_calibration",
+        "08_dataset_assembly",
+        "09_validation_benchmarking",
+    ]
+    assert snapshot["stages"][8]["status"] == "ready"
 
 
 def test_build_us_microplex_data_flow_snapshot_resolves_cps_parquet_source_exactly(

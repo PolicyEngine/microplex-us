@@ -246,6 +246,31 @@ _EXPORT_MODULES: dict[str, str] = {
         ),
     ),
     **_exports(
+        "microplex_us.pipelines.stage_contracts",
+        (
+            "USPipelineStageContract",
+            "USStageArtifactContract",
+            "USStageValidationContract",
+            "default_us_pipeline_stage_contracts",
+            "get_us_pipeline_stage_contract",
+            "serialize_us_pipeline_stage_contracts",
+        ),
+    ),
+    **_exports(
+        "microplex_us.pipelines.stage_manifest",
+        (
+            "build_us_validation_evidence_manifest",
+            "build_us_stage_manifest",
+            "load_us_policyengine_entity_stage_artifact",
+            "load_us_stage_manifest",
+            "resolve_us_stage_artifact_path",
+            "stage_summary_for_data_flow_snapshot",
+            "write_us_policyengine_entity_stage_artifact",
+            "write_us_stage_manifest",
+            "write_us_validation_evidence_manifest",
+        ),
+    ),
+    **_exports(
         "microplex_us.pipelines.summarize_pe_native_family_drilldown",
         (
             "classify_pe_native_target_family",

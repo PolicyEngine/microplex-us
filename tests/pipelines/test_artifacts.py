@@ -278,12 +278,27 @@ class TestSaveUSMicroplexArtifacts:
         assert paths.synthesizer is None
         assert paths.policyengine_dataset is not None
         assert paths.policyengine_dataset.exists()
+        assert paths.stage_manifest is not None
+        assert paths.stage_manifest.exists()
+        assert paths.source_plan is not None
+        assert paths.source_plan.exists()
+        assert paths.policyengine_entity_tables is not None
+        assert paths.policyengine_entity_tables.exists()
+        assert paths.calibration_summary is not None
+        assert paths.calibration_summary.exists()
+        assert paths.validation_evidence is not None
+        assert paths.validation_evidence.exists()
 
         manifest = json.loads(paths.manifest.read_text())
         assert manifest["rows"]["synthetic"] == 2
         assert manifest["weights"]["nonzero"] == 2
         assert manifest["config"]["synthesis_backend"] == "bootstrap"
         assert manifest["artifacts"]["policyengine_dataset"] == "policyengine_us.h5"
+        assert manifest["artifacts"]["stage_manifest"] == "stage_manifest.json"
+        assert (
+            manifest["artifacts"]["policyengine_entity_tables"]
+            == "stage_artifacts/06_policyengine_entities/metadata.json"
+        )
 
         with h5py.File(paths.policyengine_dataset, "r") as handle:
             assert "household_id" in handle
@@ -356,10 +371,14 @@ class TestSaveUSMicroplexArtifacts:
 
         assert paths.data_flow_snapshot is not None
         assert paths.data_flow_snapshot.exists()
+        assert paths.stage_manifest is not None
+        assert paths.stage_manifest.exists()
         manifest = json.loads(paths.manifest.read_text())
         assert manifest["artifacts"]["data_flow_snapshot"] == "data_flow_snapshot.json"
+        assert manifest["artifacts"]["stage_manifest"] == "stage_manifest.json"
         snapshot = json.loads(paths.data_flow_snapshot.read_text())
         assert snapshot["runtime"]["scaffoldSource"] == "cps_asec_parquet"
+        assert len(snapshot["stages"]) == 9
 
     def test_writes_child_tax_unit_agi_drift_summary(self, tmp_path):
         result = USMicroplexBuildResult(

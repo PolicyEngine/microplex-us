@@ -125,7 +125,11 @@ def test_backfill_us_pe_native_audit_root_updates_manifest_and_snapshot(
         is True
     )
     snapshot = json.loads((bundle_dir / "data_flow_snapshot.json").read_text())
-    benchmark = next(stage for stage in snapshot["stages"] if stage["id"] == "benchmark")
+    benchmark = next(
+        stage
+        for stage in snapshot["stages"]
+        if stage["id"] == "09_validation_benchmarking"
+    )
     assert benchmark["outputs"] == [
         "policyengine_native_scores.json",
         "pe_us_data_rebuild_native_audit.json",

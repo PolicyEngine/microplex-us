@@ -64,11 +64,17 @@ def write_us_microplex_data_flow_snapshot(
     output_path: str | Path,
     *,
     manifest_payload: dict[str, Any] | None = None,
+    assume_existing_stage_artifact_keys: Iterable[str] = (),
 ) -> Path:
     """Write the canonical US data-flow snapshot JSON for one saved artifact bundle."""
     snapshot = _materialize_us_microplex_data_flow_snapshot(
         artifact_dir,
         manifest_payload=manifest_payload,
+        prefer_saved_stage_manifest=False,
+        assume_existing_stage_artifact_keys=(
+            *tuple(assume_existing_stage_artifact_keys),
+            "data_flow_snapshot",
+        ),
     )
     destination = Path(output_path)
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -80,6 +86,8 @@ def _materialize_us_microplex_data_flow_snapshot(
     artifact_dir: str | Path,
     *,
     manifest_payload: dict[str, Any] | None = None,
+    prefer_saved_stage_manifest: bool = True,
+    assume_existing_stage_artifact_keys: Iterable[str] = (),
 ) -> dict[str, Any]:
     artifact_root = Path(artifact_dir)
     manifest = (
@@ -92,6 +100,8 @@ def _materialize_us_microplex_data_flow_snapshot(
     stage_manifest = _resolve_data_flow_stage_manifest(
         artifact_root,
         manifest_payload=manifest,
+        prefer_saved=prefer_saved_stage_manifest,
+        assume_existing_artifact_keys=assume_existing_stage_artifact_keys,
     )
 
     source_names = tuple(
@@ -205,10 +215,12 @@ def _resolve_data_flow_stage_manifest(
     artifact_root: Path,
     *,
     manifest_payload: dict[str, Any],
+    prefer_saved: bool,
+    assume_existing_artifact_keys: Iterable[str],
 ) -> dict[str, Any]:
     artifacts = dict(manifest_payload.get("artifacts", {}))
     stage_manifest_name = artifacts.get("stage_manifest")
-    if stage_manifest_name:
+    if prefer_saved and stage_manifest_name:
         stage_manifest_path = Path(stage_manifest_name)
         if not stage_manifest_path.is_absolute():
             stage_manifest_path = artifact_root / stage_manifest_path
@@ -217,6 +229,7 @@ def _resolve_data_flow_stage_manifest(
     return build_us_stage_manifest(
         artifact_root,
         manifest_payload=manifest_payload,
+        assume_existing_artifact_keys=assume_existing_artifact_keys,
     )
 
 

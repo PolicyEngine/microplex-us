@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any, Literal, TypedDict, cast
 
@@ -125,6 +125,7 @@ def write_us_stage_manifest(
     output_path: str | Path,
     *,
     manifest_payload: dict[str, Any],
+    assume_existing_artifact_keys: Iterable[str] = (),
 ) -> Path:
     """Write the canonical stage manifest for a saved US artifact bundle."""
 
@@ -135,6 +136,10 @@ def write_us_stage_manifest(
         build_us_stage_manifest(
             artifact_dir,
             manifest_payload=manifest_payload,
+            assume_existing_artifact_keys=(
+                *tuple(assume_existing_artifact_keys),
+                "stage_manifest",
+            ),
         ),
     )
     return destination
@@ -157,14 +162,21 @@ def build_us_stage_manifest(
     artifact_dir: str | Path,
     *,
     manifest_payload: dict[str, Any],
+    assume_existing_artifact_keys: Iterable[str] = (),
 ) -> USStageManifest:
     """Build the canonical stage manifest from a saved artifact manifest."""
 
     artifact_root = Path(artifact_dir)
     manifest = dict(manifest_payload)
     artifact_map = dict(manifest.get("artifacts", {}))
+    assumed_existing = set(assume_existing_artifact_keys)
     stages = [
-        _stage_record(contract, artifact_root=artifact_root, manifest=manifest)
+        _stage_record(
+            contract,
+            artifact_root=artifact_root,
+            manifest=manifest,
+            assume_existing_artifact_keys=assumed_existing,
+        )
         for contract in default_us_pipeline_stage_contracts()
     ]
     return {
@@ -335,9 +347,15 @@ def _stage_record(
     *,
     artifact_root: Path,
     manifest: dict[str, Any],
+    assume_existing_artifact_keys: set[str],
 ) -> USStageRecord:
     artifacts = [
-        _artifact_record(artifact, artifact_root=artifact_root, manifest=manifest)
+        _artifact_record(
+            artifact,
+            artifact_root=artifact_root,
+            manifest=manifest,
+            assume_existing_artifact_keys=assume_existing_artifact_keys,
+        )
         for artifact in contract.artifacts
     ]
     return {
@@ -350,6 +368,7 @@ def _stage_record(
             artifact_root=artifact_root,
             manifest=manifest,
             artifacts=artifacts,
+            assume_existing_artifact_keys=assume_existing_artifact_keys,
         ),
         "consumes": list(contract.consumes),
         "produces": list(contract.produces),
@@ -369,6 +388,7 @@ def _artifact_record(
     *,
     artifact_root: Path,
     manifest: dict[str, Any],
+    assume_existing_artifact_keys: set[str],
 ) -> USStageArtifactRecord:
     artifacts = dict(manifest.get("artifacts", {}))
     manifest_path = artifacts.get(artifact.key)
@@ -378,7 +398,7 @@ def _artifact_record(
         resolved = Path(str(path))
         if not resolved.is_absolute():
             resolved = artifact_root / resolved
-        exists = resolved.exists()
+        exists = resolved.exists() or artifact.key in assume_existing_artifact_keys
     return {
         **artifact.to_dict(),
         "path": path,
@@ -393,6 +413,7 @@ def _stage_status(
     artifact_root: Path,
     manifest: dict[str, Any],
     artifacts: list[USStageArtifactRecord],
+    assume_existing_artifact_keys: set[str],
 ) -> USStageStatus:
     artifact_map = dict(manifest.get("artifacts", {}))
     synthesis = dict(manifest.get("synthesis", {}))
@@ -433,6 +454,7 @@ def _stage_status(
             manifest,
             artifact_root,
             "policyengine_dataset",
+            assume_existing_artifact_keys=assume_existing_artifact_keys,
         ):
             return "metadata_only"
         return "missing"
@@ -447,9 +469,15 @@ def _stage_status(
             manifest,
             artifact_root,
             ("policyengine_dataset", "stage_manifest", "data_flow_snapshot"),
+            assume_existing_artifact_keys=assume_existing_artifact_keys,
         ):
             return "incomplete"
-        if _manifest_artifact_exists(manifest, artifact_root, "policyengine_dataset"):
+        if _manifest_artifact_exists(
+            manifest,
+            artifact_root,
+            "policyengine_dataset",
+            assume_existing_artifact_keys=assume_existing_artifact_keys,
+        ):
             return "ready"
         return "metadata_only" if artifact_map.get("stage_manifest") else "missing"
     if stage_id == "09_validation_benchmarking":
@@ -460,15 +488,30 @@ def _stage_status(
             "imputation_ablation",
             "validation_evidence",
         )
-        if _manifest_artifact_missing(manifest, artifact_root, evidence_keys):
+        if _manifest_artifact_missing(
+            manifest,
+            artifact_root,
+            evidence_keys,
+            assume_existing_artifact_keys=assume_existing_artifact_keys,
+        ):
             return "incomplete"
         has_evidence = any(
-            _manifest_artifact_exists(manifest, artifact_root, key)
+            _manifest_artifact_exists(
+                manifest,
+                artifact_root,
+                key,
+                assume_existing_artifact_keys=assume_existing_artifact_keys,
+            )
             for key in evidence_keys
         )
         if has_evidence:
             return "ready"
-        if _manifest_artifact_exists(manifest, artifact_root, "policyengine_dataset"):
+        if _manifest_artifact_exists(
+            manifest,
+            artifact_root,
+            "policyengine_dataset",
+            assume_existing_artifact_keys=assume_existing_artifact_keys,
+        ):
             return "deferred"
         return "missing"
     if any(artifact.get("exists") for artifact in artifacts):
@@ -505,11 +548,15 @@ def _manifest_artifact_exists(
     manifest: dict[str, Any],
     artifact_root: Path,
     artifact_key: str,
+    *,
+    assume_existing_artifact_keys: set[str],
 ) -> bool:
     artifacts = dict(manifest.get("artifacts", {}))
     filename = artifacts.get(artifact_key)
     if not filename:
         return False
+    if artifact_key in assume_existing_artifact_keys:
+        return True
     path = Path(str(filename))
     if not path.is_absolute():
         path = artifact_root / path
@@ -520,11 +567,18 @@ def _manifest_artifact_missing(
     manifest: dict[str, Any],
     artifact_root: Path,
     artifact_keys: tuple[str, ...],
+    *,
+    assume_existing_artifact_keys: set[str],
 ) -> bool:
     artifacts = dict(manifest.get("artifacts", {}))
     return any(
         bool(artifacts.get(key))
-        and not _manifest_artifact_exists(manifest, artifact_root, key)
+        and not _manifest_artifact_exists(
+            manifest,
+            artifact_root,
+            key,
+            assume_existing_artifact_keys=assume_existing_artifact_keys,
+        )
         for key in artifact_keys
     )
 

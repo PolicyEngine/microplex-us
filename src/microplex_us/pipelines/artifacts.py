@@ -653,15 +653,11 @@ def save_us_microplex_artifacts(
         ),
     )
     _write_json_atomically(manifest_path, manifest)
-    write_us_stage_manifest(
-        output_dir,
-        stage_manifest_path,
-        manifest_payload=manifest,
-    )
     write_us_microplex_data_flow_snapshot(
         output_dir,
         data_flow_snapshot_path,
         manifest_payload=manifest,
+        assume_existing_stage_artifact_keys=("stage_manifest",),
     )
     write_us_stage_manifest(
         output_dir,

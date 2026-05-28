@@ -360,6 +360,14 @@ ARCH_FACT_CONCEPT_TO_TARGET = {
         "partnership_scorp_income_amount",
         "AMOUNT",
     ),
+    "irs_soi.returns_with_rental_royalty_income": (
+        "rental_royalty_income_returns",
+        "COUNT",
+    ),
+    "irs_soi.rental_royalty_income": (
+        "rental_royalty_income_amount",
+        "AMOUNT",
+    ),
     "irs_soi.taxable_ira_distributions": (
         "taxable_ira_distributions_amount",
         "AMOUNT",

@@ -1555,6 +1555,79 @@ def test_arch_consumer_fact_jsonl_provider_maps_eitc_by_agi_and_children(
     }
 
 
+def test_arch_consumer_fact_coverage_accepts_eitc_child_count_totals(
+    tmp_path: Path,
+) -> None:
+    consumer_jsonl = tmp_path / "consumer_facts.jsonl"
+    rows = [
+        _consumer_fact(
+            "eitc-one-child-total-returns",
+            concept="irs_soi.returns_with_total_earned_income_credit",
+            domain="individual_income_tax_returns_with_earned_income_credit",
+            source_name="irs_soi",
+            source_table=(
+                "Publication 1304 Table 2.5 EITC by AGI and qualifying children"
+            ),
+            period={"type": "tax_year", "value": 2022},
+            value=8_490_417,
+            constraints=(
+                {
+                    "variable": "us.tax.earned_income_credit_qualifying_children",
+                    "operator": "==",
+                    "value": 1,
+                    "unit": "count",
+                    "role": "filter",
+                },
+            ),
+        ),
+        _consumer_fact(
+            "eitc-one-child-total-amount",
+            concept="irs_soi.total_earned_income_credit",
+            domain="individual_income_tax_returns_with_earned_income_credit",
+            source_name="irs_soi",
+            source_table=(
+                "Publication 1304 Table 2.5 EITC by AGI and qualifying children"
+            ),
+            period={"type": "tax_year", "value": 2022},
+            value=21_182_747_000,
+            unit="usd",
+            constraints=(
+                {
+                    "variable": "us.tax.earned_income_credit_qualifying_children",
+                    "operator": "==",
+                    "value": 1,
+                    "unit": "count",
+                    "role": "filter",
+                },
+            ),
+        ),
+    ]
+    consumer_jsonl.write_text(
+        "\n".join(json.dumps(row, sort_keys=True) for row in rows) + "\n"
+    )
+    provider = ArchConsumerFactJSONLTargetProvider(consumer_jsonl)
+
+    report = summarize_arch_target_profile_coverage(
+        provider,
+        period=2022,
+        profile_name="custom",
+        target_cells=(
+            {
+                "variable": "eitc",
+                "geo_level": "national",
+                "domain_variable": "eitc_child_count",
+            },
+            {
+                "variable": "tax_unit_count",
+                "geo_level": "national",
+                "domain_variable": "eitc_child_count",
+            },
+        ),
+    )
+
+    assert report.covered_cell_count == 2
+
+
 def test_arch_consumer_fact_jsonl_provider_maps_us_admin_source_families(
     tmp_path: Path,
 ) -> None:

@@ -1351,6 +1351,27 @@ def test_arch_consumer_fact_jsonl_provider_maps_state_broad_soi_concepts(
             value=4_400_400_000,
             unit="usd",
         ),
+        _consumer_fact(
+            "state-ca-rental-returns",
+            concept="irs_soi.returns_with_rental_royalty_income",
+            domain="all_individual_income_tax_returns",
+            source_name="irs_soi",
+            source_table="Historic Table 2 state broad totals",
+            period={"type": "tax_year", "value": 2022},
+            geography=geography,
+            value=1_315_410,
+        ),
+        _consumer_fact(
+            "state-ca-rental",
+            concept="irs_soi.rental_royalty_income",
+            domain="all_individual_income_tax_returns",
+            source_name="irs_soi",
+            source_table="Historic Table 2 state broad totals",
+            period={"type": "tax_year", "value": 2022},
+            geography=geography,
+            value=14_331_993_000,
+            unit="usd",
+        ),
     ]
     consumer_jsonl.write_text(
         "\n".join(json.dumps(row, sort_keys=True) for row in rows) + "\n"
@@ -1403,6 +1424,17 @@ def test_arch_consumer_fact_jsonl_provider_maps_state_broad_soi_concepts(
         ">",
         "0",
     ) in _target_filter_tuples(qbi_claims)
+
+    rental = targets_by_arch_variable["rental_royalty_income_amount"]
+    assert rental.metadata["variable"] == "rental_income"
+    assert rental.measure == "rental_income"
+
+    rental_returns = targets_by_arch_variable["rental_royalty_income_returns"]
+    assert rental_returns.metadata["variable"] == "rental_income"
+    assert rental_returns.aggregation.value == "count"
+    assert ("rental_income", ">", "0") in _target_filter_tuples(
+        rental_returns
+    )
 
 
 def test_arch_consumer_fact_jsonl_provider_maps_eitc_by_agi_and_children(

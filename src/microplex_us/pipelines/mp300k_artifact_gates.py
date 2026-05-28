@@ -10,14 +10,38 @@ from pathlib import Path
 from typing import Any, Literal
 
 import h5py
+import numpy as np
 
 GateStatus = Literal["pass", "fail", "unmeasured"]
 
+_ENTITY_ID_ARRAYS = {
+    "household": "household_id",
+    "person": "person_id",
+    "tax_unit": "tax_unit_id",
+    "spm_unit": "spm_unit_id",
+    "family": "family_id",
+    "marital_unit": "marital_unit_id",
+}
+_PERSON_LINK_ARRAYS = {
+    "household": "person_household_id",
+    "tax_unit": "person_tax_unit_id",
+    "spm_unit": "person_spm_unit_id",
+    "family": "person_family_id",
+    "marital_unit": "person_marital_unit_id",
+}
 _REQUIRED_PERIOD_ARRAYS = (
     "household_id",
     "household_weight",
     "person_id",
     "person_household_id",
+    "tax_unit_id",
+    "person_tax_unit_id",
+    "spm_unit_id",
+    "person_spm_unit_id",
+    "family_id",
+    "person_family_id",
+    "marital_unit_id",
+    "person_marital_unit_id",
 )
 _DEFAULT_REQUIRED_GATES = (
     "candidate_artifact",
@@ -26,6 +50,35 @@ _DEFAULT_REQUIRED_GATES = (
     "runtime",
     "ecps_comparison",
     "benchmark_manifest",
+)
+_FORBIDDEN_SOURCE_DIAGNOSTIC_VARIABLES = frozenset(
+    {
+        "ssi_reported",
+        "ssi_amount_reported",
+        "ssdi_reported",
+        "snap_reported",
+        "tanf_reported",
+        "wic_reported",
+        "source_dataset",
+        "source_survey",
+        "donor_source",
+        "imputation_source",
+    }
+)
+_FORBIDDEN_SOURCE_DIAGNOSTIC_PREFIXES = (
+    "diagnostic_",
+    "source_dataset_",
+    "source_survey_",
+    "donor_source_",
+    "imputation_source_",
+)
+_FORBIDDEN_SOURCE_DIAGNOSTIC_SUFFIXES = (
+    "_diagnostic",
+    "_diagnostics",
+    "_source_dataset",
+    "_source_survey",
+    "_donor_source",
+    "_imputation_source",
 )
 
 
@@ -108,7 +161,7 @@ def build_mp300k_artifact_gate_report(
     return {
         "schema_version": 1,
         "generated_at": datetime.now(UTC).isoformat(),
-        "product": "mp-300k",
+        "product": manifest.get("product") or "mp-300k",
         "gate_set": "artifact_ci",
         "artifact_id": artifact_root.name,
         "artifact_dir": str(artifact_root.resolve()),
@@ -284,12 +337,13 @@ def _artifact_size_gate(
 
 def _compatibility_gate(candidate_dataset: Path, *, period: int) -> dict[str, Any]:
     try:
-        missing = _missing_required_period_arrays(candidate_dataset, period=period)
-        if missing:
+        inspection = _inspect_h5_contract(candidate_dataset, period=period)
+        if inspection["failures"]:
             return _gate(
                 "fail",
-                "candidate H5 is missing required PolicyEngine structural arrays",
-                details={"missing_arrays": missing},
+                "candidate H5 violates the PolicyEngine table contract",
+                metrics=inspection["metrics"],
+                details=inspection["details"],
             )
         from microplex_us.policyengine.us import load_policyengine_us_entity_tables
 
@@ -309,6 +363,7 @@ def _compatibility_gate(candidate_dataset: Path, *, period: int) -> dict[str, An
             "pass",
             "candidate H5 satisfies the structural PolicyEngine table contract",
             metrics={
+                **inspection["metrics"],
                 "household_count": int(len(tables.households)),
                 "person_count": int(len(tables.persons))
                 if tables.persons is not None
@@ -324,16 +379,263 @@ def _compatibility_gate(candidate_dataset: Path, *, period: int) -> dict[str, An
         )
 
 
-def _missing_required_period_arrays(
+def _inspect_h5_contract(
     candidate_dataset: Path, *, period: int
-) -> list[str]:
+) -> dict[str, dict[str, Any] | list[str]]:
     period_key = str(int(period))
+    failures: list[str] = []
+    details: dict[str, Any] = {}
+    metrics: dict[str, Any] = {"period": int(period)}
     with h5py.File(candidate_dataset, "r") as handle:
-        return [
+        period_groups = sorted(
+            name for name, value in handle.items() if isinstance(value, h5py.Group)
+        )
+        metrics["variable_count"] = len(period_groups)
+        metrics["required_structural_array_count"] = len(_REQUIRED_PERIOD_ARRAYS)
+        missing = [
             variable
             for variable in _REQUIRED_PERIOD_ARRAYS
             if variable not in handle or period_key not in handle[variable]
         ]
+        if missing:
+            failures.append("missing_required_period_arrays")
+            details["missing_arrays"] = missing
+
+        variables_missing_period = [
+            variable for variable in period_groups if period_key not in handle[variable]
+        ]
+        if variables_missing_period:
+            failures.append("variables_missing_requested_period")
+            details["variables_missing_period"] = variables_missing_period
+
+        forbidden_variables = [
+            variable
+            for variable in period_groups
+            if _is_forbidden_source_diagnostic_variable(variable)
+        ]
+        if forbidden_variables:
+            failures.append("source_diagnostic_variables_exported")
+            details["forbidden_source_diagnostic_variables"] = forbidden_variables
+
+        arrays = {
+            variable: np.asarray(handle[variable][period_key])
+            for variable in _REQUIRED_PERIOD_ARRAYS
+            if variable in handle and period_key in handle[variable]
+        }
+        _inspect_structural_dtypes(arrays, failures=failures, details=details)
+        _inspect_structural_lengths(arrays, failures=failures, details=details)
+        _inspect_entity_ids(arrays, failures=failures, details=details)
+        _inspect_person_links(arrays, failures=failures, details=details)
+        _inspect_household_weights(arrays, failures=failures, details=details)
+        nonfinite = _nonfinite_numeric_period_arrays(
+            handle,
+            period_key=period_key,
+        )
+        if nonfinite:
+            failures.append("nonfinite_numeric_period_arrays")
+            details["nonfinite_numeric_arrays"] = nonfinite
+            metrics["nonfinite_numeric_array_count"] = len(nonfinite)
+        else:
+            metrics["nonfinite_numeric_array_count"] = 0
+
+    metrics.update(_structural_count_metrics(arrays))
+    return {"failures": failures, "details": details, "metrics": metrics}
+
+
+def _is_forbidden_source_diagnostic_variable(variable: str) -> bool:
+    return (
+        variable in _FORBIDDEN_SOURCE_DIAGNOSTIC_VARIABLES
+        or variable.startswith(_FORBIDDEN_SOURCE_DIAGNOSTIC_PREFIXES)
+        or variable.endswith(_FORBIDDEN_SOURCE_DIAGNOSTIC_SUFFIXES)
+    )
+
+
+def _inspect_structural_dtypes(
+    arrays: dict[str, np.ndarray],
+    *,
+    failures: list[str],
+    details: dict[str, Any],
+) -> None:
+    invalid_id_dtypes = {
+        variable: str(values.dtype)
+        for variable, values in arrays.items()
+        if variable != "household_weight" and not _is_valid_id_dtype(values.dtype)
+    }
+    if invalid_id_dtypes:
+        failures.append("invalid_structural_id_dtypes")
+        details["invalid_structural_id_dtypes"] = invalid_id_dtypes
+
+    household_weight = arrays.get("household_weight")
+    if household_weight is not None and not _is_valid_weight_dtype(
+        household_weight.dtype
+    ):
+        failures.append("invalid_household_weight_dtype")
+        details["invalid_household_weight_dtype"] = str(household_weight.dtype)
+
+
+def _is_valid_id_dtype(dtype: np.dtype[Any]) -> bool:
+    return np.issubdtype(dtype, np.integer) or dtype.kind in {"S", "U", "O"}
+
+
+def _is_valid_weight_dtype(dtype: np.dtype[Any]) -> bool:
+    return np.issubdtype(dtype, np.number) and dtype.kind != "b"
+
+
+def _inspect_structural_lengths(
+    arrays: dict[str, np.ndarray],
+    *,
+    failures: list[str],
+    details: dict[str, Any],
+) -> None:
+    household_count = _array_length(arrays.get("household_id"))
+    person_count = _array_length(arrays.get("person_id"))
+    length_mismatches: dict[str, dict[str, int | None]] = {}
+    if household_count is not None:
+        _record_length_mismatch(
+            length_mismatches,
+            "household_weight",
+            actual=_array_length(arrays.get("household_weight")),
+            expected=household_count,
+        )
+    if person_count is not None:
+        for variable in _PERSON_LINK_ARRAYS.values():
+            _record_length_mismatch(
+                length_mismatches,
+                variable,
+                actual=_array_length(arrays.get(variable)),
+                expected=person_count,
+            )
+    if length_mismatches:
+        failures.append("structural_array_length_mismatches")
+        details["structural_array_length_mismatches"] = length_mismatches
+
+
+def _array_length(values: np.ndarray | None) -> int | None:
+    if values is None:
+        return None
+    return int(values.shape[0]) if values.ndim else 1
+
+
+def _record_length_mismatch(
+    length_mismatches: dict[str, dict[str, int | None]],
+    variable: str,
+    *,
+    actual: int | None,
+    expected: int,
+) -> None:
+    if actual != expected:
+        length_mismatches[variable] = {
+            "actual": actual,
+            "expected": expected,
+        }
+
+
+def _inspect_entity_ids(
+    arrays: dict[str, np.ndarray],
+    *,
+    failures: list[str],
+    details: dict[str, Any],
+) -> None:
+    duplicate_ids: dict[str, int] = {}
+    empty_entities: list[str] = []
+    for variable in _ENTITY_ID_ARRAYS.values():
+        values = arrays.get(variable)
+        if values is None:
+            continue
+        if _array_length(values) == 0:
+            empty_entities.append(variable)
+            continue
+        unique_count = len(np.unique(values))
+        if unique_count != len(values):
+            duplicate_ids[variable] = int(len(values) - unique_count)
+    if empty_entities:
+        failures.append("empty_entity_id_arrays")
+        details["empty_entity_id_arrays"] = empty_entities
+    if duplicate_ids:
+        failures.append("duplicate_entity_ids")
+        details["duplicate_entity_ids"] = duplicate_ids
+
+
+def _inspect_person_links(
+    arrays: dict[str, np.ndarray],
+    *,
+    failures: list[str],
+    details: dict[str, Any],
+) -> None:
+    invalid_links: dict[str, list[Any]] = {}
+    for entity, link_variable in _PERSON_LINK_ARRAYS.items():
+        id_variable = _ENTITY_ID_ARRAYS[entity]
+        link_values = arrays.get(link_variable)
+        id_values = arrays.get(id_variable)
+        if link_values is None or id_values is None:
+            continue
+        missing_values = link_values[~np.isin(link_values, id_values)]
+        if missing_values.size:
+            invalid_links[link_variable] = _jsonable_sample(missing_values)
+    if invalid_links:
+        failures.append("invalid_person_entity_links")
+        details["invalid_person_entity_links"] = invalid_links
+
+
+def _inspect_household_weights(
+    arrays: dict[str, np.ndarray],
+    *,
+    failures: list[str],
+    details: dict[str, Any],
+) -> None:
+    household_weight = arrays.get("household_weight")
+    if household_weight is None:
+        return
+    values = np.asarray(household_weight, dtype=np.float64)
+    if not np.isfinite(values).all():
+        failures.append("nonfinite_household_weights")
+        details["nonfinite_household_weight_count"] = int(
+            np.size(values) - np.isfinite(values).sum()
+        )
+    negative_count = int((values < 0).sum())
+    if negative_count:
+        failures.append("negative_household_weights")
+        details["negative_household_weight_count"] = negative_count
+
+
+def _nonfinite_numeric_period_arrays(
+    handle: h5py.File,
+    *,
+    period_key: str,
+) -> dict[str, int]:
+    nonfinite: dict[str, int] = {}
+    for variable, group in handle.items():
+        if not isinstance(group, h5py.Group) or period_key not in group:
+            continue
+        dataset = group[period_key]
+        if not np.issubdtype(dataset.dtype, np.floating):
+            continue
+        values = np.asarray(dataset)
+        finite = np.isfinite(values)
+        if not finite.all():
+            nonfinite[variable] = int(np.size(values) - finite.sum())
+    return nonfinite
+
+
+def _structural_count_metrics(arrays: dict[str, np.ndarray]) -> dict[str, int]:
+    metrics: dict[str, int] = {}
+    for entity, variable in _ENTITY_ID_ARRAYS.items():
+        count = _array_length(arrays.get(variable))
+        if count is not None:
+            metrics[f"{entity}_count"] = count
+    return metrics
+
+
+def _jsonable_sample(values: np.ndarray, *, limit: int = 5) -> list[Any]:
+    sample = np.unique(values)[:limit].tolist()
+    result: list[Any] = []
+    for value in sample:
+        if hasattr(value, "item"):
+            value = value.item()
+        if isinstance(value, bytes):
+            value = value.decode("utf-8", errors="replace")
+        result.append(value)
+    return result
 
 
 def _resolve_ecps_comparison_payload(
@@ -465,12 +767,32 @@ def _runtime_gate(
         return _gate("unmeasured", "runtime smoke benchmark has not been attached")
     payload = dict(runtime_smoke_payload)
     threshold = float(runtime_ratio_threshold)
-    ratio = payload.get("runtime_ratio")
-    candidate_seconds = payload.get("candidate_seconds")
-    baseline_seconds = payload.get("baseline_seconds")
+    ratio = _first_present(payload, "runtime_ratio", "median_runtime_ratio")
+    candidate_seconds = _first_present(payload, "candidate_seconds")
+    baseline_seconds = _first_present(payload, "baseline_seconds")
+    candidate_payload = payload.get("candidate")
+    baseline_payload = payload.get("baseline")
+    if isinstance(candidate_payload, dict):
+        if candidate_seconds is None:
+            candidate_seconds = _first_present(
+                candidate_payload,
+                "median_elapsed_seconds",
+                "elapsed_seconds",
+            )
+    if isinstance(baseline_payload, dict):
+        if baseline_seconds is None:
+            baseline_seconds = _first_present(
+                baseline_payload,
+                "median_elapsed_seconds",
+                "elapsed_seconds",
+            )
     if ratio is None and candidate_seconds is not None and baseline_seconds:
         ratio = float(candidate_seconds) / float(baseline_seconds)
-    passes = payload.get("passes_runtime_gate")
+    passes = _first_present(
+        payload,
+        "passes_runtime_gate",
+        "passes_runtime_ratio_1_25x",
+    )
     details: dict[str, Any] = {}
     reported_threshold = payload.get("runtime_ratio_threshold")
     reported_threshold_matches = False
@@ -511,6 +833,13 @@ def _runtime_gate(
         },
         details=details,
     )
+
+
+def _first_present(payload: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        if key in payload:
+            return payload[key]
+    return None
 
 
 def _benchmark_manifest_gate(

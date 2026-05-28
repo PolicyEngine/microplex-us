@@ -417,3 +417,70 @@ def test_dashboard_payload_reads_run_contract_summaries(tmp_path):
     assert contracts[0]["run_id"] == "contracted-run"
     assert contracts[0]["status"] == "running"
     assert contracts[0]["completed_stages"] == ["preflight"]
+
+
+def test_dashboard_payload_reads_mp300k_artifact_gate_reports(tmp_path):
+    artifacts = tmp_path / "artifacts"
+    gate_dir = artifacts / "mp120k_release"
+    gate_dir.mkdir(parents=True)
+    (gate_dir / "mp300k_artifact_gates.json").write_text(
+        json.dumps(
+            {
+                "artifact_id": "mp120k_release",
+                "product": "mp-120k",
+                "period": 2024,
+                "summary": {
+                    "status": "passed",
+                    "passing_required_gate_count": 6,
+                    "failed_required_gate_count": 0,
+                    "unmeasured_required_gate_count": 0,
+                    "failed_required_gates": [],
+                    "unmeasured_required_gates": [],
+                },
+                "candidate_dataset": {
+                    "path": "/tmp/pe_l0_candidate.h5",
+                    "size_bytes": 150_658_539,
+                },
+                "gates": {
+                    "compatibility": {
+                        "status": "pass",
+                        "metrics": {
+                            "household_count": 120_000,
+                            "person_count": 261_177,
+                        },
+                    },
+                    "artifact_size": {
+                        "status": "pass",
+                        "metrics": {"artifact_size_ratio": 1.36},
+                    },
+                    "runtime": {
+                        "status": "pass",
+                        "metrics": {"runtime_ratio": 1.19},
+                    },
+                    "ecps_comparison": {
+                        "status": "pass",
+                        "metrics": {
+                            "candidate_enhanced_cps_native_loss": 0.0936,
+                            "baseline_enhanced_cps_native_loss": 0.1664,
+                            "enhanced_cps_native_loss_delta": -0.0728,
+                        },
+                    },
+                },
+            }
+        )
+    )
+
+    payload = build_dashboard_payload(
+        artifact_root=artifacts,
+        policyengine_us_data_repo=None,
+        include_tmux=False,
+    )
+
+    reports = payload["run_board"]["mp300k_artifact_gate_reports"]
+    assert len(reports) == 1
+    assert reports[0]["status"] == "passed"
+    assert reports[0]["product"] == "mp-120k"
+    assert reports[0]["candidate_households"] == 120_000
+    assert reports[0]["artifact_size_ratio"] == 1.36
+    assert reports[0]["runtime_ratio"] == 1.19
+    assert reports[0]["candidate_loss"] == 0.0936

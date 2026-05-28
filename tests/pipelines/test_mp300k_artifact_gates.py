@@ -22,18 +22,22 @@ def _write_minimal_policyengine_dataset(path: Path, *, period: int = 2024) -> Pa
         "household_weight": {str(period): np.asarray([10.0, 20.0])},
         "person_id": {str(period): np.asarray([1, 2, 3])},
         "person_household_id": {str(period): np.asarray([1, 1, 2])},
+        "tax_unit_id": {str(period): np.asarray([10, 20])},
+        "person_tax_unit_id": {str(period): np.asarray([10, 10, 20])},
+        "spm_unit_id": {str(period): np.asarray([100, 200])},
+        "person_spm_unit_id": {str(period): np.asarray([100, 100, 200])},
+        "family_id": {str(period): np.asarray([1000, 2000])},
+        "person_family_id": {str(period): np.asarray([1000, 1000, 2000])},
+        "marital_unit_id": {str(period): np.asarray([10000, 10001, 20000])},
+        "person_marital_unit_id": {str(period): np.asarray([10000, 10001, 20000])},
     }
     return write_policyengine_us_time_period_dataset(arrays, path)
 
 
 def _write_incomplete_policyengine_dataset(path: Path, *, period: int = 2024) -> Path:
-    with h5py.File(path, "w") as handle:
-        household_id = handle.create_group("household_id")
-        household_id.create_dataset(str(period), data=[1, 2])
-        household_weight = handle.create_group("household_weight")
-        household_weight.create_dataset(str(period), data=[10.0, 20.0])
-        person_id = handle.create_group("person_id")
-        person_id.create_dataset(str(period), data=[1, 2, 3])
+    _write_minimal_policyengine_dataset(path, period=period)
+    with h5py.File(path, "a") as handle:
+        del handle["person_household_id"]
     return path
 
 
@@ -129,6 +133,77 @@ def test_write_mp300k_artifact_gate_report_fails_missing_structural_array(tmp_pa
     assert record["gates"]["ecps_comparison"]["status"] == "unmeasured"
 
 
+def test_write_mp300k_artifact_gate_report_fails_invalid_entity_join(tmp_path):
+    artifact_dir = tmp_path / "artifact"
+    artifact_dir.mkdir()
+    _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
+    with h5py.File(artifact_dir / "candidate.h5", "a") as handle:
+        handle["person_household_id"]["2024"][2] = 999
+    _write_artifact_manifest(artifact_dir)
+
+    report_path = write_mp300k_artifact_gate_report(
+        artifact_dir,
+        compute_native_scores=False,
+        update_manifest=False,
+    )
+
+    record = json.loads(report_path.read_text())
+
+    assert record["summary"]["status"] == "failed"
+    assert record["gates"]["compatibility"]["status"] == "fail"
+    assert record["gates"]["compatibility"]["details"][
+        "invalid_person_entity_links"
+    ] == {"person_household_id": [999]}
+
+
+def test_write_mp300k_artifact_gate_report_fails_source_diagnostic_variable(tmp_path):
+    artifact_dir = tmp_path / "artifact"
+    artifact_dir.mkdir()
+    _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
+    with h5py.File(artifact_dir / "candidate.h5", "a") as handle:
+        diagnostic = handle.create_group("ssi_reported")
+        diagnostic.create_dataset("2024", data=np.asarray([1.0, 0.0, 0.0]))
+    _write_artifact_manifest(artifact_dir)
+
+    report_path = write_mp300k_artifact_gate_report(
+        artifact_dir,
+        compute_native_scores=False,
+        update_manifest=False,
+    )
+
+    record = json.loads(report_path.read_text())
+
+    assert record["summary"]["status"] == "failed"
+    assert record["gates"]["compatibility"]["status"] == "fail"
+    assert record["gates"]["compatibility"]["details"][
+        "forbidden_source_diagnostic_variables"
+    ] == ["ssi_reported"]
+
+
+def test_write_mp300k_artifact_gate_report_fails_nonfinite_numeric_value(tmp_path):
+    artifact_dir = tmp_path / "artifact"
+    artifact_dir.mkdir()
+    _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
+    with h5py.File(artifact_dir / "candidate.h5", "a") as handle:
+        income = handle.create_group("employment_income")
+        income.create_dataset("2024", data=np.asarray([1.0, np.nan, 3.0]))
+    _write_artifact_manifest(artifact_dir)
+
+    report_path = write_mp300k_artifact_gate_report(
+        artifact_dir,
+        compute_native_scores=False,
+        update_manifest=False,
+    )
+
+    record = json.loads(report_path.read_text())
+
+    assert record["summary"]["status"] == "failed"
+    assert record["gates"]["compatibility"]["status"] == "fail"
+    assert record["gates"]["compatibility"]["details"]["nonfinite_numeric_arrays"] == {
+        "employment_income": 1
+    }
+
+
 def test_write_mp300k_artifact_gate_report_reports_missing_candidate(tmp_path):
     artifact_dir = tmp_path / "artifact"
     artifact_dir.mkdir()
@@ -220,6 +295,42 @@ def test_ecps_comparison_can_become_nonblocking(tmp_path):
     assert "ecps_comparison" not in record["required_gates"]
     assert record["gates"]["ecps_comparison"]["status"] == "unmeasured"
     assert record["summary"]["unmeasured_optional_gates"] == ["ecps_comparison"]
+
+
+def test_runtime_gate_accepts_repeated_loader_smoke_payload(tmp_path):
+    artifact_dir = tmp_path / "artifact"
+    artifact_dir.mkdir()
+    _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
+    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
+    benchmark_manifest = tmp_path / "benchmark_manifest.json"
+    benchmark_manifest.write_text(json.dumps({"schema_version": 1}))
+
+    report_path = write_mp300k_artifact_gate_report(
+        artifact_dir,
+        ecps_comparison_payload={
+            "summary": {
+                "candidate_enhanced_cps_native_loss": 0.10,
+                "baseline_enhanced_cps_native_loss": 0.20,
+            }
+        },
+        runtime_smoke_payload={
+            "median_runtime_ratio": 1.19,
+            "candidate": {"median_elapsed_seconds": 0.137},
+            "baseline": {"median_elapsed_seconds": 0.115},
+        },
+        benchmark_manifest_path=benchmark_manifest,
+        compute_native_scores=False,
+        update_manifest=False,
+    )
+
+    record = json.loads(report_path.read_text())
+
+    assert record["summary"]["status"] == "passed"
+    assert record["gates"]["runtime"]["status"] == "pass"
+    assert record["gates"]["runtime"]["metrics"]["runtime_ratio"] == 1.19
+    assert record["gates"]["runtime"]["metrics"]["candidate_seconds"] == 0.137
+    assert record["gates"]["runtime"]["metrics"]["baseline_seconds"] == 0.115
 
 
 def test_ecps_comparison_accepts_existing_broad_loss_array_payload(tmp_path):

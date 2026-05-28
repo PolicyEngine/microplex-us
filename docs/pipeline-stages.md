@@ -8,8 +8,8 @@ separate from parity or migration roadmaps against incumbent data packages.
 1. Run profile
    -> 2. Source contracts and loading
    -> 3. Source planning, fusion planning, and scaffold selection
-   -> 4. Seed construction and donor integration
-   -> 5. Synthesis, candidate population, and support enforcement
+   -> 4. Seed/scaffold construction
+   -> 5. Donor integration, synthesis, and support enforcement
    -> 6. PolicyEngine entity construction and microsimulation materialization
    -> 7. Target resolution, selection, and calibration
    -> 8. Dataset assembly and publication
@@ -34,16 +34,19 @@ Reasons about the source mix: variable coverage, scaffold selection, donor
 sources, and variable families that need donor integration or synthetic
 generation.
 
-## Stage 4: Seed construction and donor integration
+## Stage 4: Seed/scaffold construction
 
-Projects the scaffold into the canonical seed schema and integrates donor
-variables, conditioning surfaces, exclusions, and authoritative overrides.
+Projects the selected scaffold source into the canonical seed schema. The saved
+boundary artifact is the pre-donor seed frame, which makes the scaffold-only
+state visible before donor variables, conditioning surfaces, exclusions, and
+authoritative overrides are applied.
 
-## Stage 5: Synthesis, candidate population, and support enforcement
+## Stage 5: Donor integration, synthesis, and support enforcement
 
-Produces the candidate population that will be calibrated. This may be seed
-passthrough, bootstrap synthesis, or model-backed synthesis, depending on the
-selected backend.
+Integrates donor variables, applies donor semantic guards, and produces the
+candidate population that will be calibrated. This may be seed passthrough,
+bootstrap synthesis, or model-backed synthesis, depending on the selected
+backend.
 
 ## Stage 6: PolicyEngine entity construction and microsimulation materialization
 

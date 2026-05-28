@@ -75,6 +75,7 @@ class USMicroplexArtifactPaths:
     targets: Path
     manifest: Path
     version_id: str | None = None
+    scaffold_seed_data: Path | None = None
     synthesizer: Path | None = None
     policyengine_dataset: Path | None = None
     data_flow_snapshot: Path | None = None
@@ -130,6 +131,16 @@ def replay_us_microplex_policyengine_stage_from_artifact(
     seed_data = pd.read_parquet(
         _resolve_saved_artifact_file(artifact_root, manifest, "seed_data")
     )
+    scaffold_seed_data_path = _resolve_optional_saved_artifact_file(
+        artifact_root,
+        manifest,
+        "scaffold_seed_data",
+    )
+    scaffold_seed_data = (
+        pd.read_parquet(scaffold_seed_data_path)
+        if scaffold_seed_data_path is not None
+        else None
+    )
     synthetic_data = pd.read_parquet(
         _resolve_saved_artifact_file(artifact_root, manifest, "synthetic_data")
     )
@@ -170,6 +181,7 @@ def replay_us_microplex_policyengine_stage_from_artifact(
         calibration_summary=calibration_summary,
         synthesis_metadata=synthesis_metadata,
         policyengine_tables=policyengine_tables,
+        scaffold_seed_data=scaffold_seed_data,
     )
 
 
@@ -250,6 +262,23 @@ def _resolve_saved_artifact_file(
         path = artifact_root / path
     if not path.exists():
         raise FileNotFoundError(f"Saved artifact file not found: {path}")
+    return path
+
+
+def _resolve_optional_saved_artifact_file(
+    artifact_root: Path,
+    manifest: dict[str, Any],
+    artifact_key: str,
+) -> Path | None:
+    artifacts = dict(manifest.get("artifacts", {}))
+    filename = artifacts.get(artifact_key)
+    if not filename:
+        return None
+    path = Path(str(filename))
+    if not path.is_absolute():
+        path = artifact_root / path
+    if not path.exists():
+        raise FileNotFoundError(f"Saved optional artifact file not found: {path}")
     return path
 
 
@@ -357,6 +386,11 @@ def save_us_microplex_artifacts(
     stage_manifest_path = output_dir / "stage_manifest.json"
     stage_artifact_root = output_dir / US_STAGE_ARTIFACT_ROOT
     source_plan_path = stage_artifact_root / "03_source_planning" / "source_plan.json"
+    scaffold_seed_data_path = (
+        stage_artifact_root / "04_seed_scaffold" / "scaffold_seed_data.parquet"
+        if result.scaffold_seed_data is not None
+        else None
+    )
     policyengine_entity_tables_path = (
         stage_artifact_root / "06_policyengine_entities" / "metadata.json"
         if result.policyengine_tables is not None
@@ -376,6 +410,9 @@ def save_us_microplex_artifacts(
     resolved_run_index_path = None
     harness_payload = None
 
+    if result.scaffold_seed_data is not None and scaffold_seed_data_path is not None:
+        scaffold_seed_data_path.parent.mkdir(parents=True, exist_ok=True)
+        result.scaffold_seed_data.to_parquet(scaffold_seed_data_path, index=False)
     result.seed_data.to_parquet(seed_data_path, index=False)
     result.synthetic_data.to_parquet(synthetic_data_path, index=False)
     result.calibrated_data.to_parquet(calibrated_data_path, index=False)
@@ -535,6 +572,11 @@ def save_us_microplex_artifacts(
         "calibration": result.calibration_summary,
         "artifacts": {
             "seed_data": seed_data_path.name,
+            "scaffold_seed_data": (
+                str(scaffold_seed_data_path.relative_to(output_dir))
+                if scaffold_seed_data_path is not None
+                else None
+            ),
             "synthetic_data": synthetic_data_path.name,
             "calibrated_data": calibrated_data_path.name,
             "targets": targets_path.name,
@@ -632,6 +674,7 @@ def save_us_microplex_artifacts(
             "policyengine_harness" if harness_summary is not None else None
         ),
         required_artifact_keys=(
+            *(("scaffold_seed_data",) if scaffold_seed_data_path is not None else ()),
             "seed_data",
             "synthetic_data",
             "calibrated_data",
@@ -673,6 +716,7 @@ def save_us_microplex_artifacts(
         calibrated_data=calibrated_data_path,
         targets=targets_path,
         manifest=manifest_path,
+        scaffold_seed_data=scaffold_seed_data_path,
         synthesizer=synthesizer_path,
         policyengine_dataset=policyengine_dataset_path,
         data_flow_snapshot=data_flow_snapshot_path,
@@ -750,6 +794,7 @@ def save_versioned_us_microplex_artifacts(
         calibrated_data=paths.calibrated_data,
         targets=paths.targets,
         manifest=paths.manifest,
+        scaffold_seed_data=paths.scaffold_seed_data,
         synthesizer=paths.synthesizer,
         policyengine_dataset=paths.policyengine_dataset,
         data_flow_snapshot=paths.data_flow_snapshot,

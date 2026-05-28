@@ -1609,6 +1609,7 @@ class USMicroplexBuildResult:
     source_frame: ObservationFrame | None = None
     source_frames: tuple[ObservationFrame, ...] = ()
     fusion_plan: FusionPlan | None = None
+    scaffold_seed_data: pd.DataFrame | None = None
 
     @property
     def n_nonzero_weights(self) -> int:
@@ -1701,6 +1702,7 @@ class USMicroplexPipeline:
         fusion_plan = FusionPlan.from_sources([frame.source for frame in frames])
         scaffold_input = self._select_scaffold_source(source_inputs)
         seed_data = self.prepare_seed_data_from_source(scaffold_input)
+        scaffold_seed_data = seed_data.copy()
         donor_integration = self._integrate_donor_sources(
             seed_data,
             scaffold_input=scaffold_input,
@@ -1864,6 +1866,7 @@ class USMicroplexPipeline:
             source_frame=scaffold_input.frame,
             source_frames=tuple(frame for frame in frames),
             fusion_plan=fusion_plan,
+            scaffold_seed_data=scaffold_seed_data,
         )
 
     def build(

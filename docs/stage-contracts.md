@@ -15,13 +15,17 @@ by each stage, and the current resume posture.
 The first implementation is explicit rather than automatic. It writes reusable
 boundary artifacts where the pipeline already has stable outputs:
 
-- Stage 4: `seed_data.parquet`
-- Stage 5: `synthetic_data.parquet`
+- Stage 4: `stage_artifacts/04_seed_scaffold/scaffold_seed_data.parquet`
+- Stage 5: `seed_data.parquet` and `synthetic_data.parquet`
 - Stage 6: `stage_artifacts/06_policyengine_entities/`
 - Stage 7: `calibrated_data.parquet`, `targets.json`, and
   `stage_artifacts/07_calibration/calibration_summary.json`
 - Stage 8: `policyengine_us.h5`
 - Stage 9: validation and benchmark evidence sidecars
+
+The Stage 4 artifact is the scaffold-projected seed before donor integration. It
+is a diagnostic and manual replay boundary, not an automatic conditional resume
+point yet.
 
 Conditional execution is intentionally not implemented yet. The stage manifest
 and artifacts are designed to make that possible later without changing the

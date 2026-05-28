@@ -433,18 +433,24 @@ def _stage_status(
         if _artifact_exists(artifacts, "source_plan"):
             return "ready"
         return "metadata_only" if synthesis.get("scaffold_source") else "missing"
-    if stage_id == "04_seed_and_donors":
+    if stage_id == "04_seed_scaffold":
         if _referenced_artifact_missing(artifacts, required_only=True):
             return "incomplete"
         if _required_artifacts_exist(artifacts):
             return "ready"
-        return "metadata_only" if rows.get("seed") else "missing"
-    if stage_id == "05_synthesis":
+        return (
+            "metadata_only"
+            if rows.get("seed") or synthesis.get("scaffold_source")
+            else "missing"
+        )
+    if stage_id == "05_donor_integration_synthesis":
         if _referenced_artifact_missing(artifacts, required_only=True):
             return "incomplete"
         if _required_artifacts_exist(artifacts):
             return "ready"
-        return "metadata_only" if rows.get("synthetic") else "missing"
+        return (
+            "metadata_only" if rows.get("seed") or rows.get("synthetic") else "missing"
+        )
     if stage_id == "06_policyengine_entities":
         if _referenced_artifact_missing(artifacts):
             return "incomplete"
@@ -602,16 +608,18 @@ def _stage_metrics(stage_id: str, *, manifest: dict[str, Any]) -> list[USStageMe
         ]
     if stage_id == "03_source_planning":
         return [{"label": "Scaffold", "value": synthesis.get("scaffold_source")}]
-    if stage_id == "04_seed_and_donors":
+    if stage_id == "04_seed_scaffold":
+        return [
+            {"label": "Seed rows", "value": rows.get("seed")},
+            {"label": "Scaffold", "value": synthesis.get("scaffold_source")},
+        ]
+    if stage_id == "05_donor_integration_synthesis":
         return [
             {"label": "Seed rows", "value": rows.get("seed")},
             {
                 "label": "Integrated vars",
                 "value": len(synthesis.get("donor_integrated_variables", ())),
             },
-        ]
-    if stage_id == "05_synthesis":
-        return [
             {"label": "Backend", "value": synthesis.get("backend")},
             {"label": "Synthetic rows", "value": rows.get("synthetic")},
         ]

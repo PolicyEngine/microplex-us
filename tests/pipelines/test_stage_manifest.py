@@ -18,6 +18,11 @@ from microplex_us.policyengine import PolicyEngineUSEntityTableBundle
 
 def test_build_us_stage_manifest_reports_nine_stage_statuses(tmp_path):
     (tmp_path / "manifest.json").write_text("{}")
+    scaffold_seed_path = (
+        tmp_path / "stage_artifacts" / "04_seed_scaffold" / "scaffold_seed_data.parquet"
+    )
+    scaffold_seed_path.parent.mkdir(parents=True)
+    scaffold_seed_path.write_text("scaffold")
     (tmp_path / "seed_data.parquet").write_text("seed")
     (tmp_path / "synthetic_data.parquet").write_text("synthetic")
     (tmp_path / "calibrated_data.parquet").write_text("calibrated")
@@ -35,6 +40,9 @@ def test_build_us_stage_manifest_reports_nine_stage_statuses(tmp_path):
         },
         "calibration": {"backend": "policyengine_db_entropy"},
         "artifacts": {
+            "scaffold_seed_data": (
+                "stage_artifacts/04_seed_scaffold/scaffold_seed_data.parquet"
+            ),
             "seed_data": "seed_data.parquet",
             "synthetic_data": "synthetic_data.parquet",
             "calibrated_data": "calibrated_data.parquet",
@@ -51,8 +59,8 @@ def test_build_us_stage_manifest_reports_nine_stage_statuses(tmp_path):
         "01_run_profile",
         "02_source_loading",
         "03_source_planning",
-        "04_seed_and_donors",
-        "05_synthesis",
+        "04_seed_scaffold",
+        "05_donor_integration_synthesis",
         "06_policyengine_entities",
         "07_calibration",
         "08_dataset_assembly",
@@ -62,8 +70,8 @@ def test_build_us_stage_manifest_reports_nine_stage_statuses(tmp_path):
     assert statuses["01_run_profile"] == "ready"
     assert statuses["02_source_loading"] == "metadata_only"
     assert statuses["03_source_planning"] == "metadata_only"
-    assert statuses["04_seed_and_donors"] == "ready"
-    assert statuses["05_synthesis"] == "ready"
+    assert statuses["04_seed_scaffold"] == "ready"
+    assert statuses["05_donor_integration_synthesis"] == "ready"
     assert statuses["06_policyengine_entities"] == "metadata_only"
     assert statuses["07_calibration"] == "ready"
     assert statuses["08_dataset_assembly"] == "ready"
@@ -81,6 +89,9 @@ def test_build_us_stage_manifest_reports_incomplete_referenced_artifacts(tmp_pat
             "backend": "seed",
         },
         "artifacts": {
+            "scaffold_seed_data": (
+                "stage_artifacts/04_seed_scaffold/scaffold_seed_data.parquet"
+            ),
             "seed_data": "seed_data.parquet",
             "synthetic_data": "synthetic_data.parquet",
             "policyengine_harness": "policyengine_harness.json",
@@ -90,8 +101,8 @@ def test_build_us_stage_manifest_reports_incomplete_referenced_artifacts(tmp_pat
     payload = build_us_stage_manifest(tmp_path, manifest_payload=manifest)
 
     statuses = {stage["id"]: stage["status"] for stage in payload["stages"]}
-    assert statuses["04_seed_and_donors"] == "incomplete"
-    assert statuses["05_synthesis"] == "incomplete"
+    assert statuses["04_seed_scaffold"] == "incomplete"
+    assert statuses["05_donor_integration_synthesis"] == "incomplete"
     assert statuses["09_validation_benchmarking"] == "incomplete"
 
 

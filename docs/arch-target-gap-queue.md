@@ -67,8 +67,8 @@ Snapshot date: 2026-05-22.
 
 Inputs:
 
-- `/Users/maxghenis/CosilicoAI/arch/arch/fixtures/consumer_facts.jsonl`
-- `/Users/maxghenis/CosilicoAI/arch/macro/targets.db`
+- `/Users/maxghenis/PolicyEngine/arch/arch/fixtures/consumer_facts.jsonl`
+- `/Users/maxghenis/PolicyEngine/arch/macro/targets.db`
 - `/tmp/arch-suite-hhs-acf-tanf-caseload-2024/consumer_facts.jsonl`
 - `/tmp/arch-suite-soi-historic-table-2-2022/consumer_facts.jsonl`
 - `/tmp/arch-suite-hhs-acf-liheap-fy2024-national-profile/consumer_facts.jsonl`
@@ -82,8 +82,8 @@ Command:
 
 ```bash
 uv run --extra policyengine microplex-us-arch-target-refresh \
-  --arch-targets-db /Users/maxghenis/CosilicoAI/arch/arch/fixtures/consumer_facts.jsonl \
-  --arch-targets-db /Users/maxghenis/CosilicoAI/arch/macro/targets.db \
+  --arch-targets-db /Users/maxghenis/PolicyEngine/arch/arch/fixtures/consumer_facts.jsonl \
+  --arch-targets-db /Users/maxghenis/PolicyEngine/arch/macro/targets.db \
   --arch-targets-db /tmp/arch-suite-hhs-acf-tanf-caseload-2024/consumer_facts.jsonl \
   --arch-targets-db /tmp/arch-suite-soi-historic-table-2-2022/consumer_facts.jsonl \
   --arch-targets-db /tmp/arch-suite-hhs-acf-liheap-fy2024-national-profile/consumer_facts.jsonl \

@@ -1372,6 +1372,48 @@ def test_arch_consumer_fact_jsonl_provider_maps_state_broad_soi_concepts(
             value=14_331_993_000,
             unit="usd",
         ),
+        _consumer_fact(
+            "state-ca-ctc-returns",
+            concept="irs_soi.returns_with_child_tax_credit",
+            domain="all_individual_income_tax_returns",
+            source_name="irs_soi",
+            source_table="Historic Table 2 state broad totals",
+            period={"type": "tax_year", "value": 2022},
+            geography=geography,
+            value=4_626_510,
+        ),
+        _consumer_fact(
+            "state-ca-ctc",
+            concept="irs_soi.child_tax_credit",
+            domain="all_individual_income_tax_returns",
+            source_name="irs_soi",
+            source_table="Historic Table 2 state broad totals",
+            period={"type": "tax_year", "value": 2022},
+            geography=geography,
+            value=9_724_583_000,
+            unit="usd",
+        ),
+        _consumer_fact(
+            "state-ca-actc-returns",
+            concept="irs_soi.returns_with_additional_child_tax_credit",
+            domain="all_individual_income_tax_returns",
+            source_name="irs_soi",
+            source_table="Historic Table 2 state broad totals",
+            period={"type": "tax_year", "value": 2022},
+            geography=geography,
+            value=1_933_500,
+        ),
+        _consumer_fact(
+            "state-ca-actc",
+            concept="irs_soi.additional_child_tax_credit",
+            domain="all_individual_income_tax_returns",
+            source_name="irs_soi",
+            source_table="Historic Table 2 state broad totals",
+            period={"type": "tax_year", "value": 2022},
+            geography=geography,
+            value=3_605_628_000,
+            unit="usd",
+        ),
     ]
     consumer_jsonl.write_text(
         "\n".join(json.dumps(row, sort_keys=True) for row in rows) + "\n"
@@ -1434,6 +1476,28 @@ def test_arch_consumer_fact_jsonl_provider_maps_state_broad_soi_concepts(
     assert rental_returns.aggregation.value == "count"
     assert ("rental_income", ">", "0") in _target_filter_tuples(
         rental_returns
+    )
+
+    ctc = targets_by_arch_variable["ctc_amount"]
+    assert ctc.metadata["variable"] == "non_refundable_ctc"
+    assert ctc.measure == "non_refundable_ctc"
+
+    ctc_claims = targets_by_arch_variable["ctc_claims"]
+    assert ctc_claims.metadata["variable"] == "non_refundable_ctc"
+    assert ctc_claims.aggregation.value == "count"
+    assert ("non_refundable_ctc", ">", "0") in _target_filter_tuples(
+        ctc_claims
+    )
+
+    actc = targets_by_arch_variable["actc_amount"]
+    assert actc.metadata["variable"] == "refundable_ctc"
+    assert actc.measure == "refundable_ctc"
+
+    actc_claims = targets_by_arch_variable["actc_claims"]
+    assert actc_claims.metadata["variable"] == "refundable_ctc"
+    assert actc_claims.aggregation.value == "count"
+    assert ("refundable_ctc", ">", "0") in _target_filter_tuples(
+        actc_claims
     )
 
 

@@ -24,6 +24,14 @@ def _write_minimal_policyengine_dataset(path: Path, *, period: int = 2024) -> Pa
         "household_weight": {str(period): np.asarray([10.0, 20.0])},
         "person_id": {str(period): np.asarray([1, 2, 3])},
         "person_household_id": {str(period): np.asarray([1, 1, 2])},
+        "tax_unit_id": {str(period): np.asarray([10, 20])},
+        "person_tax_unit_id": {str(period): np.asarray([10, 10, 20])},
+        "spm_unit_id": {str(period): np.asarray([100, 200])},
+        "person_spm_unit_id": {str(period): np.asarray([100, 100, 200])},
+        "family_id": {str(period): np.asarray([1000, 2000])},
+        "person_family_id": {str(period): np.asarray([1000, 1000, 2000])},
+        "marital_unit_id": {str(period): np.asarray([10000, 10001, 20000])},
+        "person_marital_unit_id": {str(period): np.asarray([10000, 10001, 20000])},
     }
     return write_policyengine_us_time_period_dataset(arrays, path)
 

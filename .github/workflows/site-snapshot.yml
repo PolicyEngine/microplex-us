@@ -29,6 +29,13 @@ jobs:
           ref: main
           path: microplex
 
+      - name: Check out microunit
+        uses: actions/checkout@v4
+        with:
+          repository: CosilicoAI/microunit
+          ref: main
+          path: microunit
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:

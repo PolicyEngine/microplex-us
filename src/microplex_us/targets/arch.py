@@ -5060,7 +5060,7 @@ def _county_fips_from_arch_geography_id(geography_id: Any) -> str:
 
 def _congressional_district_from_arch_geography_id(geography_id: Any) -> str:
     raw = str(geography_id)
-    if raw.startswith(("5001800US", "5001900US")):
+    if raw.startswith(("5001700US", "5001800US", "5001900US")):
         return raw[-4:]
     return raw
 

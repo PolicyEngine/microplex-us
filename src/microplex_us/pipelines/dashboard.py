@@ -94,6 +94,13 @@ def build_dashboard_payload(
     actual_l0_runs = collect_actual_l0_objective_runs(artifact_root)
     materialized_l0_scores = collect_materialized_policyengine_l0_scores(artifact_root)
     artifact_gate_reports = collect_mp300k_artifact_gate_reports(artifact_root)
+    release_gate_reports = [
+        *artifact_gate_reports,
+        *_release_gate_reports_from_score_runs(
+            score_runs,
+            artifact_gate_reports,
+        ),
+    ]
     run_contracts = collect_run_contracts(artifact_root)
     active_logs = collect_recent_log_summaries(artifact_root)
     tmux_sessions = collect_tmux_sessions() if include_tmux else []
@@ -116,7 +123,7 @@ def build_dashboard_payload(
             "actual_l0_objective_runs": actual_l0_runs,
             "materialized_policyengine_l0_scores": materialized_l0_scores,
             "mp300k_artifact_gate_reports": artifact_gate_reports,
-            "release_readiness": build_release_readiness(artifact_gate_reports),
+            "release_readiness": build_release_readiness(release_gate_reports),
             "run_contracts": run_contracts,
             "active_logs": active_logs,
             "tmux_sessions": tmux_sessions,
@@ -291,6 +298,114 @@ def collect_mp300k_artifact_gate_reports(
             row.get("artifact_path") or "",
         ),
     )
+
+
+def _release_gate_reports_from_score_runs(
+    score_runs: list[dict[str, Any]],
+    artifact_gate_reports: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Build release-readiness rows from scored artifacts with smoke metadata.
+
+    Full gate reports are preferred when present. This fallback keeps the living
+    dashboard useful for older candidate artifacts that persisted PE-native
+    scores and loader-smoke results before the full gate sidecar existed.
+    """
+
+    gate_report_dirs = {
+        str(row.get("artifact_dir"))
+        for row in artifact_gate_reports
+        if row.get("artifact_dir")
+    }
+    reports: list[dict[str, Any]] = []
+    for score in score_runs:
+        artifact_dir = str(score.get("artifact_dir") or "")
+        if not artifact_dir or artifact_dir in gate_report_dirs:
+            continue
+        release_smoke = score.get("release_smoke")
+        if not isinstance(release_smoke, dict):
+            continue
+        product = score.get("record_count_tier")
+        if not product:
+            continue
+
+        file_size_passes = release_smoke.get("passes_file_size_ratio_2x")
+        runtime_passes = release_smoke.get("passes_runtime_ratio_1_25x")
+        candidate_beats_baseline = score.get("candidate_beats_baseline")
+        failed_required_gates = []
+        unmeasured_required_gates = ["full_gate_report"]
+        for gate_name, gate_value in (
+            ("artifact_size", file_size_passes),
+            ("runtime", runtime_passes),
+            ("ecps_comparison", candidate_beats_baseline),
+        ):
+            if gate_value is True:
+                continue
+            if gate_value is False:
+                failed_required_gates.append(gate_name)
+            else:
+                unmeasured_required_gates.append(gate_name)
+
+        reports.append(
+            {
+                "artifact_path": release_smoke.get("artifact_path")
+                or score.get("artifact_path"),
+                "artifact_dir": artifact_dir,
+                "artifact_id": Path(artifact_dir).name,
+                "product": product,
+                "period": score.get("period"),
+                "status": _release_smoke_gate_status(
+                    failed_required_gates,
+                    unmeasured_required_gates,
+                ),
+                "passing_required_gate_count": 4
+                - len(failed_required_gates)
+                - len(unmeasured_required_gates),
+                "failed_required_gate_count": len(failed_required_gates),
+                "unmeasured_required_gate_count": len(unmeasured_required_gates),
+                "failed_required_gates": failed_required_gates,
+                "unmeasured_required_gates": unmeasured_required_gates,
+                "candidate_dataset_path": score.get("candidate_dataset"),
+                "candidate_size_bytes": release_smoke.get(
+                    "candidate_file_size_bytes"
+                ),
+                "candidate_households": release_smoke.get("candidate_households"),
+                "candidate_persons": None,
+                "compatibility_status": "smoke_only",
+                "artifact_size_status": _gate_bool_status(file_size_passes),
+                "artifact_size_ratio": release_smoke.get("file_size_ratio"),
+                "runtime_status": _gate_bool_status(runtime_passes),
+                "runtime_ratio": release_smoke.get("median_runtime_ratio"),
+                "ecps_comparison_status": _gate_bool_status(
+                    candidate_beats_baseline
+                ),
+                "candidate_loss": score.get("candidate_loss"),
+                "baseline_loss": score.get("baseline_loss"),
+                "loss_delta": score.get("loss_delta"),
+                "n_targets_kept": score.get("n_targets_kept"),
+                "metric_runtime": score.get("metric_runtime"),
+                "source_kind": "score_release_smoke",
+            }
+        )
+    return reports
+
+
+def _release_smoke_gate_status(
+    failed_required_gates: list[str],
+    unmeasured_required_gates: list[str],
+) -> str:
+    if failed_required_gates:
+        return "failed"
+    if unmeasured_required_gates:
+        return "incomplete"
+    return "passed"
+
+
+def _gate_bool_status(value: Any) -> str | None:
+    if value is True:
+        return "pass"
+    if value is False:
+        return "fail"
+    return None
 
 
 def build_release_readiness(
@@ -1627,8 +1742,10 @@ def _score_entries_from_payload(path: Path, payload: Any) -> list[dict[str, Any]
                 "loss_delta": _number_or_none(
                     summary.get("enhanced_cps_native_loss_delta")
                 ),
-                "candidate_beats_baseline": bool(
-                    summary.get("candidate_beats_baseline")
+                "candidate_beats_baseline": _candidate_beats_baseline(
+                    summary,
+                    candidate_loss,
+                    baseline_loss,
                 ),
                 "candidate_unweighted_msre": _number_or_none(
                     summary.get("candidate_unweighted_msre")
@@ -1698,6 +1815,25 @@ def _release_smoke_summary(artifact_dir: Path) -> dict[str, Any] | None:
             None if runtime_ratio is None else runtime_ratio <= 1.25
         ),
     }
+
+
+def _candidate_beats_baseline(
+    summary: dict[str, Any],
+    candidate_loss: float,
+    baseline_loss: float,
+) -> bool:
+    raw_value = summary.get("candidate_beats_baseline")
+    if isinstance(raw_value, bool):
+        return raw_value
+    if raw_value is None:
+        return candidate_loss < baseline_loss
+    if isinstance(raw_value, str):
+        lowered = raw_value.strip().lower()
+        if lowered in {"true", "1", "yes"}:
+            return True
+        if lowered in {"false", "0", "no"}:
+            return False
+    return bool(raw_value)
 
 
 def _summarize_unified_diagnostics(path: Path) -> dict[str, Any] | None:

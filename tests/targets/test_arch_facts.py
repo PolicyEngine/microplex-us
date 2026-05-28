@@ -1261,6 +1261,16 @@ def test_arch_consumer_fact_jsonl_provider_maps_table_2_1_itemized_details(
             unit="usd",
         ),
         _consumer_fact(
+            "soi-real-estate-taxes",
+            concept="irs_soi.real_estate_taxes",
+            domain=domain,
+            source_name="irs_soi",
+            source_table=source_table,
+            value=108_606_373_000,
+            period=period,
+            unit="usd",
+        ),
+        _consumer_fact(
             "soi-mortgage-financial",
             concept="irs_soi.home_mortgage_interest_paid_to_financial_institutions",
             domain=domain,
@@ -1305,11 +1315,17 @@ def test_arch_consumer_fact_jsonl_provider_maps_table_2_1_itemized_details(
         "\n".join(json.dumps(row, sort_keys=True) for row in rows) + "\n"
     )
 
-    target_set = ArchConsumerFactJSONLTargetProvider(consumer_jsonl).load_target_set(
-        TargetQuery(period=2023)
-    )
+    provider = ArchConsumerFactJSONLTargetProvider(consumer_jsonl)
+    target_set = provider.load_target_set(TargetQuery(period=2023))
     targets_by_arch_variable = {
-        target.metadata["arch_variable"]: target for target in target_set.targets
+        target.metadata["arch_variable"]: target
+        for target in target_set.targets
+        if target.metadata.get("arch_variable") is not None
+    }
+    targets_by_measure = {
+        str(target.measure): target
+        for target in target_set.targets
+        if target.measure is not None
     }
 
     charitable = targets_by_arch_variable["charitable_amount"]
@@ -1336,6 +1352,13 @@ def test_arch_consumer_fact_jsonl_provider_maps_table_2_1_itemized_details(
         "state_local_income_or_sales_tax_amount"
     ]
     assert state_local_income_sales.measure == "state_and_local_sales_or_income_tax"
+    assert targets_by_arch_variable["real_estate_taxes_amount"].measure == (
+        "real_estate_taxes"
+    )
+    salt = targets_by_measure["salt"]
+    assert salt.measure == "salt"
+    assert salt.value == 327_149_456_000
+    assert salt.metadata["variable"] == "salt"
     assert targets_by_arch_variable["mortgage_interest_paid_amount"].measure == (
         "deductible_mortgage_interest"
     )
@@ -1350,7 +1373,7 @@ def test_arch_consumer_fact_jsonl_provider_maps_table_2_1_itemized_details(
     )
 
     coverage = summarize_arch_target_profile_coverage(
-        ArchConsumerFactJSONLTargetProvider(consumer_jsonl),
+        provider,
         period=2023,
         profile_name="custom",
         target_cells=(
@@ -1379,6 +1402,11 @@ def test_arch_consumer_fact_jsonl_provider_maps_table_2_1_itemized_details(
             PolicyEngineUSTargetCell(
                 "state_and_local_sales_or_income_tax",
                 geo_level="national",
+            ),
+            PolicyEngineUSTargetCell(
+                "salt",
+                geo_level="national",
+                domain_variable="salt,tax_unit_itemizes",
             ),
         ),
     )

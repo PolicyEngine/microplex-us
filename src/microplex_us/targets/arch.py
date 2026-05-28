@@ -204,6 +204,13 @@ ARCH_STATE_TO_NATIONAL_ROLLUP_VARIABLES = frozenset(
     }
 )
 
+ARCH_COMPONENT_SUM_TARGETS = {
+    "salt_amount": (
+        "state_local_income_or_sales_tax_amount",
+        "real_estate_taxes_amount",
+    ),
+}
+
 ARCH_NATIONAL_ROLLUP_STATE_FIPS = frozenset(
     state_fips for state_fips in US_STATE_ABBR_BY_FIPS if state_fips != "72"
 )
@@ -2462,10 +2469,146 @@ def _compose_arch_model_year_records(
 def _with_state_to_national_rollup_records(
     records: list[ArchTargetRecord],
 ) -> list[ArchTargetRecord]:
-    rollups = _state_to_national_rollup_records(records)
+    expanded_records = _with_component_sum_records(records)
+    rollups = _state_to_national_rollup_records(expanded_records)
     if not rollups:
+        return expanded_records
+    return [*expanded_records, *rollups]
+
+
+def _with_component_sum_records(
+    records: list[ArchTargetRecord],
+) -> list[ArchTargetRecord]:
+    component_records = _component_sum_records(records)
+    if not component_records:
         return records
-    return [*records, *rollups]
+    return [*records, *component_records]
+
+
+def _component_sum_records(
+    records: list[ArchTargetRecord],
+) -> list[ArchTargetRecord]:
+    existing_keys = {
+        _component_sum_record_key(record, output_variable=record.variable)
+        for record in records
+        if record.target_type == "AMOUNT"
+    }
+    grouped: dict[
+        tuple[Any, ...],
+        dict[str, ArchTargetRecord],
+    ] = {}
+    for record in records:
+        if record.target_type != "AMOUNT":
+            continue
+        for output_variable, component_variables in ARCH_COMPONENT_SUM_TARGETS.items():
+            if record.variable not in component_variables:
+                continue
+            key = _component_sum_record_key(record, output_variable=output_variable)
+            if key in existing_keys:
+                continue
+            components = grouped.setdefault(key, {})
+            if record.variable in components:
+                components.clear()
+                break
+            components[record.variable] = record
+
+    composite_records: list[ArchTargetRecord] = []
+    for key, components_by_variable in grouped.items():
+        output_variable = str(key[0])
+        component_variables = ARCH_COMPONENT_SUM_TARGETS[output_variable]
+        if set(components_by_variable) != set(component_variables):
+            continue
+        composite_records.append(
+            _component_records_to_sum_record(
+                key,
+                [
+                    components_by_variable[component_variable]
+                    for component_variable in component_variables
+                ],
+            )
+        )
+    return composite_records
+
+
+def _component_sum_record_key(
+    record: ArchTargetRecord,
+    *,
+    output_variable: str,
+) -> tuple[Any, ...]:
+    return (
+        output_variable,
+        record.target_type,
+        record.period,
+        _arch_record_geo_level(record),
+        record.geography_id,
+        tuple(sorted(record.constraints)),
+        _normalize_arch_source(record.source),
+        record.source_period,
+        record.aging_factors,
+        record.unit,
+    )
+
+
+def _component_records_to_sum_record(
+    key: tuple[Any, ...],
+    records: list[ArchTargetRecord],
+) -> ArchTargetRecord:
+    first = records[0]
+    digest = sha1(repr(key).encode("utf-8")).hexdigest()
+    component_labels = ", ".join(record.variable for record in records)
+    source_tables = tuple(
+        dict.fromkeys(record.source_table for record in records if record.source_table)
+    )
+    source_urls = tuple(
+        dict.fromkeys(record.source_url for record in records if record.source_url)
+    )
+    source_row_keys = tuple(
+        dict.fromkeys(
+            source_row_key
+            for record in records
+            for source_row_key in (
+                record.source_row_keys
+                or (str(record.source_target_id or record.target_id),)
+            )
+        )
+    )
+    source_cell_keys = tuple(
+        dict.fromkeys(
+            source_cell_key
+            for record in records
+            for source_cell_key in record.source_cell_keys
+        )
+    )
+    notes = (
+        "Microplex component sum matching PolicyEngine salt sources: "
+        f"{component_labels}."
+    )
+    return replace(
+        first,
+        target_id=-int(digest[:12], 16),
+        stratum_id=-int(digest[12:20], 16),
+        variable=str(key[0]),
+        value=sum(record.value for record in records),
+        source_table=(
+            source_tables[0]
+            if len(source_tables) == 1
+            else "Microplex component sum from Arch source tables"
+        ),
+        source_url=source_urls[0] if len(source_urls) == 1 else None,
+        notes=f"{first.notes} {notes}" if first.notes else notes,
+        source_record_id=f"microplex_component_sum:{digest[:16]}",
+        source_cell_keys=source_cell_keys,
+        source_row_keys=source_row_keys,
+        aggregate_fact_key=None,
+        semantic_fact_key=None,
+        source_target_id=None,
+        source_stratum_id=None,
+        concept=None,
+        source_concept=None,
+        concept_relation="sum_of_components",
+        concept_authority="policyengine_us",
+        concept_evidence_notes=notes,
+    )
 
 
 def _state_to_national_rollup_records(

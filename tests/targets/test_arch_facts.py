@@ -1712,6 +1712,82 @@ def test_arch_consumer_fact_jsonl_provider_maps_state_broad_soi_concepts(
     )
 
 
+def test_arch_consumer_fact_jsonl_provider_maps_soi_alimony_concepts(
+    tmp_path: Path,
+) -> None:
+    consumer_jsonl = tmp_path / "consumer_facts.jsonl"
+    rows = [
+        _consumer_fact(
+            "soi-alimony-received-returns",
+            concept="irs_soi.returns_with_alimony_received",
+            domain="all_individual_income_tax_returns",
+            source_name="irs_soi",
+            source_table="Publication 1304 Table 1.4",
+            period={"type": "tax_year", "value": 2023},
+            value=183_582,
+        ),
+        _consumer_fact(
+            "soi-alimony-received-amount",
+            concept="irs_soi.alimony_received",
+            domain="all_individual_income_tax_returns",
+            source_name="irs_soi",
+            source_table="Publication 1304 Table 1.4",
+            period={"type": "tax_year", "value": 2023},
+            value=6_686_429_000,
+            unit="usd",
+        ),
+        _consumer_fact(
+            "soi-alimony-paid-returns",
+            concept="irs_soi.returns_with_alimony_paid",
+            domain="all_individual_income_tax_returns",
+            source_name="irs_soi",
+            source_table="Publication 1304 Table 1.4",
+            period={"type": "tax_year", "value": 2023},
+            value=278_541,
+        ),
+        _consumer_fact(
+            "soi-alimony-paid-amount",
+            concept="irs_soi.alimony_paid",
+            domain="all_individual_income_tax_returns",
+            source_name="irs_soi",
+            source_table="Publication 1304 Table 1.4",
+            period={"type": "tax_year", "value": 2023},
+            value=7_497_135_000,
+            unit="usd",
+        ),
+    ]
+    consumer_jsonl.write_text(
+        "\n".join(json.dumps(row, sort_keys=True) for row in rows) + "\n"
+    )
+
+    target_set = ArchConsumerFactJSONLTargetProvider(consumer_jsonl).load_target_set(
+        TargetQuery(period=2023)
+    )
+    targets_by_arch_variable = {
+        target.metadata["arch_variable"]: target for target in target_set.targets
+    }
+
+    received_amount = targets_by_arch_variable["alimony_received_amount"]
+    assert received_amount.metadata["variable"] == "alimony_income"
+    assert received_amount.measure == "alimony_income"
+
+    received_returns = targets_by_arch_variable["alimony_received_returns"]
+    assert received_returns.metadata["variable"] == "tax_unit_count"
+    assert received_returns.aggregation.value == "count"
+    assert ("alimony_income", ">", "0") in _target_filter_tuples(
+        received_returns
+    )
+
+    paid_amount = targets_by_arch_variable["alimony_paid_amount"]
+    assert paid_amount.metadata["variable"] == "alimony_expense"
+    assert paid_amount.measure == "alimony_expense"
+
+    paid_returns = targets_by_arch_variable["alimony_paid_returns"]
+    assert paid_returns.metadata["variable"] == "tax_unit_count"
+    assert paid_returns.aggregation.value == "count"
+    assert ("alimony_expense", ">", "0") in _target_filter_tuples(paid_returns)
+
+
 def test_arch_consumer_fact_jsonl_provider_maps_eitc_by_agi_and_children(
     tmp_path: Path,
 ) -> None:

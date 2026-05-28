@@ -3768,7 +3768,7 @@ def test_arch_target_gap_queue_points_itemized_deductions_to_soi_table_2(tmp_pat
     rows_by_cell = {(row.variable, row.domain_variable): row for row in report.rows}
     salt_row = rows_by_variable["salt_deduction"]
     assert salt_row.expected_source == "IRS_SOI"
-    assert salt_row.expected_source_table == "IRS SOI Historic Table 2"
+    assert salt_row.expected_source_table == "IRS SOI Publication 1304 Table 2.1"
     assert salt_row.expected_arch_variable == "limited_state_local_taxes_amount"
     assert salt_row.expected_target_type == "AMOUNT"
     assert salt_row.expected_entity == "tax_unit"
@@ -3777,7 +3777,7 @@ def test_arch_target_gap_queue_points_itemized_deductions_to_soi_table_2(tmp_pat
 
     interest_row = rows_by_variable["interest_deduction"]
     assert interest_row.expected_source == "IRS_SOI"
-    assert interest_row.expected_source_table == "IRS SOI Historic Table 2"
+    assert interest_row.expected_source_table == "IRS SOI Publication 1304 Table 2.1"
     assert interest_row.expected_arch_variable == "interest_paid_deduction_amount"
     assert interest_row.expected_target_type == "AMOUNT"
     assert interest_row.expected_entity == "tax_unit"

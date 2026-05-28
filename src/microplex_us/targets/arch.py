@@ -115,6 +115,9 @@ ARCH_AMOUNT_VARIABLE_ALIASES = {
     "qbi_amount": "qualified_business_income_deduction",
     "salt_amount": "salt",
     "limited_state_local_taxes_amount": "salt_deduction",
+    "state_local_income_or_sales_tax_amount": (
+        "state_and_local_sales_or_income_tax"
+    ),
     "charitable_amount": "charitable_deduction",
     "mortgage_interest_amount": "deductible_mortgage_interest",
     "mortgage_interest_paid_amount": "deductible_mortgage_interest",
@@ -147,18 +150,34 @@ ARCH_SELF_DOMAIN_AMOUNT_VARIABLES = frozenset(
 
 ARCH_IRS_SOI_ITEMIZED_DEDUCTION_AMOUNT_VARIABLES = frozenset(
     {
+        "charitable_amount",
+        "deductible_points_amount",
+        "home_mortgage_personal_seller_amount",
+        "interest_paid_deduction_amount",
+        "investment_interest_paid_amount",
+        "limited_state_local_taxes_amount",
         "medical_amount",
         "medical_dental_expense_amount",
+        "mortgage_interest_paid_amount",
         "real_estate_taxes_amount",
         "salt_amount",
+        "state_local_income_or_sales_tax_amount",
     }
 )
 
 ARCH_IRS_SOI_ITEMIZED_DEDUCTION_COUNT_VARIABLES = frozenset(
     {
+        "charitable_returns",
+        "deductible_points_returns",
+        "home_mortgage_personal_seller_returns",
+        "interest_paid_deduction_returns",
+        "investment_interest_paid_returns",
+        "limited_state_local_taxes_returns",
         "medical_claims",
+        "mortgage_interest_paid_returns",
         "real_estate_taxes_claims",
         "salt_claims",
+        "state_local_income_or_sales_tax_returns",
     }
 )
 
@@ -320,6 +339,56 @@ ARCH_FACT_CONCEPT_TO_TARGET = {
         "limited_state_local_taxes_amount",
         "AMOUNT",
     ),
+    "irs_soi.returns_with_state_local_income_or_sales_taxes": (
+        "state_local_income_or_sales_tax_returns",
+        "COUNT",
+    ),
+    "irs_soi.state_local_income_or_sales_taxes": (
+        "state_local_income_or_sales_tax_amount",
+        "AMOUNT",
+    ),
+    "irs_soi.returns_with_interest_paid_deduction": (
+        "interest_paid_deduction_returns",
+        "COUNT",
+    ),
+    "irs_soi.interest_paid_deduction": (
+        "interest_paid_deduction_amount",
+        "AMOUNT",
+    ),
+    "irs_soi.returns_with_home_mortgage_interest_paid_to_financial_institutions": (
+        "mortgage_interest_paid_returns",
+        "COUNT",
+    ),
+    "irs_soi.home_mortgage_interest_paid_to_financial_institutions": (
+        "mortgage_interest_paid_amount",
+        "AMOUNT",
+    ),
+    "irs_soi.returns_with_home_mortgage_interest_paid_to_individuals": (
+        "home_mortgage_personal_seller_returns",
+        "COUNT",
+    ),
+    "irs_soi.home_mortgage_interest_paid_to_individuals": (
+        "home_mortgage_personal_seller_amount",
+        "AMOUNT",
+    ),
+    "irs_soi.returns_with_deductible_points": (
+        "deductible_points_returns",
+        "COUNT",
+    ),
+    "irs_soi.deductible_points": ("deductible_points_amount", "AMOUNT"),
+    "irs_soi.returns_with_investment_interest_expense_deduction": (
+        "investment_interest_paid_returns",
+        "COUNT",
+    ),
+    "irs_soi.investment_interest_expense_deduction": (
+        "investment_interest_paid_amount",
+        "AMOUNT",
+    ),
+    "irs_soi.returns_with_contributions_deduction": (
+        "charitable_returns",
+        "COUNT",
+    ),
+    "irs_soi.contributions_deduction": ("charitable_amount", "AMOUNT"),
     "us:statutes/26/62#adjusted_gross_income": (
         "adjusted_gross_income",
         "AMOUNT",
@@ -632,6 +701,17 @@ ARCH_FACT_CONCEPT_TO_TARGET = {
     ),
 }
 
+ARCH_FACT_CONCEPTS_TO_SKIP = frozenset(
+    {
+        # SOI Table 2.1 total state/local taxes includes personal property
+        # taxes. PolicyEngine's federal SALT input currently combines
+        # state/local income-or-sales taxes and real estate taxes, so the total
+        # source-native concept is not exposed as a Microplex target.
+        "irs_soi.returns_with_state_and_local_taxes",
+        "irs_soi.state_and_local_taxes",
+    }
+)
+
 ARCH_FACT_DOMAIN_CONSTRAINTS = {
     "all_individual_income_tax_returns": (("is_tax_filer", "==", "1"),),
     "form_w2_items": (),
@@ -833,7 +913,26 @@ ARCH_VARIABLE_LABEL_OVERRIDES = {
     "state_individual_income_tax_collections": (
         "State individual income tax collections"
     ),
+    "charitable_amount": "Contributions deduction amount",
+    "charitable_returns": "Returns with contributions deduction",
+    "deductible_points_returns": "Returns with deductible points",
+    "home_mortgage_personal_seller_returns": (
+        "Returns with home mortgage interest paid to individuals"
+    ),
+    "interest_paid_deduction_returns": ("Returns with interest paid deduction"),
+    "investment_interest_paid_returns": (
+        "Returns with investment interest expense deduction"
+    ),
     "limited_state_local_taxes_amount": "Limited state and local taxes amount",
+    "state_local_income_or_sales_tax_amount": (
+        "State and local income or sales taxes amount"
+    ),
+    "state_local_income_or_sales_tax_returns": (
+        "Returns with state and local income or sales taxes"
+    ),
+    "mortgage_interest_paid_returns": (
+        "Returns with home mortgage interest paid to financial institutions"
+    ),
     "interest_paid_deduction_amount": "Interest paid deduction amount",
     "mortgage_interest_paid_amount": "Mortgage interest paid amount",
     "home_mortgage_personal_seller_amount": (
@@ -990,8 +1089,22 @@ ARCH_GAP_SOURCE_TABLE_HINTS = {
     "income_tax_before_credits": "IRS SOI Publication 1304 Table 1.1",
     "income_tax_before_credits_returns": "IRS SOI Historic Table 2",
     "tax_filer_individual_count": "IRS SOI Historic Table 2",
-    "interest_paid_deduction_amount": "IRS SOI Historic Table 2",
-    "limited_state_local_taxes_amount": "IRS SOI Historic Table 2",
+    "charitable_amount": "IRS SOI Publication 1304 Table 2.1",
+    "charitable_returns": "IRS SOI Publication 1304 Table 2.1",
+    "deductible_points_amount": "IRS SOI Publication 1304 Table 2.1",
+    "deductible_points_returns": "IRS SOI Publication 1304 Table 2.1",
+    "home_mortgage_personal_seller_amount": "IRS SOI Publication 1304 Table 2.1",
+    "home_mortgage_personal_seller_returns": "IRS SOI Publication 1304 Table 2.1",
+    "interest_paid_deduction_amount": "IRS SOI Publication 1304 Table 2.1",
+    "interest_paid_deduction_returns": "IRS SOI Publication 1304 Table 2.1",
+    "investment_interest_paid_amount": "IRS SOI Publication 1304 Table 2.1",
+    "investment_interest_paid_returns": "IRS SOI Publication 1304 Table 2.1",
+    "limited_state_local_taxes_amount": "IRS SOI Publication 1304 Table 2.1",
+    "limited_state_local_taxes_returns": "IRS SOI Publication 1304 Table 2.1",
+    "mortgage_interest_paid_amount": "IRS SOI Publication 1304 Table 2.1",
+    "mortgage_interest_paid_returns": "IRS SOI Publication 1304 Table 2.1",
+    "state_local_income_or_sales_tax_amount": "IRS SOI Publication 1304 Table 2.1",
+    "state_local_income_or_sales_tax_returns": "IRS SOI Publication 1304 Table 2.1",
     "liheap_household_count": "HHS ACF LIHEAP National Profile",
     "medicaid_benefits": (
         "CMS National Health Expenditures by type of service and source of funds"
@@ -4154,7 +4267,10 @@ def _consumer_fact_rows_to_records(
             )
         )
         stratum_id = stratum_ids.setdefault(constraints, len(stratum_ids) + 1)
-        variable, target_type = _arch_consumer_fact_target_identity(row)
+        target_identity = _arch_consumer_fact_target_identity(row)
+        if target_identity is None:
+            continue
+        variable, target_type = target_identity
         source = row.get("source") or {}
         observed_measure = row.get("observed_measure") or {}
         geography = row.get("geography") or {}
@@ -4204,8 +4320,12 @@ def _consumer_fact_period(row: dict[str, Any]) -> int:
     return arch_consumer_fact_period(row)
 
 
-def _arch_consumer_fact_target_identity(row: dict[str, Any]) -> tuple[str, str]:
+def _arch_consumer_fact_target_identity(
+    row: dict[str, Any],
+) -> tuple[str, str] | None:
     concept = _arch_consumer_fact_concept(row)
+    if concept in ARCH_FACT_CONCEPTS_TO_SKIP:
+        return None
     if concept == "ssa.annual_oasdi_or_ssi_payment_amount":
         return (_ssa_payment_variable_from_consumer_fact(row), "AMOUNT")
     try:
@@ -4316,7 +4436,10 @@ def _group_arch_fact_rows(
         row = item["row"]
         constraints = tuple(dict.fromkeys(item["constraints"]))
         stratum_id = stratum_ids.setdefault(constraints, len(stratum_ids) + 1)
-        variable, target_type = _arch_fact_target_identity(row)
+        target_identity = _arch_fact_target_identity(row)
+        if target_identity is None:
+            continue
+        variable, target_type = target_identity
         period = int(row["period_value"])
         source_name = row["source_name"] or "arch"
         fact_lineage = lineage.get(fact_key, {})
@@ -4355,8 +4478,10 @@ def _group_arch_fact_rows(
     return records
 
 
-def _arch_fact_target_identity(row: sqlite3.Row) -> tuple[str, str]:
+def _arch_fact_target_identity(row: sqlite3.Row) -> tuple[str, str] | None:
     concept = str(row["measure_concept"])
+    if concept in ARCH_FACT_CONCEPTS_TO_SKIP:
+        return None
     try:
         return ARCH_FACT_CONCEPT_TO_TARGET[concept]
     except KeyError as exc:
@@ -5034,7 +5159,10 @@ def _matches_arch_target_cell(
             _split_target_cell_domain_variables(domain_variable)
         )
         if domain_variable is None or not cell_domain_variables:
-            if _target_self_domain_is_redundant(target, target_domain_variables):
+            if _target_domain_variables_are_redundant_for_unfiltered_cell(
+                target,
+                target_domain_variables,
+            ):
                 return True
             return not target_domain_variables
         if not _target_domain_variables_match(
@@ -5053,10 +5181,21 @@ def _target_domain_variables_match(
     target_domain_variables: set[str],
     cell_domain_variables: set[str],
 ) -> bool:
+    target_domain_variables = _normalize_arch_target_domain_variables(
+        target,
+        target_domain_variables,
+    )
+    cell_domain_variables = _normalize_arch_target_domain_variables(
+        target,
+        cell_domain_variables,
+    )
     if cell_domain_variables == target_domain_variables:
         return True
 
-    implied_domain_variables = _arch_target_implied_domain_variables(target)
+    implied_domain_variables = _normalize_arch_target_domain_variables(
+        target,
+        _arch_target_implied_domain_variables(target),
+    )
     effective_target_domain_variables = (
         target_domain_variables | implied_domain_variables
     )
@@ -5091,6 +5230,42 @@ def _target_domain_variables_match(
         return True
 
     return False
+
+
+def _normalize_arch_target_domain_variables(
+    target: CanonicalTargetSpec,
+    domain_variables: set[str],
+) -> set[str]:
+    """Normalize source-native domains to equivalent PE target cell domains."""
+    if not _arch_target_has_soi_itemized_deduction_domain(target):
+        return set(domain_variables)
+    return {
+        "tax_unit_itemizes" if variable == "itemized_deductions" else variable
+        for variable in domain_variables
+    }
+
+
+def _target_domain_variables_are_redundant_for_unfiltered_cell(
+    target: CanonicalTargetSpec,
+    target_domain_variables: set[str],
+) -> bool:
+    normalized_domain_variables = _normalize_arch_target_domain_variables(
+        target,
+        target_domain_variables,
+    )
+    if _target_self_domain_is_redundant(target, normalized_domain_variables):
+        return True
+    return (
+        target.aggregation is TargetAggregation.SUM
+        and _arch_target_has_soi_itemized_deduction_domain(target)
+        and normalized_domain_variables.issubset({"tax_unit_itemizes"})
+    )
+
+
+def _arch_target_has_soi_itemized_deduction_domain(
+    target: CanonicalTargetSpec,
+) -> bool:
+    return _arch_target_implied_domain_variables(target) == {"tax_unit_itemizes"}
 
 
 def _arch_target_implied_domain_variables(

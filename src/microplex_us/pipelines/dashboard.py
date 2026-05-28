@@ -92,9 +92,7 @@ def build_dashboard_payload(
     local_screens = collect_local_target_screens(artifact_root)
     pe_l0_models = collect_policyengine_l0_models(policyengine_us_data_repo)
     actual_l0_runs = collect_actual_l0_objective_runs(artifact_root)
-    materialized_l0_scores = collect_materialized_policyengine_l0_scores(
-        artifact_root
-    )
+    materialized_l0_scores = collect_materialized_policyengine_l0_scores(artifact_root)
     run_contracts = collect_run_contracts(artifact_root)
     active_logs = collect_recent_log_summaries(artifact_root)
     tmux_sessions = collect_tmux_sessions() if include_tmux else []
@@ -179,8 +177,7 @@ def collect_run_contracts(artifact_root: str | Path) -> list[dict[str, Any]]:
                 "events_path": str(path.parent / "run_events.jsonl"),
                 "status_source": "contract",
                 "run_id": summary.get("run_id") or manifest.get("run_id"),
-                "attempt_id": summary.get("attempt_id")
-                or manifest.get("attempt_id"),
+                "attempt_id": summary.get("attempt_id") or manifest.get("attempt_id"),
                 "status": summary.get("status"),
                 "active": summary.get("active"),
                 "started_at": summary.get("started_at"),
@@ -295,20 +292,14 @@ def _local_screen_score_summary(path: Path) -> dict[str, Any] | None:
     summary = payload.get("summary")
     if not isinstance(summary, dict):
         summary = payload
-    candidate_loss = _number_or_none(
-        summary.get("candidate_enhanced_cps_native_loss")
-    )
-    baseline_loss = _number_or_none(
-        summary.get("baseline_enhanced_cps_native_loss")
-    )
+    candidate_loss = _number_or_none(summary.get("candidate_enhanced_cps_native_loss"))
+    baseline_loss = _number_or_none(summary.get("baseline_enhanced_cps_native_loss"))
     if candidate_loss is None:
         return None
     return {
         "candidate_loss": candidate_loss,
         "baseline_loss": baseline_loss,
-        "loss_delta": _number_or_none(
-            summary.get("enhanced_cps_native_loss_delta")
-        ),
+        "loss_delta": _number_or_none(summary.get("enhanced_cps_native_loss_delta")),
         "candidate_beats_baseline": summary.get("candidate_beats_baseline"),
     }
 
@@ -335,9 +326,7 @@ def collect_policyengine_l0_models(
                 "id": spec["id"],
                 "label": spec["label"],
                 "status": (
-                    "available_weight_package"
-                    if present
-                    else "missing_weight_package"
+                    "available_weight_package" if present else "missing_weight_package"
                 ),
                 "artifact_dir": str(model_dir),
                 "weights_path": str(weights_path) if weights_path.exists() else None,
@@ -502,12 +491,8 @@ def collect_materialized_policyengine_l0_scores(
                 "candidate_beats_baseline": candidate_loss < baseline_loss,
                 "loss_delta": _number_or_none(summary.get("loss_delta")),
                 "n_targets": _number_or_none(summary.get("n_targets")),
-                "state_score_count": _number_or_none(
-                    payload.get("state_score_count")
-                ),
-                "state_weight_sum": _number_or_none(
-                    payload.get("state_weight_sum")
-                ),
+                "state_score_count": _number_or_none(payload.get("state_score_count")),
+                "state_weight_sum": _number_or_none(payload.get("state_weight_sum")),
                 "notes": (
                     "This is an experimental materialized state-stack score. "
                     "It is a broad same-harness artifact, but it is not the "
@@ -577,7 +562,9 @@ def collect_tmux_sessions() -> list[dict[str, Any]]:
         if not _is_relevant_tmux_session(name):
             continue
         sessions.append({"name": name, "raw": line})
-    return sorted(sessions, key=lambda row: (not row["name"].startswith("mp_"), row["name"]))
+    return sorted(
+        sessions, key=lambda row: (not row["name"].startswith("mp_"), row["name"])
+    )
 
 
 def build_comparison_matrix(
@@ -591,13 +578,17 @@ def build_comparison_matrix(
     materialized_l0_scores = materialized_l0_scores or []
     best_latest = _best_score(
         score_runs,
-        predicate=lambda row: row.get("metric_runtime") == "latest_policyengine_us"
-        and row.get("model_id") == "microplex_current_best",
+        predicate=lambda row: (
+            row.get("metric_runtime") == "latest_policyengine_us"
+            and row.get("model_id") == "microplex_current_best"
+        ),
     )
     best_legacy = _best_score(
         score_runs,
-        predicate=lambda row: row.get("metric_runtime") == "legacy_or_patched_runtime"
-        and row.get("model_id") == "microplex_current_best",
+        predicate=lambda row: (
+            row.get("metric_runtime") == "legacy_or_patched_runtime"
+            and row.get("model_id") == "microplex_current_best"
+        ),
     )
     best_local = local_screens[0] if local_screens else None
     pe_l0_by_id = {row.get("id"): row for row in pe_l0_models}
@@ -647,9 +638,7 @@ def build_comparison_matrix(
                         else None
                     ),
                     "latest_pe_status": (
-                        "scored"
-                        if latest_score is not None
-                        else "missing_h5_score"
+                        "scored" if latest_score is not None else "missing_h5_score"
                     ),
                     "legacy_metric_loss": (
                         legacy_score.get("candidate_loss")
@@ -657,9 +646,7 @@ def build_comparison_matrix(
                         else None
                     ),
                     "legacy_metric_status": (
-                        "scored"
-                        if legacy_score is not None
-                        else "missing_h5_score"
+                        "scored" if legacy_score is not None else "missing_h5_score"
                     ),
                     "pe_local_l0_mean_abs_error_pct": diagnostics.get(
                         "mean_abs_relative_error_pct"
@@ -756,6 +743,14 @@ def build_comparison_matrix(
             "artifact_path": (
                 best_latest.get("artifact_path") if best_latest is not None else None
             ),
+            "record_count_tier": (
+                best_latest.get("record_count_tier")
+                if best_latest is not None
+                else None
+            ),
+            "release_smoke": (
+                best_latest.get("release_smoke") if best_latest is not None else None
+            ),
             "notes": (
                 "This is the best completed Microplex score found locally. "
                 "The CD-age row is a matrix screen until the latest-PE row-batch "
@@ -776,13 +771,17 @@ def build_apples_to_apples_groups(
 
     best_latest = _best_score(
         score_runs,
-        predicate=lambda row: row.get("metric_runtime") == "latest_policyengine_us"
-        and row.get("model_id") == "microplex_current_best",
+        predicate=lambda row: (
+            row.get("metric_runtime") == "latest_policyengine_us"
+            and row.get("model_id") == "microplex_current_best"
+        ),
     )
     best_legacy = _best_score(
         score_runs,
-        predicate=lambda row: row.get("metric_runtime") == "legacy_or_patched_runtime"
-        and row.get("model_id") == "microplex_current_best",
+        predicate=lambda row: (
+            row.get("metric_runtime") == "legacy_or_patched_runtime"
+            and row.get("model_id") == "microplex_current_best"
+        ),
     )
     best_local = local_screens[0] if local_screens else None
     best_materialized_l0 = _best_materialized_l0_score(materialized_l0_scores)
@@ -842,8 +841,7 @@ def build_apples_to_apples_groups(
                     ),
                     status=(
                         "scored_candidate_beats_baseline"
-                        if best_latest
-                        and best_latest.get("candidate_beats_baseline")
+                        if best_latest and best_latest.get("candidate_beats_baseline")
                         else "missing"
                     ),
                     artifact_path=(
@@ -896,8 +894,7 @@ def build_apples_to_apples_groups(
                     ),
                     status=(
                         "scored_candidate_beats_baseline"
-                        if best_legacy
-                        and best_legacy.get("candidate_beats_baseline")
+                        if best_legacy and best_legacy.get("candidate_beats_baseline")
                         else "missing"
                     ),
                     artifact_path=(
@@ -956,8 +953,7 @@ def build_apples_to_apples_groups(
                     score=(
                         100 * best_local.get("cd_age_mean_abs_relative_error")
                         if best_local is not None
-                        and best_local.get("cd_age_mean_abs_relative_error")
-                        is not None
+                        and best_local.get("cd_age_mean_abs_relative_error") is not None
                         else None
                     ),
                     status=(
@@ -992,13 +988,17 @@ def build_dashboard_assertions(
     materialized_l0_scores = materialized_l0_scores or []
     best_latest = _best_score(
         score_runs,
-        predicate=lambda row: row.get("metric_runtime") == "latest_policyengine_us"
-        and row.get("model_id") == "microplex_current_best",
+        predicate=lambda row: (
+            row.get("metric_runtime") == "latest_policyengine_us"
+            and row.get("model_id") == "microplex_current_best"
+        ),
     )
     best_legacy = _best_score(
         score_runs,
-        predicate=lambda row: row.get("metric_runtime") == "legacy_or_patched_runtime"
-        and row.get("model_id") == "microplex_current_best",
+        predicate=lambda row: (
+            row.get("metric_runtime") == "legacy_or_patched_runtime"
+            and row.get("model_id") == "microplex_current_best"
+        ),
     )
     pe_l0_by_id = {row.get("id"): row for row in pe_l0_models}
     small_l0_present = (
@@ -1033,10 +1033,10 @@ def build_dashboard_assertions(
     small_complete = bool(small_latest and small_legacy)
     big_complete = bool(big_latest and big_legacy)
     all_models_complete = bool(
-        best_latest
-        and best_legacy
-        and small_complete
-        and big_complete
+        best_latest and best_legacy and small_complete and big_complete
+    )
+    best_latest_release_smoke = (
+        best_latest.get("release_smoke") if isinstance(best_latest, dict) else None
     )
     return {
         "microplex_beats_legacy_ecps_latest_pe_broad": bool(
@@ -1044,6 +1044,12 @@ def build_dashboard_assertions(
         ),
         "microplex_beats_legacy_ecps_legacy_metric": bool(
             best_legacy and best_legacy.get("candidate_beats_baseline")
+        ),
+        "microplex_current_best_has_release_smoke": bool(best_latest_release_smoke),
+        "microplex_current_best_release_smoke_passes": bool(
+            isinstance(best_latest_release_smoke, dict)
+            and best_latest_release_smoke.get("passes_file_size_ratio_2x")
+            and best_latest_release_smoke.get("passes_runtime_ratio_1_25x")
         ),
         "microplex_vs_small_l0_complete": small_complete,
         "microplex_vs_big_l0_complete": big_complete,
@@ -1158,9 +1164,7 @@ def _best_materialized_l0_score(
     rows: list[dict[str, Any]],
 ) -> dict[str, Any] | None:
     candidates = [
-        row
-        for row in rows
-        if _number_or_none(row.get("candidate_loss")) is not None
+        row for row in rows if _number_or_none(row.get("candidate_loss")) is not None
     ]
     if not candidates:
         return None
@@ -1233,13 +1237,9 @@ def _inspect_l0_materialization(
                         geography["block_geoid"].shape[0]
                     )
                 if "n_records" in geography:
-                    result["geography_n_records"] = int(
-                        geography["n_records"][0]
-                    )
+                    result["geography_n_records"] = int(geography["n_records"][0])
                 if "n_clones" in geography:
-                    result["geography_n_clones"] = int(
-                        geography["n_clones"][0]
-                    )
+                    result["geography_n_clones"] = int(geography["n_clones"][0])
         except Exception as error:  # pragma: no cover - defensive artifact read
             result["geography_error"] = str(error)
 
@@ -1317,9 +1317,7 @@ def _iter_score_paths(artifact_root: Path) -> list[Path]:
     return [path for path in paths if path.is_file()]
 
 
-def _score_entries_from_payload(
-    path: Path, payload: Any
-) -> list[dict[str, Any]]:
+def _score_entries_from_payload(path: Path, payload: Any) -> list[dict[str, Any]]:
     if isinstance(payload, list):
         raw_entries = payload
     elif isinstance(payload, dict) and "broad_loss" in payload:
@@ -1339,7 +1337,9 @@ def _score_entries_from_payload(
             summary = item
             broad_loss = item
         else:
-            summary = item.get("summary") if isinstance(item.get("summary"), dict) else {}
+            summary = (
+                item.get("summary") if isinstance(item.get("summary"), dict) else {}
+            )
             broad_loss = (
                 item.get("broad_loss")
                 if isinstance(item.get("broad_loss"), dict)
@@ -1358,10 +1358,15 @@ def _score_entries_from_payload(
         metric_runtime = _infer_metric_runtime(path, summary)
         model_id = _infer_score_model_id(path, candidate_dataset)
         label = _score_label(path, candidate_dataset, index)
+        release_smoke = _release_smoke_summary(path.parent)
+        record_count_tier = _infer_record_count_tier(
+            path, candidate_dataset
+        ) or _infer_record_count_tier_from_release_smoke(release_smoke)
         entries.append(
             {
                 "label": label,
                 "model_id": model_id,
+                "record_count_tier": record_count_tier,
                 "artifact_path": str(path),
                 "artifact_dir": str(path.parent),
                 "entry_index": index,
@@ -1392,10 +1397,60 @@ def _score_entries_from_payload(
                 "baseline_weight_sum": _number_or_none(
                     broad_loss.get("baseline_weight_sum")
                 ),
+                "release_smoke": release_smoke,
                 "source_kind": "scores_json",
             }
         )
     return entries
+
+
+def _release_smoke_summary(artifact_dir: Path) -> dict[str, Any] | None:
+    """Read colocated lightweight release gate smoke output when present."""
+
+    path = artifact_dir / "runtime_smoke_loader.json"
+    payload = _read_json(path)
+    if not isinstance(payload, dict):
+        return None
+
+    candidate = payload.get("candidate")
+    baseline = payload.get("baseline")
+    if not isinstance(candidate, dict) or not isinstance(baseline, dict):
+        return None
+
+    runtime_ratio = _number_or_none(
+        payload.get("median_runtime_ratio") or payload.get("runtime_ratio")
+    )
+    file_size_ratio = _number_or_none(payload.get("file_size_ratio"))
+    household_ratio = _number_or_none(payload.get("household_ratio"))
+    return {
+        "artifact_path": str(path),
+        "benchmark": payload.get("benchmark"),
+        "candidate_households": _number_or_none(candidate.get("households")),
+        "baseline_households": _number_or_none(baseline.get("households")),
+        "household_ratio": household_ratio,
+        "candidate_file_size_bytes": _number_or_none(candidate.get("file_size_bytes")),
+        "baseline_file_size_bytes": _number_or_none(baseline.get("file_size_bytes")),
+        "file_size_ratio": file_size_ratio,
+        "median_runtime_ratio": runtime_ratio,
+        "candidate_median_elapsed_seconds": _number_or_none(
+            candidate.get("median_elapsed_seconds") or candidate.get("elapsed_seconds")
+        ),
+        "baseline_median_elapsed_seconds": _number_or_none(
+            baseline.get("median_elapsed_seconds") or baseline.get("elapsed_seconds")
+        ),
+        "raw_candidate_household_weight_sum": _number_or_none(
+            candidate.get("raw_household_weight_sum")
+        ),
+        "raw_baseline_household_weight_sum": _number_or_none(
+            baseline.get("raw_household_weight_sum")
+        ),
+        "passes_file_size_ratio_2x": (
+            None if file_size_ratio is None else file_size_ratio <= 2.0
+        ),
+        "passes_runtime_ratio_1_25x": (
+            None if runtime_ratio is None else runtime_ratio <= 1.25
+        ),
+    }
 
 
 def _summarize_unified_diagnostics(path: Path) -> dict[str, Any] | None:
@@ -1428,9 +1483,7 @@ def _summarize_unified_diagnostics(path: Path) -> dict[str, Any] | None:
     return {
         "n_targets": len(rows),
         "n_achievable": achievable_count,
-        "actual_l0_objective": (
-            "sum(((estimate - target) / (target + 1)) ** 2)"
-        ),
+        "actual_l0_objective": ("sum(((estimate - target) / (target + 1)) ** 2)"),
         "actual_l0_data_loss": (
             sum(actual_l0_squared_errors) if actual_l0_squared_errors else None
         ),
@@ -1468,7 +1521,17 @@ def _infer_metric_runtime(path: Path, summary: dict[str, Any]) -> str:
     text = str(path).lower()
     n_targets = _number_or_none(summary.get("n_targets_kept"))
     baseline_loss = _number_or_none(summary.get("baseline_enhanced_cps_native_loss"))
-    if "latest_pe" in text or n_targets == 2805 or baseline_loss == 0.09774356788921322:
+    if "legacy_targets" in text:
+        return "legacy_or_patched_runtime"
+    if "new_targets" in text:
+        return "latest_policyengine_us"
+    if n_targets == 2805 and baseline_loss == 0.09774356788921322:
+        return "legacy_or_patched_runtime"
+    if (
+        "latest_us_data" in text
+        or n_targets in {2814, 2818}
+        or (baseline_loss is not None and baseline_loss > 0.15)
+    ):
         return "latest_policyengine_us"
     return "legacy_or_patched_runtime"
 
@@ -1488,6 +1551,35 @@ def _infer_score_model_id(path: Path, candidate_dataset: Any) -> str:
     return "microplex_current_best"
 
 
+def _infer_record_count_tier(path: Path, candidate_dataset: Any) -> str | None:
+    """Infer product-style record-count tier labels such as ``mp-120k``."""
+
+    text_parts = [str(path).lower()]
+    if isinstance(candidate_dataset, str):
+        text_parts.append(candidate_dataset.lower())
+        text_parts.append(Path(candidate_dataset).name.lower())
+    text = " ".join(text_parts)
+    match = re.search(r"\bmp[-_]?(\d+(?:k|m))(?:\b|_)", text)
+    if match:
+        return f"mp-{match.group(1)}"
+    return None
+
+
+def _infer_record_count_tier_from_release_smoke(
+    release_smoke: dict[str, Any] | None,
+) -> str | None:
+    """Infer a product-style tier from measured household rows when available."""
+
+    if not isinstance(release_smoke, dict):
+        return None
+    households = _number_or_none(release_smoke.get("candidate_households"))
+    if households is None or households <= 0:
+        return None
+    if households >= 1_000_000:
+        return f"mp-{households / 1_000_000:.1f}m".replace(".0m", "m")
+    return f"mp-{round(households / 1_000)}k"
+
+
 def _percentile(sorted_values: list[float], quantile: float) -> float | None:
     if not sorted_values:
         return None
@@ -1497,9 +1589,7 @@ def _percentile(sorted_values: list[float], quantile: float) -> float | None:
     lower = int(position)
     upper = min(lower + 1, len(sorted_values) - 1)
     weight = position - lower
-    return 100 * (
-        sorted_values[lower] * (1 - weight) + sorted_values[upper] * weight
-    )
+    return 100 * (sorted_values[lower] * (1 - weight) + sorted_values[upper] * weight)
 
 
 def _share_under(values: list[float], threshold: float) -> float | None:
@@ -1508,9 +1598,7 @@ def _share_under(values: list[float], threshold: float) -> float | None:
     return sum(value < threshold for value in values) / len(values)
 
 
-def _best_score(
-    rows: list[dict[str, Any]], *, predicate: Any
-) -> dict[str, Any] | None:
+def _best_score(rows: list[dict[str, Any]], *, predicate: Any) -> dict[str, Any] | None:
     candidates = [
         row
         for row in rows
@@ -1529,8 +1617,10 @@ def _best_model_metric_score(
 ) -> dict[str, Any] | None:
     return _best_score(
         rows,
-        predicate=lambda row: row.get("model_id") == model_id
-        and row.get("metric_runtime") == metric_runtime,
+        predicate=lambda row: (
+            row.get("model_id") == model_id
+            and row.get("metric_runtime") == metric_runtime
+        ),
     )
 
 

@@ -1,7 +1,7 @@
 """
 RAC Variable Mapping
 
-Maps calibration target variables to Cosilico RAC (statute) definitions.
+Maps calibration target variables to PolicyEngine RAC (statute) definitions.
 Enables validation of microdata against encoded tax law.
 """
 
@@ -10,7 +10,7 @@ from dataclasses import dataclass
 
 @dataclass
 class RACVariable:
-    """A variable defined in Cosilico RAC."""
+    """A variable defined in PolicyEngine RAC."""
     name: str
     statute: str           # e.g., "26/62" for IRC Section 62
     description: str
@@ -20,7 +20,7 @@ class RACVariable:
 
 
 # Map from target variable names to RAC definitions
-# Based on cosilico-us/statute structure
+# Based on policyengine-us/statute structure
 RAC_VARIABLE_MAP: dict[str, RACVariable] = {
     # Income (IRC Section 61 - Gross Income)
     "adjusted_gross_income": RACVariable(

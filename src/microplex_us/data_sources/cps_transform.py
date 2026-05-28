@@ -1,7 +1,7 @@
 """
-Transform CPS data to cosilico-us variables.
+Transform CPS data to policyengine-us variables.
 
-Applies all CPS -> cosilico-us mappings and constructs tax units.
+Applies all CPS -> policyengine-us mappings and constructs tax units.
 """
 
 from dataclasses import dataclass, field
@@ -17,7 +17,7 @@ from microplex_us.data_sources.cps_mappings import (
 
 @dataclass
 class TransformedDataset:
-    """CPS data transformed to cosilico-us variables."""
+    """CPS data transformed to policyengine-us variables."""
 
     persons: pl.DataFrame
     tax_units: pl.DataFrame
@@ -38,9 +38,9 @@ class TransformedDataset:
         }
 
 
-def transform_cps_to_cosilico(cps: CPSDataset) -> TransformedDataset:
+def transform_cps_to_policyengine(cps: CPSDataset) -> TransformedDataset:
     """
-    Transform CPS data to cosilico-us variables.
+    Transform CPS data to policyengine-us variables.
 
     Steps:
     1. Apply person-level mappings (age, earned_income, is_blind, etc.)
@@ -283,18 +283,18 @@ def _generate_coverage_report() -> dict:
 
     for m in mappings:
         if m.coverage == CoverageLevel.FULL:
-            full.append(m.cosilico_us_variable)
+            full.append(m.policyengine_us_variable)
         elif m.coverage == CoverageLevel.PARTIAL:
-            partial.append(m.cosilico_us_variable)
+            partial.append(m.policyengine_us_variable)
         elif m.coverage == CoverageLevel.DERIVED:
-            derived.append(m.cosilico_us_variable)
+            derived.append(m.policyengine_us_variable)
         else:
-            none.append(m.cosilico_us_variable)
+            none.append(m.policyengine_us_variable)
 
         # Collect gaps
         for gap in m.gaps:
             gaps.append({
-                "variable": m.cosilico_us_variable,
+                "variable": m.policyengine_us_variable,
                 "component": gap.component,
                 "statute_ref": gap.statute_ref,
                 "impact": gap.impact,

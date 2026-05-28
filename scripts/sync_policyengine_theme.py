@@ -1,4 +1,4 @@
-"""Sync exported Cosilico design tokens into browser-readable CSS variables."""
+"""Sync exported PolicyEngine design tokens into browser-readable CSS variables."""
 
 from __future__ import annotations
 
@@ -9,18 +9,18 @@ from pathlib import Path
 
 
 def default_source(repo_root: Path) -> Path:
-    """Return the first local Cosilico token export next to this repo."""
+    """Return the first local PolicyEngine token export next to this repo."""
 
     candidates = (
-        repo_root.parent / "cosilico.ai" / "packages" / "config" / "theme.css",
-        repo_root.parent / "cosilico" / "packages" / "config" / "theme.css",
-        repo_root.parent / "cosilico" / "apps" / "web" / "src" / "app" / "globals.css",
+        repo_root.parent / "policyengine.org" / "packages" / "config" / "theme.css",
+        repo_root.parent / "policyengine" / "packages" / "config" / "theme.css",
+        repo_root.parent / "policyengine" / "apps" / "web" / "src" / "app" / "globals.css",
     )
     for candidate in candidates:
         if candidate.exists():
             return candidate
     searched = ", ".join(str(path) for path in candidates)
-    raise FileNotFoundError(f"Could not find exported Cosilico theme. Searched: {searched}")
+    raise FileNotFoundError(f"Could not find exported PolicyEngine theme. Searched: {searched}")
 
 
 def render_browser_tokens(
@@ -40,9 +40,9 @@ def render_browser_tokens(
     except ValueError:
         display_source = source_path
     return (
-        "/* Generated from the exported Cosilico design tokens.\n"
+        "/* Generated from the exported PolicyEngine design tokens.\n"
         f"   Source: {display_source}\n"
-        "   Re-run: python scripts/sync_cosilico_theme.py\n"
+        "   Re-run: python scripts/sync_policyengine_theme.py\n"
         "*/\n"
         ":root {\n"
         f"{body}\n"
@@ -53,13 +53,13 @@ def render_browser_tokens(
 def main(argv: list[str] | None = None) -> int:
     repo_root = Path(__file__).resolve().parents[1]
     parser = argparse.ArgumentParser(
-        description="Sync @cosilico/config theme tokens into dashboard CSS."
+        description="Sync @policyengine/config theme tokens into dashboard CSS."
     )
     parser.add_argument("--source", type=Path)
     parser.add_argument(
         "--output",
         type=Path,
-        default=repo_root / "dashboard" / "cosilico-theme.css",
+        default=repo_root / "dashboard" / "policyengine-theme.css",
     )
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args(argv)

@@ -25,14 +25,14 @@ Historical note:
 
 The incumbent-compatibility track currently uses historically named runtime
 entry points in
-[`pe_us_data_rebuild.py`](/Users/maxghenis/CosilicoAI/microplex-us/src/microplex_us/pipelines/pe_us_data_rebuild.py):
+[`pe_us_data_rebuild.py`](/Users/maxghenis/PolicyEngine/microplex-us/src/microplex_us/pipelines/pe_us_data_rebuild.py):
 
 - `default_policyengine_us_data_rebuild_config(...)`
 - `default_policyengine_us_data_rebuild_source_providers(...)`
 - `build_policyengine_us_data_rebuild_pipeline(...)`
 
 And it now has one concrete saved-run checkpoint runner in
-[`pe_us_data_rebuild_checkpoint.py`](/Users/maxghenis/CosilicoAI/microplex-us/src/microplex_us/pipelines/pe_us_data_rebuild_checkpoint.py):
+[`pe_us_data_rebuild_checkpoint.py`](/Users/maxghenis/PolicyEngine/microplex-us/src/microplex_us/pipelines/pe_us_data_rebuild_checkpoint.py):
 
 - `default_policyengine_us_data_rebuild_checkpoint_config(...)`
 - `default_policyengine_us_data_rebuild_queries(...)`
@@ -49,12 +49,12 @@ That profile now also includes:
 - opt-in ACS/SCF donor providers plus a block-spec-driven SIPP donor provider
   for the compatibility path
 - one shared donor-block manifest,
-  [`pe_source_impute_blocks.json`](/Users/maxghenis/CosilicoAI/microplex-us/src/microplex_us/manifests/pe_source_impute_blocks.json),
+  [`pe_source_impute_blocks.json`](/Users/maxghenis/PolicyEngine/microplex-us/src/microplex_us/manifests/pe_source_impute_blocks.json),
   that now drives both:
   - donor-survey adapter specs in
-    [`donor_surveys.py`](/Users/maxghenis/CosilicoAI/microplex-us/src/microplex_us/data_sources/donor_surveys.py)
+    [`donor_surveys.py`](/Users/maxghenis/PolicyEngine/microplex-us/src/microplex_us/data_sources/donor_surveys.py)
   - the PE-style prespecified predictor and condition-preparation surface in
-    [`us.py`](/Users/maxghenis/CosilicoAI/microplex-us/src/microplex_us/pipelines/us.py)
+    [`us.py`](/Users/maxghenis/PolicyEngine/microplex-us/src/microplex_us/pipelines/us.py)
   - SIPP donor-block postprocessing such as month filtering, annualization, and
     household child-count features
   - SIPP raw-file extraction details such as file names, delimiters, ID parts,
@@ -62,16 +62,16 @@ That profile now also includes:
   - ACS/SCF subprocess dataset-loader details such as dataset module/class,
     table-builder mode, and canonical variable mappings
   - one explicit PE source-impute execution boundary in
-    [`pe_source_impute_engine.py`](/Users/maxghenis/CosilicoAI/microplex-us/src/microplex_us/pe_source_impute_engine.py)
+    [`pe_source_impute_engine.py`](/Users/maxghenis/PolicyEngine/microplex-us/src/microplex_us/pe_source_impute_engine.py)
     so `us.py` no longer owns PE block resolution, PE block-frame preparation /
     entity projection, condition-surface prep, the prespecified block
     fit/generate/match loop, or a second duplicated generic donor execution loop
   - one saved-run parity sidecar in
-    [`pe_us_data_rebuild_parity.py`](/Users/maxghenis/CosilicoAI/microplex-us/src/microplex_us/pipelines/pe_us_data_rebuild_parity.py)
+    [`pe_us_data_rebuild_parity.py`](/Users/maxghenis/PolicyEngine/microplex-us/src/microplex_us/pipelines/pe_us_data_rebuild_parity.py)
     that records profile conformance, the exact incumbent baseline slice, and
     the harness / PE-native verdicts for one artifact bundle
   - one saved-run native audit sidecar in
-    [`pe_us_data_rebuild_audit.py`](/Users/maxghenis/CosilicoAI/microplex-us/src/microplex_us/pipelines/pe_us_data_rebuild_audit.py)
+    [`pe_us_data_rebuild_audit.py`](/Users/maxghenis/PolicyEngine/microplex-us/src/microplex_us/pipelines/pe_us_data_rebuild_audit.py)
     that records family regressions, target-level regressions, support audits,
     and imputation-sidecar verdict hints for the same artifact bundle
   - one checkpoint runner that saves a normal versioned Microplex artifact

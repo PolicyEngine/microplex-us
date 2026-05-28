@@ -2,8 +2,8 @@
 title: "Literature review for `microplex-us`"
 author:
   - name: Max Ghenis
-    affiliation: Cosilico
-    email: max@cosilico.ai
+    affiliation: PolicyEngine
+    email: max@policyengine.org
 date: last-modified
 bibliography: references.bib
 format:

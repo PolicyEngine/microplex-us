@@ -31,8 +31,8 @@ microplex-us-pe-native-target-diagnostics \
   --output-path artifacts/pe_native_target_diagnostics_current.json
 ```
 
-The dashboard uses the exported Cosilico design tokens from
-`@cosilico/config/theme.css`; run `python scripts/sync_cosilico_theme.py --check`
+The dashboard uses the exported PolicyEngine design tokens from
+`@policyengine/config/theme.css`; run `python scripts/sync_policyengine_theme.py --check`
 to verify the local browser-readable token copy is still synced.
 When a PolicyEngine target DB is available, the JSON annotates PE-native legacy
 labels with structured target IDs and flags legacy-only gaps.
@@ -53,6 +53,6 @@ The architecture is still evolving, so the docs are deliberately technical and
 operational rather than paper-like.
 
 Method-level decomposable-family bakeoffs now live in the sibling eval repo:
-`/Users/maxghenis/CosilicoAI/microplex-evals`. `microplex-us` should keep the
+`/Users/maxghenis/PolicyEngine/microplex-evals`. `microplex-us` should keep the
 runtime helpers and pipeline-adjacent diagnostics, not the long-lived eval
 orchestration and artifact curation.

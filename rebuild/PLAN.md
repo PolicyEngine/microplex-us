@@ -81,6 +81,22 @@ one-sided refitting, that is a bug, not a result.
   expect shipped_loss ~0.166 and refit_loss <= shipped (vs the old 0.544).
   Reuses only data helpers (`_ENHANCED_CPS_BAD_TARGETS`, family classifier),
   not the old optimizer.
+- **Iter 4 (legibility/plumbing pivot)** — after matched-N showed the ACS-experiment
+  candidate loses ~2x to eCPS (and is the WRONG build to test; the eCPS-shaped
+  default config CPS+PUF-clone+donors is the parity target), the work pivoted to
+  governance: (a) `docs/build-manifest-spec.md` + `manifest/` schema + example
+  (the legibility layer Microplex never finished); (b) `docs/puf-handling-*` (eCPS
+  vs mp PUF: both QRF + same 7 predictors; eCPS "clones" = doubled CPS w/ QRF tax
+  vars; mp PUF=donor-only); (c) Gate 0 = deterministic column parity — found the
+  shipped eCPS H5 was STALE (the 13 `_reported` are already removed by merged
+  #960/#964; don't diff stale artifacts); (d) `mp_rebuild/release_manifest.py` —
+  emits a policyengine-bundles `DataReleaseManifest` (validated against the real
+  bundles schema), fed by the build manifest. This is the bundle-eligibility
+  artifact mp lacks (eCPS has `utils/release_manifest.py`).
+  DEPRECATION CHAIN (verified): mp deprecates eCPS via column parity (ingestion)
+  -> publish H5 + release manifest (certification) -> bundle pins it -> policyengine.py
+  swaps the default US dataset URI (`enhanced_cps_2024.h5` -> `mp_300k_2024.h5`).
+  Intended home for release_manifest.py: `src/microplex_us/`.
   ENV (important): run PE-native scoring from the microplex-us main checkout as
   `cd ~/CosilicoAI/microplex-us && PYTHONPATH=/Users/maxghenis/PolicyEngine/policyengine-us-data uv run --extra dev --extra policyengine python <script>`.
   `policyengine_us_data` is NOT installed in the uv env (nor the bare .venv); it

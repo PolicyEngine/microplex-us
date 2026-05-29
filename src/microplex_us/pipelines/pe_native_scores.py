@@ -1021,6 +1021,24 @@ def stored_variables_for(dataset_path: str) -> set[str]:
         return set(handle.keys())
 
 
+def calculate_first_available(sim, variables, *, period: int, map_to: str | None = None):
+    last_error = None
+    for variable in variables:
+        try:
+            if map_to is None:
+                values = sim.calculate(variable, period=period).values
+            else:
+                values = sim.calculate(variable, period=period, map_to=map_to).values
+            return variable, values
+        except ValueError as exc:
+            if "does not exist" not in str(exc):
+                raise
+            last_error = exc
+    if last_error is not None:
+        raise last_error
+    raise ValueError("No candidate variables supplied")
+
+
 def state_abbr(value) -> str:
     if value is None:
         return "NA"
@@ -1098,24 +1116,47 @@ def build_snapshot(dataset_path: str) -> dict:
     filing_status = sim.calculate("filing_status", period=PERIOD).values
     adjusted_gross_income = sim.calculate("adjusted_gross_income", period=PERIOD).values.astype(np.float64)
     ssi = sim.calculate("ssi", period=PERIOD).values.astype(np.float64)
-    medicare_part_b_premiums = sim.calculate("medicare_part_b_premiums", period=PERIOD).values.astype(np.float64)
+    medicare_part_b_variable, medicare_part_b_premiums = calculate_first_available(
+        sim,
+        (
+            "medicare_part_b_premiums",
+            "medicare_part_b_premiums_reported",
+            "medicare_part_b_premium",
+        ),
+        period=PERIOD,
+    )
+    medicare_part_b_premiums = medicare_part_b_premiums.astype(np.float64)
     aca_ptc_household = sim.calculate("aca_ptc", map_to="household", period=PERIOD).values.astype(np.float64)
 
     critical_support = {}
     for variable in CRITICAL_PERSON_VARIABLES:
-        values = sim.calculate(variable, period=PERIOD).values
+        calculated_variable = variable
+        if variable == "medicare_part_b_premiums":
+            calculated_variable, values = calculate_first_available(
+                sim,
+                (
+                    "medicare_part_b_premiums",
+                    "medicare_part_b_premiums_reported",
+                    "medicare_part_b_premium",
+                ),
+                period=PERIOD,
+            )
+        else:
+            values = sim.calculate(variable, period=PERIOD).values
+        stored = variable in stored_variables or calculated_variable in stored_variables
         if np.asarray(values).dtype == np.bool_:
             critical_support[variable] = summarize_bool(
                 values,
                 person_weights,
-                stored=variable in stored_variables,
+                stored=stored,
             )
         else:
             critical_support[variable] = summarize_numeric(
                 values,
                 person_weights,
-                stored=variable in stored_variables,
+                stored=stored,
             )
+        critical_support[variable]["calculated_variable"] = calculated_variable
 
     normalized_filing_status = np.asarray([normalize_status(value) for value in filing_status])
     filing_status_counts = {}
@@ -1210,6 +1251,7 @@ def build_snapshot(dataset_path: str) -> dict:
         "mfs_high_agi_support": mfs_agi_support,
         "hoh_agi_support": hoh_agi_support,
         "ssi_by_age": ssi_by_age,
+        "medicare_part_b_premiums_variable": medicare_part_b_variable,
         "medicare_part_b_premiums_by_age": medicare_part_b_by_age,
         "state_aca_ptc_spending": state_aca_ptc,
         "state_marketplace_enrollment": state_marketplace,
@@ -1521,6 +1563,24 @@ def stored_variables_for(dataset_path: str) -> set[str]:
         return set(handle.keys())
 
 
+def calculate_first_available(sim, variables, *, period: int, map_to: str | None = None):
+    last_error = None
+    for variable in variables:
+        try:
+            if map_to is None:
+                values = sim.calculate(variable, period=period).values
+            else:
+                values = sim.calculate(variable, period=period, map_to=map_to).values
+            return variable, values
+        except ValueError as exc:
+            if "does not exist" not in str(exc):
+                raise
+            last_error = exc
+    if last_error is not None:
+        raise last_error
+    raise ValueError("No candidate variables supplied")
+
+
 def state_abbr(value) -> str:
     if value is None:
         return "NA"
@@ -1598,24 +1658,47 @@ def build_snapshot(dataset_path: str) -> dict:
     filing_status = sim.calculate("filing_status", period=PERIOD).values
     adjusted_gross_income = sim.calculate("adjusted_gross_income", period=PERIOD).values.astype(np.float64)
     ssi = sim.calculate("ssi", period=PERIOD).values.astype(np.float64)
-    medicare_part_b_premiums = sim.calculate("medicare_part_b_premiums", period=PERIOD).values.astype(np.float64)
+    medicare_part_b_variable, medicare_part_b_premiums = calculate_first_available(
+        sim,
+        (
+            "medicare_part_b_premiums",
+            "medicare_part_b_premiums_reported",
+            "medicare_part_b_premium",
+        ),
+        period=PERIOD,
+    )
+    medicare_part_b_premiums = medicare_part_b_premiums.astype(np.float64)
     aca_ptc_household = sim.calculate("aca_ptc", map_to="household", period=PERIOD).values.astype(np.float64)
 
     critical_support = {}
     for variable in CRITICAL_PERSON_VARIABLES:
-        values = sim.calculate(variable, period=PERIOD).values
+        calculated_variable = variable
+        if variable == "medicare_part_b_premiums":
+            calculated_variable, values = calculate_first_available(
+                sim,
+                (
+                    "medicare_part_b_premiums",
+                    "medicare_part_b_premiums_reported",
+                    "medicare_part_b_premium",
+                ),
+                period=PERIOD,
+            )
+        else:
+            values = sim.calculate(variable, period=PERIOD).values
+        stored = variable in stored_variables or calculated_variable in stored_variables
         if np.asarray(values).dtype == np.bool_:
             critical_support[variable] = summarize_bool(
                 values,
                 person_weights,
-                stored=variable in stored_variables,
+                stored=stored,
             )
         else:
             critical_support[variable] = summarize_numeric(
                 values,
                 person_weights,
-                stored=variable in stored_variables,
+                stored=stored,
             )
+        critical_support[variable]["calculated_variable"] = calculated_variable
 
     normalized_filing_status = np.asarray([normalize_status(value) for value in filing_status])
     filing_status_counts = {}
@@ -1710,6 +1793,7 @@ def build_snapshot(dataset_path: str) -> dict:
         "mfs_high_agi_support": mfs_agi_support,
         "hoh_agi_support": hoh_agi_support,
         "ssi_by_age": ssi_by_age,
+        "medicare_part_b_premiums_variable": medicare_part_b_variable,
         "medicare_part_b_premiums_by_age": medicare_part_b_by_age,
         "state_aca_ptc_spending": state_aca_ptc,
         "state_marketplace_enrollment": state_marketplace,

@@ -5850,13 +5850,54 @@ class USMicroplexPipeline:
         next_tax_unit_id = 0
         preserved_households: set[Any] = set()
 
+        role_based = self._build_policyengine_tax_units_from_role_flags(
+            persons,
+            start_tax_unit_id=next_tax_unit_id,
+        )
+        if role_based is not None:
+            role_tax_units, role_person_rows, role_households = role_based
+            if len(role_households) == person_rows["household_id"].nunique():
+                return role_tax_units, role_person_rows
+            if not role_tax_units.empty:
+                tax_unit_rows.extend(role_tax_units.to_dict(orient="records"))
+                person_to_tax_unit.update(
+                    {
+                        int(person_id): int(tax_unit_id)
+                        for person_id, tax_unit_id in zip(
+                            role_person_rows["person_id"].tolist(),
+                            role_person_rows["tax_unit_id"].tolist(),
+                            strict=True,
+                        )
+                    }
+                )
+                preserved_households.update(role_households)
+                next_tax_unit_id = (
+                    int(
+                        pd.to_numeric(
+                            role_tax_units["tax_unit_id"],
+                            errors="coerce",
+                        ).max()
+                    )
+                    + 1
+                )
+
         if self.config.policyengine_prefer_existing_tax_unit_ids:
-            preserved = self._build_policyengine_tax_units_from_existing_ids(persons)
+            remaining_persons = persons.loc[
+                ~persons["household_id"].isin(preserved_households)
+            ].copy()
+            preserved = self._build_policyengine_tax_units_from_existing_ids(
+                remaining_persons,
+                start_tax_unit_id=next_tax_unit_id,
+            )
             if preserved is not None:
-                preserved_tax_units, preserved_person_rows, preserved_households = (
+                preserved_tax_units, preserved_person_rows, existing_households = (
                     preserved
                 )
-                if len(preserved_households) == person_rows["household_id"].nunique():
+                if (
+                    len(existing_households | preserved_households)
+                    == person_rows["household_id"].nunique()
+                    and not tax_unit_rows
+                ):
                     return preserved_tax_units, preserved_person_rows
                 if not preserved_tax_units.empty:
                     tax_unit_rows.extend(preserved_tax_units.to_dict(orient="records"))
@@ -5870,6 +5911,7 @@ class USMicroplexPipeline:
                             )
                         }
                     )
+                    preserved_households.update(existing_households)
                     next_tax_unit_id = (
                         int(
                             pd.to_numeric(
@@ -5976,9 +6018,165 @@ class USMicroplexPipeline:
         tax_units = pd.DataFrame(tax_unit_rows)
         return tax_units, person_rows
 
+    def _build_policyengine_tax_units_from_role_flags(
+        self,
+        persons: pd.DataFrame,
+        *,
+        start_tax_unit_id: int = 0,
+    ) -> tuple[pd.DataFrame, pd.DataFrame, set[Any]] | None:
+        role_columns = {
+            "is_tax_unit_head",
+            "is_tax_unit_spouse",
+            "is_tax_unit_dependent",
+        }
+        if not role_columns.issubset(persons.columns) or "person_id" not in persons.columns:
+            return None
+
+        person_rows = persons.copy()
+        person_rows["_is_tax_unit_head_flag"] = self._role_flag_series(
+            person_rows,
+            "is_tax_unit_head",
+        )
+        person_rows["_is_tax_unit_spouse_flag"] = self._role_flag_series(
+            person_rows,
+            "is_tax_unit_spouse",
+        )
+        person_rows["_is_tax_unit_dependent_flag"] = self._role_flag_series(
+            person_rows,
+            "is_tax_unit_dependent",
+        )
+
+        tax_unit_rows: list[dict[str, Any]] = []
+        person_to_tax_unit: dict[int, int] = {}
+        role_households: set[Any] = set()
+        next_tax_unit_id = int(start_tax_unit_id)
+
+        for household_id, household_persons in person_rows.groupby(
+            "household_id",
+            sort=False,
+        ):
+            ordered = household_persons.sort_values(
+                ["relationship_to_head", "age", "person_id"],
+                ascending=[True, False, True],
+            ).copy()
+            head_rows = ordered.loc[ordered["_is_tax_unit_head_flag"]]
+            if head_rows.empty:
+                continue
+
+            head_ids = [int(person_id) for person_id in head_rows["person_id"].tolist()]
+            head_to_spouses = self._assign_role_flag_spouses(ordered, head_ids)
+            head_to_dependents = self._assign_role_flag_dependents(ordered, head_ids)
+            assigned_person_ids: set[int] = set()
+
+            for head_id in head_ids:
+                spouse_ids = head_to_spouses.get(head_id, [])
+                dependent_ids = head_to_dependents.get(head_id, [])
+                unit_person_ids = [head_id, *spouse_ids, *dependent_ids]
+                unit_persons = ordered.loc[
+                    ordered["person_id"].astype(int).isin(unit_person_ids)
+                ].copy()
+                if unit_persons.empty:
+                    continue
+                global_tax_unit_id = next_tax_unit_id
+                next_tax_unit_id += 1
+                for person_id in unit_person_ids:
+                    person_to_tax_unit[int(person_id)] = global_tax_unit_id
+                    assigned_person_ids.add(int(person_id))
+
+                filing_status = self._infer_role_flag_tax_unit_filing_status(
+                    unit_persons,
+                    head_id=head_id,
+                    spouse_ids=spouse_ids,
+                    dependent_ids=dependent_ids,
+                )
+                tax_unit_rows.append(
+                    {
+                        "tax_unit_id": global_tax_unit_id,
+                        "household_id": int(household_id),
+                        "filing_status": filing_status,
+                        "member_ids": [
+                            int(person_id) for person_id in unit_person_ids
+                        ],
+                        "filer_ids": [head_id, *spouse_ids],
+                        "dependent_ids": dependent_ids,
+                        "n_dependents": len(dependent_ids),
+                        "total_income": float(
+                            pd.to_numeric(
+                                unit_persons.get("income", 0.0),
+                                errors="coerce",
+                            )
+                            .fillna(0.0)
+                            .sum()
+                        ),
+                        "tax_liability": 0.0,
+                        **self._aggregate_policyengine_tax_unit_input_columns(
+                            unit_persons
+                        ),
+                    }
+                )
+
+            unassigned = [
+                int(person_id)
+                for person_id in ordered["person_id"].tolist()
+                if int(person_id) not in assigned_person_ids
+            ]
+            for person_id in unassigned:
+                unit_persons = ordered.loc[
+                    ordered["person_id"].astype(int).eq(person_id)
+                ].copy()
+                global_tax_unit_id = next_tax_unit_id
+                next_tax_unit_id += 1
+                person_to_tax_unit[person_id] = global_tax_unit_id
+                tax_unit_rows.append(
+                    {
+                        "tax_unit_id": global_tax_unit_id,
+                        "household_id": int(household_id),
+                        "filing_status": "SINGLE",
+                        "member_ids": [person_id],
+                        "filer_ids": [person_id],
+                        "dependent_ids": [],
+                        "n_dependents": 0,
+                        "total_income": float(
+                            pd.to_numeric(
+                                unit_persons.get("income", 0.0),
+                                errors="coerce",
+                            )
+                            .fillna(0.0)
+                            .sum()
+                        ),
+                        "tax_liability": 0.0,
+                        **self._aggregate_policyengine_tax_unit_input_columns(
+                            unit_persons
+                        ),
+                    }
+                )
+
+            role_households.add(household_id)
+
+        if not tax_unit_rows:
+            return None
+
+        result_persons = person_rows.loc[
+            person_rows["household_id"].isin(role_households)
+        ].copy()
+        result_persons["tax_unit_id"] = result_persons["person_id"].map(
+            person_to_tax_unit
+        )
+        result_persons = result_persons.drop(
+            columns=[
+                "_is_tax_unit_head_flag",
+                "_is_tax_unit_spouse_flag",
+                "_is_tax_unit_dependent_flag",
+            ],
+            errors="ignore",
+        )
+        return pd.DataFrame(tax_unit_rows), result_persons, role_households
+
     def _build_policyengine_tax_units_from_existing_ids(
         self,
         persons: pd.DataFrame,
+        *,
+        start_tax_unit_id: int = 0,
     ) -> tuple[pd.DataFrame, pd.DataFrame, set[Any]] | None:
         if "tax_unit_id" not in persons.columns or "person_id" not in persons.columns:
             return None
@@ -6018,11 +6216,18 @@ class USMicroplexPipeline:
                 pd.factorize(pd.MultiIndex.from_frame(tax_unit_key), sort=False)[
                     0
                 ].astype(np.int64)
-                + 1
+                + int(start_tax_unit_id)
             )
             person_rows["tax_unit_id"] = normalized_tax_unit_id
         else:
-            person_rows["tax_unit_id"] = raw_tax_unit_id.astype(np.int64)
+            raw_tax_unit_id = raw_tax_unit_id.astype(np.int64)
+            if int(start_tax_unit_id) == 0:
+                person_rows["tax_unit_id"] = raw_tax_unit_id
+            else:
+                raw_min = int(raw_tax_unit_id.min()) if len(raw_tax_unit_id) else 0
+                person_rows["tax_unit_id"] = (
+                    raw_tax_unit_id - raw_min + int(start_tax_unit_id)
+                ).astype(np.int64)
 
         tax_unit_rows: list[dict[str, Any]] = []
         for tax_unit_id, unit_persons in person_rows.groupby("tax_unit_id", sort=False):
@@ -6065,6 +6270,156 @@ class USMicroplexPipeline:
             )
 
         return pd.DataFrame(tax_unit_rows), person_rows, preserved_households
+
+    def _role_flag_series(self, frame: pd.DataFrame, column: str) -> pd.Series:
+        if column not in frame.columns:
+            return pd.Series(False, index=frame.index, dtype=bool)
+        return pd.to_numeric(frame[column], errors="coerce").fillna(0.0).gt(0.5)
+
+    def _assign_role_flag_spouses(
+        self,
+        household_persons: pd.DataFrame,
+        head_ids: list[int],
+    ) -> dict[int, list[int]]:
+        head_set = set(head_ids)
+        assignments: dict[int, list[int]] = {head_id: [] for head_id in head_ids}
+        spouse_rows = household_persons.loc[
+            household_persons["_is_tax_unit_spouse_flag"]
+        ]
+        if spouse_rows.empty:
+            return assignments
+
+        person_number = (
+            pd.to_numeric(
+                household_persons.get("person_number"),
+                errors="coerce",
+            )
+            .fillna(0)
+            .astype(int)
+            if "person_number" in household_persons.columns
+            else pd.Series(0, index=household_persons.index, dtype=int)
+        )
+        spouse_number = (
+            pd.to_numeric(
+                household_persons.get("spouse_person_number"),
+                errors="coerce",
+            )
+            .fillna(0)
+            .astype(int)
+            if "spouse_person_number" in household_persons.columns
+            else pd.Series(0, index=household_persons.index, dtype=int)
+        )
+        head_by_person_number = {
+            int(person_number.loc[index]): int(row["person_id"])
+            for index, row in household_persons.iterrows()
+            if int(row["person_id"]) in head_set
+            and int(person_number.loc[index]) > 0
+        }
+        row_by_person_id = {
+            int(row["person_id"]): index
+            for index, row in household_persons.iterrows()
+        }
+        assigned_spouses: set[int] = set()
+
+        for index, row in spouse_rows.iterrows():
+            spouse_id = int(row["person_id"])
+            pointed_head_id = head_by_person_number.get(int(spouse_number.loc[index]))
+            if pointed_head_id is None:
+                spouse_person_number = int(person_number.loc[index])
+                for head_id in head_ids:
+                    head_index = row_by_person_id.get(head_id)
+                    if head_index is None:
+                        continue
+                    if int(spouse_number.loc[head_index]) == spouse_person_number:
+                        pointed_head_id = head_id
+                        break
+            if pointed_head_id is None:
+                continue
+            if assignments[pointed_head_id]:
+                continue
+            assignments[pointed_head_id].append(spouse_id)
+            assigned_spouses.add(spouse_id)
+
+        unassigned_spouse_ids = [
+            int(person_id)
+            for person_id in spouse_rows["person_id"].tolist()
+            if int(person_id) not in assigned_spouses
+        ]
+        heads_without_spouse = [
+            head_id for head_id in head_ids if not assignments[head_id]
+        ]
+        for head_id, spouse_id in zip(
+            heads_without_spouse,
+            unassigned_spouse_ids,
+            strict=False,
+        ):
+            assignments[head_id].append(spouse_id)
+
+        return assignments
+
+    def _assign_role_flag_dependents(
+        self,
+        household_persons: pd.DataFrame,
+        head_ids: list[int],
+    ) -> dict[int, list[int]]:
+        assignments: dict[int, list[int]] = {head_id: [] for head_id in head_ids}
+        dependent_rows = household_persons.loc[
+            household_persons["_is_tax_unit_dependent_flag"]
+        ].sort_values(["age", "person_id"], ascending=[True, True])
+        if dependent_rows.empty:
+            return assignments
+
+        target_counts: dict[int, int] = {}
+        if "tax_unit_count_dependents" in household_persons.columns:
+            count_series = pd.to_numeric(
+                household_persons["tax_unit_count_dependents"],
+                errors="coerce",
+            ).fillna(0)
+            for head_id in head_ids:
+                head_mask = household_persons["person_id"].astype(int).eq(head_id)
+                if not bool(head_mask.any()):
+                    target_counts[head_id] = 0
+                    continue
+                target_counts[head_id] = max(
+                    0,
+                    int(round(float(count_series.loc[head_mask].iloc[0]))),
+                )
+        else:
+            target_counts = {head_id: 0 for head_id in head_ids}
+
+        for _, dependent in dependent_rows.iterrows():
+            dependent_id = int(dependent["person_id"])
+            candidates = [
+                head_id
+                for head_id in head_ids
+                if len(assignments[head_id]) < target_counts.get(head_id, 0)
+            ]
+            head_id = candidates[0] if candidates else head_ids[0]
+            assignments[head_id].append(dependent_id)
+
+        return assignments
+
+    def _infer_role_flag_tax_unit_filing_status(
+        self,
+        unit_persons: pd.DataFrame,
+        *,
+        head_id: int,
+        spouse_ids: list[int],
+        dependent_ids: list[int],
+    ) -> str:
+        if spouse_ids:
+            return "JOINT"
+
+        head_rows = unit_persons.loc[unit_persons["person_id"].astype(int).eq(head_id)]
+        if head_rows.empty:
+            return "SINGLE"
+        hinted_status = self._infer_single_filer_filing_status(
+            head_rows.iloc[0],
+            has_dependents=bool(dependent_ids),
+        )
+        if hinted_status is not None:
+            return hinted_status
+        return "HEAD_OF_HOUSEHOLD" if dependent_ids else "SINGLE"
 
     def _aggregate_policyengine_tax_unit_input_columns(
         self,

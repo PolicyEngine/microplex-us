@@ -264,6 +264,23 @@ def test_sound_ecps_replacement_comparison_satisfies_gate_contract(
         "household_net_income",
     }
     assert summary["protected_family_losses"]["wages"]["n_targets"] == 1
+    target_diagnostics = payload["target_diagnostics"]
+    assert target_diagnostics["summary"]["n_targets"] == len(_TARGET_NAMES)
+    assert (
+        target_diagnostics["summary"]["candidate_wins"]
+        + target_diagnostics["summary"]["baseline_wins"]
+        + target_diagnostics["summary"]["ties"]
+        == len(_TARGET_NAMES)
+    )
+    assert target_diagnostics["summary"]["train_targets"] > 0
+    assert target_diagnostics["summary"]["holdout_targets"] > 0
+    assert target_diagnostics["top_regressions"]
+    assert target_diagnostics["top_improvements"]
+    assert len(target_diagnostics["targets"]) == len(_TARGET_NAMES)
+    assert {
+        row["split"] for row in target_diagnostics["targets"]
+    } == {"train", "holdout"}
+    assert target_diagnostics["family_breakdown"]
     structure = payload["entity_structure"]["candidate_matched"]
     assert structure["household_count"] == 2
     assert structure["person_count"] == 3
@@ -311,6 +328,39 @@ def test_sound_ecps_replacement_comparison_satisfies_gate_contract(
 
     assert gate_report["summary"]["status"] == "passed"
     assert gate_report["gates"]["ecps_comparison"]["status"] == "pass"
+
+
+def test_sound_ecps_replacement_comparison_writes_target_diagnostics_sidecar(
+    monkeypatch,
+    tmp_path,
+):
+    candidate = _write_minimal_policyengine_dataset(tmp_path / "candidate.h5")
+    baseline = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    output_dir = tmp_path / "comparison"
+    output_path = output_dir / "comparison.json"
+    monkeypatch.setattr(ecps, "_extract_pe_native_loss_inputs", _fake_loss_inputs)
+    monkeypatch.setattr(ecps, "compute_us_pe_native_scores", _fake_pe_native_scores)
+
+    written = ecps.write_sound_ecps_replacement_comparison(
+        output_path,
+        candidate_dataset_path=candidate,
+        baseline_dataset_path=baseline,
+        output_dir=output_dir,
+        optimizer_max_iter=50,
+        target_diagnostics_top_k=3,
+    )
+
+    payload = json.loads(written.read_text())
+    diagnostics_path = output_dir / "target_loss_diagnostics.json"
+    diagnostics_payload = json.loads(diagnostics_path.read_text())
+    descriptor = payload["artifacts"]["target_loss_diagnostics"]
+
+    assert descriptor["path"] == str(diagnostics_path.resolve())
+    assert descriptor["size_bytes"] == diagnostics_path.stat().st_size
+    assert payload["target_diagnostics"] == diagnostics_payload
+    assert diagnostics_payload["summary"]["top_k"] == 3
+    assert len(diagnostics_payload["top_regressions"]) == 3
+    assert len(diagnostics_payload["top_improvements"]) == 3
 
 
 def test_sound_ecps_replacement_comparison_flags_score_mismatch(

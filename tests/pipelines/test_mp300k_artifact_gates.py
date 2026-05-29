@@ -821,6 +821,36 @@ def test_ecps_comparison_rejects_missing_ecps_refit_recovery(tmp_path):
     assert ecps_gate["details"]["ecps_refit_recovery_passed"] is False
 
 
+def test_ecps_comparison_requires_measured_refit_objective_identity(tmp_path):
+    artifact_dir = tmp_path / "artifact"
+    artifact_dir.mkdir()
+    _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
+    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    benchmark_manifest = tmp_path / "benchmark_manifest.json"
+    _write_benchmark_manifest(benchmark_manifest)
+    _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
+    payload = _sound_ecps_comparison_payload(candidate_loss=0.10)
+    del payload["summary"]["refit_objective_matches_scoring"]
+
+    report_path = write_mp300k_artifact_gate_report(
+        artifact_dir,
+        ecps_comparison_payload=payload,
+        arch_coverage_payload=_arch_coverage_payload(),
+        runtime_smoke_payload={"runtime_ratio": 1.0},
+        benchmark_manifest_path=benchmark_manifest,
+        compute_native_scores=False,
+        update_manifest=False,
+    )
+
+    record = json.loads(report_path.read_text())
+    ecps_gate = record["gates"]["ecps_comparison"]
+
+    assert record["summary"]["status"] == "failed"
+    assert ecps_gate["status"] == "fail"
+    assert "refit_objective_matches_scoring" in ecps_gate["summary"]
+    assert ecps_gate["details"]["refit_objective_matches_scoring"] is None
+
+
 def test_runtime_gate_ignores_contradictory_producer_verdict(tmp_path):
     artifact_dir = tmp_path / "artifact"
     artifact_dir.mkdir()

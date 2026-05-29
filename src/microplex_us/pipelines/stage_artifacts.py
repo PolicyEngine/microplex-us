@@ -5,9 +5,12 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal, TypedDict, cast
+from typing import TYPE_CHECKING, Any, Literal, TypedDict, cast
+
+import pandas as pd
 
 from microplex_us.pipelines.stage_contracts import (
     US_STAGE_CONTRACT_VERSION,
@@ -18,7 +21,12 @@ from microplex_us.pipelines.stage_contracts import (
 from microplex_us.pipelines.stage_manifest import (
     USStageManifest,
     build_us_stage_manifest,
+    load_us_policyengine_entity_stage_artifact,
 )
+
+if TYPE_CHECKING:
+    from microplex_us.pipelines.us import USMicroplexTargets
+    from microplex_us.policyengine import PolicyEngineUSEntityTableBundle
 
 US_STAGE_ARTIFACT_INVENTORY_SCHEMA_VERSION = 1
 DEFAULT_US_STAGE_ARTIFACT_HASH_MAX_BYTES = 25_000_000
@@ -77,6 +85,46 @@ class USStageArtifactInventory(TypedDict):
     manifest: str
     stageManifest: str | None
     artifacts: list[USStageArtifactInventoryRecord]
+
+
+@dataclass(frozen=True)
+class USCandidateStageArtifacts:
+    """Reloaded Stage 4/5 candidate artifacts for manual downstream replay."""
+
+    seed_data: pd.DataFrame
+    synthetic_data: pd.DataFrame
+    targets: USMicroplexTargets
+    scaffold_seed_data: pd.DataFrame | None = None
+    artifact_paths: Mapping[str, Path] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class USPolicyEngineEntityStageArtifacts:
+    """Reloaded Stage 6 PolicyEngine entity-table checkpoint."""
+
+    bundle: PolicyEngineUSEntityTableBundle
+    metadata: dict[str, Any]
+    metadata_path: Path
+
+
+@dataclass(frozen=True)
+class USCalibratedStageArtifacts:
+    """Reloaded Stage 7 calibrated data and target metadata."""
+
+    calibrated_data: pd.DataFrame
+    targets: USMicroplexTargets
+    calibration_summary: dict[str, Any]
+    artifact_paths: Mapping[str, Path] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class USDatasetAssemblyArtifacts:
+    """Resolved Stage 8 dataset assembly artifacts."""
+
+    policyengine_dataset: Path
+    manifest: Path
+    stage_manifest: Path
+    data_flow_snapshot: Path
 
 
 def build_us_stage_artifact_inventory(
@@ -197,6 +245,317 @@ def resolve_us_stage_artifact_from_inventory(
             path = Path(artifact_dir) / path
         return path
     raise KeyError(f"Stage artifact not found: {stage_id}.{artifact_key}")
+
+
+def resolve_us_stage_artifact_path_checked(
+    artifact_dir: str | Path,
+    stage_id: str,
+    artifact_key: str,
+    *,
+    manifest_payload: dict[str, Any] | None = None,
+    stage_manifest: USStageManifest | dict[str, Any] | None = None,
+    expected_format: StageArtifactFormat | None = None,
+    require_exists: bool = True,
+) -> Path:
+    """Resolve one stage artifact path and enforce format/existence checks."""
+
+    artifact_root = Path(artifact_dir)
+    record = _stage_artifact_record(
+        artifact_root,
+        stage_id,
+        artifact_key,
+        manifest_payload=manifest_payload,
+        stage_manifest=stage_manifest,
+    )
+    actual_format = cast(StageArtifactFormat, record.get("format") or "unknown")
+    if expected_format is not None and actual_format != expected_format:
+        raise ValueError(
+            f"Stage artifact {stage_id}.{artifact_key} has format "
+            f"{actual_format!r}, expected {expected_format!r}"
+        )
+    path_text = record.get("path")
+    if not path_text:
+        raise KeyError(f"Stage artifact has no path: {stage_id}.{artifact_key}")
+    path = Path(str(path_text))
+    if not path.is_absolute():
+        path = artifact_root / path
+    if require_exists and not path.exists():
+        raise FileNotFoundError(f"Stage artifact not found: {path}")
+    return path
+
+
+def load_us_stage_parquet_artifact(
+    artifact_dir: str | Path,
+    stage_id: str,
+    artifact_key: str,
+    *,
+    manifest_payload: dict[str, Any] | None = None,
+    stage_manifest: USStageManifest | dict[str, Any] | None = None,
+) -> pd.DataFrame:
+    """Load one stage-owned parquet dataframe artifact."""
+
+    path = resolve_us_stage_artifact_path_checked(
+        artifact_dir,
+        stage_id,
+        artifact_key,
+        manifest_payload=manifest_payload,
+        stage_manifest=stage_manifest,
+        expected_format="parquet_dataframe",
+    )
+    return pd.read_parquet(path)
+
+
+def load_us_stage_json_artifact(
+    artifact_dir: str | Path,
+    stage_id: str,
+    artifact_key: str,
+    *,
+    manifest_payload: dict[str, Any] | None = None,
+    stage_manifest: USStageManifest | dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Load one stage-owned JSON artifact."""
+
+    path = resolve_us_stage_artifact_path_checked(
+        artifact_dir,
+        stage_id,
+        artifact_key,
+        manifest_payload=manifest_payload,
+        stage_manifest=stage_manifest,
+        expected_format="json",
+    )
+    payload = json.loads(path.read_text())
+    if not isinstance(payload, dict):
+        raise ValueError(f"Expected JSON object in stage artifact: {path}")
+    return dict(payload)
+
+
+def load_us_candidate_stage_artifacts(
+    artifact_dir: str | Path,
+    *,
+    manifest_payload: dict[str, Any] | None = None,
+    stage_manifest: USStageManifest | dict[str, Any] | None = None,
+) -> USCandidateStageArtifacts:
+    """Load the saved candidate population artifacts for manual replay."""
+
+    from microplex_us.pipelines.us import USMicroplexTargets
+
+    seed_path = resolve_us_stage_artifact_path_checked(
+        artifact_dir,
+        "05_donor_integration_synthesis",
+        "seed_data",
+        manifest_payload=manifest_payload,
+        stage_manifest=stage_manifest,
+        expected_format="parquet_dataframe",
+    )
+    synthetic_path = resolve_us_stage_artifact_path_checked(
+        artifact_dir,
+        "05_donor_integration_synthesis",
+        "synthetic_data",
+        manifest_payload=manifest_payload,
+        stage_manifest=stage_manifest,
+        expected_format="parquet_dataframe",
+    )
+    targets_path = resolve_us_stage_artifact_path_checked(
+        artifact_dir,
+        "07_calibration",
+        "targets",
+        manifest_payload=manifest_payload,
+        stage_manifest=stage_manifest,
+        expected_format="json",
+    )
+    scaffold_seed_path = _resolve_optional_stage_artifact_path(
+        artifact_dir,
+        "04_seed_scaffold",
+        "scaffold_seed_data",
+        manifest_payload=manifest_payload,
+        stage_manifest=stage_manifest,
+        expected_format="parquet_dataframe",
+    )
+    targets_payload = json.loads(targets_path.read_text())
+    return USCandidateStageArtifacts(
+        seed_data=pd.read_parquet(seed_path),
+        synthetic_data=pd.read_parquet(synthetic_path),
+        targets=USMicroplexTargets(
+            marginal=dict(targets_payload.get("marginal", {})),
+            continuous=dict(targets_payload.get("continuous", {})),
+        ),
+        scaffold_seed_data=(
+            pd.read_parquet(scaffold_seed_path)
+            if scaffold_seed_path is not None
+            else None
+        ),
+        artifact_paths={
+            "seed_data": seed_path,
+            "synthetic_data": synthetic_path,
+            "targets": targets_path,
+            **(
+                {"scaffold_seed_data": scaffold_seed_path}
+                if scaffold_seed_path is not None
+                else {}
+            ),
+        },
+    )
+
+
+def load_us_policyengine_entity_stage_artifacts(
+    artifact_dir: str | Path,
+    *,
+    manifest_payload: dict[str, Any] | None = None,
+    stage_manifest: USStageManifest | dict[str, Any] | None = None,
+) -> USPolicyEngineEntityStageArtifacts:
+    """Load the saved Stage 6 PolicyEngine entity-table bundle."""
+
+    metadata_path = resolve_us_stage_artifact_path_checked(
+        artifact_dir,
+        "06_policyengine_entities",
+        "policyengine_entity_tables",
+        manifest_payload=manifest_payload,
+        stage_manifest=stage_manifest,
+        expected_format="policyengine_entity_bundle",
+    )
+    bundle, metadata = load_us_policyengine_entity_stage_artifact(metadata_path)
+    return USPolicyEngineEntityStageArtifacts(
+        bundle=bundle,
+        metadata=metadata,
+        metadata_path=metadata_path,
+    )
+
+
+def load_us_calibrated_stage_artifacts(
+    artifact_dir: str | Path,
+    *,
+    manifest_payload: dict[str, Any] | None = None,
+    stage_manifest: USStageManifest | dict[str, Any] | None = None,
+) -> USCalibratedStageArtifacts:
+    """Load saved Stage 7 calibrated outputs and calibration metadata."""
+
+    from microplex_us.pipelines.us import USMicroplexTargets
+
+    calibrated_path = resolve_us_stage_artifact_path_checked(
+        artifact_dir,
+        "07_calibration",
+        "calibrated_data",
+        manifest_payload=manifest_payload,
+        stage_manifest=stage_manifest,
+        expected_format="parquet_dataframe",
+    )
+    targets_path = resolve_us_stage_artifact_path_checked(
+        artifact_dir,
+        "07_calibration",
+        "targets",
+        manifest_payload=manifest_payload,
+        stage_manifest=stage_manifest,
+        expected_format="json",
+    )
+    calibration_summary_path = resolve_us_stage_artifact_path_checked(
+        artifact_dir,
+        "07_calibration",
+        "calibration_summary",
+        manifest_payload=manifest_payload,
+        stage_manifest=stage_manifest,
+        expected_format="json",
+    )
+    targets_payload = json.loads(targets_path.read_text())
+    return USCalibratedStageArtifacts(
+        calibrated_data=pd.read_parquet(calibrated_path),
+        targets=USMicroplexTargets(
+            marginal=dict(targets_payload.get("marginal", {})),
+            continuous=dict(targets_payload.get("continuous", {})),
+        ),
+        calibration_summary=json.loads(calibration_summary_path.read_text()),
+        artifact_paths={
+            "calibrated_data": calibrated_path,
+            "targets": targets_path,
+            "calibration_summary": calibration_summary_path,
+        },
+    )
+
+
+def load_us_dataset_assembly_artifacts(
+    artifact_dir: str | Path,
+    *,
+    manifest_payload: dict[str, Any] | None = None,
+    stage_manifest: USStageManifest | dict[str, Any] | None = None,
+) -> USDatasetAssemblyArtifacts:
+    """Resolve saved Stage 8 dataset assembly artifacts."""
+
+    artifact_root = Path(artifact_dir)
+    return USDatasetAssemblyArtifacts(
+        policyengine_dataset=resolve_us_stage_artifact_path_checked(
+            artifact_root,
+            "08_dataset_assembly",
+            "policyengine_dataset",
+            manifest_payload=manifest_payload,
+            stage_manifest=stage_manifest,
+            expected_format="h5_dataset",
+        ),
+        manifest=artifact_root / "manifest.json",
+        stage_manifest=resolve_us_stage_artifact_path_checked(
+            artifact_root,
+            "08_dataset_assembly",
+            "stage_manifest",
+            manifest_payload=manifest_payload,
+            stage_manifest=stage_manifest,
+            expected_format="json",
+        ),
+        data_flow_snapshot=resolve_us_stage_artifact_path_checked(
+            artifact_root,
+            "08_dataset_assembly",
+            "data_flow_snapshot",
+            manifest_payload=manifest_payload,
+            stage_manifest=stage_manifest,
+            expected_format="json",
+        ),
+    )
+
+
+def _stage_artifact_record(
+    artifact_root: Path,
+    stage_id: str,
+    artifact_key: str,
+    *,
+    manifest_payload: dict[str, Any] | None,
+    stage_manifest: USStageManifest | dict[str, Any] | None,
+) -> dict[str, Any]:
+    manifest = (
+        dict(manifest_payload)
+        if manifest_payload is not None
+        else json.loads((artifact_root / "manifest.json").read_text())
+    )
+    stages = (
+        dict(stage_manifest)
+        if stage_manifest is not None
+        else build_us_stage_manifest(artifact_root, manifest_payload=manifest)
+    )
+    for stage in stages.get("stages", ()):
+        if not isinstance(stage, dict) or stage.get("id") != stage_id:
+            continue
+        for artifact in stage.get("artifacts", ()):
+            if isinstance(artifact, dict) and artifact.get("key") == artifact_key:
+                return dict(artifact)
+    raise KeyError(f"Stage artifact not found: {stage_id}.{artifact_key}")
+
+
+def _resolve_optional_stage_artifact_path(
+    artifact_dir: str | Path,
+    stage_id: str,
+    artifact_key: str,
+    *,
+    manifest_payload: dict[str, Any] | None,
+    stage_manifest: USStageManifest | dict[str, Any] | None,
+    expected_format: StageArtifactFormat,
+) -> Path | None:
+    try:
+        return resolve_us_stage_artifact_path_checked(
+            artifact_dir,
+            stage_id,
+            artifact_key,
+            manifest_payload=manifest_payload,
+            stage_manifest=stage_manifest,
+            expected_format=expected_format,
+        )
+    except (KeyError, FileNotFoundError):
+        return None
 
 
 def _inventory_record(
@@ -369,12 +728,23 @@ def _write_json_atomically(path: Path, payload: Mapping[str, Any]) -> None:
 __all__ = [
     "DEFAULT_US_STAGE_ARTIFACT_HASH_MAX_BYTES",
     "US_STAGE_ARTIFACT_INVENTORY_SCHEMA_VERSION",
+    "USCalibratedStageArtifacts",
+    "USCandidateStageArtifacts",
+    "USDatasetAssemblyArtifacts",
+    "USPolicyEngineEntityStageArtifacts",
     "USStageArtifactClassification",
     "USStageArtifactHashStatus",
     "USStageArtifactInventory",
     "USStageArtifactInventoryRecord",
     "build_us_stage_artifact_inventory",
+    "load_us_calibrated_stage_artifacts",
+    "load_us_candidate_stage_artifacts",
+    "load_us_dataset_assembly_artifacts",
+    "load_us_policyengine_entity_stage_artifacts",
+    "load_us_stage_json_artifact",
+    "load_us_stage_parquet_artifact",
     "load_us_stage_artifact_inventory",
+    "resolve_us_stage_artifact_path_checked",
     "resolve_us_stage_artifact_from_inventory",
     "write_us_stage_artifact_inventory",
 ]

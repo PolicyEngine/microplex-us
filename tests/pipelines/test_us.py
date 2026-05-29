@@ -1,5 +1,6 @@
 """Tests for the US microplex pipeline library."""
 
+import json
 import logging
 import sqlite3
 from types import SimpleNamespace
@@ -235,7 +236,9 @@ class TestUSMicroplexBuildConfig:
         assert config.n_synthetic == 100_000
         assert config.random_seed == 42
         assert config.donor_imputer_authoritative_override_variables == ()
-        assert config.policyengine_calibration_deferred_stage_min_active_households == ()
+        assert (
+            config.policyengine_calibration_deferred_stage_min_active_households == ()
+        )
         assert config.policyengine_calibration_deferred_stage_max_constraints == 24
         assert (
             config.policyengine_calibration_deferred_stage_min_full_oracle_capped_mean_abs_relative_error
@@ -1483,7 +1486,6 @@ class TestUSMicroplexPipeline:
         assert tax_units.loc[
             tax_units["household_id"] == 20, "tax_unit_id"
         ].tolist() == [201]
-
 
     def test_build_from_source_providers_accepts_year_specific_query_keys(self):
         households = pd.DataFrame(
@@ -3251,6 +3253,87 @@ class TestUSMicroplexPipeline:
             calibrated_persons["state_fips"] == 6, "weight"
         ].iloc[0] == pytest.approx(225.0, rel=1e-6)
 
+    def test_calibrate_policyengine_tables_residualizes_and_appends_forbes_spine(
+        self,
+        persons,
+        households,
+        tmp_path,
+    ):
+        db_path = tmp_path / "policyengine_targets.db"
+        _create_policyengine_calibration_db(db_path)
+        forbes_path = tmp_path / "forbes.jsonl"
+        forbes_path.write_text(
+            json.dumps(
+                {
+                    "forbes_unit_id": "forbes-1",
+                    "name": "Example Founder",
+                    "rank": 1,
+                    "state_fips": 6,
+                    "net_worth": 10_000_000_000.0,
+                    "weight": 1.0,
+                }
+            )
+            + "\n"
+        )
+        config = USMicroplexBuildConfig(
+            calibration_backend="entropy",
+            policyengine_targets_db=str(db_path),
+            policyengine_target_variables=("household_count",),
+            policyengine_target_period=2024,
+            policyengine_calibration_min_active_households=1,
+            forbes_fixed_spine_records_path=forbes_path,
+            forbes_fixed_spine_snapshot_id="forbes-test-2024",
+            forbes_fixed_spine_replicates_per_unit=2,
+        )
+        pipeline = USMicroplexPipeline(config)
+        seed = pipeline.prepare_seed_data(persons, households).rename(
+            columns={"hh_weight": "weight"}
+        )
+        tables = pipeline.build_policyengine_entity_tables(seed)
+
+        calibrated_tables, calibrated_persons, summary = (
+            pipeline.calibrate_policyengine_tables(tables)
+        )
+
+        contributions = {
+            contribution["target_name"]: contribution
+            for contribution in summary["fixed_spine"]["residualization"][
+                "contributions"
+            ]
+        }
+        for table in (
+            calibrated_tables.households,
+            calibrated_tables.persons,
+            calibrated_tables.tax_units,
+        ):
+            assert table is not None
+            assert not any(column.startswith("forbes_") for column in table.columns)
+
+        assert summary["fixed_spine"]["enabled"] is True
+        assert summary["fixed_spine"]["record_metadata_rows"] == 2
+        assert (
+            summary["fixed_spine"]["source_metadata"]["snapshot_id"]
+            == "forbes-test-2024"
+        )
+        assert summary["fixed_spine"]["residualization"]["supported_target_count"] == 2
+        assert contributions["policyengine_us_target_1"]["contribution"] == (
+            pytest.approx(1.0)
+        )
+        assert contributions["policyengine_us_target_2"]["contribution"] == (
+            pytest.approx(1.0)
+        )
+        assert len(calibrated_tables.households) == len(tables.households) + 2
+        assert calibrated_tables.households["household_weight"].sum() == pytest.approx(
+            450.0,
+            rel=1e-6,
+        )
+        california_weight = calibrated_tables.households.loc[
+            calibrated_tables.households["state_fips"].eq(6),
+            "household_weight",
+        ].sum()
+        assert california_weight == pytest.approx(225.0, rel=1e-6)
+        assert calibrated_persons["weight"].sum() == pytest.approx(899.0, rel=1e-6)
+
     def test_calibrate_policyengine_tables_none_backend_preserves_original_weights(
         self,
         persons,
@@ -4093,7 +4176,9 @@ class TestUSMicroplexPipeline:
         assert summary["oracle_loss"]["full_oracle"]["target_count"] == 2
         assert summary["oracle_loss"]["full_oracle"]["supported_target_count"] == 2
         assert summary["oracle_loss"]["active_solve"]["target_count"] == 1
-        assert summary["oracle_loss"]["active_solve"]["mean_abs_relative_error"] == pytest.approx(
+        assert summary["oracle_loss"]["active_solve"][
+            "mean_abs_relative_error"
+        ] == pytest.approx(
             0.0,
             abs=1e-12,
         )
@@ -4101,9 +4186,12 @@ class TestUSMicroplexPipeline:
             "capped_mean_abs_relative_error"
         ] == pytest.approx(0.0, abs=1e-12)
         assert summary["oracle_loss"]["deferred"]["target_count"] == 1
-        assert summary["oracle_loss"]["deferred"]["family_summaries"][
-            "household_count"
-        ]["target_count"] == 1
+        assert (
+            summary["oracle_loss"]["deferred"]["family_summaries"]["household_count"][
+                "target_count"
+            ]
+            == 1
+        )
         assert summary["oracle_loss"]["deferred"]["family_summaries"][
             "household_count"
         ]["loss_share"] == pytest.approx(1.0, rel=1e-9)
@@ -4124,12 +4212,15 @@ class TestUSMicroplexPipeline:
             ],
             rel=1e-9,
         )
-        assert summary["oracle_loss"]["full_oracle"]["geography_summaries"][
-            "unspecified"
-        ]["target_count"] == 2
-        assert summary["oracle_loss"]["full_oracle"]["geography_ranking"][0]["group"] == (
-            "unspecified"
+        assert (
+            summary["oracle_loss"]["full_oracle"]["geography_summaries"]["unspecified"][
+                "target_count"
+            ]
+            == 2
         )
+        assert summary["oracle_loss"]["full_oracle"]["geography_ranking"][0][
+            "group"
+        ] == ("unspecified")
         assert (
             summary["oracle_loss"]["full_oracle"]["mean_abs_relative_error"]
             > summary["oracle_loss"]["active_solve"]["mean_abs_relative_error"]
@@ -4380,27 +4471,33 @@ class TestUSMicroplexPipeline:
         assert summary["oracle_loss"]["audit_only"][
             "capped_mean_abs_relative_error"
         ] == pytest.approx(10.0)
-        assert summary["oracle_loss"]["audit_only"]["family_summaries"][
-            "income_tax"
-        ]["unsupported_target_count"] == 1
-        assert summary["oracle_loss"]["audit_only"]["family_summaries"][
-            "income_tax"
-        ]["sum_abs_relative_error"] == pytest.approx(10.0)
-        assert summary["oracle_loss"]["audit_only"]["family_summaries"][
-            "income_tax"
-        ]["capped_sum_abs_relative_error"] == pytest.approx(10.0)
+        assert (
+            summary["oracle_loss"]["audit_only"]["family_summaries"]["income_tax"][
+                "unsupported_target_count"
+            ]
+            == 1
+        )
+        assert summary["oracle_loss"]["audit_only"]["family_summaries"]["income_tax"][
+            "sum_abs_relative_error"
+        ] == pytest.approx(10.0)
+        assert summary["oracle_loss"]["audit_only"]["family_summaries"]["income_tax"][
+            "capped_sum_abs_relative_error"
+        ] == pytest.approx(10.0)
         assert summary["oracle_loss"]["audit_only"]["family_ranking"][0]["group"] == (
             "income_tax"
         )
-        assert summary["oracle_loss"]["full_oracle"]["family_summaries"][
-            "income_tax"
-        ]["supported_target_rate"] == pytest.approx(0.0, abs=1e-12)
-        assert summary["oracle_loss"]["full_oracle"]["geography_summaries"][
-            "unspecified"
-        ]["unsupported_target_count"] == 1
-        assert summary["oracle_loss"]["full_oracle"]["geography_ranking"][0]["group"] == (
-            "unspecified"
+        assert summary["oracle_loss"]["full_oracle"]["family_summaries"]["income_tax"][
+            "supported_target_rate"
+        ] == pytest.approx(0.0, abs=1e-12)
+        assert (
+            summary["oracle_loss"]["full_oracle"]["geography_summaries"]["unspecified"][
+                "unsupported_target_count"
+            ]
+            == 1
         )
+        assert summary["oracle_loss"]["full_oracle"]["geography_ranking"][0][
+            "group"
+        ] == ("unspecified")
         assert any(
             entry["stage"] == "audit_only"
             and entry["reason"] == "materialization_failure"

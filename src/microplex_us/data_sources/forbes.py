@@ -288,6 +288,47 @@ def build_forbes_fixed_spine(
     )
 
 
+def append_forbes_fixed_spine_tables(
+    tables: PolicyEngineUSEntityTableBundle,
+    fixed_spine: ForbesFixedSpine,
+) -> PolicyEngineUSEntityTableBundle:
+    """Append fixed-spine entity rows after ordinary calibration."""
+
+    fixed_tables = _with_person_weights(fixed_spine.tables)
+    return PolicyEngineUSEntityTableBundle(
+        households=_append_entity_table(
+            tables.households,
+            fixed_tables.households,
+            id_column="household_id",
+        ),
+        persons=_append_entity_table(
+            tables.persons,
+            fixed_tables.persons,
+            id_column="person_id",
+        ),
+        tax_units=_append_entity_table(
+            tables.tax_units,
+            fixed_tables.tax_units,
+            id_column="tax_unit_id",
+        ),
+        spm_units=_append_entity_table(
+            tables.spm_units,
+            fixed_tables.spm_units,
+            id_column="spm_unit_id",
+        ),
+        families=_append_entity_table(
+            tables.families,
+            fixed_tables.families,
+            id_column="family_id",
+        ),
+        marital_units=_append_entity_table(
+            tables.marital_units,
+            fixed_tables.marital_units,
+            id_column="marital_unit_id",
+        ),
+    )
+
+
 def forbes_fixed_spine_variable_bindings(
     tables: PolicyEngineUSEntityTableBundle,
 ) -> dict[str, PolicyEngineUSVariableBinding]:
@@ -459,18 +500,18 @@ def _household_weights(tables: PolicyEngineUSEntityTableBundle) -> np.ndarray:
     raise ValueError("Fixed-spine households must include household_weight or weight")
 
 
-def _normalize_state_fips(value: Any) -> str:
+def _normalize_state_fips(value: Any) -> int:
     if value is None or pd.isna(value):
-        return "00"
+        return 0
     if isinstance(value, str):
         stripped = value.strip()
         if not stripped:
-            return "00"
+            return 0
         numeric = pd.to_numeric(pd.Series([stripped]), errors="coerce").iloc[0]
         if pd.isna(numeric):
-            return stripped
-        return f"{int(numeric):02d}"
-    return f"{int(value):02d}"
+            raise ValueError(f"Invalid state_fips value for Forbes spine: {value!r}")
+        return int(numeric)
+    return int(value)
 
 
 def _numeric_or_default(value: Any, default: float) -> float:
@@ -495,3 +536,41 @@ def _sha256_file(path: str | Path | None) -> str | None:
         for chunk in iter(lambda: file.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _with_person_weights(
+    tables: PolicyEngineUSEntityTableBundle,
+) -> PolicyEngineUSEntityTableBundle:
+    if tables.persons is None or "weight" in tables.persons.columns:
+        return tables
+    household_weights = tables.households.set_index("household_id")["household_weight"]
+    persons = tables.persons.copy()
+    persons["weight"] = persons["household_id"].map(household_weights).astype(float)
+    return PolicyEngineUSEntityTableBundle(
+        households=tables.households,
+        persons=persons,
+        tax_units=tables.tax_units,
+        spm_units=tables.spm_units,
+        families=tables.families,
+        marital_units=tables.marital_units,
+    )
+
+
+def _append_entity_table(
+    base: pd.DataFrame | None,
+    fixed: pd.DataFrame | None,
+    *,
+    id_column: str,
+) -> pd.DataFrame | None:
+    if fixed is None:
+        return base
+    if base is None:
+        return fixed.copy()
+    if id_column in base.columns and id_column in fixed.columns:
+        overlap = set(base[id_column].dropna()) & set(fixed[id_column].dropna())
+        if overlap:
+            sample = sorted(overlap)[:5]
+            raise ValueError(
+                f"Forbes fixed spine {id_column} values overlap existing table: {sample}"
+            )
+    return pd.concat([base, fixed], ignore_index=True, sort=False)

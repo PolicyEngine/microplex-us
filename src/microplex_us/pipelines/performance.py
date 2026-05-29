@@ -576,6 +576,7 @@ def _write_matched_policyengine_us_baseline_dataset(
     period: int,
     household_count: int,
     random_seed: int,
+    sample_method: str = "uniform",
 ) -> str:
     period_key = str(period)
     arrays = _load_policyengine_us_period_arrays(
@@ -613,11 +614,13 @@ def _write_matched_policyengine_us_baseline_dataset(
             shutil.copy2(resolved_baseline_path, resolved_output_path)
         return str(resolved_output_path)
 
-    sampled_household_ids = pd.Series(household_ids).sample(
-        n=household_count,
-        replace=False,
-        random_state=random_seed,
-    ).to_numpy()
+    sampled_household_ids = _sample_matched_household_ids(
+        household_ids,
+        household_weights,
+        household_count=household_count,
+        random_seed=random_seed,
+        sample_method=sample_method,
+    )
     household_mask = np.isin(household_ids, sampled_household_ids)
     person_mask = np.isin(
         np.asarray(arrays["person_household_id"]),
@@ -724,6 +727,60 @@ def _write_matched_policyengine_us_baseline_dataset(
             sampled_arrays,
             output_dataset_path,
         ).resolve()
+    )
+
+
+def _sample_matched_household_ids(
+    household_ids: np.ndarray,
+    household_weights: np.ndarray,
+    *,
+    household_count: int,
+    random_seed: int,
+    sample_method: str,
+) -> np.ndarray:
+    """Choose household IDs for a matched-size PE dataset copy."""
+
+    method = sample_method.lower().replace("-", "_")
+    if method == "uniform":
+        return (
+            pd.Series(household_ids)
+            .sample(
+                n=household_count,
+                replace=False,
+                random_state=random_seed,
+            )
+            .to_numpy()
+        )
+    if method in {"weight_proportional", "pps"}:
+        positive_weights = np.clip(household_weights.astype(np.float64), 0.0, None)
+        weight_sum = float(positive_weights.sum())
+        if weight_sum <= 0.0:
+            raise ValueError(
+                "weight-proportional matched sample requires positive household weights"
+            )
+        rng = np.random.default_rng(random_seed)
+        return rng.choice(
+            household_ids,
+            size=household_count,
+            replace=False,
+            p=positive_weights / weight_sum,
+        )
+    if method == "largest_weight":
+        frame = pd.DataFrame(
+            {"household_id": household_ids, "household_weight": household_weights}
+        )
+        return (
+            frame.sort_values(
+                ["household_weight", "household_id"],
+                ascending=[False, True],
+                kind="mergesort",
+            )["household_id"]
+            .head(household_count)
+            .to_numpy()
+        )
+    raise ValueError(
+        "matched sample_method must be one of: uniform, weight_proportional, "
+        "largest_weight"
     )
 
 

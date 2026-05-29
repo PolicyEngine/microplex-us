@@ -54,6 +54,7 @@ def build_sound_ecps_replacement_comparison(
     period: int = 2024,
     matched_household_count: int | None = None,
     random_seed: int = 20260529,
+    matched_sample_method: str = "uniform",
     holdout_target_fraction: float = 0.2,
     holdout_target_seed: int = 20260529,
     optimizer_max_iter: int = 200,
@@ -100,6 +101,7 @@ def build_sound_ecps_replacement_comparison(
         period=period,
         household_count=matched_count,
         random_seed=random_seed,
+        sample_method=matched_sample_method,
         force=force,
     )
     _write_matched_dataset(
@@ -108,6 +110,7 @@ def build_sound_ecps_replacement_comparison(
         period=period,
         household_count=matched_count,
         random_seed=random_seed + 1,
+        sample_method=matched_sample_method,
         force=force,
     )
 
@@ -243,6 +246,7 @@ def build_sound_ecps_replacement_comparison(
             "candidate": _dataset_descriptor(matched_candidate_path),
             "baseline": _dataset_descriptor(matched_baseline_path),
             "random_seed": int(random_seed),
+            "sample_method": matched_sample_method,
         },
         "comparison_contract": {
             "matched_household_count": True,
@@ -294,6 +298,7 @@ def _write_matched_dataset(
     period: int,
     household_count: int,
     random_seed: int,
+    sample_method: str,
     force: bool,
 ) -> None:
     if output_path.exists() and not force:
@@ -304,6 +309,7 @@ def _write_matched_dataset(
         period=period,
         household_count=household_count,
         random_seed=random_seed,
+        sample_method=sample_method,
     )
 
 
@@ -624,6 +630,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--period", type=int, default=2024)
     parser.add_argument("--matched-household-count", type=int)
     parser.add_argument("--random-seed", type=int, default=20260529)
+    parser.add_argument(
+        "--matched-sample-method",
+        choices=("uniform", "weight_proportional", "pps", "largest_weight"),
+        default="uniform",
+        help=(
+            "Household thinning method used when matching a larger dataset down "
+            "to the comparison household count."
+        ),
+    )
     parser.add_argument("--holdout-target-fraction", type=float, default=0.2)
     parser.add_argument("--holdout-target-seed", type=int, default=20260529)
     parser.add_argument("--optimizer-max-iter", type=int, default=200)
@@ -649,6 +664,7 @@ def main(argv: list[str] | None = None) -> int:
         period=args.period,
         matched_household_count=args.matched_household_count,
         random_seed=args.random_seed,
+        matched_sample_method=args.matched_sample_method,
         holdout_target_fraction=args.holdout_target_fraction,
         holdout_target_seed=args.holdout_target_seed,
         optimizer_max_iter=args.optimizer_max_iter,

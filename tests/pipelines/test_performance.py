@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
 
+import numpy as np
 import pandas as pd
 from microplex.core import EntityType
 from microplex.targets import TargetQuery, TargetSet, TargetSpec
@@ -21,6 +22,7 @@ from microplex_us.pipelines.performance import (
     USMicroplexPerformanceSession,
     _calibration_build_config_key,
     _precalibration_build_config_key,
+    _sample_matched_household_ids,
     _write_matched_policyengine_us_baseline_dataset,
     default_fast_calibration_target_variables,
     run_us_microplex_performance_harness,
@@ -714,6 +716,26 @@ def test_write_matched_policyengine_us_baseline_dataset_preserves_variables(
         random_seed=42,
     )
     assert Path(copied_dataset_path).read_bytes() == baseline_path.read_bytes()
+
+
+def test_sample_matched_household_ids_supports_weighted_methods():
+    household_ids = np.asarray([10, 20, 30])
+    weights = np.asarray([0.0, 0.0, 5.0])
+
+    assert _sample_matched_household_ids(
+        household_ids,
+        weights,
+        household_count=1,
+        random_seed=42,
+        sample_method="weight_proportional",
+    ).tolist() == [30]
+    assert _sample_matched_household_ids(
+        household_ids,
+        np.asarray([1.0, 9.0, 2.0]),
+        household_count=2,
+        random_seed=42,
+        sample_method="largest_weight",
+    ).tolist() == [20, 30]
 
 
 def test_run_us_microplex_performance_harness_can_write_output_bundle(monkeypatch, tmp_path):

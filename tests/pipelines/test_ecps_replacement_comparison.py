@@ -220,6 +220,7 @@ def test_sound_ecps_replacement_comparison_satisfies_gate_contract(
     summary = payload["summary"]
     assert summary["candidate_household_count"] == 2
     assert summary["baseline_household_count"] == 2
+    assert payload["matched_datasets"]["sample_method"] == "uniform"
     assert summary["symmetric_refit"] is True
     assert summary["score_candidate_only"] is False
     assert summary["refit_objective_matches_scoring"] is True

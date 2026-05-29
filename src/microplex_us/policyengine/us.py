@@ -311,6 +311,10 @@ SAFE_POLICYENGINE_US_EXPORT_VARIABLES: set[str] = {
     "has_esi",
     "has_marketplace_health_coverage",
     "health_savings_account_ald",
+    # Although PE-US defines a fallback formula for filing_status, Microplex
+    # constructs tax units explicitly and should preserve that status as an
+    # input for SOI filing-status cells.
+    "filing_status",
     "is_separated",
     "is_surviving_spouse",
     "net_worth",

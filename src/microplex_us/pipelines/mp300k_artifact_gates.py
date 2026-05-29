@@ -116,6 +116,42 @@ _ECPS_TRANSIENT_INPUT_COLUMNS = frozenset(
         "tanf_reported",
     }
 )
+_ECPS_RENAMED_CONTRACT_COLUMNS = {
+    # PE-US now distinguishes reported/source premiums from formula-computed
+    # out-of-pocket premiums.
+    "medicare_part_b_premiums": ("medicare_part_b_premiums_reported",),
+    # PE-US now constrains retirement contributions through formula outputs
+    # backed by desired pre-limit input variables.
+    "roth_401k_contributions": ("roth_401k_contributions_desired",),
+    "roth_ira_contributions": ("roth_ira_contributions_desired",),
+    "self_employed_pension_contributions": (
+        "self_employed_pension_contributions_desired",
+    ),
+    "traditional_401k_contributions": ("traditional_401k_contributions_desired",),
+    "traditional_ira_contributions": ("traditional_ira_contributions_desired",),
+}
+_ECPS_CURRENT_PE_CALCULATED_OR_LEGACY_COLUMNS = frozenset(
+    {
+        # Current PE-US formula/aggregate outputs. Microplex should preserve
+        # their inputs and let PE-US calculate these, not write raw overrides.
+        "medicare_enrolled",
+        "roth_401k_contributions",
+        "roth_ira_contributions",
+        "self_employed_health_insurance_ald",
+        "self_employed_pension_contribution_ald",
+        "self_employed_pension_contributions",
+        "spm_unit_capped_work_childcare_expenses",
+        "traditional_401k_contributions",
+        "traditional_ira_contributions",
+        # eCPS-era columns that are not current PE-US variables.
+        "has_valid_ssn",
+        "is_tipped_occupation",
+        "other_type_retirement_account_distributions",
+        "regular_ira_distributions",
+        "roth_ira_distributions",
+        "taxpayer_id_type",
+    }
+)
 _FORBIDDEN_SOURCE_DIAGNOSTIC_VARIABLES = frozenset(
     {
         "ssi_reported",
@@ -502,11 +538,41 @@ def _column_contract_gate(
         for column in baseline_columns
         if column not in _ECPS_TRANSIENT_INPUT_COLUMNS
     )
-    missing_contract_columns = sorted(set(contract_columns) - set(candidate_columns))
+    candidate_column_set = set(candidate_columns)
+    replacement_matches: dict[str, str] = {}
+    calculated_or_legacy_contract_columns: list[str] = []
+    missing_contract_columns: list[str] = []
+    for column in contract_columns:
+        if column in candidate_column_set:
+            continue
+        replacement = next(
+            (
+                candidate
+                for candidate in _ECPS_RENAMED_CONTRACT_COLUMNS.get(column, ())
+                if candidate in candidate_column_set
+            ),
+            None,
+        )
+        if replacement is not None:
+            replacement_matches[column] = replacement
+            continue
+        if column in _ECPS_CURRENT_PE_CALCULATED_OR_LEGACY_COLUMNS:
+            calculated_or_legacy_contract_columns.append(column)
+            continue
+        missing_contract_columns.append(column)
+    missing_contract_columns = sorted(missing_contract_columns)
+    calculated_or_legacy_contract_columns = sorted(
+        calculated_or_legacy_contract_columns
+    )
     extra_candidate_columns = sorted(set(candidate_columns) - set(contract_columns))
-    matched_count = len(contract_columns) - len(missing_contract_columns)
+    satisfied_count = (
+        len(contract_columns)
+        - len(missing_contract_columns)
+        - len(calculated_or_legacy_contract_columns)
+    )
+    accepted_count = len(contract_columns) - len(missing_contract_columns)
     contract_share = (
-        float(matched_count / len(contract_columns)) if contract_columns else None
+        float(accepted_count / len(contract_columns)) if contract_columns else None
     )
     metrics = {
         "period": int(period),
@@ -514,13 +580,21 @@ def _column_contract_gate(
         "candidate_column_count": len(candidate_columns),
         "excluded_transient_column_count": len(excluded_transient),
         "contract_column_count": len(contract_columns),
-        "candidate_contract_column_count": matched_count,
+        "candidate_contract_column_count": satisfied_count,
+        "replacement_contract_column_count": len(replacement_matches),
+        "calculated_or_legacy_contract_column_count": len(
+            calculated_or_legacy_contract_columns
+        ),
         "missing_contract_column_count": len(missing_contract_columns),
         "extra_candidate_column_count": len(extra_candidate_columns),
         "column_contract_share": contract_share,
     }
     details = {
         "missing_contract_columns": missing_contract_columns,
+        "replacement_contract_columns": dict(sorted(replacement_matches.items())),
+        "calculated_or_legacy_contract_columns": (
+            calculated_or_legacy_contract_columns
+        ),
         "extra_candidate_columns": extra_candidate_columns,
         "excluded_transient_columns": excluded_transient,
     }

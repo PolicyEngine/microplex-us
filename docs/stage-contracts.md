@@ -5,10 +5,15 @@ The canonical stage registry lives in
 expected inputs, outputs, artifacts, diagnostics, validation placeholders, and
 resume mode.
 
-Saved artifact bundles now include a `stage_manifest.json` sidecar. This file is
-the machine-readable saved-run overlay for the stage taxonomy. It records the
+Saved artifact bundles now include a `stage_manifest.json` derived artifact. This
+file is the machine-readable saved-run overlay for the stage taxonomy. It records the
 canonical stages, status for the current run, artifact paths, diagnostics owned
 by each stage, and the current resume posture.
+
+Each saved bundle also includes typed per-stage output manifests at
+`stage_artifacts/<stage_id>/manifest.json`. These manifests are written through
+`USStageRunWriter`, which validates each stage as a whole instead of updating
+individual manifest keys directly.
 
 The registry exposes two seam layers:
 
@@ -47,7 +52,7 @@ boundary artifacts where the pipeline already has stable outputs:
 - Stage 7: `calibrated_data.parquet`, `targets.json`, and
   `stage_artifacts/07_calibration/calibration_summary.json`
 - Stage 8: `policyengine_us.h5`
-- Stage 9: validation and benchmark evidence sidecars
+- Stage 9: validation and benchmark evidence artifacts
 
 The Stage 4 artifact is the scaffold-projected seed before donor integration. It
 is a diagnostic and manual replay boundary, not an automatic conditional resume
@@ -59,7 +64,7 @@ saved-run contract again.
 
 ## Artifact inventory and readiness
 
-Saved bundles also expose two Stage 8 diagnostic sidecars:
+Saved bundles also expose two Stage 8 diagnostic artifacts:
 
 - `stage_artifacts/artifact_inventory.json` lists canonical stage artifacts,
   whether each path exists, whether it was referenced by the run manifest, its

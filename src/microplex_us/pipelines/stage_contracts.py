@@ -543,6 +543,75 @@ def default_us_pipeline_stage_contracts() -> tuple[USPipelineStageContract, ...]
                     "Requested synthetic population size.",
                     required=False,
                 ),
+                _config_resource(
+                    "random_seed",
+                    "Random seed used by donor integration and synthesis.",
+                ),
+                _config_resource(
+                    "synthesizer_condition_vars",
+                    "Configured synthesis conditioning variables.",
+                    required=False,
+                ),
+                _config_resource(
+                    "synthesizer_target_vars",
+                    "Configured synthesis target variables.",
+                    required=False,
+                ),
+                _config_resource(
+                    "synthesizer_epochs",
+                    "Configured synthesizer training epochs.",
+                    required=False,
+                ),
+                _config_resource(
+                    "synthesizer_batch_size",
+                    "Configured synthesizer batch size.",
+                    required=False,
+                ),
+                _config_resource(
+                    "synthesizer_learning_rate",
+                    "Configured synthesizer learning rate.",
+                    required=False,
+                ),
+                _config_resource(
+                    "synthesizer_n_layers",
+                    "Configured synthesizer network depth.",
+                    required=False,
+                ),
+                _config_resource(
+                    "synthesizer_hidden_dim",
+                    "Configured synthesizer hidden dimension.",
+                    required=False,
+                ),
+                _config_resource(
+                    "donor_imputer_backend",
+                    "Configured donor imputer backend.",
+                    required=False,
+                ),
+                _config_resource(
+                    "donor_imputer_condition_selection",
+                    "Configured donor imputer condition selection strategy.",
+                    required=False,
+                ),
+                _config_resource(
+                    "donor_imputer_max_condition_vars",
+                    "Configured donor imputer condition-variable cap.",
+                    required=False,
+                ),
+                _config_resource(
+                    "donor_imputer_excluded_variables",
+                    "Variables excluded from donor imputation.",
+                    required=False,
+                ),
+                _config_resource(
+                    "donor_imputer_authoritative_override_variables",
+                    "Variables treated as authoritative donor overrides.",
+                    required=False,
+                ),
+                _config_resource(
+                    "bootstrap_strata_columns",
+                    "Bootstrap strata columns used by seed/bootstrap synthesis.",
+                    required=False,
+                ),
             ),
             outputs=(
                 _artifact_resource(
@@ -693,13 +762,43 @@ def default_us_pipeline_stage_contracts() -> tuple[USPipelineStageContract, ...]
                     "Configured calibration backend.",
                 ),
                 _config_resource(
-                    "calibration_epochs",
-                    "Configured calibration epoch count.",
+                    "calibration_tol",
+                    "Configured calibration tolerance.",
                     required=False,
                 ),
                 _config_resource(
-                    "calibration_l0_lambda",
-                    "Configured L0 regularization strength.",
+                    "calibration_max_iter",
+                    "Configured maximum calibration iterations or epochs.",
+                    required=False,
+                ),
+                _config_resource(
+                    "target_sparsity",
+                    "Configured sparse-target selection pressure.",
+                    required=False,
+                ),
+                _config_resource(
+                    "policyengine_quantity_targets",
+                    "Configured PolicyEngine quantity targets.",
+                    required=False,
+                ),
+                _config_resource(
+                    "policyengine_targets_db",
+                    "PolicyEngine target database used for calibration.",
+                    required=False,
+                ),
+                _config_resource(
+                    "policyengine_calibration_target_variables",
+                    "Configured calibration target variables.",
+                    required=False,
+                ),
+                _config_resource(
+                    "policyengine_calibration_target_domains",
+                    "Configured calibration target domains.",
+                    required=False,
+                ),
+                _config_resource(
+                    "policyengine_calibration_geo_levels",
+                    "Configured calibration geography levels.",
                     required=False,
                 ),
             ),

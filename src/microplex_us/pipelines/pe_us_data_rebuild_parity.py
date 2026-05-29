@@ -11,8 +11,8 @@ from microplex_us.pipelines.pe_us_data_rebuild import (
     default_policyengine_us_data_rebuild_config,
     default_policyengine_us_data_rebuild_program,
 )
-from microplex_us.pipelines.stage_contracts import (
-    resolve_us_stage_artifact_contract_path,
+from microplex_us.pipelines.stage_run import (
+    resolve_us_manifest_or_contract_artifact_path,
 )
 
 _HARNESS_SUMMARY_KEYS = (
@@ -88,10 +88,9 @@ def build_policyengine_us_data_rebuild_parity_artifact(
         if manifest_payload is not None
         else json.loads((artifact_root / "manifest.json").read_text())
     )
-    artifacts = dict(manifest.get("artifacts", {}))
     harness_path = _resolve_stage_artifact_path(
         artifact_root,
-        artifacts,
+        manifest,
         "policyengine_harness",
         stage_id="09_validation_benchmarking",
     )
@@ -106,7 +105,7 @@ def build_policyengine_us_data_rebuild_parity_artifact(
     )
     native_scores_path = _resolve_stage_artifact_path(
         artifact_root,
-        artifacts,
+        manifest,
         "policyengine_native_scores",
         stage_id="09_validation_benchmarking",
     )
@@ -121,7 +120,7 @@ def build_policyengine_us_data_rebuild_parity_artifact(
     )
     imputation_ablation_path = _resolve_stage_artifact_path(
         artifact_root,
-        artifacts,
+        manifest,
         "imputation_ablation",
         stage_id="09_validation_benchmarking",
     )
@@ -304,18 +303,17 @@ def _load_optional_json(path: Path) -> dict[str, Any] | None:
 
 def _resolve_stage_artifact_path(
     artifact_root: Path,
-    artifacts: dict[str, Any],
+    manifest: dict[str, Any],
     artifact_key: str,
     *,
     stage_id: str,
 ) -> Path:
-    declared = artifacts.get(artifact_key)
-    if declared is not None:
-        path = Path(str(declared))
-        if not path.is_absolute():
-            path = artifact_root / path
-        return path
-    return resolve_us_stage_artifact_contract_path(artifact_root, stage_id, artifact_key)
+    return resolve_us_manifest_or_contract_artifact_path(
+        artifact_root,
+        manifest,
+        artifact_key,
+        stage_id=stage_id,
+    )
 
 
 def _build_profile_conformance(

@@ -576,6 +576,13 @@ def _stage_status(
                 assume_existing_artifact_keys=assume_existing_artifact_keys,
             )
         if has_evidence:
+            if not _manifest_artifact_exists(
+                manifest,
+                artifact_root,
+                "validation_evidence",
+                assume_existing_artifact_keys=assume_existing_artifact_keys,
+            ):
+                return "incomplete"
             return "ready"
         if _manifest_artifact_exists(
             manifest,
@@ -749,10 +756,29 @@ def _stage_metrics(stage_id: str, *, manifest: dict[str, Any]) -> list[USStageMe
     if stage_id == "08_dataset_assembly":
         return [{"label": "Dataset", "value": artifacts.get("policyengine_dataset")}]
     if stage_id == "09_validation_benchmarking":
+        imputation_ablation = dict(manifest.get("imputation_ablation", {}))
         return [
+            {
+                "label": "Capped full oracle loss",
+                "value": calibration.get(
+                    "full_oracle_capped_mean_abs_relative_error"
+                ),
+            },
+            {
+                "label": "Full oracle loss",
+                "value": calibration.get("full_oracle_mean_abs_relative_error"),
+            },
             {"label": "Harness delta", "value": harness.get("mean_abs_relative_error_delta")},
             {"label": "Native delta", "value": native_scores.get("enhanced_cps_native_loss_delta")},
             {"label": "Win rate", "value": harness.get("target_win_rate")},
+            {
+                "label": "Imputation MAE",
+                "value": imputation_ablation.get("production_mean_weighted_mae"),
+            },
+            {
+                "label": "Imputation F1",
+                "value": imputation_ablation.get("production_mean_support_f1"),
+            },
         ]
     return []
 

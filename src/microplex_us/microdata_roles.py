@@ -90,7 +90,6 @@ POLICYENGINE_US_CALCULATED_OUTPUT_VARIABLES: frozenset[str] = frozenset(
         "aca_ptc",
         "additional_ctc",
         "assigned_aca_ptc",
-        "filing_status",
         "loss_limited_net_capital_gains",
         "net_capital_gains",
         "chip_enrolled",
@@ -113,6 +112,15 @@ POLICYENGINE_US_CALCULATED_OUTPUT_VARIABLES: frozenset[str] = frozenset(
         "tanf",
         "total_income_tax",
         "wic",
+    }
+)
+
+POLICYENGINE_US_CONSTRUCTION_INPUT_VARIABLES: frozenset[str] = frozenset(
+    {
+        # PolicyEngine can calculate filing status, but Microplex builds tax
+        # units explicitly and should preserve that construction-stage input
+        # for IRS filing-status targets.
+        "filing_status",
     }
 )
 
@@ -165,6 +173,8 @@ def non_model_input_microdata_variables(
 
 def policyengine_us_variable_role(variable_name: str) -> PolicyEngineUSVariableRole:
     """Resolve the Microplex role for a PolicyEngine US variable name."""
+    if variable_name in POLICYENGINE_US_CONSTRUCTION_INPUT_VARIABLES:
+        return PolicyEngineUSVariableRole.PRESERVED_INPUT
     if variable_name in POLICYENGINE_US_CALCULATED_OUTPUT_VARIABLES:
         return PolicyEngineUSVariableRole.CALCULATED_OUTPUT
     if variable_name in POLICYENGINE_US_REPORTED_OUTPUT_VARIABLES:

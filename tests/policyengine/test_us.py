@@ -1936,7 +1936,7 @@ class TestPolicyEngineUSProjection:
         )
 
         assert export_maps["household"] == {"state_fips": "state_fips"}
-        assert export_maps["tax_unit"] == {}
+        assert export_maps["tax_unit"] == {"filing_status": "filing_status"}
         assert export_maps["spm_unit"] == {}
         assert export_maps["person"] == {
             "alimony_income": "alimony_income",
@@ -1961,7 +1961,7 @@ class TestPolicyEngineUSProjection:
             "unemployment_compensation": "unemployment_compensation",
         }
 
-    def test_build_policyengine_us_export_variable_maps_include_direct_overrides_only_when_requested(self):
+    def test_build_policyengine_us_export_variable_maps_include_direct_overrides_with_safe_inputs(self):
         class FakeEntity:
             def __init__(self, key):
                 self.key = key
@@ -2081,7 +2081,13 @@ class TestPolicyEngineUSProjection:
     def test_default_policyengine_us_export_surface_avoids_formula_aggregates(self):
         from policyengine_us import CountryTaxBenefitSystem
 
-        allowed_formula_exceptions = {"rent"}
+        allowed_formula_exceptions = {
+            "rent",
+            # Microplex constructs tax units before PE export. Preserve that
+            # construction-stage filing status instead of falling back to PE's
+            # formula when scoring filing-status-sensitive SOI cells.
+            "filing_status",
+        }
         tbs = CountryTaxBenefitSystem()
 
         overlaps = sorted(
@@ -2102,6 +2108,7 @@ class TestPolicyEngineUSProjection:
         assert "farm_operations_income" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         assert "farm_rent_income" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         assert "health_savings_account_ald" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
+        assert "filing_status" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         assert "social_security_retirement" not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         assert "social_security_retirement_reported" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         assert "non_sch_d_capital_gains" not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES

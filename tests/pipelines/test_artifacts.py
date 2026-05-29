@@ -331,7 +331,7 @@ class TestSaveUSMicroplexArtifacts:
             assert "person_household_id" in handle
             assert "tax_unit_id" in handle
             assert "taxable_interest_income" in handle
-            assert "filing_status" not in handle
+            assert "filing_status" in handle
 
     def test_writes_model_when_present(self, tmp_path):
         class FakeSynthesizer:

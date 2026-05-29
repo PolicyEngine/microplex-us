@@ -67,3 +67,23 @@ one-sided refitting, that is a bug, not a result.
 - **Iter 1** — worktree + scoreboard core + fast invariant tests (green). The
   non-increase / recovery property holds by construction. eCPS integration test
   scaffolded and skipped pending the PE-native loader.
+- **Iter 2** — `mp_rebuild/pe_native.py`: clean loader reusing the canonical
+  `build_loss_matrix` + exact PE-native filtering/scaling (reproduces ~0.166).
+  Added `reduction="sum"` to `CalibrationProblem` for the pre-scaled PE-native
+  system. Live eCPS recovery test (`MPR_RUN_SLOW=1`) + standalone
+  `run_recovery_check.py` driver. Fast suite still green (19 passed, 1 skipped).
+  Launched the recovery check in background (build matrix + fit + score eCPS) —
+  expect shipped_loss ~0.166 and refit_loss <= shipped (vs the old 0.544).
+  Reuses only data helpers (`_ENHANCED_CPS_BAD_TARGETS`, family classifier),
+  not the old optimizer.
+  ENV (important): run PE-native scoring from the microplex-us main checkout as
+  `cd ~/CosilicoAI/microplex-us && PYTHONPATH=/Users/maxghenis/PolicyEngine/policyengine-us-data uv run --extra dev --extra policyengine python <script>`.
+  `policyengine_us_data` is NOT installed in the uv env (nor the bare .venv); it
+  must be injected from its repo source via PYTHONPATH. (`policyengine_us` and
+  `microplex_us` ARE in the uv env.) The recovery driver adds its own dir to
+  sys.path for `mp_rebuild`.
+  Caveat: us-data's `utils/loss.py` has uncommitted edits, so the live target
+  set may differ slightly from the original 0.166 baseline -- recovery
+  (non-increase) holds regardless; baseline reproduction is checked with abs=0.03.
+  TODO next: matched-N candidate loader (>50k households needs batching),
+  reweighted-CPS baseline, then the honest Microplex@N vs eCPS@N held-out run.

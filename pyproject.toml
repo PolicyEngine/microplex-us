@@ -26,6 +26,7 @@ dev = [
 ]
 docs = [
     "jupyter-book>=0.15,<0.16",
+    "standard-imghdr>=3.13; python_version >= '3.13'",
 ]
 r2 = [
     "boto3>=1.34",

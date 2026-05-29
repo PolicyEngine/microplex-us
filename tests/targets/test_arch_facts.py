@@ -997,6 +997,85 @@ def test_arch_fact_provider_matches_value_constraint_soi_targets(
     )
 
 
+def test_arch_fact_provider_skips_unsupported_source_package_facts(
+    tmp_path: Path,
+) -> None:
+    fact_db = tmp_path / "arch_facts.db"
+    _create_arch_fact_db(fact_db)
+    conn = sqlite3.connect(fact_db)
+    conn.execute(
+        """
+        INSERT INTO aggregate_facts (
+            fact_key,
+            source_record_id,
+            value_numeric,
+            value_text,
+            value_json,
+            period_value,
+            geography_level,
+            geography_id,
+            geography_name,
+            measure_concept,
+            measure_source_concept,
+            measure_concept_relation,
+            measure_concept_authority,
+            measure_concept_evidence_url,
+            measure_concept_evidence_notes,
+            measure_legal_vintage,
+            measure_unit,
+            aggregation_method,
+            domain,
+            filters_json,
+            label,
+            source_name,
+            source_table,
+            source_url,
+            source_method_notes
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            "arch.fact.v1:bea-defined-contribution-pensions",
+            "bea_nipa.nipa.7.20.line_5",
+            274_439_000_000,
+            "274439000000",
+            json.dumps(274_439_000_000),
+            "2023",
+            "country",
+            "0100000US",
+            "United States",
+            "bea_nipa.defined_contribution_employer_contributions",
+            "bea_nipa.W351RC",
+            "source_label",
+            "bea",
+            "https://apps.bea.gov/iTable/",
+            "BEA NIPA pension contribution source-package fixture.",
+            None,
+            "usd",
+            "sum",
+            "defined_contribution_pension_plans",
+            json.dumps({}),
+            "Defined contribution employer contributions",
+            "bea_nipa",
+            "NIPA Table 7.20",
+            "https://apps.bea.gov/iTable/",
+            "Unsupported source package fact fixture.",
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+    target_set = ArchFactSQLiteTargetProvider(fact_db).load_target_set(
+        TargetQuery(period=2023)
+    )
+
+    assert target_set.targets
+    assert all(
+        target.metadata.get("arch_concept")
+        != "bea_nipa.defined_contribution_employer_contributions"
+        for target in target_set.targets
+    )
+
+
 def test_arch_consumer_fact_jsonl_provider_matches_value_constraint_soi_targets(
     tmp_path: Path,
 ) -> None:
@@ -1014,6 +1093,47 @@ def test_arch_consumer_fact_jsonl_provider_matches_value_constraint_soi_targets(
     assert _normalize_target_behavior(consumer_targets) == _normalize_target_behavior(
         value_targets
     )
+
+
+def test_arch_consumer_fact_jsonl_provider_skips_unsupported_source_package_facts(
+    tmp_path: Path,
+) -> None:
+    consumer_jsonl = tmp_path / "consumer_facts.jsonl"
+    rows = [
+        _consumer_fact(
+            "soi-wages",
+            concept="irs_soi.total_wages",
+            domain="all_individual_income_tax_returns",
+            source_name="irs_soi",
+            source_table="Publication 1304 Table 1.1",
+            period={"type": "tax_year", "value": 2024},
+            value=10_000_000_000_000,
+            unit="usd",
+        ),
+        _consumer_fact(
+            "bea-defined-contribution-pensions",
+            concept="bea_nipa.defined_contribution_employer_contributions",
+            domain="defined_contribution_pension_plans",
+            source_name="bea_nipa",
+            source_table="NIPA Table 7.20",
+            period={"type": "calendar_year", "value": 2024},
+            value=274_439_000_000,
+            unit="usd",
+        ),
+    ]
+    consumer_jsonl.write_text(
+        "\n".join(json.dumps(row, sort_keys=True) for row in rows) + "\n"
+    )
+
+    target_set = ArchConsumerFactJSONLTargetProvider(consumer_jsonl).load_target_set(
+        TargetQuery(period=2024)
+    )
+
+    assert len(target_set.targets) == 1
+    target = target_set.targets[0]
+    assert target.metadata["arch_variable"] == "wages_salaries_amount"
+    assert target.measure == "employment_income"
+    assert target.metadata["arch_concept"] == "irs_soi.total_wages"
 
 
 def test_arch_fact_provider_preserves_fact_provenance(tmp_path: Path) -> None:

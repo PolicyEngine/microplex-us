@@ -4836,14 +4836,22 @@ def _consumer_fact_rows_to_records(
     records: list[ArchTargetRecord] = []
     stratum_ids: dict[tuple[tuple[str, str, str], ...], int] = {}
     for target_id, row in enumerate(rows, start=1):
-        concept = _arch_consumer_fact_concept(row)
+        concept = arch_consumer_fact_concept(row)
+        if concept is None:
+            continue
         if _should_skip_arch_fact_concept(concept):
+            continue
+        target_identity = _arch_consumer_fact_target_identity(row)
+        if target_identity is None:
+            continue
+        domain_constraints = _arch_consumer_fact_domain_constraints(row)
+        if domain_constraints is None:
             continue
         constraints = tuple(
             dict.fromkeys(
                 constraint
                 for constraint in (
-                    *_arch_consumer_fact_domain_constraints(row),
+                    *domain_constraints,
                     *(
                         _arch_consumer_fact_constraint(constraint)
                         for constraint in _consumer_fact_universe_constraints(row).get(
@@ -4855,9 +4863,6 @@ def _consumer_fact_rows_to_records(
             )
         )
         stratum_id = stratum_ids.setdefault(constraints, len(stratum_ids) + 1)
-        target_identity = _arch_consumer_fact_target_identity(row)
-        if target_identity is None:
-            continue
         variable, target_type = target_identity
         source = row.get("source") or {}
         observed_measure = row.get("observed_measure") or {}
@@ -4916,12 +4921,7 @@ def _arch_consumer_fact_target_identity(
         return None
     if concept == "ssa.annual_oasdi_or_ssi_payment_amount":
         return (_ssa_payment_variable_from_consumer_fact(row), "AMOUNT")
-    try:
-        return ARCH_FACT_CONCEPT_TO_TARGET[concept]
-    except KeyError as exc:
-        raise ValueError(
-            f"No Microplex Arch consumer fact mapping for concept {concept!r}"
-        ) from exc
+    return ARCH_FACT_CONCEPT_TO_TARGET.get(concept)
 
 
 def _ssa_payment_variable_from_consumer_fact(row: dict[str, Any]) -> str:
@@ -4943,7 +4943,7 @@ def _arch_consumer_fact_concept(row: dict[str, Any]) -> str:
 
 def _arch_consumer_fact_domain_constraints(
     row: dict[str, Any],
-) -> tuple[tuple[str, str, str], ...]:
+) -> tuple[tuple[str, str, str], ...] | None:
     domain = str(_consumer_fact_universe_constraints(row).get("domain"))
     return _arch_fact_domain_constraints_for_domain(domain)
 
@@ -5011,12 +5011,19 @@ def _group_arch_fact_rows(
     for row in rows:
         if _should_skip_arch_fact_concept(str(row["measure_concept"])):
             continue
+        target_identity = _arch_fact_target_identity(row)
+        if target_identity is None:
+            continue
+        domain_constraints = _arch_fact_domain_constraints(row)
+        if domain_constraints is None:
+            continue
         fact_key = str(row["fact_key"])
         item = grouped.setdefault(
             fact_key,
             {
                 "row": row,
-                "constraints": list(_arch_fact_domain_constraints(row)),
+                "target_identity": target_identity,
+                "constraints": list(domain_constraints),
             },
         )
         if row["constraint_variable"] is not None:
@@ -5029,10 +5036,7 @@ def _group_arch_fact_rows(
         row = item["row"]
         constraints = tuple(dict.fromkeys(item["constraints"]))
         stratum_id = stratum_ids.setdefault(constraints, len(stratum_ids) + 1)
-        target_identity = _arch_fact_target_identity(row)
-        if target_identity is None:
-            continue
-        variable, target_type = target_identity
+        variable, target_type = item["target_identity"]
         period = int(row["period_value"])
         source_name = row["source_name"] or "arch"
         fact_lineage = lineage.get(fact_key, {})
@@ -5079,28 +5083,20 @@ def _arch_fact_target_identity(row: sqlite3.Row) -> tuple[str, str] | None:
     concept = str(row["measure_concept"])
     if concept in ARCH_FACT_CONCEPTS_TO_SKIP:
         return None
-    try:
-        return ARCH_FACT_CONCEPT_TO_TARGET[concept]
-    except KeyError as exc:
-        raise ValueError(
-            f"No Microplex Arch fact mapping for concept {concept!r}"
-        ) from exc
+    return ARCH_FACT_CONCEPT_TO_TARGET.get(concept)
 
 
-def _arch_fact_domain_constraints(row: sqlite3.Row) -> tuple[tuple[str, str, str], ...]:
+def _arch_fact_domain_constraints(
+    row: sqlite3.Row,
+) -> tuple[tuple[str, str, str], ...] | None:
     domain = str(row["domain"])
     return _arch_fact_domain_constraints_for_domain(domain)
 
 
 def _arch_fact_domain_constraints_for_domain(
     domain: str,
-) -> tuple[tuple[str, str, str], ...]:
-    try:
-        return ARCH_FACT_DOMAIN_CONSTRAINTS[domain]
-    except KeyError as exc:
-        raise ValueError(
-            f"No Microplex Arch fact mapping for domain {domain!r}"
-        ) from exc
+) -> tuple[tuple[str, str, str], ...] | None:
+    return ARCH_FACT_DOMAIN_CONSTRAINTS.get(domain)
 
 
 def _arch_fact_constraint(row: sqlite3.Row) -> tuple[str, str, str] | None:

@@ -1279,9 +1279,7 @@ class TestUSMicroplexPipeline:
         assert tax_units.iloc[0]["n_dependents"] == 1
 
     def test_build_policyengine_entity_tables_can_preserve_existing_tax_unit_ids(self):
-        pipeline = USMicroplexPipeline(
-            USMicroplexBuildConfig(policyengine_prefer_existing_tax_unit_ids=True)
-        )
+        pipeline = USMicroplexPipeline(USMicroplexBuildConfig())
         population = pd.DataFrame(
             {
                 "person_id": [1, 2, 3],

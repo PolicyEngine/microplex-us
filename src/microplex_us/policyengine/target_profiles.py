@@ -1004,12 +1004,6 @@ PE_NATIVE_BROAD_SOURCE_BACKED_EXCLUDED_CELL_REASONS: dict[
     ),
 }
 
-_PENDING_SSI_DETAIL_SOURCE_REASON = (
-    "Current Arch SSA source packages cover broad SSI payment totals but do not "
-    "yet encode exact recipient-count, state-level, aged, blind, or disabled "
-    "SSI source facts for this PolicyEngine cell."
-)
-
 _PENDING_IRS_DETAIL_SOURCE_REASON = (
     "Current Arch IRS SOI source packages do not yet encode an exact source "
     "fact for this detailed PolicyEngine tax cell at the requested geography "
@@ -1020,29 +1014,6 @@ _PENDING_ARCH_SOURCE_BACKED_CELL_REASONS: dict[
     PolicyEngineUSTargetCellKey,
     str,
 ] = {
-    **{
-        ("person_count", geo_level, domain_variable, None): (
-            _PENDING_SSI_DETAIL_SOURCE_REASON
-        )
-        for geo_level in ("national", "state")
-        for domain_variable in (
-            "ssi",
-            "ssi,is_ssi_aged",
-            "ssi,is_blind",
-            "ssi,is_ssi_disabled",
-        )
-    },
-    **{
-        ("ssi", geo_level, domain_variable, None): (
-            _PENDING_SSI_DETAIL_SOURCE_REASON
-        )
-        for geo_level, domain_variable in (
-            ("national", "ssi,is_ssi_aged"),
-            ("national", "ssi,is_blind"),
-            ("national", "ssi,is_ssi_disabled"),
-            ("state", None),
-        )
-    },
     **{
         (variable, geo_level, None, None): _PENDING_IRS_DETAIL_SOURCE_REASON
         for variable in (

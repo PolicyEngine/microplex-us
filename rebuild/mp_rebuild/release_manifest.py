@@ -94,6 +94,20 @@ def build_data_artifact(
     }
 
 
+def _ensure_missing_reason(artifact: Mapping[str, Any]) -> dict[str, Any]:
+    """Backfill ``missing_reason`` for a caller-supplied artifact dict.
+
+    The dict-passthrough form in :func:`build_release_manifest` would otherwise let
+    a non-certified artifact reach the manifest without a reason, which the bundles
+    model rejects. Mirrors :func:`build_data_artifact`'s rule; preserves an explicit
+    reason and leaves certified artifacts untouched.
+    """
+    art = dict(artifact)
+    if art.get("status", "certified") != "certified" and not art.get("missing_reason"):
+        art["missing_reason"] = "not yet certified"
+    return art
+
+
 def _build_info(build_manifest: Mapping[str, Any] | None) -> dict[str, Any] | None:
     """Map the upstream build manifest's provenance into ``DataBuildInfo``.
 
@@ -146,7 +160,7 @@ def build_release_manifest(
     artifact_entries: dict[str, Any] = {}
     for key, spec in artifacts.items():
         if isinstance(spec, dict):
-            artifact_entries[key] = spec
+            artifact_entries[key] = _ensure_missing_reason(spec)
             continue
         artifact_entries[key] = build_data_artifact(
             key=key,

@@ -106,6 +106,31 @@ def test_uncertified_artifact_has_missing_reason(tmp_path):
     assert art["missing_reason"]  # non-empty
 
 
+def test_dict_passthrough_artifact_backfills_missing_reason():
+    """A caller-supplied non-certified artifact dict must still get a missing_reason."""
+    common = dict(
+        data_package_name="microplex-us",
+        data_package_version="0.1.0",
+        repo_id="policyengine/microplex-us",
+        compatible_model_packages=[("policyengine-us", ">=1.715,<2")],
+        compatible_core_packages=[("policyengine-core", ">=3.26,<4")],
+        default_datasets={"us": "raw"},
+    )
+    backfilled = build_release_manifest(
+        artifacts={"raw": {"kind": "dataset", "status": "unverified",
+                           "sha256": "deadbeef", "preservation_mirrors": [], "metadata": {}}},
+        **common,
+    )["artifacts"]["raw"]
+    assert backfilled["missing_reason"]  # backfilled, not left missing
+
+    preserved = build_release_manifest(
+        artifacts={"raw": {"kind": "dataset", "status": "unavailable",
+                           "missing_reason": "build failed", "preservation_mirrors": [], "metadata": {}}},
+        **common,
+    )["artifacts"]["raw"]
+    assert preserved["missing_reason"] == "build failed"  # explicit reason preserved
+
+
 def test_validates_against_bundles_schema(tmp_path):
     jsonschema = pytest.importorskip("jsonschema")
     if not DEFAULT_BUNDLES_SCHEMA.exists():

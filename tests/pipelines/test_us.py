@@ -33,6 +33,7 @@ from microplex_us.pipelines.us import (
     _policyengine_target_loss_geography_key,
     _select_feasible_policyengine_calibration_constraints,
     _select_policyengine_deferred_stage_constraints,
+    _select_ssi_takeup_by_age_amount,
     _summarize_policyengine_target_fit_report,
     _summarize_weight_diagnostics,
     build_us_microplex,
@@ -44,6 +45,8 @@ from microplex_us.policyengine.comparison import (
 from microplex_us.policyengine.us import (
     PolicyEngineUSConstraint,
     PolicyEngineUSEntityTableBundle,
+    PolicyEngineUSVariableBinding,
+    PolicyEngineUSVariableMaterializationResult,
     build_policyengine_us_export_variable_maps,
     compute_policyengine_us_definition_hash,
 )
@@ -223,6 +226,22 @@ def _create_policyengine_calibration_db_with_unsupported_target(path) -> None:
     )
     conn.commit()
     conn.close()
+
+
+def test_select_ssi_takeup_by_age_amount_matches_reported_age_group_amounts():
+    selected, summary = _select_ssi_takeup_by_age_amount(
+        person_ids=pd.Series([1, 2, 3, 4]),
+        ages=pd.Series([70, 70, 40, 40]),
+        weights=pd.Series([1.0, 1.0, 1.0, 1.0]),
+        reported_ssi=pd.Series([100.0, 0.0, 100.0, 0.0]),
+        full_takeup_ssi=pd.Series([80.0, 20.0, 20.0, 80.0]),
+    )
+
+    assert selected.tolist() == [True, True, True, True]
+    assert summary["reported_amount"] == 200.0
+    assert summary["selected_amount"] == 200.0
+    assert summary["groups"]["aged"]["selected_amount"] == 100.0
+    assert summary["groups"]["under65"]["selected_amount"] == 100.0
 
 
 class TestUSMicroplexBuildConfig:
@@ -3565,6 +3584,85 @@ class TestUSMicroplexPipeline:
             False,
             True,
         ]
+
+    def test_calibrate_policyengine_ssi_takeup_uses_reported_amounts_by_age(
+        self,
+        monkeypatch,
+    ):
+        pipeline = USMicroplexPipeline(
+            USMicroplexBuildConfig(
+                policyengine_dataset_year=2024,
+                policyengine_calibration_target_profile="pe_native_broad",
+            )
+        )
+        persons = pd.DataFrame(
+            {
+                "person_id": [1, 2, 3, 4],
+                "household_id": [10, 20, 30, 40],
+                "age": [70, 70, 40, 40],
+                "weight": [1.0, 1.0, 1.0, 1.0],
+                "ssi": [100.0, 0.0, 100.0, 0.0],
+                "takes_up_ssi_if_eligible": [True, False, True, False],
+            }
+        )
+        tables = PolicyEngineUSEntityTableBundle(
+            households=pd.DataFrame(
+                {
+                    "household_id": [10, 20, 30, 40],
+                    "household_weight": [1.0, 1.0, 1.0, 1.0],
+                }
+            ),
+            persons=persons,
+            tax_units=pd.DataFrame({"tax_unit_id": [1], "household_id": [10]}),
+            spm_units=pd.DataFrame({"spm_unit_id": [1], "household_id": [10]}),
+            families=pd.DataFrame({"family_id": [1], "household_id": [10]}),
+        )
+
+        def fake_materialize(tables_arg, **kwargs):
+            assert kwargs["variables"] == ("ssi",)
+            assert tables_arg.persons["takes_up_ssi_if_eligible"].all()
+            materialized_persons = tables_arg.persons.copy()
+            materialized_persons["ssi"] = [80.0, 20.0, 20.0, 80.0]
+            return PolicyEngineUSVariableMaterializationResult(
+                tables=PolicyEngineUSEntityTableBundle(
+                    households=tables_arg.households,
+                    persons=materialized_persons,
+                    tax_units=tables_arg.tax_units,
+                    spm_units=tables_arg.spm_units,
+                    families=tables_arg.families,
+                    marital_units=tables_arg.marital_units,
+                ),
+                bindings={
+                    "ssi": PolicyEngineUSVariableBinding(
+                        entity=EntityType.PERSON,
+                        column="ssi",
+                    )
+                },
+                materialized_variables=("ssi",),
+            )
+
+        monkeypatch.setattr(
+            us_pipeline_module,
+            "materialize_policyengine_us_variables_safely",
+            fake_materialize,
+        )
+
+        updated_tables, summary = (
+            pipeline._calibrate_policyengine_ssi_takeup_from_reported_amounts(
+                tables,
+                target_period=2024,
+            )
+        )
+
+        assert updated_tables.persons["takes_up_ssi_if_eligible"].tolist() == [
+            True,
+            True,
+            True,
+            True,
+        ]
+        assert summary["enabled"] is True
+        assert summary["reported_amount"] == 200.0
+        assert summary["selected_amount"] == 200.0
 
     def test_augment_policyengine_person_inputs_materializes_agi_parity_inputs(self):
         pipeline = USMicroplexPipeline(USMicroplexBuildConfig())

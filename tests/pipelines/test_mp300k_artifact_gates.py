@@ -45,7 +45,14 @@ def _write_artifact_manifest(
     artifact_dir: Path,
     *,
     baseline_dataset: Path | None = None,
+    source_weight_diagnostics: bool = True,
 ) -> None:
+    artifacts = {"policyengine_dataset": "candidate.h5"}
+    if source_weight_diagnostics:
+        (artifact_dir / "source_weight_diagnostics.json").write_text(
+            json.dumps(_source_weight_diagnostics_payload())
+        )
+        artifacts["source_weight_diagnostics"] = "source_weight_diagnostics.json"
     manifest = {
         "created_at": "2026-05-27T00:00:00+00:00",
         "config": {
@@ -54,7 +61,7 @@ def _write_artifact_manifest(
             else None,
             "policyengine_dataset_year": 2024,
         },
-        "artifacts": {"policyengine_dataset": "candidate.h5"},
+        "artifacts": artifacts,
     }
     (artifact_dir / "manifest.json").write_text(json.dumps(manifest))
 
@@ -101,6 +108,36 @@ def _arch_coverage_payload(
         "coverage_rate": (
             covered_cell_count / target_cell_count if target_cell_count else 0.0
         ),
+    }
+
+
+def _source_weight_diagnostics_payload(
+    *,
+    puf_support_share: float = 0.05,
+) -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "summary": {
+            "max_source_household_weight_share": 0.85,
+            "puf_support_household_weight_share": puf_support_share,
+        },
+        "sources": [
+            {
+                "source_name": "cps_asec",
+                "source_class": "base",
+                "household_weight_share": 0.85,
+            },
+            {
+                "source_name": "irs_soi_puf_support_clone",
+                "source_class": "puf_support",
+                "household_weight_share": puf_support_share,
+            },
+            {
+                "source_name": "forbes_fixed_spine",
+                "source_class": "fixed_spine",
+                "household_weight_share": 0.10,
+            },
+        ],
     }
 
 
@@ -199,6 +236,13 @@ def test_write_mp300k_artifact_gate_report_passes_with_all_evidence(tmp_path):
     assert record["gates"]["arch_target_coverage"]["status"] == "pass"
     assert record["gates"]["runtime"]["status"] == "pass"
     assert record["gates"]["runtime"]["metrics"]["runtime_ratio"] == 1.1
+    assert record["gates"]["source_weight_diagnostics"]["status"] == "pass"
+    assert (
+        record["gates"]["source_weight_diagnostics"]["metrics"][
+            "puf_support_household_weight_share"
+        ]
+        == 0.05
+    )
     assert record["gates"]["benchmark_manifest"]["status"] == "pass"
     assert record["candidate_dataset"]["path"] == str(candidate_dataset.resolve())
     assert (
@@ -238,6 +282,71 @@ def test_benchmark_manifest_gate_requires_pinned_release_evidence(tmp_path):
         "policyengine_us.version",
         "target_db.path",
         "target_db.sha256",
+    ]
+
+
+def test_source_weight_diagnostics_gate_rejects_missing_sidecar(tmp_path):
+    artifact_dir = tmp_path / "artifact"
+    artifact_dir.mkdir()
+    _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
+    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    benchmark_manifest = tmp_path / "benchmark_manifest.json"
+    _write_benchmark_manifest(benchmark_manifest)
+    _write_artifact_manifest(
+        artifact_dir,
+        baseline_dataset=baseline_dataset,
+        source_weight_diagnostics=False,
+    )
+
+    report_path = write_mp300k_artifact_gate_report(
+        artifact_dir,
+        ecps_comparison_payload=_sound_ecps_comparison_payload(),
+        arch_coverage_payload=_arch_coverage_payload(),
+        runtime_smoke_payload={"runtime_ratio": 1.0},
+        benchmark_manifest_path=benchmark_manifest,
+        compute_native_scores=False,
+        update_manifest=False,
+    )
+
+    record = json.loads(report_path.read_text())
+    source_gate = record["gates"]["source_weight_diagnostics"]
+
+    assert record["summary"]["status"] == "incomplete"
+    assert source_gate["status"] == "unmeasured"
+    assert "source_weight_diagnostics" in record["summary"]["unmeasured_required_gates"]
+
+
+def test_source_weight_diagnostics_gate_rejects_puf_support_dominance(tmp_path):
+    artifact_dir = tmp_path / "artifact"
+    artifact_dir.mkdir()
+    _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
+    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    benchmark_manifest = tmp_path / "benchmark_manifest.json"
+    _write_benchmark_manifest(benchmark_manifest)
+    _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
+
+    report_path = write_mp300k_artifact_gate_report(
+        artifact_dir,
+        ecps_comparison_payload=_sound_ecps_comparison_payload(),
+        source_weight_diagnostics_payload=_source_weight_diagnostics_payload(
+            puf_support_share=0.40
+        ),
+        arch_coverage_payload=_arch_coverage_payload(),
+        runtime_smoke_payload={"runtime_ratio": 1.0},
+        benchmark_manifest_path=benchmark_manifest,
+        compute_native_scores=False,
+        update_manifest=False,
+    )
+
+    record = json.loads(report_path.read_text())
+    source_gate = record["gates"]["source_weight_diagnostics"]
+
+    assert record["summary"]["status"] == "failed"
+    assert source_gate["status"] == "fail"
+    assert source_gate["metrics"]["puf_support_household_weight_share"] == 0.40
+    assert source_gate["details"]["failures"] == [
+        "support_household_weight_share",
+        "puf_support_household_weight_share",
     ]
 
 

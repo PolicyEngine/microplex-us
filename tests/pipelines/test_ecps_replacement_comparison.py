@@ -151,6 +151,25 @@ def test_protected_family_losses_match_pe_native_labels_with_spaces():
 
 
 def _artifact_manifest(artifact_dir: Path, baseline_dataset: Path) -> None:
+    (artifact_dir / "source_weight_diagnostics.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "sources": [
+                    {
+                        "source_name": "cps_asec",
+                        "source_class": "base",
+                        "household_weight_share": 0.95,
+                    },
+                    {
+                        "source_name": "irs_soi_puf_support_clone",
+                        "source_class": "puf_support",
+                        "household_weight_share": 0.05,
+                    },
+                ],
+            }
+        )
+    )
     (artifact_dir / "manifest.json").write_text(
         json.dumps(
             {
@@ -158,7 +177,10 @@ def _artifact_manifest(artifact_dir: Path, baseline_dataset: Path) -> None:
                     "policyengine_baseline_dataset": str(baseline_dataset),
                     "policyengine_dataset_year": 2024,
                 },
-                "artifacts": {"policyengine_dataset": "candidate.h5"},
+                "artifacts": {
+                    "policyengine_dataset": "candidate.h5",
+                    "source_weight_diagnostics": "source_weight_diagnostics.json",
+                },
             }
         )
     )

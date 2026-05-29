@@ -971,6 +971,14 @@ HIGH_SIGNAL_MFS_AGI_BINS = (
     ("200k_to_500k", 200_000.0, 500_000.0),
     ("500k_plus", 500_000.0, np.inf),
 )
+HIGH_SIGNAL_HOH_AGI_BINS = (
+    ("20k_to_25k", 20_000.0, 25_000.0),
+    ("25k_to_30k", 25_000.0, 30_000.0),
+    ("30k_to_40k", 30_000.0, 40_000.0),
+    ("200k_to_500k", 200_000.0, 500_000.0),
+    ("500k_to_1m", 500_000.0, 1_000_000.0),
+    ("1m_plus", 1_000_000.0, np.inf),
+)
 AGE_BUCKETS = (
     ("0_to_4", 0, 5),
     ("5_to_17", 5, 18),
@@ -978,6 +986,22 @@ AGE_BUCKETS = (
     ("30_to_44", 30, 45),
     ("45_to_64", 45, 65),
     ("65_plus", 65, np.inf),
+)
+SSI_AGE_BUCKETS = (
+    ("all", -np.inf, np.inf),
+    ("under_18", 0, 18),
+    ("18_to_64", 18, 65),
+    ("65_plus", 65, np.inf),
+)
+MEDICARE_PART_B_AGE_BUCKETS = (
+    ("age_0_to_9", 0, 10),
+    ("age_10_to_19", 10, 20),
+    ("age_20_to_29", 20, 30),
+    ("age_30_to_39", 30, 40),
+    ("age_40_to_49", 40, 50),
+    ("age_50_to_59", 50, 60),
+    ("age_60_to_64", 60, 65),
+    ("age_65_plus", 65, np.inf),
 )
 
 
@@ -1065,12 +1089,17 @@ def build_snapshot(dataset_path: str) -> dict:
     sim.default_calculation_period = PERIOD
 
     person_weights = sim.calculate("person_weight", period=PERIOD).values.astype(np.float64)
+    household_weights = sim.calculate("household_weight", period=PERIOD).values.astype(np.float64)
     tax_unit_weights = sim.calculate("tax_unit_weight", period=PERIOD).values.astype(np.float64)
     person_state = sim.calculate("state_fips", map_to="person", period=PERIOD).values
+    household_state = sim.calculate("state_fips", map_to="household", period=PERIOD).values
     person_age = sim.calculate("age", period=PERIOD).values.astype(np.float64)
     marketplace = sim.calculate("has_marketplace_health_coverage", period=PERIOD).values
     filing_status = sim.calculate("filing_status", period=PERIOD).values
     adjusted_gross_income = sim.calculate("adjusted_gross_income", period=PERIOD).values.astype(np.float64)
+    ssi = sim.calculate("ssi", period=PERIOD).values.astype(np.float64)
+    medicare_part_b_premiums = sim.calculate("medicare_part_b_premiums", period=PERIOD).values.astype(np.float64)
+    aca_ptc_household = sim.calculate("aca_ptc", map_to="household", period=PERIOD).values.astype(np.float64)
 
     critical_support = {}
     for variable in CRITICAL_PERSON_VARIABLES:
@@ -1088,26 +1117,65 @@ def build_snapshot(dataset_path: str) -> dict:
                 stored=variable in stored_variables,
             )
 
+    normalized_filing_status = np.asarray([normalize_status(value) for value in filing_status])
     filing_status_counts = {}
     for status in ("SINGLE", "JOINT", "SEPARATE", "HEAD_OF_HOUSEHOLD", "SURVIVING_SPOUSE"):
-        mask = np.asarray([normalize_status(value) == status for value in filing_status], dtype=bool)
+        mask = normalized_filing_status == status
         filing_status_counts[status] = {
             "count": int(mask.sum()),
             "weighted_count": float(tax_unit_weights[mask].sum()),
         }
 
-    mfs_mask = np.asarray([normalize_status(value) == "SEPARATE" for value in filing_status], dtype=bool)
-    mfs_agi_support = []
-    for label, lower, upper in HIGH_SIGNAL_MFS_AGI_BINS:
-        mask = mfs_mask & (adjusted_gross_income >= lower) & (adjusted_gross_income < upper)
-        mfs_agi_support.append(
-            {
-                "agi_bin": label,
-                "count": int(mask.sum()),
-                "weighted_count": float(tax_unit_weights[mask].sum()),
-                "weighted_agi": float((adjusted_gross_income[mask] * tax_unit_weights[mask]).sum()),
-            }
-        )
+    def agi_support_for_status(status: str, bins) -> list[dict]:
+        status_mask = normalized_filing_status == status
+        rows = []
+        for label, lower, upper in bins:
+            mask = status_mask & (adjusted_gross_income >= lower) & (adjusted_gross_income < upper)
+            rows.append(
+                {
+                    "agi_bin": label,
+                    "count": int(mask.sum()),
+                    "weighted_count": float(tax_unit_weights[mask].sum()),
+                    "weighted_agi": float((adjusted_gross_income[mask] * tax_unit_weights[mask]).sum()),
+                }
+            )
+        return rows
+
+    def person_value_by_age(values, buckets) -> list[dict]:
+        arr = np.nan_to_num(np.asarray(values, dtype=np.float64), nan=0.0)
+        rows = []
+        for label, lower, upper in buckets:
+            age_mask = (person_age >= lower) & (person_age < upper)
+            positive = age_mask & (arr > 0.0)
+            rows.append(
+                {
+                    "age_bucket": label,
+                    "person_count": int(age_mask.sum()),
+                    "positive_count": int(positive.sum()),
+                    "weighted_people": float(person_weights[age_mask].sum()),
+                    "weighted_positive": float(person_weights[positive].sum()),
+                    "value_sum": float((arr[age_mask] * person_weights[age_mask]).sum()),
+                }
+            )
+        return rows
+
+    mfs_agi_support = agi_support_for_status("SEPARATE", HIGH_SIGNAL_MFS_AGI_BINS)
+    hoh_agi_support = agi_support_for_status("HEAD_OF_HOUSEHOLD", HIGH_SIGNAL_HOH_AGI_BINS)
+    ssi_by_age = person_value_by_age(ssi, SSI_AGE_BUCKETS)
+    medicare_part_b_by_age = person_value_by_age(
+        medicare_part_b_premiums,
+        MEDICARE_PART_B_AGE_BUCKETS,
+    )
+
+    state_aca_ptc = {}
+    for state in sorted({state_abbr(value) for value in household_state}):
+        state_mask = np.asarray([state_abbr(value) == state for value in household_state], dtype=bool)
+        positive = state_mask & (aca_ptc_household > 0.0)
+        state_aca_ptc[state] = {
+            "weighted_households": float(household_weights[state_mask].sum()),
+            "weighted_positive_households": float(household_weights[positive].sum()),
+            "weighted_aca_ptc": float((aca_ptc_household[state_mask] * household_weights[state_mask]).sum()),
+        }
 
     states = sorted({state_abbr(value) for value in person_state})
     state_marketplace = {}
@@ -1140,6 +1208,10 @@ def build_snapshot(dataset_path: str) -> dict:
         "critical_input_support": critical_support,
         "filing_status_weighted_counts": filing_status_counts,
         "mfs_high_agi_support": mfs_agi_support,
+        "hoh_agi_support": hoh_agi_support,
+        "ssi_by_age": ssi_by_age,
+        "medicare_part_b_premiums_by_age": medicare_part_b_by_age,
+        "state_aca_ptc_spending": state_aca_ptc,
         "state_marketplace_enrollment": state_marketplace,
         "state_age_bucket_support": state_age_bucket,
     }
@@ -1191,6 +1263,84 @@ def compare_snapshots(candidate: dict, baseline: dict) -> dict:
                 "weighted_agi_delta": float(row["weighted_agi"] - other["weighted_agi"]),
             }
         )
+
+    baseline_bins = {row["agi_bin"]: row for row in baseline["hoh_agi_support"]}
+    hoh_rows = []
+    for row in candidate["hoh_agi_support"]:
+        other = baseline_bins[row["agi_bin"]]
+        hoh_rows.append(
+            {
+                "agi_bin": row["agi_bin"],
+                "candidate_weighted_count": float(row["weighted_count"]),
+                "baseline_weighted_count": float(other["weighted_count"]),
+                "weighted_count_delta": float(row["weighted_count"] - other["weighted_count"]),
+                "candidate_weighted_agi": float(row["weighted_agi"]),
+                "baseline_weighted_agi": float(other["weighted_agi"]),
+                "weighted_agi_delta": float(row["weighted_agi"] - other["weighted_agi"]),
+            }
+        )
+
+    def age_value_delta(name: str) -> list[dict]:
+        baseline_bins = {row["age_bucket"]: row for row in baseline[name]}
+        rows = []
+        for row in candidate[name]:
+            other = baseline_bins[row["age_bucket"]]
+            rows.append(
+                {
+                    "age_bucket": row["age_bucket"],
+                    "candidate_weighted_positive": float(row["weighted_positive"]),
+                    "baseline_weighted_positive": float(other["weighted_positive"]),
+                    "weighted_positive_delta": float(row["weighted_positive"] - other["weighted_positive"]),
+                    "candidate_value_sum": float(row["value_sum"]),
+                    "baseline_value_sum": float(other["value_sum"]),
+                    "value_sum_delta": float(row["value_sum"] - other["value_sum"]),
+                }
+            )
+        return rows
+
+    ssi_rows = age_value_delta("ssi_by_age")
+    for row in ssi_rows:
+        row["candidate_weighted_recipients"] = row.pop("candidate_weighted_positive")
+        row["baseline_weighted_recipients"] = row.pop("baseline_weighted_positive")
+        row["weighted_recipient_delta"] = row.pop("weighted_positive_delta")
+        row["candidate_ssi"] = row.pop("candidate_value_sum")
+        row["baseline_ssi"] = row.pop("baseline_value_sum")
+        row["ssi_delta"] = row.pop("value_sum_delta")
+
+    medicare_part_b_rows = age_value_delta("medicare_part_b_premiums_by_age")
+
+    all_states = sorted(
+        set(candidate["state_aca_ptc_spending"])
+        | set(baseline["state_aca_ptc_spending"])
+    )
+    state_aca_ptc_rows = []
+    for state in all_states:
+        candidate_row = candidate["state_aca_ptc_spending"].get(
+            state,
+            {"weighted_aca_ptc": 0.0, "weighted_positive_households": 0.0},
+        )
+        baseline_row = baseline["state_aca_ptc_spending"].get(
+            state,
+            {"weighted_aca_ptc": 0.0, "weighted_positive_households": 0.0},
+        )
+        state_aca_ptc_rows.append(
+            {
+                "state": state,
+                "candidate_weighted_aca_ptc": float(candidate_row["weighted_aca_ptc"]),
+                "baseline_weighted_aca_ptc": float(baseline_row["weighted_aca_ptc"]),
+                "weighted_aca_ptc_delta": float(candidate_row["weighted_aca_ptc"] - baseline_row["weighted_aca_ptc"]),
+                "candidate_weighted_positive_households": float(candidate_row["weighted_positive_households"]),
+                "baseline_weighted_positive_households": float(baseline_row["weighted_positive_households"]),
+                "weighted_positive_household_delta": float(
+                    candidate_row["weighted_positive_households"]
+                    - baseline_row["weighted_positive_households"]
+                ),
+            }
+        )
+    state_aca_ptc_rows.sort(
+        key=lambda row: abs(row["weighted_aca_ptc_delta"]),
+        reverse=True,
+    )
 
     all_states = sorted(
         set(candidate["state_marketplace_enrollment"])
@@ -1254,6 +1404,10 @@ def compare_snapshots(candidate: dict, baseline: dict) -> dict:
         "critical_input_support": critical_rows,
         "filing_status_weighted_delta": filing_status_rows,
         "mfs_high_agi_delta": mfs_rows,
+        "hoh_agi_delta": hoh_rows,
+        "ssi_by_age_delta": ssi_rows,
+        "medicare_part_b_premiums_by_age_delta": medicare_part_b_rows,
+        "state_aca_ptc_spending_top_gaps": state_aca_ptc_rows[:15],
         "state_marketplace_enrollment_top_gaps": state_marketplace_rows[:15],
         "state_age_bucket_top_gaps": state_age_rows[:20],
     }
@@ -1317,6 +1471,14 @@ HIGH_SIGNAL_MFS_AGI_BINS = (
     ("200k_to_500k", 200_000.0, 500_000.0),
     ("500k_plus", 500_000.0, np.inf),
 )
+HIGH_SIGNAL_HOH_AGI_BINS = (
+    ("20k_to_25k", 20_000.0, 25_000.0),
+    ("25k_to_30k", 25_000.0, 30_000.0),
+    ("30k_to_40k", 30_000.0, 40_000.0),
+    ("200k_to_500k", 200_000.0, 500_000.0),
+    ("500k_to_1m", 500_000.0, 1_000_000.0),
+    ("1m_plus", 1_000_000.0, np.inf),
+)
 AGE_BUCKETS = (
     ("0_to_4", 0, 5),
     ("5_to_17", 5, 18),
@@ -1324,6 +1486,22 @@ AGE_BUCKETS = (
     ("30_to_44", 30, 45),
     ("45_to_64", 45, 65),
     ("65_plus", 65, np.inf),
+)
+SSI_AGE_BUCKETS = (
+    ("all", -np.inf, np.inf),
+    ("under_18", 0, 18),
+    ("18_to_64", 18, 65),
+    ("65_plus", 65, np.inf),
+)
+MEDICARE_PART_B_AGE_BUCKETS = (
+    ("age_0_to_9", 0, 10),
+    ("age_10_to_19", 10, 20),
+    ("age_20_to_29", 20, 30),
+    ("age_30_to_39", 30, 40),
+    ("age_40_to_49", 40, 50),
+    ("age_50_to_59", 50, 60),
+    ("age_60_to_64", 60, 65),
+    ("age_65_plus", 65, np.inf),
 )
 
 
@@ -1411,12 +1589,17 @@ def build_snapshot(dataset_path: str) -> dict:
     sim.default_calculation_period = PERIOD
 
     person_weights = sim.calculate("person_weight", period=PERIOD).values.astype(np.float64)
+    household_weights = sim.calculate("household_weight", period=PERIOD).values.astype(np.float64)
     tax_unit_weights = sim.calculate("tax_unit_weight", period=PERIOD).values.astype(np.float64)
     person_state = sim.calculate("state_fips", map_to="person", period=PERIOD).values
+    household_state = sim.calculate("state_fips", map_to="household", period=PERIOD).values
     person_age = sim.calculate("age", period=PERIOD).values.astype(np.float64)
     marketplace = sim.calculate("has_marketplace_health_coverage", period=PERIOD).values
     filing_status = sim.calculate("filing_status", period=PERIOD).values
     adjusted_gross_income = sim.calculate("adjusted_gross_income", period=PERIOD).values.astype(np.float64)
+    ssi = sim.calculate("ssi", period=PERIOD).values.astype(np.float64)
+    medicare_part_b_premiums = sim.calculate("medicare_part_b_premiums", period=PERIOD).values.astype(np.float64)
+    aca_ptc_household = sim.calculate("aca_ptc", map_to="household", period=PERIOD).values.astype(np.float64)
 
     critical_support = {}
     for variable in CRITICAL_PERSON_VARIABLES:
@@ -1434,26 +1617,65 @@ def build_snapshot(dataset_path: str) -> dict:
                 stored=variable in stored_variables,
             )
 
+    normalized_filing_status = np.asarray([normalize_status(value) for value in filing_status])
     filing_status_counts = {}
     for status in ("SINGLE", "JOINT", "SEPARATE", "HEAD_OF_HOUSEHOLD", "SURVIVING_SPOUSE"):
-        mask = np.asarray([normalize_status(value) == status for value in filing_status], dtype=bool)
+        mask = normalized_filing_status == status
         filing_status_counts[status] = {
             "count": int(mask.sum()),
             "weighted_count": float(tax_unit_weights[mask].sum()),
         }
 
-    mfs_mask = np.asarray([normalize_status(value) == "SEPARATE" for value in filing_status], dtype=bool)
-    mfs_agi_support = []
-    for label, lower, upper in HIGH_SIGNAL_MFS_AGI_BINS:
-        mask = mfs_mask & (adjusted_gross_income >= lower) & (adjusted_gross_income < upper)
-        mfs_agi_support.append(
-            {
-                "agi_bin": label,
-                "count": int(mask.sum()),
-                "weighted_count": float(tax_unit_weights[mask].sum()),
-                "weighted_agi": float((adjusted_gross_income[mask] * tax_unit_weights[mask]).sum()),
-            }
-        )
+    def agi_support_for_status(status: str, bins) -> list[dict]:
+        status_mask = normalized_filing_status == status
+        rows = []
+        for label, lower, upper in bins:
+            mask = status_mask & (adjusted_gross_income >= lower) & (adjusted_gross_income < upper)
+            rows.append(
+                {
+                    "agi_bin": label,
+                    "count": int(mask.sum()),
+                    "weighted_count": float(tax_unit_weights[mask].sum()),
+                    "weighted_agi": float((adjusted_gross_income[mask] * tax_unit_weights[mask]).sum()),
+                }
+            )
+        return rows
+
+    def person_value_by_age(values, buckets) -> list[dict]:
+        arr = np.nan_to_num(np.asarray(values, dtype=np.float64), nan=0.0)
+        rows = []
+        for label, lower, upper in buckets:
+            age_mask = (person_age >= lower) & (person_age < upper)
+            positive = age_mask & (arr > 0.0)
+            rows.append(
+                {
+                    "age_bucket": label,
+                    "person_count": int(age_mask.sum()),
+                    "positive_count": int(positive.sum()),
+                    "weighted_people": float(person_weights[age_mask].sum()),
+                    "weighted_positive": float(person_weights[positive].sum()),
+                    "value_sum": float((arr[age_mask] * person_weights[age_mask]).sum()),
+                }
+            )
+        return rows
+
+    mfs_agi_support = agi_support_for_status("SEPARATE", HIGH_SIGNAL_MFS_AGI_BINS)
+    hoh_agi_support = agi_support_for_status("HEAD_OF_HOUSEHOLD", HIGH_SIGNAL_HOH_AGI_BINS)
+    ssi_by_age = person_value_by_age(ssi, SSI_AGE_BUCKETS)
+    medicare_part_b_by_age = person_value_by_age(
+        medicare_part_b_premiums,
+        MEDICARE_PART_B_AGE_BUCKETS,
+    )
+
+    state_aca_ptc = {}
+    for state in sorted({state_abbr(value) for value in household_state}):
+        state_mask = np.asarray([state_abbr(value) == state for value in household_state], dtype=bool)
+        positive = state_mask & (aca_ptc_household > 0.0)
+        state_aca_ptc[state] = {
+            "weighted_households": float(household_weights[state_mask].sum()),
+            "weighted_positive_households": float(household_weights[positive].sum()),
+            "weighted_aca_ptc": float((aca_ptc_household[state_mask] * household_weights[state_mask]).sum()),
+        }
 
     states = sorted({state_abbr(value) for value in person_state})
     state_marketplace = {}
@@ -1486,6 +1708,10 @@ def build_snapshot(dataset_path: str) -> dict:
         "critical_input_support": critical_support,
         "filing_status_weighted_counts": filing_status_counts,
         "mfs_high_agi_support": mfs_agi_support,
+        "hoh_agi_support": hoh_agi_support,
+        "ssi_by_age": ssi_by_age,
+        "medicare_part_b_premiums_by_age": medicare_part_b_by_age,
+        "state_aca_ptc_spending": state_aca_ptc,
         "state_marketplace_enrollment": state_marketplace,
         "state_age_bucket_support": state_age_bucket,
     }
@@ -1537,6 +1763,84 @@ def compare_snapshots(candidate: dict, baseline: dict) -> dict:
                 "weighted_agi_delta": float(row["weighted_agi"] - other["weighted_agi"]),
             }
         )
+
+    baseline_bins = {row["agi_bin"]: row for row in baseline["hoh_agi_support"]}
+    hoh_rows = []
+    for row in candidate["hoh_agi_support"]:
+        other = baseline_bins[row["agi_bin"]]
+        hoh_rows.append(
+            {
+                "agi_bin": row["agi_bin"],
+                "candidate_weighted_count": float(row["weighted_count"]),
+                "baseline_weighted_count": float(other["weighted_count"]),
+                "weighted_count_delta": float(row["weighted_count"] - other["weighted_count"]),
+                "candidate_weighted_agi": float(row["weighted_agi"]),
+                "baseline_weighted_agi": float(other["weighted_agi"]),
+                "weighted_agi_delta": float(row["weighted_agi"] - other["weighted_agi"]),
+            }
+        )
+
+    def age_value_delta(name: str) -> list[dict]:
+        baseline_bins = {row["age_bucket"]: row for row in baseline[name]}
+        rows = []
+        for row in candidate[name]:
+            other = baseline_bins[row["age_bucket"]]
+            rows.append(
+                {
+                    "age_bucket": row["age_bucket"],
+                    "candidate_weighted_positive": float(row["weighted_positive"]),
+                    "baseline_weighted_positive": float(other["weighted_positive"]),
+                    "weighted_positive_delta": float(row["weighted_positive"] - other["weighted_positive"]),
+                    "candidate_value_sum": float(row["value_sum"]),
+                    "baseline_value_sum": float(other["value_sum"]),
+                    "value_sum_delta": float(row["value_sum"] - other["value_sum"]),
+                }
+            )
+        return rows
+
+    ssi_rows = age_value_delta("ssi_by_age")
+    for row in ssi_rows:
+        row["candidate_weighted_recipients"] = row.pop("candidate_weighted_positive")
+        row["baseline_weighted_recipients"] = row.pop("baseline_weighted_positive")
+        row["weighted_recipient_delta"] = row.pop("weighted_positive_delta")
+        row["candidate_ssi"] = row.pop("candidate_value_sum")
+        row["baseline_ssi"] = row.pop("baseline_value_sum")
+        row["ssi_delta"] = row.pop("value_sum_delta")
+
+    medicare_part_b_rows = age_value_delta("medicare_part_b_premiums_by_age")
+
+    all_states = sorted(
+        set(candidate["state_aca_ptc_spending"])
+        | set(baseline["state_aca_ptc_spending"])
+    )
+    state_aca_ptc_rows = []
+    for state in all_states:
+        candidate_row = candidate["state_aca_ptc_spending"].get(
+            state,
+            {"weighted_aca_ptc": 0.0, "weighted_positive_households": 0.0},
+        )
+        baseline_row = baseline["state_aca_ptc_spending"].get(
+            state,
+            {"weighted_aca_ptc": 0.0, "weighted_positive_households": 0.0},
+        )
+        state_aca_ptc_rows.append(
+            {
+                "state": state,
+                "candidate_weighted_aca_ptc": float(candidate_row["weighted_aca_ptc"]),
+                "baseline_weighted_aca_ptc": float(baseline_row["weighted_aca_ptc"]),
+                "weighted_aca_ptc_delta": float(candidate_row["weighted_aca_ptc"] - baseline_row["weighted_aca_ptc"]),
+                "candidate_weighted_positive_households": float(candidate_row["weighted_positive_households"]),
+                "baseline_weighted_positive_households": float(baseline_row["weighted_positive_households"]),
+                "weighted_positive_household_delta": float(
+                    candidate_row["weighted_positive_households"]
+                    - baseline_row["weighted_positive_households"]
+                ),
+            }
+        )
+    state_aca_ptc_rows.sort(
+        key=lambda row: abs(row["weighted_aca_ptc_delta"]),
+        reverse=True,
+    )
 
     all_states = sorted(
         set(candidate["state_marketplace_enrollment"])
@@ -1600,6 +1904,10 @@ def compare_snapshots(candidate: dict, baseline: dict) -> dict:
         "critical_input_support": critical_rows,
         "filing_status_weighted_delta": filing_status_rows,
         "mfs_high_agi_delta": mfs_rows,
+        "hoh_agi_delta": hoh_rows,
+        "ssi_by_age_delta": ssi_rows,
+        "medicare_part_b_premiums_by_age_delta": medicare_part_b_rows,
+        "state_aca_ptc_spending_top_gaps": state_aca_ptc_rows[:15],
         "state_marketplace_enrollment_top_gaps": state_marketplace_rows[:15],
         "state_age_bucket_top_gaps": state_age_rows[:20],
     }

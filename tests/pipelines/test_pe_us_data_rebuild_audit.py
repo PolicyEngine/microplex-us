@@ -135,6 +135,30 @@ def test_build_policyengine_us_data_rebuild_native_audit_summarizes_saved_artifa
                         "weighted_count_delta": -75.0,
                     }
                 ],
+                "hoh_agi_delta": [
+                    {
+                        "agi_bin": "500k_to_1m",
+                        "weighted_count_delta": 500.0,
+                    }
+                ],
+                "ssi_by_age_delta": [
+                    {
+                        "age_bucket": "65_plus",
+                        "weighted_recipient_delta": 400.0,
+                    }
+                ],
+                "medicare_part_b_premiums_by_age_delta": [
+                    {
+                        "age_bucket": "age_10_to_19",
+                        "weighted_positive_delta": 300.0,
+                    }
+                ],
+                "state_aca_ptc_spending_top_gaps": [
+                    {
+                        "state": "CA",
+                        "weighted_aca_ptc_delta": -220.0,
+                    }
+                ],
                 "state_marketplace_enrollment_top_gaps": [
                     {
                         "state": "CA",
@@ -169,6 +193,12 @@ def test_build_policyengine_us_data_rebuild_native_audit_summarizes_saved_artifa
     assert audit["topTargetRegressions"][0]["target_name"].startswith("state/CA/")
     assert audit["supportAuditSummary"]["missingStoredCriticalInputs"] == ["has_esi"]
     assert audit["supportAuditSummary"]["topCriticalInputSupportGaps"][0]["variable"] == "has_esi"
+    assert audit["supportAuditSummary"]["topHoHAgiGaps"][0]["agi_bin"] == "500k_to_1m"
+    assert audit["supportAuditSummary"]["topSSIByAgeGaps"][0]["age_bucket"] == "65_plus"
+    assert audit["supportAuditSummary"]["topMedicarePartBByAgeGaps"][0]["age_bucket"] == (
+        "age_10_to_19"
+    )
+    assert audit["supportAuditSummary"]["topAcaPtcSpendingGaps"][0]["state"] == "CA"
     assert (
         audit["imputationAblationSummary"]["best_mean_weighted_mae_variant"]
         == "top_correlated_qrf"

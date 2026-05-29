@@ -23,6 +23,7 @@ from microplex_us.pipelines.pe_native_scores import (
     _ENHANCED_CPS_BAD_TARGETS,
     build_policyengine_us_data_subprocess_env,
     compute_us_pe_native_scores,
+    compute_us_pe_native_support_audit,
     resolve_policyengine_us_data_repo_root,
 )
 from microplex_us.pipelines.performance import (
@@ -61,6 +62,7 @@ def build_sound_ecps_replacement_comparison(
     optimizer_tol: float = 1e-8,
     score_consistency_tol: float = 1e-6,
     target_diagnostics_top_k: int = 50,
+    include_support_audit: bool = True,
     policyengine_us_data_repo: str | Path | None = None,
     policyengine_us_data_python: str | Path | None = None,
     skip_tax_expenditure_targets: bool = False,
@@ -216,6 +218,20 @@ def build_sound_ecps_replacement_comparison(
         holdout_mask=holdout_mask,
         top_k=target_diagnostics_top_k,
     )
+    support_audit = (
+        compute_us_pe_native_support_audit(
+            candidate_dataset_path=candidate_refit_path,
+            baseline_dataset_path=baseline_refit_path,
+            period=period,
+            policyengine_us_data_repo=policyengine_us_data_repo,
+            policyengine_us_data_python=policyengine_us_data_python,
+        )
+        if include_support_audit
+        else None
+    )
+    support_audit_summary = (
+        _support_audit_summary(support_audit) if support_audit is not None else None
+    )
 
     score_summary.update(
         {
@@ -244,6 +260,7 @@ def build_sound_ecps_replacement_comparison(
             "holdout_targets": int(holdout_mask.sum()),
             "protected_family_losses": protected_family_losses,
             "target_diagnostics": target_diagnostics["summary"],
+            "support_audit": support_audit_summary,
         }
     )
     payload = {
@@ -298,6 +315,7 @@ def build_sound_ecps_replacement_comparison(
         "summary": score_summary,
         "score": pe_native_scores,
         "target_diagnostics": target_diagnostics,
+        "support_audit": support_audit,
         "candidate_refit": _strip_weights(candidate_refit),
         "baseline_refit": _strip_weights(baseline_refit),
         "target_split": {
@@ -319,6 +337,7 @@ def build_sound_ecps_replacement_comparison(
 def write_sound_ecps_replacement_comparison(
     output_path: str | Path,
     target_diagnostics_path: str | Path | None = None,
+    support_audit_path: str | Path | None = None,
     **kwargs: Any,
 ) -> Path:
     """Write a sound eCPS replacement comparison payload."""
@@ -338,6 +357,20 @@ def write_sound_ecps_replacement_comparison(
     payload.setdefault("artifacts", {})["target_loss_diagnostics"] = (
         _dataset_descriptor(diagnostics_destination)
     )
+    support_audit = payload.get("support_audit")
+    if support_audit is not None:
+        support_destination = (
+            Path(support_audit_path).expanduser().resolve()
+            if support_audit_path is not None
+            else destination.parent / "support_audit.json"
+        )
+        support_destination.parent.mkdir(parents=True, exist_ok=True)
+        support_destination.write_text(
+            json.dumps(support_audit, indent=2, sort_keys=True)
+        )
+        payload.setdefault("artifacts", {})["support_audit"] = _dataset_descriptor(
+            support_destination
+        )
     destination.write_text(json.dumps(payload, indent=2, sort_keys=True))
     return destination
 
@@ -873,6 +906,56 @@ def _target_family_breakdown(
     return sorted(breakdown, key=lambda row: abs(float(row["loss_delta"])), reverse=True)
 
 
+def _support_audit_summary(support_audit: dict[str, Any]) -> dict[str, Any]:
+    comparisons = dict(support_audit.get("comparisons") or {})
+    critical_rows = list(comparisons.get("critical_input_support") or ())
+    missing_stored = [
+        row["variable"]
+        for row in critical_rows
+        if bool(row.get("baseline_stored")) and not bool(row.get("candidate_stored"))
+    ]
+    return {
+        "missing_stored_critical_inputs": missing_stored,
+        "top_critical_input_support_gaps": _sort_rows_by_abs_delta(
+            critical_rows,
+            "weighted_nonzero_delta",
+        ),
+        "top_filing_status_gaps": _sort_rows_by_abs_delta(
+            list(comparisons.get("filing_status_weighted_delta") or ()),
+            "weighted_count_delta",
+        ),
+        "top_hoh_agi_gaps": _sort_rows_by_abs_delta(
+            list(comparisons.get("hoh_agi_delta") or ()),
+            "weighted_count_delta",
+        ),
+        "top_ssi_by_age_gaps": _sort_rows_by_abs_delta(
+            list(comparisons.get("ssi_by_age_delta") or ()),
+            "weighted_recipient_delta",
+        ),
+        "top_medicare_part_b_by_age_gaps": _sort_rows_by_abs_delta(
+            list(comparisons.get("medicare_part_b_premiums_by_age_delta") or ()),
+            "weighted_positive_delta",
+        ),
+        "top_aca_ptc_spending_gaps": _sort_rows_by_abs_delta(
+            list(comparisons.get("state_aca_ptc_spending_top_gaps") or ()),
+            "weighted_aca_ptc_delta",
+        ),
+    }
+
+
+def _sort_rows_by_abs_delta(
+    rows: list[dict[str, Any]],
+    delta_key: str,
+    *,
+    limit: int = 10,
+) -> list[dict[str, Any]]:
+    return sorted(
+        rows,
+        key=lambda row: abs(float(row.get(delta_key, 0.0))),
+        reverse=True,
+    )[:limit]
+
+
 def _loss_terms(loss_inputs: dict[str, Any], weights: np.ndarray) -> np.ndarray:
     matrix = np.asarray(loss_inputs["scaled_matrix"], dtype=np.float64)
     target = np.asarray(loss_inputs["scaled_target"], dtype=np.float64)
@@ -944,6 +1027,10 @@ def main(argv: list[str] | None = None) -> int:
         "--target-diagnostics-path",
         help="Defaults to <output-dir>/target_loss_diagnostics.json.",
     )
+    parser.add_argument(
+        "--support-audit-path",
+        help="Defaults to <output-dir>/support_audit.json when enabled.",
+    )
     parser.add_argument("--period", type=int, default=2024)
     parser.add_argument("--matched-household-count", type=int)
     parser.add_argument("--random-seed", type=int, default=20260529)
@@ -962,6 +1049,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--optimizer-tol", type=float, default=1e-8)
     parser.add_argument("--score-consistency-tol", type=float, default=1e-6)
     parser.add_argument("--target-diagnostics-top-k", type=int, default=50)
+    parser.add_argument(
+        "--skip-support-audit",
+        action="store_true",
+        help="Skip the PE-native support audit sidecar.",
+    )
     parser.add_argument("--policyengine-us-data-repo")
     parser.add_argument("--policyengine-us-data-python")
     parser.add_argument("--skip-tax-expenditure-targets", action="store_true")
@@ -977,6 +1069,7 @@ def main(argv: list[str] | None = None) -> int:
     written = write_sound_ecps_replacement_comparison(
         output_path,
         target_diagnostics_path=args.target_diagnostics_path,
+        support_audit_path=args.support_audit_path,
         candidate_dataset_path=args.candidate_dataset,
         baseline_dataset_path=args.baseline_dataset,
         output_dir=output_dir,
@@ -990,6 +1083,7 @@ def main(argv: list[str] | None = None) -> int:
         optimizer_tol=args.optimizer_tol,
         score_consistency_tol=args.score_consistency_tol,
         target_diagnostics_top_k=args.target_diagnostics_top_k,
+        include_support_audit=not args.skip_support_audit,
         policyengine_us_data_repo=args.policyengine_us_data_repo,
         policyengine_us_data_python=args.policyengine_us_data_python,
         skip_tax_expenditure_targets=args.skip_tax_expenditure_targets,

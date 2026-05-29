@@ -247,6 +247,35 @@ def _resolve_saved_artifact_path(
     return candidate
 
 
+def _resolve_required_saved_artifact_path(
+    artifact_root: Path,
+    artifacts: dict[str, Any],
+    artifact_key: str,
+) -> Path:
+    path = _resolve_saved_artifact_path(artifact_root, artifacts.get(artifact_key))
+    if path is None:
+        raise KeyError(f"Saved artifact manifest does not declare {artifact_key!r}")
+    return path
+
+
+def _resolve_saved_stage_artifact_path(
+    artifact_root: Path,
+    artifacts: dict[str, Any],
+    artifact_key: str,
+    *,
+    stage_id: str,
+) -> Path | None:
+    declared_path = _resolve_saved_artifact_path(artifact_root, artifacts.get(artifact_key))
+    if declared_path is not None:
+        return declared_path
+    contract_path = resolve_us_stage_artifact_contract_path(
+        artifact_root,
+        stage_id,
+        artifact_key,
+    )
+    return contract_path if contract_path.exists() else None
+
+
 def _infer_policyengine_baseline_household_weight_sum(
     baseline_dataset: str | Path,
     *,
@@ -1059,7 +1088,11 @@ def _refresh_checkpoint_data_flow_snapshot(
     *,
     extra_outputs: tuple[str, ...] = (),
 ) -> Path | None:
-    snapshot_path = artifact_root / "data_flow_snapshot.json"
+    snapshot_path = resolve_us_stage_artifact_contract_path(
+        artifact_root,
+        "08_dataset_assembly",
+        "data_flow_snapshot",
+    )
     stage_manifest_path = resolve_us_stage_artifact_contract_path(
         artifact_root,
         "08_dataset_assembly",
@@ -1265,35 +1298,128 @@ def _load_checkpoint_versioned_artifacts(
     artifact_paths = USMicroplexArtifactPaths(
         output_dir=artifact_root,
         version_id=artifact_root.name,
-        seed_data=artifact_root / str(artifacts["seed_data"]),
-        synthetic_data=artifact_root / str(artifacts["synthetic_data"]),
-        calibrated_data=artifact_root / str(artifacts["calibrated_data"]),
-        targets=artifact_root / str(artifacts["targets"]),
+        seed_data=_resolve_required_saved_artifact_path(
+            artifact_root,
+            artifacts,
+            "seed_data",
+        ),
+        synthetic_data=_resolve_required_saved_artifact_path(
+            artifact_root,
+            artifacts,
+            "synthetic_data",
+        ),
+        calibrated_data=_resolve_required_saved_artifact_path(
+            artifact_root,
+            artifacts,
+            "calibrated_data",
+        ),
+        targets=_resolve_required_saved_artifact_path(
+            artifact_root,
+            artifacts,
+            "targets",
+        ),
         manifest=manifest_path,
-        synthesizer=_resolve_saved_artifact_path(
+        scaffold_seed_data=_resolve_saved_stage_artifact_path(
             artifact_root,
-            artifacts.get("synthesizer"),
+            artifacts,
+            "scaffold_seed_data",
+            stage_id="04_seed_scaffold",
         ),
-        policyengine_dataset=_resolve_saved_artifact_path(
+        synthesizer=_resolve_saved_stage_artifact_path(
             artifact_root,
-            artifacts.get("policyengine_dataset"),
+            artifacts,
+            "synthesizer",
+            stage_id="05_donor_integration_synthesis",
         ),
-        data_flow_snapshot=(
-            artifact_root / "data_flow_snapshot.json"
-            if (artifact_root / "data_flow_snapshot.json").exists()
-            else None
-        ),
-        policyengine_harness=_resolve_saved_artifact_path(
+        policyengine_dataset=_resolve_saved_stage_artifact_path(
             artifact_root,
-            artifacts.get("policyengine_harness"),
+            artifacts,
+            "policyengine_dataset",
+            stage_id="08_dataset_assembly",
         ),
-        policyengine_native_scores=_resolve_saved_artifact_path(
+        data_flow_snapshot=_resolve_saved_stage_artifact_path(
             artifact_root,
-            artifacts.get("policyengine_native_scores"),
+            artifacts,
+            "data_flow_snapshot",
+            stage_id="08_dataset_assembly",
         ),
-        policyengine_native_audit=_resolve_saved_artifact_path(
+        stage_manifest=_resolve_saved_stage_artifact_path(
             artifact_root,
-            artifacts.get("policyengine_native_audit"),
+            artifacts,
+            "stage_manifest",
+            stage_id="08_dataset_assembly",
+        ),
+        artifact_inventory=_resolve_saved_stage_artifact_path(
+            artifact_root,
+            artifacts,
+            "artifact_inventory",
+            stage_id="08_dataset_assembly",
+        ),
+        conditional_readiness=_resolve_saved_stage_artifact_path(
+            artifact_root,
+            artifacts,
+            "conditional_readiness",
+            stage_id="08_dataset_assembly",
+        ),
+        source_plan=_resolve_saved_stage_artifact_path(
+            artifact_root,
+            artifacts,
+            "source_plan",
+            stage_id="03_source_planning",
+        ),
+        policyengine_entity_tables=_resolve_saved_stage_artifact_path(
+            artifact_root,
+            artifacts,
+            "policyengine_entity_tables",
+            stage_id="06_policyengine_entities",
+        ),
+        calibration_summary=_resolve_saved_stage_artifact_path(
+            artifact_root,
+            artifacts,
+            "calibration_summary",
+            stage_id="07_calibration",
+        ),
+        validation_evidence=_resolve_saved_stage_artifact_path(
+            artifact_root,
+            artifacts,
+            "validation_evidence",
+            stage_id="09_validation_benchmarking",
+        ),
+        policyengine_harness=_resolve_saved_stage_artifact_path(
+            artifact_root,
+            artifacts,
+            "policyengine_harness",
+            stage_id="09_validation_benchmarking",
+        ),
+        policyengine_native_scores=_resolve_saved_stage_artifact_path(
+            artifact_root,
+            artifacts,
+            "policyengine_native_scores",
+            stage_id="09_validation_benchmarking",
+        ),
+        policyengine_native_audit=_resolve_saved_stage_artifact_path(
+            artifact_root,
+            artifacts,
+            "policyengine_native_audit",
+            stage_id="09_validation_benchmarking",
+        ),
+        child_tax_unit_agi_drift=_resolve_saved_stage_artifact_path(
+            artifact_root,
+            artifacts,
+            "child_tax_unit_agi_drift",
+            stage_id="09_validation_benchmarking",
+        ),
+        capital_gains_lots=_resolve_saved_stage_artifact_path(
+            artifact_root,
+            artifacts,
+            "capital_gains_lots",
+            stage_id="08_dataset_assembly",
+        ),
+        source_weight_diagnostics=_resolve_saved_stage_artifact_path(
+            artifact_root,
+            artifacts,
+            "source_weight_diagnostics",
+            stage_id="05_donor_integration_synthesis",
         ),
         run_registry=_resolve_saved_artifact_path(
             artifact_root,

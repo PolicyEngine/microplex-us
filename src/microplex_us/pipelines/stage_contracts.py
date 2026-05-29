@@ -368,6 +368,10 @@ def default_us_pipeline_stage_contracts() -> tuple[USPipelineStageContract, ...]
                     "Loaded Microplex observation frames with source metadata.",
                 ),
                 _runtime_resource(
+                    "source_descriptors",
+                    "Source descriptors attached to the loaded observation frames.",
+                ),
+                _runtime_resource(
                     "source_relationships",
                     "Validated entity relationships in loaded source frames.",
                 ),
@@ -455,7 +459,6 @@ def default_us_pipeline_stage_contracts() -> tuple[USPipelineStageContract, ...]
                     "source_plan",
                     "Saved scaffold and donor/source planning summary from Stage 3.",
                     stage_id="03_source_planning",
-                    required=False,
                 ),
                 _stage_output_resource(
                     "scaffold_selection",

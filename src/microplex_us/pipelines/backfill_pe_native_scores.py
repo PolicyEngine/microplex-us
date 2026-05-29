@@ -13,9 +13,16 @@ from microplex_us.pipelines.pe_native_scores import (
     compute_batch_us_pe_native_scores,
     compute_us_pe_native_scores,
 )
+from microplex_us.pipelines.pe_us_data_rebuild_checkpoint import (
+    _refresh_checkpoint_data_flow_snapshot,
+)
 from microplex_us.pipelines.registry import (
     append_us_microplex_run_registry_entry,
     build_us_microplex_run_registry_entry,
+)
+from microplex_us.pipelines.stage_contracts import (
+    get_us_stage_artifact_contract,
+    resolve_us_stage_artifact_contract_path,
 )
 
 
@@ -23,10 +30,16 @@ def discover_us_candidate_artifact_dirs(artifact_root: str | Path) -> tuple[Path
     """Return saved US artifact bundle directories with a PE dataset and manifest."""
 
     root = Path(artifact_root)
+    dataset_hint = get_us_stage_artifact_contract(
+        "08_dataset_assembly",
+        "policyengine_dataset",
+    ).path_hint
+    if dataset_hint is None:
+        raise RuntimeError("Stage 8 policyengine_dataset artifact has no path hint")
     return tuple(
         sorted(
             path.parent
-            for path in root.rglob("policyengine_us.h5")
+            for path in root.rglob(dataset_hint)
             if (path.parent / "manifest.json").exists()
         )
     )
@@ -50,7 +63,11 @@ def backfill_us_pe_native_scores_bundle(
     if not dataset_name:
         raise ValueError(f"{bundle_dir} does not declare a policyengine_dataset artifact")
 
-    native_sidecar_path = bundle_dir / "policyengine_native_scores.json"
+    native_sidecar_path = resolve_us_stage_artifact_contract_path(
+        bundle_dir,
+        "09_validation_benchmarking",
+        "policyengine_native_scores",
+    )
     if native_sidecar_path.exists() and not force:
         payload = json.loads(native_sidecar_path.read_text())
     else:
@@ -96,7 +113,11 @@ def backfill_us_pe_native_scores_bundles(
         manifest = json.loads(manifest_path.read_text())
         manifest_paths.append(manifest_path)
 
-        native_sidecar_path = bundle_dir / "policyengine_native_scores.json"
+        native_sidecar_path = resolve_us_stage_artifact_contract_path(
+            bundle_dir,
+            "09_validation_benchmarking",
+            "policyengine_native_scores",
+        )
         if native_sidecar_path.exists() and not force:
             _write_native_scores_payload_to_bundle(
                 bundle_dir=bundle_dir,
@@ -189,11 +210,17 @@ def _write_native_scores_payload_to_bundle(
     manifest: dict,
     payload: dict,
 ) -> Path:
-    native_sidecar_path = bundle_dir / "policyengine_native_scores.json"
+    native_sidecar_path = resolve_us_stage_artifact_contract_path(
+        bundle_dir,
+        "09_validation_benchmarking",
+        "policyengine_native_scores",
+    )
     native_sidecar_path.write_text(json.dumps(payload, indent=2, sort_keys=True))
 
     artifacts = dict(manifest.get("artifacts", {}))
-    artifacts["policyengine_native_scores"] = native_sidecar_path.name
+    artifacts["policyengine_native_scores"] = str(
+        native_sidecar_path.relative_to(bundle_dir)
+    )
     manifest["artifacts"] = artifacts
     manifest["policyengine_native_scores"] = dict(payload.get("summary", {}))
     if "run_registry" in manifest:
@@ -201,6 +228,7 @@ def _write_native_scores_payload_to_bundle(
             "enhanced_cps_native_loss_delta"
         )
 
+    _refresh_checkpoint_data_flow_snapshot(bundle_dir, manifest)
     assert_valid_benchmark_artifact_manifest(
         manifest,
         artifact_dir=bundle_dir,

@@ -10,6 +10,10 @@ from typing import Any
 import h5py
 import numpy as np
 
+from microplex_us.pipelines.stage_contracts import (
+    resolve_us_stage_artifact_contract_path,
+)
+
 DEFAULT_PERIOD = 2024
 DEFAULT_REQUIRED_VARIABLES: dict[str, str] = {
     "household_id": "household",
@@ -161,10 +165,16 @@ def _resolve_dataset_path(path: Path) -> Path:
         manifest = json.loads(manifest_path.read_text())
         dataset_name = dict(manifest.get("artifacts", {})).get("policyengine_dataset")
         if isinstance(dataset_name, str) and dataset_name:
-            dataset_path = path / dataset_name
+            dataset_path = Path(dataset_name)
+            if not dataset_path.is_absolute():
+                dataset_path = path / dataset_path
             if dataset_path.exists():
                 return dataset_path.resolve()
-    dataset_path = path / "policyengine_us.h5"
+    dataset_path = resolve_us_stage_artifact_contract_path(
+        path,
+        "08_dataset_assembly",
+        "policyengine_dataset",
+    )
     if dataset_path.exists():
         return dataset_path.resolve()
     raise FileNotFoundError(f"No policyengine_us.h5 export found under {path}")

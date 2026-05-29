@@ -8,6 +8,8 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
+from microplex_us.pipelines.stage_contracts import get_us_stage_artifact_contract
+
 
 def _sorted_counter_items(counter: Counter[str]) -> list[tuple[str, int]]:
     return sorted(counter.items(), key=lambda item: (-int(item[1]), item[0]))
@@ -173,11 +175,17 @@ def summarize_us_policyengine_oracle_regressions(
 
 
 def _iter_oracle_bundle_dirs(artifact_root: Path) -> tuple[Path, ...]:
+    dataset_hint = get_us_stage_artifact_contract(
+        "08_dataset_assembly",
+        "policyengine_dataset",
+    ).path_hint
+    if dataset_hint is None:
+        return ()
     return tuple(
         sorted(
             path.parent
             for path in artifact_root.rglob("manifest.json")
-            if (path.parent / "policyengine_us.h5").exists()
+            if (path.parent / dataset_hint).exists()
         )
     )
 

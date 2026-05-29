@@ -8,6 +8,9 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+from microplex_us.pipelines.stage_contracts import (
+    resolve_us_stage_artifact_contract_path,
+)
 from microplex_us.pipelines.us import (
     USMicroplexBuildConfig,
     USMicroplexPipeline,
@@ -40,11 +43,16 @@ def summarize_us_policyengine_oracle_target_drilldown(
     if config.policyengine_targets_db is None:
         raise ValueError("Artifact config does not define policyengine_targets_db")
 
-    dataset_name = dict(manifest.get("artifacts", {})).get(
-        "policyengine_dataset",
-        "policyengine_us.h5",
+    dataset_name = dict(manifest.get("artifacts", {})).get("policyengine_dataset")
+    dataset_path = (
+        _resolve_manifest_artifact_path(bundle_dir, str(dataset_name))
+        if dataset_name is not None
+        else resolve_us_stage_artifact_contract_path(
+            bundle_dir,
+            "08_dataset_assembly",
+            "policyengine_dataset",
+        )
     )
-    dataset_path = (bundle_dir / dataset_name).resolve()
     if not dataset_path.exists():
         raise FileNotFoundError(f"PolicyEngine dataset not found: {dataset_path}")
 
@@ -204,6 +212,13 @@ def summarize_us_policyengine_oracle_target_drilldown(
         },
         "topRows": filtered_rows[:top_k] if top_k is not None else filtered_rows,
     }
+
+
+def _resolve_manifest_artifact_path(bundle_dir: Path, artifact_name: str) -> Path:
+    artifact_path = Path(artifact_name)
+    if artifact_path.is_absolute():
+        return artifact_path
+    return (bundle_dir / artifact_path).resolve()
 
 
 def _oracle_target_row(

@@ -8,6 +8,11 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
+from microplex_us.pipelines.stage_contracts import (
+    get_us_stage_artifact_contract,
+    resolve_us_stage_artifact_contract_path,
+)
+
 
 def _sorted_counter_items(counter: Counter[str]) -> list[tuple[str, int]]:
     return sorted(counter.items(), key=lambda item: (-int(item[1]), item[0]))
@@ -32,7 +37,13 @@ def summarize_us_pe_native_regressions(
     for artifact_root in normalized_roots:
         root_key = artifact_root.name
         for bundle_dir in _iter_scored_bundle_dirs(artifact_root):
-            scores_payload = json.loads((bundle_dir / "policyengine_native_scores.json").read_text())
+            scores_payload = json.loads(
+                resolve_us_stage_artifact_contract_path(
+                    bundle_dir,
+                    "09_validation_benchmarking",
+                    "policyengine_native_scores",
+                ).read_text()
+            )
             summary = dict(scores_payload.get("summary", {}))
             positive_families = [
                 row
@@ -47,7 +58,11 @@ def summarize_us_pe_native_regressions(
             largest_family = positive_families[0] if positive_families else {}
             top3_families = [row.get("family") for row in positive_families[:3]]
 
-            audit_path = bundle_dir / "pe_us_data_rebuild_native_audit.json"
+            audit_path = resolve_us_stage_artifact_contract_path(
+                bundle_dir,
+                "09_validation_benchmarking",
+                "policyengine_native_audit",
+            )
             audit_payload = json.loads(audit_path.read_text()) if audit_path.exists() else None
             verdict_hints = dict((audit_payload or {}).get("verdictHints", {}))
             support_summary = dict((audit_payload or {}).get("supportAuditSummary", {}))
@@ -142,11 +157,21 @@ def summarize_us_pe_native_regressions(
 
 
 def _iter_scored_bundle_dirs(artifact_root: Path) -> tuple[Path, ...]:
+    scores_hint = get_us_stage_artifact_contract(
+        "09_validation_benchmarking",
+        "policyengine_native_scores",
+    ).path_hint
+    dataset_hint = get_us_stage_artifact_contract(
+        "08_dataset_assembly",
+        "policyengine_dataset",
+    ).path_hint
+    if scores_hint is None or dataset_hint is None:
+        return ()
     return tuple(
         sorted(
             path.parent
-            for path in artifact_root.rglob("policyengine_native_scores.json")
-            if (path.parent / "policyengine_us.h5").exists()
+            for path in artifact_root.rglob(scores_hint)
+            if (path.parent / dataset_hint).exists()
         )
     )
 

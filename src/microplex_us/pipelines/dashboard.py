@@ -14,6 +14,7 @@ from typing import Any
 
 from microplex_us.pipelines.stage_contracts import (
     canonicalize_us_pipeline_stage_id,
+    get_us_stage_artifact_contract,
 )
 
 _ROOT = Path(__file__).resolve().parents[3]
@@ -1720,8 +1721,13 @@ def write_dashboard_payload(
 
 
 def _iter_score_paths(artifact_root: Path) -> list[Path]:
+    native_scores_hint = get_us_stage_artifact_contract(
+        "09_validation_benchmarking",
+        "policyengine_native_scores",
+    ).path_hint
     paths = list(artifact_root.rglob("scores.json"))
-    paths.extend(artifact_root.rglob("policyengine_native_scores.json"))
+    if native_scores_hint is not None:
+        paths.extend(artifact_root.rglob(native_scores_hint))
     paths.extend(artifact_root.rglob("*_score.json"))
     return [path for path in paths if path.is_file()]
 
@@ -1940,7 +1946,13 @@ def _score_label(path: Path, candidate_dataset: Any, index: int) -> str:
     artifact = path.parent.name
     if isinstance(candidate_dataset, str):
         dataset_name = Path(candidate_dataset).name
-        if dataset_name != "policyengine_us.h5":
+        policyengine_dataset_hint = get_us_stage_artifact_contract(
+            "08_dataset_assembly",
+            "policyengine_dataset",
+        ).path_hint
+        if policyengine_dataset_hint is None or dataset_name != Path(
+            policyengine_dataset_hint
+        ).name:
             return f"{artifact} / {dataset_name}"
     if index:
         return f"{artifact} / candidate {index + 1}"

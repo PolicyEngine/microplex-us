@@ -2015,6 +2015,7 @@ class TestPolicyEngineUSProjection:
             "unreported_payroll_tax",
         )
         spm_unit_contract_inputs = ("spm_unit_tenure_type",)
+        legacy_person_contract_inputs = ("count_under_18", "count_under_6")
 
         class FakeSystem:
             variables = {
@@ -2045,6 +2046,7 @@ class TestPolicyEngineUSProjection:
                     "person_id": [1],
                     "household_id": [10],
                     **{name: [1.0] for name in person_contract_inputs},
+                    **{name: [0] for name in legacy_person_contract_inputs},
                 }
             ),
             tax_units=pd.DataFrame(
@@ -2071,7 +2073,8 @@ class TestPolicyEngineUSProjection:
         )
 
         assert export_maps["person"] == {
-            name: name for name in person_contract_inputs
+            name: name
+            for name in (*person_contract_inputs, *legacy_person_contract_inputs)
         }
         assert export_maps["household"] == {
             name: name for name in household_contract_inputs

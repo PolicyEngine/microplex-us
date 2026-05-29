@@ -385,6 +385,11 @@ POLICYENGINE_US_EXPORT_DEFAULTS: dict[str, Any] = {
     "would_file_taxes_voluntarily": False,
 }
 
+POLICYENGINE_US_LEGACY_CONTRACT_VARIABLE_ENTITIES: dict[str, str] = {
+    "count_under_18": "person",
+    "count_under_6": "person",
+}
+
 
 def compute_policyengine_us_definition_hash(
     constraints: tuple[PolicyEngineUSConstraint, ...] | list[PolicyEngineUSConstraint],
@@ -2800,6 +2805,12 @@ def _group_policyengine_us_export_variables_by_entity(
         if entity_key not in allowed_variables_by_entity:
             continue
         allowed_variables_by_entity[entity_key].add(variable_name)
+    for (
+        variable_name,
+        entity_key,
+    ) in POLICYENGINE_US_LEGACY_CONTRACT_VARIABLE_ENTITIES.items():
+        if entity_key in allowed_variables_by_entity:
+            allowed_variables_by_entity[entity_key].add(variable_name)
     return allowed_variables_by_entity
 
 

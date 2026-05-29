@@ -4118,6 +4118,12 @@ class USMicroplexPipeline:
         persons["age"] = (
             pd.to_numeric(persons["age"], errors="coerce").fillna(0).astype(int)
         )
+        household_ids = persons["household_id"]
+        for column, threshold in (("count_under_18", 18), ("count_under_6", 6)):
+            under_threshold = persons["age"].lt(threshold).astype(np.int64)
+            persons[column] = under_threshold.groupby(
+                household_ids, sort=False
+            ).transform("sum")
         persons = self._augment_policyengine_person_inputs(persons)
         persons["relationship_to_head"] = self._normalize_relationship_to_head(persons)
 

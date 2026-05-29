@@ -6046,7 +6046,16 @@ class USMicroplexPipeline:
     def _build_policyengine_households(self, persons: pd.DataFrame) -> pd.DataFrame:
         household_columns = [
             column
-            for column in ("state_fips", "county_fips", "tenure", "state")
+            for column in (
+                "state_fips",
+                "county_fips",
+                "tenure",
+                "tenure_type",
+                "state",
+                "net_worth",
+                "auto_loan_balance",
+                "auto_loan_interest",
+            )
             if column in persons.columns
         ]
         aggregations = {column: "first" for column in household_columns}
@@ -6894,9 +6903,13 @@ class USMicroplexPipeline:
         unit_persons: pd.DataFrame,
     ) -> dict[str, float]:
         columns = (
+            "domestic_production_ald",
             "health_savings_account_ald",
+            "recapture_of_investment_credit",
             "self_employed_health_insurance_ald",
             "self_employed_pension_contribution_ald",
+            "unrecaptured_section_1250_gain",
+            "unreported_payroll_tax",
         )
         aggregated: dict[str, float] = {}
         for column in columns:

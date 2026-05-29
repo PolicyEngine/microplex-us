@@ -1966,6 +1966,94 @@ class TestPolicyEngineUSProjection:
             "unemployment_compensation": "unemployment_compensation",
         }
 
+    def test_build_policyengine_us_export_variable_maps_includes_contract_inputs(self):
+        class FakeEntity:
+            def __init__(self, key):
+                self.key = key
+
+        class FakeVariable:
+            def __init__(self, entity):
+                self.entity = FakeEntity(entity)
+
+        person_contract_inputs = (
+            "alimony_expense",
+            "amt_foreign_tax_credit",
+            "bank_account_assets",
+            "bond_assets",
+            "casualty_loss",
+            "charitable_cash_donations",
+            "charitable_non_cash_donations",
+            "early_withdrawal_penalty",
+            "educator_expense",
+            "excess_withheld_payroll_tax",
+            "general_business_credit",
+            "investment_income_elected_form_4952",
+            "is_household_head",
+            "long_term_capital_gains_on_collectibles",
+            "miscellaneous_income",
+            "non_sch_d_capital_gains",
+            "other_credits",
+            "own_children_in_household",
+            "prior_year_minimum_tax_credit",
+            "qualified_tuition_expenses",
+            "salt_refund_income",
+            "stock_assets",
+            "taxable_ira_distributions",
+            "tip_income",
+            "traditional_ira_contributions",
+            "unreimbursed_business_employee_expenses",
+        )
+        tax_unit_contract_inputs = (
+            "recapture_of_investment_credit",
+            "unrecaptured_section_1250_gain",
+            "unreported_payroll_tax",
+        )
+
+        class FakeSystem:
+            variables = {
+                **{name: FakeVariable("person") for name in person_contract_inputs},
+                **{name: FakeVariable("tax_unit") for name in tax_unit_contract_inputs},
+                "self_employed_health_insurance_ald": FakeVariable("tax_unit"),
+                "self_employed_pension_contribution_ald": FakeVariable("tax_unit"),
+            }
+
+        tables = PolicyEngineUSEntityTableBundle(
+            households=pd.DataFrame(
+                {
+                    "household_id": [10],
+                    "household_weight": [1.0],
+                }
+            ),
+            persons=pd.DataFrame(
+                {
+                    "person_id": [1],
+                    "household_id": [10],
+                    **{name: [1.0] for name in person_contract_inputs},
+                }
+            ),
+            tax_units=pd.DataFrame(
+                {
+                    "tax_unit_id": [100],
+                    "household_id": [10],
+                    **{name: [2.0] for name in tax_unit_contract_inputs},
+                    "self_employed_health_insurance_ald": [3.0],
+                    "self_employed_pension_contribution_ald": [4.0],
+                }
+            ),
+        )
+
+        export_maps = build_policyengine_us_export_variable_maps(
+            tables,
+            tax_benefit_system=FakeSystem(),
+        )
+
+        assert export_maps["person"] == {
+            name: name for name in person_contract_inputs
+        }
+        assert export_maps["tax_unit"] == {
+            name: name for name in tax_unit_contract_inputs
+        }
+
     def test_build_policyengine_us_export_variable_maps_include_direct_overrides_with_safe_inputs(self):
         class FakeEntity:
             def __init__(self, key):
@@ -2116,7 +2204,7 @@ class TestPolicyEngineUSProjection:
         assert "filing_status" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         assert "social_security_retirement" not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         assert "social_security_retirement_reported" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
-        assert "non_sch_d_capital_gains" not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
+        assert "non_sch_d_capital_gains" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         assert "receives_wic" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         assert "ssn_card_type" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         assert "is_separated" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES

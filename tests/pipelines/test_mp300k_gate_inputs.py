@@ -81,6 +81,17 @@ def _write_benchmark_manifest(path: Path) -> None:
     )
 
 
+def _arch_coverage_payload() -> dict[str, object]:
+    return {
+        "profile_name": "pe_native_broad_source_backed",
+        "period": 2024,
+        "target_cell_count": 183,
+        "covered_cell_count": 183,
+        "uncovered_cell_count": 0,
+        "coverage_rate": 1.0,
+    }
+
+
 def _archive_manifest(archive_path: Path) -> dict:
     with tarfile.open(archive_path) as archive:
         manifest = archive.extractfile("artifact/manifest.json")
@@ -138,6 +149,8 @@ def test_package_mp300k_gate_inputs_rewrites_external_candidate(tmp_path):
     baseline_dataset.write_bytes(b"baseline")
     ecps_comparison = tmp_path / "scores.json"
     ecps_comparison.write_text(json.dumps([{"broad_loss": {}}]))
+    arch_coverage = tmp_path / "arch_coverage.json"
+    arch_coverage.write_text(json.dumps(_arch_coverage_payload()))
     runtime_smoke = tmp_path / "runtime.json"
     runtime_smoke.write_text(json.dumps({"runtime_ratio": 1.0}))
     benchmark_manifest = tmp_path / "benchmark.json"
@@ -148,6 +161,7 @@ def test_package_mp300k_gate_inputs_rewrites_external_candidate(tmp_path):
         tmp_path / "gate-inputs",
         candidate_dataset_path=external_candidate,
         ecps_comparison_path=ecps_comparison,
+        arch_coverage_path=arch_coverage,
         runtime_smoke_path=runtime_smoke,
         benchmark_manifest_path=benchmark_manifest,
     )
@@ -158,6 +172,7 @@ def test_package_mp300k_gate_inputs_rewrites_external_candidate(tmp_path):
 
     assert archive_path.exists()
     assert (output_dir / "ecps_comparison.json").exists()
+    assert (output_dir / "arch_coverage.json").exists()
     assert (output_dir / "runtime_smoke.json").exists()
     assert (output_dir / "benchmark_manifest.json").exists()
     assert (output_dir / "gate_inputs.json").exists()
@@ -214,11 +229,14 @@ def test_packaged_inputs_run_gates_from_clean_extract(tmp_path):
     _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
     benchmark_manifest = tmp_path / "benchmark.json"
     _write_benchmark_manifest(benchmark_manifest)
+    arch_coverage = tmp_path / "arch_coverage.json"
+    arch_coverage.write_text(json.dumps(_arch_coverage_payload()))
     output_dir = tmp_path / "gate-inputs"
 
     package_mp300k_gate_inputs(
         artifact_dir,
         output_dir,
+        arch_coverage_path=arch_coverage,
         benchmark_manifest_path=benchmark_manifest,
     )
 
@@ -238,6 +256,7 @@ def test_packaged_inputs_run_gates_from_clean_extract(tmp_path):
     report_path = write_mp300k_artifact_gate_report(
         packaged_artifact_dir,
         ecps_comparison_payload=_sound_ecps_comparison_payload(),
+        arch_coverage_payload=json.loads((output_dir / "arch_coverage.json").read_text()),
         runtime_smoke_payload={"runtime_ratio": 1.0},
         benchmark_manifest_path=output_dir / "benchmark_manifest.json",
         compute_native_scores=False,

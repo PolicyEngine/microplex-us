@@ -84,6 +84,26 @@ def _write_benchmark_manifest(path: Path) -> None:
     )
 
 
+def _arch_coverage_payload(
+    *,
+    profile_name: str = "pe_native_broad_source_backed",
+    period: int = 2024,
+    target_cell_count: int = 183,
+    uncovered_cell_count: int = 0,
+) -> dict[str, object]:
+    covered_cell_count = target_cell_count - uncovered_cell_count
+    return {
+        "profile_name": profile_name,
+        "period": period,
+        "target_cell_count": target_cell_count,
+        "covered_cell_count": covered_cell_count,
+        "uncovered_cell_count": uncovered_cell_count,
+        "coverage_rate": (
+            covered_cell_count / target_cell_count if target_cell_count else 0.0
+        ),
+    }
+
+
 def _sound_ecps_comparison_payload(
     *,
     candidate_loss: float = 0.12,
@@ -143,6 +163,7 @@ def test_write_mp300k_artifact_gate_report_passes_with_all_evidence(tmp_path):
     report_path = write_mp300k_artifact_gate_report(
         artifact_dir,
         ecps_comparison_payload=_sound_ecps_comparison_payload(),
+        arch_coverage_payload=_arch_coverage_payload(),
         runtime_smoke_payload={
             "candidate_seconds": 11.0,
             "baseline_seconds": 10.0,
@@ -160,6 +181,7 @@ def test_write_mp300k_artifact_gate_report_passes_with_all_evidence(tmp_path):
     assert record["gates"]["compatibility"]["metrics"]["person_count"] == 3
     assert record["gates"]["artifact_size"]["status"] == "pass"
     assert record["gates"]["ecps_comparison"]["status"] == "pass"
+    assert record["gates"]["arch_target_coverage"]["status"] == "pass"
     assert record["gates"]["runtime"]["status"] == "pass"
     assert record["gates"]["runtime"]["metrics"]["runtime_ratio"] == 1.1
     assert record["gates"]["benchmark_manifest"]["status"] == "pass"
@@ -182,6 +204,7 @@ def test_benchmark_manifest_gate_requires_pinned_release_evidence(tmp_path):
     report_path = write_mp300k_artifact_gate_report(
         artifact_dir,
         ecps_comparison_payload=_sound_ecps_comparison_payload(),
+        arch_coverage_payload=_arch_coverage_payload(),
         runtime_smoke_payload={"runtime_ratio": 1.0},
         benchmark_manifest_path=benchmark_manifest,
         compute_native_scores=False,
@@ -203,6 +226,37 @@ def test_benchmark_manifest_gate_requires_pinned_release_evidence(tmp_path):
     ]
 
 
+def test_arch_target_coverage_gate_rejects_uncovered_source_backed_cells(tmp_path):
+    artifact_dir = tmp_path / "artifact"
+    artifact_dir.mkdir()
+    _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
+    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    benchmark_manifest = tmp_path / "benchmark_manifest.json"
+    _write_benchmark_manifest(benchmark_manifest)
+    _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
+
+    report_path = write_mp300k_artifact_gate_report(
+        artifact_dir,
+        ecps_comparison_payload=_sound_ecps_comparison_payload(),
+        arch_coverage_payload=_arch_coverage_payload(uncovered_cell_count=1),
+        runtime_smoke_payload={"runtime_ratio": 1.0},
+        benchmark_manifest_path=benchmark_manifest,
+        compute_native_scores=False,
+        update_manifest=False,
+    )
+
+    record = json.loads(report_path.read_text())
+    coverage_gate = record["gates"]["arch_target_coverage"]
+
+    assert record["summary"]["status"] == "failed"
+    assert coverage_gate["status"] == "fail"
+    assert coverage_gate["details"]["failures"] == [
+        "uncovered_cell_count",
+        "covered_cell_count",
+        "coverage_rate",
+    ]
+
+
 def test_benchmark_manifest_gate_rejects_dirty_us_data_pin(tmp_path):
     artifact_dir = tmp_path / "artifact"
     artifact_dir.mkdir()
@@ -218,6 +272,7 @@ def test_benchmark_manifest_gate_rejects_dirty_us_data_pin(tmp_path):
     report_path = write_mp300k_artifact_gate_report(
         artifact_dir,
         ecps_comparison_payload=_sound_ecps_comparison_payload(),
+        arch_coverage_payload=_arch_coverage_payload(),
         runtime_smoke_payload={"runtime_ratio": 1.0},
         benchmark_manifest_path=benchmark_manifest,
         compute_native_scores=False,
@@ -361,6 +416,8 @@ def test_main_writes_artifact_gate_report_from_payload_files(tmp_path, capsys):
     runtime_path.write_text(
         json.dumps({"runtime_ratio": 1.2, "runtime_ratio_threshold": 1.25})
     )
+    arch_coverage_path = tmp_path / "arch_coverage.json"
+    arch_coverage_path.write_text(json.dumps(_arch_coverage_payload()))
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
     _write_benchmark_manifest(benchmark_manifest)
 
@@ -372,6 +429,8 @@ def test_main_writes_artifact_gate_report_from_payload_files(tmp_path, capsys):
             str(ecps_comparison_path),
             "--runtime-smoke-json",
             str(runtime_path),
+            "--arch-coverage-json",
+            str(arch_coverage_path),
             "--benchmark-manifest",
             str(benchmark_manifest),
         ]
@@ -400,6 +459,7 @@ def test_ecps_comparison_can_become_nonblocking(tmp_path):
             "runtime_ratio": 1.0,
             "runtime_ratio_threshold": 1.25,
         },
+        arch_coverage_payload=_arch_coverage_payload(),
         benchmark_manifest_path=benchmark_manifest,
         compute_native_scores=False,
         require_ecps_comparison=False,
@@ -426,6 +486,7 @@ def test_runtime_gate_accepts_repeated_loader_smoke_payload(tmp_path):
     report_path = write_mp300k_artifact_gate_report(
         artifact_dir,
         ecps_comparison_payload=_sound_ecps_comparison_payload(candidate_loss=0.10),
+        arch_coverage_payload=_arch_coverage_payload(),
         runtime_smoke_payload={
             "median_runtime_ratio": 1.19,
             "candidate": {"median_elapsed_seconds": 0.137},
@@ -466,6 +527,7 @@ def test_ecps_comparison_accepts_existing_broad_loss_array_payload(tmp_path):
                 }
             }
         ],
+        arch_coverage_payload=_arch_coverage_payload(),
         runtime_smoke_payload={"runtime_ratio": 1.0},
         benchmark_manifest_path=benchmark_manifest,
         compute_native_scores=False,
@@ -506,6 +568,7 @@ def test_ecps_comparison_rejects_one_sided_unmatched_refit_win(tmp_path):
                 "score_candidate_only": True,
             }
         },
+        arch_coverage_payload=_arch_coverage_payload(),
         runtime_smoke_payload={"runtime_ratio": 1.0},
         benchmark_manifest_path=benchmark_manifest,
         compute_native_scores=False,
@@ -538,6 +601,7 @@ def test_ecps_comparison_rejects_protected_family_regression(tmp_path):
     report_path = write_mp300k_artifact_gate_report(
         artifact_dir,
         ecps_comparison_payload=payload,
+        arch_coverage_payload=_arch_coverage_payload(),
         runtime_smoke_payload={"runtime_ratio": 1.0},
         benchmark_manifest_path=benchmark_manifest,
         compute_native_scores=False,
@@ -575,6 +639,7 @@ def test_ecps_comparison_rejects_missing_ecps_refit_recovery(tmp_path):
     report_path = write_mp300k_artifact_gate_report(
         artifact_dir,
         ecps_comparison_payload=payload,
+        arch_coverage_payload=_arch_coverage_payload(),
         runtime_smoke_payload={"runtime_ratio": 1.0},
         benchmark_manifest_path=benchmark_manifest,
         compute_native_scores=False,
@@ -607,6 +672,7 @@ def test_runtime_gate_ignores_contradictory_producer_verdict(tmp_path):
                 "baseline_enhanced_cps_native_loss": 0.2,
             }
         },
+        arch_coverage_payload=_arch_coverage_payload(),
         runtime_smoke_payload={
             "runtime_ratio": 10.0,
             "runtime_ratio_threshold": 100.0,
@@ -649,6 +715,7 @@ def test_ecps_gate_derives_verdict_from_losses_not_producer_flag(tmp_path):
                 "candidate_beats_baseline": True,
             }
         },
+        arch_coverage_payload=_arch_coverage_payload(),
         runtime_smoke_payload={"runtime_ratio": 1.0},
         benchmark_manifest_path=benchmark_manifest,
         compute_native_scores=False,

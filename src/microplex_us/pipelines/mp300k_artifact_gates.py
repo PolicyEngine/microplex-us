@@ -50,8 +50,10 @@ _DEFAULT_REQUIRED_GATES = (
     "artifact_size",
     "runtime",
     "ecps_comparison",
+    "arch_target_coverage",
     "benchmark_manifest",
 )
+_DEFAULT_ARCH_COVERAGE_PROFILE = "pe_native_broad_source_backed"
 _PROTECTED_ECPS_TARGET_FAMILIES = (
     "ssi",
     "snap",
@@ -141,9 +143,11 @@ def build_mp300k_artifact_gate_report(
     candidate_dataset_path: str | Path | None = None,
     baseline_dataset_path: str | Path | None = None,
     ecps_comparison_payload: Any = None,
+    arch_coverage_payload: dict[str, Any] | None = None,
     runtime_smoke_payload: dict[str, Any] | None = None,
     benchmark_manifest_path: str | Path | None = None,
     period: int = 2024,
+    arch_coverage_profile: str = _DEFAULT_ARCH_COVERAGE_PROFILE,
     artifact_size_ratio_threshold: float = 2.0,
     runtime_ratio_threshold: float = 1.25,
     compute_native_scores: bool = True,
@@ -192,6 +196,11 @@ def build_mp300k_artifact_gate_report(
         policyengine_us_data_python=policyengine_us_data_python,
     )
     ecps_comparison_gate = _ecps_comparison_gate(resolved_ecps_comparison)
+    arch_coverage_gate = _arch_target_coverage_gate(
+        arch_coverage_payload,
+        expected_period=period,
+        expected_profile=arch_coverage_profile,
+    )
     runtime_gate = _runtime_gate(
         runtime_smoke_payload,
         runtime_ratio_threshold=runtime_ratio_threshold,
@@ -205,6 +214,7 @@ def build_mp300k_artifact_gate_report(
         "artifact_size": artifact_size_gate,
         "runtime": runtime_gate,
         "ecps_comparison": ecps_comparison_gate,
+        "arch_target_coverage": arch_coverage_gate,
         "benchmark_manifest": benchmark_gate,
     }
     required_gates = _required_gate_names(
@@ -230,6 +240,7 @@ def build_mp300k_artifact_gate_report(
         ),
         "gates": gates,
         "ecps_comparison_payload": resolved_ecps_comparison,
+        "arch_coverage": arch_coverage_payload,
         "runtime_smoke": runtime_smoke_payload,
         "benchmark_manifest": benchmark_descriptor,
     }
@@ -1181,6 +1192,76 @@ def _runtime_gate(
     )
 
 
+def _arch_target_coverage_gate(
+    arch_coverage_payload: dict[str, Any] | None,
+    *,
+    expected_period: int,
+    expected_profile: str,
+) -> dict[str, Any]:
+    if arch_coverage_payload is None:
+        return _gate(
+            "unmeasured",
+            "Arch target coverage report has not been attached",
+            metrics={
+                "expected_profile": expected_profile,
+                "expected_period": int(expected_period),
+            },
+        )
+    if not isinstance(arch_coverage_payload, dict):
+        return _gate(
+            "fail",
+            "Arch target coverage report must be a JSON object",
+            metrics={
+                "expected_profile": expected_profile,
+                "expected_period": int(expected_period),
+            },
+        )
+    payload = dict(arch_coverage_payload)
+    profile_name = payload.get("profile_name")
+    period = payload.get("period")
+    target_cell_count = payload.get("target_cell_count")
+    covered_cell_count = payload.get("covered_cell_count")
+    uncovered_cell_count = payload.get("uncovered_cell_count")
+    coverage_rate = payload.get("coverage_rate")
+    failures: list[str] = []
+    if profile_name != expected_profile:
+        failures.append("profile_name")
+    if period is None or int(period) != int(expected_period):
+        failures.append("period")
+    if target_cell_count is None or int(target_cell_count) <= 0:
+        failures.append("target_cell_count")
+    if uncovered_cell_count is None or int(uncovered_cell_count) != 0:
+        failures.append("uncovered_cell_count")
+    if (
+        covered_cell_count is not None
+        and target_cell_count is not None
+        and int(covered_cell_count) != int(target_cell_count)
+    ):
+        failures.append("covered_cell_count")
+    if coverage_rate is None or float(coverage_rate) < 1.0:
+        failures.append("coverage_rate")
+    status: GateStatus = "pass" if not failures else "fail"
+    return _gate(
+        status,
+        (
+            "Arch source-backed target coverage is complete"
+            if status == "pass"
+            else "Arch source-backed target coverage is incomplete or mismatched"
+        ),
+        metrics={
+            "profile_name": profile_name,
+            "expected_profile": expected_profile,
+            "period": period,
+            "expected_period": int(expected_period),
+            "target_cell_count": target_cell_count,
+            "covered_cell_count": covered_cell_count,
+            "uncovered_cell_count": uncovered_cell_count,
+            "coverage_rate": coverage_rate,
+        },
+        details={"failures": failures} if failures else None,
+    )
+
+
 def _first_present(payload: dict[str, Any], *keys: str) -> Any:
     for key in keys:
         if key in payload:
@@ -1432,9 +1513,14 @@ def main(argv: list[str] | None = None) -> int:
         dest="ecps_comparison_json",
     )
     parser.add_argument("--runtime-smoke-json")
+    parser.add_argument("--arch-coverage-json")
     parser.add_argument("--benchmark-manifest")
     parser.add_argument("--output-json")
     parser.add_argument("--target-period", type=int, default=2024)
+    parser.add_argument(
+        "--arch-coverage-profile",
+        default=_DEFAULT_ARCH_COVERAGE_PROFILE,
+    )
     parser.add_argument("--artifact-size-ratio-threshold", type=float, default=2.0)
     parser.add_argument("--runtime-ratio-threshold", type=float, default=1.25)
     parser.add_argument("--policyengine-us-data-repo")
@@ -1477,9 +1563,11 @@ def main(argv: list[str] | None = None) -> int:
         candidate_dataset_path=args.candidate_dataset,
         baseline_dataset_path=args.baseline_dataset,
         ecps_comparison_payload=_load_json_file(args.ecps_comparison_json),
+        arch_coverage_payload=_load_json_file(args.arch_coverage_json),
         runtime_smoke_payload=_load_json_file(args.runtime_smoke_json),
         benchmark_manifest_path=args.benchmark_manifest,
         period=args.target_period,
+        arch_coverage_profile=args.arch_coverage_profile,
         artifact_size_ratio_threshold=args.artifact_size_ratio_threshold,
         runtime_ratio_threshold=args.runtime_ratio_threshold,
         compute_native_scores=not args.skip_ecps_computation,

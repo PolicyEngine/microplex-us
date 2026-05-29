@@ -336,8 +336,9 @@ def _build_source_weight_diagnostics(
 ) -> dict[str, Any]:
     """Summarize source-weight provenance without exporting diagnostics to H5."""
 
-    household_summary = _household_weight_summary(result)
-    total_household_weight = household_summary["household_weight_sum"]
+    entity_summaries = _entity_weight_summaries(result)
+    household_summary = entity_summaries["households"]
+    total_household_weight = household_summary["weight_sum"]
     source_names = _source_names_for_diagnostics(result)
     scaffold_source = _scaffold_source_for_diagnostics(result)
     donor_sources = [
@@ -349,32 +350,33 @@ def _build_source_weight_diagnostics(
 
     fixed_spine_entry = _fixed_spine_source_entry(
         result,
-        total_household_weight=total_household_weight,
+        total_entity_summaries=entity_summaries,
     )
-    fixed_spine_weight = (
-        fixed_spine_entry.get("household_weight_sum")
+    fixed_entity_summaries = (
+        {
+            entity: {
+                "count": fixed_spine_entry.get(f"{prefix}_count", 0),
+                "weight_sum": fixed_spine_entry.get(f"{prefix}_weight_sum", 0.0),
+                "available": fixed_spine_entry.get(f"{prefix}_weight_sum")
+                is not None,
+            }
+            for entity, prefix in _SOURCE_DIAGNOSTIC_ENTITY_PREFIXES.items()
+        }
         if fixed_spine_entry is not None
-        else None
+        else {}
     )
-    ordinary_household_weight = total_household_weight
-    if isinstance(fixed_spine_weight, int | float):
-        ordinary_household_weight = max(
-            total_household_weight - float(fixed_spine_weight),
-            0.0,
-        )
+    ordinary_entity_summaries = _subtract_entity_summaries(
+        entity_summaries,
+        fixed_entity_summaries,
+    )
 
     sources.append(
         {
             "source_name": scaffold_source or "microplex_synthetic_population",
             "source_class": "synthetic_population",
-            "household_count": household_summary["household_count"],
-            "household_weight_sum": ordinary_household_weight,
-            "household_weight_share": _weight_share(
-                ordinary_household_weight,
-                total_household_weight,
-            ),
             "source_role": "scaffold",
             "source_names": source_names,
+            **_source_entity_fields(ordinary_entity_summaries, entity_summaries),
         }
     )
 
@@ -386,12 +388,13 @@ def _build_source_weight_diagnostics(
             {
                 "source_name": source_name,
                 "source_class": "donor_imputation",
-                "household_count": 0,
-                "household_weight_sum": 0.0,
-                "household_weight_share": 0.0,
                 "source_role": "donor",
                 "integrated_variable_count": len(donor_integrated_variables),
                 "row_contribution": "variables_imputed_into_synthetic_rows",
+                **_source_entity_fields(
+                    _zero_entity_summaries(),
+                    entity_summaries,
+                ),
             }
         )
 
@@ -404,9 +407,13 @@ def _build_source_weight_diagnostics(
         if isinstance(source.get("household_weight_share"), int | float)
     ]
     summary = {
-        "diagnostic_scope": "saved_artifact_household_weight_by_source_rows",
-        "household_count": household_summary["household_count"],
+        "diagnostic_scope": "saved_artifact_entity_weight_by_source_rows",
+        "household_count": household_summary["count"],
         "total_household_weight": total_household_weight,
+        "person_count": entity_summaries["persons"]["count"],
+        "total_person_weight": entity_summaries["persons"]["weight_sum"],
+        "tax_unit_count": entity_summaries["tax_units"]["count"],
+        "total_tax_unit_weight": entity_summaries["tax_units"]["weight_sum"],
         "source_entry_count": len(sources),
         "donor_source_count": len(donor_sources),
         "donor_integrated_variable_count": len(donor_integrated_variables),
@@ -438,36 +445,164 @@ def _build_source_weight_diagnostics(
     }
 
 
-def _household_weight_summary(result: USMicroplexBuildResult) -> dict[str, Any]:
+_SOURCE_DIAGNOSTIC_ENTITY_PREFIXES = {
+    "households": "household",
+    "persons": "person",
+    "tax_units": "tax_unit",
+}
+
+
+def _entity_weight_summaries(
+    result: USMicroplexBuildResult,
+) -> dict[str, dict[str, Any]]:
+    summaries = _zero_entity_summaries()
     if result.policyengine_tables is not None:
-        households = result.policyengine_tables.households
-        if households is not None and "household_weight" in households.columns:
-            weights = pd.to_numeric(
-                households["household_weight"],
-                errors="coerce",
-            ).fillna(0.0)
-            return {
-                "household_count": int(len(households)),
-                "household_weight_sum": float(weights.sum()),
+        for entity in _SOURCE_DIAGNOSTIC_ENTITY_PREFIXES:
+            frame, weights = _policyengine_entity_weights(result, entity)
+            if frame is None or weights is None:
+                continue
+            summaries[entity] = {
+                "count": int(len(frame)),
+                "weight_sum": float(weights.sum()),
+                "available": True,
             }
+        return summaries
 
     frame = result.calibrated_data
     if frame.empty:
-        return {"household_count": 0, "household_weight_sum": 0.0}
-    weight_column = "household_weight" if "household_weight" in frame.columns else "weight"
+        return summaries
+    weight_column = (
+        "household_weight" if "household_weight" in frame.columns else "weight"
+    )
     if weight_column not in frame.columns:
-        return {"household_count": int(len(frame)), "household_weight_sum": 0.0}
+        summaries["persons"] = {
+            "count": int(len(frame)),
+            "weight_sum": 0.0,
+            "available": False,
+        }
+        return summaries
+
     weights = pd.to_numeric(frame[weight_column], errors="coerce").fillna(0.0)
+    summaries["persons"] = {
+        "count": int(len(frame)),
+        "weight_sum": float(weights.sum()),
+        "available": True,
+    }
     if "household_id" in frame.columns:
         household_weights = weights.groupby(frame["household_id"], sort=False).first()
-        return {
-            "household_count": int(len(household_weights)),
-            "household_weight_sum": float(household_weights.sum()),
+        summaries["households"] = {
+            "count": int(len(household_weights)),
+            "weight_sum": float(household_weights.sum()),
+            "available": True,
         }
+    return summaries
+
+
+def _zero_entity_summaries() -> dict[str, dict[str, Any]]:
     return {
-        "household_count": int(len(frame)),
-        "household_weight_sum": float(weights.sum()),
+        entity: {"count": 0, "weight_sum": 0.0, "available": False}
+        for entity in _SOURCE_DIAGNOSTIC_ENTITY_PREFIXES
     }
+
+
+def _subtract_entity_summaries(
+    total: dict[str, dict[str, Any]],
+    subtract: dict[str, dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    result: dict[str, dict[str, Any]] = {}
+    for entity in _SOURCE_DIAGNOSTIC_ENTITY_PREFIXES:
+        total_summary = total.get(entity, {})
+        subtract_summary = subtract.get(entity, {})
+        total_count = int(total_summary.get("count", 0) or 0)
+        subtract_count = int(subtract_summary.get("count", 0) or 0)
+        total_weight = float(total_summary.get("weight_sum", 0.0) or 0.0)
+        subtract_weight = float(subtract_summary.get("weight_sum", 0.0) or 0.0)
+        result[entity] = {
+            "count": max(total_count - subtract_count, 0),
+            "weight_sum": max(total_weight - subtract_weight, 0.0),
+            "available": bool(total_summary.get("available", False)),
+        }
+    return result
+
+
+def _source_entity_fields(
+    source: dict[str, dict[str, Any]],
+    total: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    fields: dict[str, Any] = {}
+    for entity, prefix in _SOURCE_DIAGNOSTIC_ENTITY_PREFIXES.items():
+        source_summary = source.get(entity, {})
+        total_summary = total.get(entity, {})
+        source_weight = source_summary.get("weight_sum")
+        fields[f"{prefix}_count"] = int(source_summary.get("count", 0) or 0)
+        fields[f"{prefix}_weight_sum"] = (
+            float(source_weight) if source_weight is not None else None
+        )
+        fields[f"{prefix}_weight_share"] = _weight_share(
+            float(source_weight or 0.0),
+            float(total_summary.get("weight_sum", 0.0) or 0.0),
+        )
+    return fields
+
+
+def _policyengine_entity_weights(
+    result: USMicroplexBuildResult,
+    entity: str,
+) -> tuple[pd.DataFrame | None, pd.Series | None]:
+    tables = result.policyengine_tables
+    if tables is None:
+        return None, None
+    households = tables.households
+    if households is None or "household_weight" not in households.columns:
+        household_weight_by_id = None
+    else:
+        household_weights = pd.to_numeric(
+            households["household_weight"],
+            errors="coerce",
+        ).fillna(0.0)
+        household_weight_by_id = pd.Series(
+            household_weights.to_numpy(dtype=float),
+            index=households["household_id"],
+        )
+    if entity == "households":
+        if households is None or household_weight_by_id is None:
+            return None, None
+        return households, household_weights
+    if entity == "persons":
+        return _frame_and_entity_weights(
+            tables.persons,
+            direct_weight_columns=("weight", "person_weight", "household_weight"),
+            household_weight_by_id=household_weight_by_id,
+        )
+    if entity == "tax_units":
+        return _frame_and_entity_weights(
+            tables.tax_units,
+            direct_weight_columns=("tax_unit_weight", "household_weight"),
+            household_weight_by_id=household_weight_by_id,
+        )
+    return None, None
+
+
+def _frame_and_entity_weights(
+    frame: pd.DataFrame | None,
+    *,
+    direct_weight_columns: tuple[str, ...],
+    household_weight_by_id: pd.Series | None,
+) -> tuple[pd.DataFrame | None, pd.Series | None]:
+    if frame is None:
+        return None, None
+    for column in direct_weight_columns:
+        if column in frame.columns:
+            return (
+                frame,
+                pd.to_numeric(frame[column], errors="coerce").fillna(0.0),
+            )
+    if household_weight_by_id is not None and "household_id" in frame.columns:
+        return (
+            frame,
+            frame["household_id"].map(household_weight_by_id).fillna(0.0),
+        )
+    return frame, pd.Series(0.0, index=frame.index, dtype=float)
 
 
 def _source_names_for_diagnostics(result: USMicroplexBuildResult) -> list[str]:
@@ -498,7 +633,7 @@ def _scaffold_source_for_diagnostics(result: USMicroplexBuildResult) -> str | No
 def _fixed_spine_source_entry(
     result: USMicroplexBuildResult,
     *,
-    total_household_weight: float,
+    total_entity_summaries: dict[str, dict[str, Any]],
 ) -> dict[str, Any] | None:
     fixed_spine = result.calibration_summary.get("fixed_spine")
     if not isinstance(fixed_spine, dict) or not fixed_spine.get("enabled"):
@@ -511,33 +646,16 @@ def _fixed_spine_source_entry(
         "source_role": "post_calibration_append",
         "source_metadata": source_metadata,
     }
-    if result.policyengine_tables is None:
-        return entry
-    households = result.policyengine_tables.households
-    if households is None or "household_id" not in households.columns:
-        return entry
-    if "household_weight" not in households.columns:
-        return entry
-
     fixed_spine_config = ForbesFixedSpineConfig()
-    household_ids = pd.to_numeric(households["household_id"], errors="coerce")
-    fixed_mask = household_ids >= fixed_spine_config.household_id_start
-    fixed_households = households.loc[fixed_mask]
-    fixed_weight = float(
-        pd.to_numeric(
-            fixed_households["household_weight"],
-            errors="coerce",
-        )
-        .fillna(0.0)
-        .sum()
+    fixed_entity_summaries = _fixed_spine_entity_summaries(
+        result,
+        fixed_spine_config=fixed_spine_config,
     )
     entry.update(
         {
-            "household_count": int(len(fixed_households)),
-            "household_weight_sum": fixed_weight,
-            "household_weight_share": _weight_share(
-                fixed_weight,
-                total_household_weight,
+            **_source_entity_fields(
+                fixed_entity_summaries,
+                total_entity_summaries,
             ),
             "household_id_detection": {
                 "method": "forbes_default_household_id_floor",
@@ -546,6 +664,32 @@ def _fixed_spine_source_entry(
         }
     )
     return entry
+
+
+def _fixed_spine_entity_summaries(
+    result: USMicroplexBuildResult,
+    *,
+    fixed_spine_config: ForbesFixedSpineConfig,
+) -> dict[str, dict[str, Any]]:
+    summaries = _zero_entity_summaries()
+    id_floors = {
+        "households": ("household_id", fixed_spine_config.household_id_start),
+        "persons": ("person_id", fixed_spine_config.person_id_start),
+        "tax_units": ("tax_unit_id", fixed_spine_config.tax_unit_id_start),
+    }
+    for entity, (id_column, id_floor) in id_floors.items():
+        frame, weights = _policyengine_entity_weights(result, entity)
+        if frame is None or weights is None or id_column not in frame.columns:
+            continue
+        ids = pd.to_numeric(frame[id_column], errors="coerce")
+        fixed_mask = ids >= id_floor
+        fixed_weights = weights.loc[fixed_mask]
+        summaries[entity] = {
+            "count": int(fixed_mask.sum()),
+            "weight_sum": float(fixed_weights.sum()),
+            "available": True,
+        }
+    return summaries
 
 
 def _weight_share(value: float, denominator: float) -> float | None:

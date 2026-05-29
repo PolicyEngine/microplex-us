@@ -3446,9 +3446,9 @@ def test_arch_target_profile_coverage_reports_current_pe_profile(tmp_path):
         profile_name="pe_native_broad",
     )
 
-    assert report.target_cell_count == 189
+    assert report.target_cell_count == 220
     assert report.covered_cell_count == 4
-    assert report.uncovered_cell_count == 185
+    assert report.uncovered_cell_count == 216
     assert report.by_geo_level["national"]["covered_cell_count"] == 3
     assert report.by_geo_level["state"]["covered_cell_count"] == 1
 
@@ -4071,9 +4071,9 @@ def test_arch_target_refresh_cli_discovers_artifact_and_writes_snapshot(tmp_path
     gaps_csv = gaps_csv_path.read_text()
     summary = summary_path.read_text()
 
-    assert coverage["target_cell_count"] == 189
+    assert coverage["target_cell_count"] == 220
     assert coverage["covered_cell_count"] == 4
-    assert gaps["uncovered_row_count"] == 185
+    assert gaps["uncovered_row_count"] == 216
     assert gaps_csv.startswith("priority,profile_name,period,variable")
     assert "Coverage rate" in summary
     assert str(db_path.resolve()) in summary

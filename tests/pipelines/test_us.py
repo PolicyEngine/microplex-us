@@ -1308,6 +1308,71 @@ class TestUSMicroplexPipeline:
         assert tax_units.iloc[0]["filing_status"] == "HEAD_OF_HOUSEHOLD"
         assert tax_units.iloc[0]["n_dependents"] == 1
 
+    def test_build_policyengine_entity_tables_preserves_explicit_role_flag_head_of_household_code(
+        self,
+    ):
+        pipeline = USMicroplexPipeline(USMicroplexBuildConfig())
+        population = pd.DataFrame(
+            {
+                "person_id": [1, 2],
+                "household_id": [10, 10],
+                "tax_unit_id": [100, 100],
+                "weight": [1.0, 1.0],
+                "age": [45, 12],
+                "income": [60_000.0, 0.0],
+                "relationship_to_head": [0, 2],
+                "person_number": [1, 2],
+                "spouse_person_number": [0, 0],
+                "tax_unit_is_joint": [0.0, 0.0],
+                "tax_unit_count_dependents": [1.0, 1.0],
+                "is_tax_unit_head": [1.0, 0.0],
+                "is_tax_unit_spouse": [0.0, 0.0],
+                "is_tax_unit_dependent": [0.0, 1.0],
+                "filing_status_code": [4, np.nan],
+                "state_fips": [6, 6],
+                "tenure": [1, 1],
+            }
+        )
+
+        tables = pipeline.build_policyengine_entity_tables(population)
+        tax_units = tables.tax_units.sort_values("tax_unit_id").reset_index(drop=True)
+
+        assert len(tax_units) == 1
+        assert tax_units.iloc[0]["filing_status"] == "HEAD_OF_HOUSEHOLD"
+        assert tax_units.iloc[0]["n_dependents"] == 1
+
+    def test_build_policyengine_entity_tables_does_not_promote_non_hoh_role_flag_codes(
+        self,
+    ):
+        pipeline = USMicroplexPipeline(USMicroplexBuildConfig())
+        population = pd.DataFrame(
+            {
+                "person_id": [1, 2, 3, 4],
+                "household_id": [10, 10, 20, 20],
+                "tax_unit_id": [100, 100, 200, 200],
+                "weight": [1.0, 1.0, 1.0, 1.0],
+                "age": [45, 12, 44, 10],
+                "income": [60_000.0, 0.0, 55_000.0, 0.0],
+                "relationship_to_head": [0, 2, 0, 2],
+                "person_number": [1, 2, 1, 2],
+                "spouse_person_number": [0, 0, 0, 0],
+                "tax_unit_is_joint": [0.0, 0.0, 0.0, 0.0],
+                "tax_unit_count_dependents": [1.0, 1.0, 1.0, 1.0],
+                "is_tax_unit_head": [1.0, 0.0, 1.0, 0.0],
+                "is_tax_unit_spouse": [0.0, 0.0, 0.0, 0.0],
+                "is_tax_unit_dependent": [0.0, 1.0, 0.0, 1.0],
+                "filing_status_code": [1, np.nan, 2, np.nan],
+                "state_fips": [6, 6, 6, 6],
+                "tenure": [1, 1, 1, 1],
+            }
+        )
+
+        tables = pipeline.build_policyengine_entity_tables(population)
+        tax_units = tables.tax_units.sort_values("tax_unit_id").reset_index(drop=True)
+
+        assert tax_units["filing_status"].tolist() == ["SINGLE", "SINGLE"]
+        assert tax_units["n_dependents"].tolist() == [1, 1]
+
     def test_build_policyengine_entity_tables_does_not_infer_head_of_household_from_marital_status_alone(
         self,
     ):
@@ -1460,7 +1525,7 @@ class TestUSMicroplexPipeline:
 
         assert len(tax_units) == 1
         assert person_rows["tax_unit_id"].nunique() == 1
-        assert tax_units.iloc[0]["filing_status"] == "HEAD_OF_HOUSEHOLD"
+        assert tax_units.iloc[0]["filing_status"] == "SINGLE"
         assert tax_units.iloc[0]["n_dependents"] == 1
 
     def test_build_policyengine_entity_tables_resolves_spouse_dependent_role_conflicts(
@@ -1493,7 +1558,7 @@ class TestUSMicroplexPipeline:
         tax_units = tables.tax_units.sort_values("tax_unit_id").reset_index(drop=True)
 
         assert len(tax_units) == 1
-        assert tax_units.iloc[0]["filing_status"] == "HEAD_OF_HOUSEHOLD"
+        assert tax_units.iloc[0]["filing_status"] == "SINGLE"
         assert tax_units.iloc[0]["n_dependents"] == 1
 
     def test_build_policyengine_entity_tables_repairs_missing_role_flag_heads(self):
@@ -1524,7 +1589,7 @@ class TestUSMicroplexPipeline:
         tax_units = tables.tax_units.sort_values("tax_unit_id").reset_index(drop=True)
 
         assert len(tax_units) == 1
-        assert tax_units.iloc[0]["filing_status"] == "HEAD_OF_HOUSEHOLD"
+        assert tax_units.iloc[0]["filing_status"] == "SINGLE"
         assert tax_units.iloc[0]["n_dependents"] == 1
 
     def test_build_policyengine_entity_tables_folds_young_head_hint_dependents(self):
@@ -1555,7 +1620,7 @@ class TestUSMicroplexPipeline:
         tax_units = tables.tax_units.sort_values("tax_unit_id").reset_index(drop=True)
 
         assert len(tax_units) == 1
-        assert tax_units.iloc[0]["filing_status"] == "HEAD_OF_HOUSEHOLD"
+        assert tax_units.iloc[0]["filing_status"] == "SINGLE"
         assert tax_units.iloc[0]["n_dependents"] == 1
 
     def test_build_policyengine_entity_tables_keeps_positive_income_adult_heads(self):

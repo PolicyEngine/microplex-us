@@ -122,6 +122,52 @@ def _fake_pe_native_scores(**kwargs) -> dict[str, object]:
     }
 
 
+def _fake_support_audit(**_kwargs) -> dict[str, object]:
+    return {
+        "metric": "enhanced_cps_support_audit",
+        "comparisons": {
+            "critical_input_support": [
+                {
+                    "variable": "medicare_part_b_premiums",
+                    "candidate_stored": True,
+                    "baseline_stored": False,
+                    "weighted_nonzero_delta": 100.0,
+                }
+            ],
+            "filing_status_weighted_delta": [
+                {
+                    "filing_status": "HEAD_OF_HOUSEHOLD",
+                    "weighted_count_delta": 50.0,
+                }
+            ],
+            "hoh_agi_delta": [
+                {
+                    "agi_bin": "500k_to_1m",
+                    "weighted_count_delta": 40.0,
+                }
+            ],
+            "ssi_by_age_delta": [
+                {
+                    "age_bucket": "65_plus",
+                    "weighted_recipient_delta": 30.0,
+                }
+            ],
+            "medicare_part_b_premiums_by_age_delta": [
+                {
+                    "age_bucket": "10_to_19",
+                    "weighted_positive_delta": 20.0,
+                }
+            ],
+            "state_aca_ptc_spending_top_gaps": [
+                {
+                    "state": "CA",
+                    "weighted_aca_ptc_delta": -10.0,
+                }
+            ],
+        },
+    }
+
+
 def test_protected_family_losses_match_pe_native_labels_with_spaces():
     target_names = [
         "nation/bea/wages and salaries",
@@ -231,6 +277,7 @@ def test_sound_ecps_replacement_comparison_satisfies_gate_contract(
     output_dir = tmp_path / "comparison"
     monkeypatch.setattr(ecps, "_extract_pe_native_loss_inputs", _fake_loss_inputs)
     monkeypatch.setattr(ecps, "compute_us_pe_native_scores", _fake_pe_native_scores)
+    monkeypatch.setattr(ecps, "compute_us_pe_native_support_audit", _fake_support_audit)
 
     payload = ecps.build_sound_ecps_replacement_comparison(
         candidate_dataset_path=candidate,
@@ -281,6 +328,17 @@ def test_sound_ecps_replacement_comparison_satisfies_gate_contract(
         row["split"] for row in target_diagnostics["targets"]
     } == {"train", "holdout"}
     assert target_diagnostics["family_breakdown"]
+    support_summary = payload["summary"]["support_audit"]
+    assert support_summary["top_filing_status_gaps"][0]["filing_status"] == (
+        "HEAD_OF_HOUSEHOLD"
+    )
+    assert support_summary["top_hoh_agi_gaps"][0]["agi_bin"] == "500k_to_1m"
+    assert support_summary["top_ssi_by_age_gaps"][0]["age_bucket"] == "65_plus"
+    assert (
+        support_summary["top_medicare_part_b_by_age_gaps"][0]["age_bucket"]
+        == "10_to_19"
+    )
+    assert support_summary["top_aca_ptc_spending_gaps"][0]["state"] == "CA"
     structure = payload["entity_structure"]["candidate_matched"]
     assert structure["household_count"] == 2
     assert structure["person_count"] == 3
@@ -340,6 +398,7 @@ def test_sound_ecps_replacement_comparison_writes_target_diagnostics_sidecar(
     output_path = output_dir / "comparison.json"
     monkeypatch.setattr(ecps, "_extract_pe_native_loss_inputs", _fake_loss_inputs)
     monkeypatch.setattr(ecps, "compute_us_pe_native_scores", _fake_pe_native_scores)
+    monkeypatch.setattr(ecps, "compute_us_pe_native_support_audit", _fake_support_audit)
 
     written = ecps.write_sound_ecps_replacement_comparison(
         output_path,
@@ -354,10 +413,14 @@ def test_sound_ecps_replacement_comparison_writes_target_diagnostics_sidecar(
     diagnostics_path = output_dir / "target_loss_diagnostics.json"
     diagnostics_payload = json.loads(diagnostics_path.read_text())
     descriptor = payload["artifacts"]["target_loss_diagnostics"]
+    support_descriptor = payload["artifacts"]["support_audit"]
 
     assert descriptor["path"] == str(diagnostics_path.resolve())
     assert descriptor["size_bytes"] == diagnostics_path.stat().st_size
     assert payload["target_diagnostics"] == diagnostics_payload
+    support_path = output_dir / "support_audit.json"
+    assert support_descriptor["path"] == str(support_path.resolve())
+    assert json.loads(support_path.read_text()) == payload["support_audit"]
     assert diagnostics_payload["summary"]["top_k"] == 3
     assert len(diagnostics_payload["top_regressions"]) == 3
     assert len(diagnostics_payload["top_improvements"]) == 3
@@ -370,6 +433,7 @@ def test_sound_ecps_replacement_comparison_flags_score_mismatch(
     candidate = _write_minimal_policyengine_dataset(tmp_path / "candidate.h5")
     baseline = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
     monkeypatch.setattr(ecps, "_extract_pe_native_loss_inputs", _fake_loss_inputs)
+    monkeypatch.setattr(ecps, "compute_us_pe_native_support_audit", _fake_support_audit)
 
     def mismatched_scores(**kwargs):
         payload = _fake_pe_native_scores(**kwargs)

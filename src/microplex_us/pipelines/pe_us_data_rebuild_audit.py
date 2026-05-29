@@ -251,12 +251,33 @@ def _build_support_summary(
         key=lambda row: abs(float(row.get("weighted_count_delta", 0.0))),
         reverse=True,
     )[:top_k]
+    hoh_agi_gaps = sorted(
+        list(comparisons.get("hoh_agi_delta", ())),
+        key=lambda row: abs(float(row.get("weighted_count_delta", 0.0))),
+        reverse=True,
+    )[:top_k]
+    ssi_by_age_gaps = sorted(
+        list(comparisons.get("ssi_by_age_delta", ())),
+        key=lambda row: abs(float(row.get("weighted_recipient_delta", 0.0))),
+        reverse=True,
+    )[:top_k]
+    medicare_part_b_by_age_gaps = sorted(
+        list(comparisons.get("medicare_part_b_premiums_by_age_delta", ())),
+        key=lambda row: abs(float(row.get("weighted_positive_delta", 0.0))),
+        reverse=True,
+    )[:top_k]
 
     return {
         "missingStoredCriticalInputs": missing_stored,
         "topCriticalInputSupportGaps": critical_support_gaps,
         "topFilingStatusGaps": filing_status_gaps,
         "topMFSAgiGaps": mfs_high_agi_gaps,
+        "topHoHAgiGaps": hoh_agi_gaps,
+        "topSSIByAgeGaps": ssi_by_age_gaps,
+        "topMedicarePartBByAgeGaps": medicare_part_b_by_age_gaps,
+        "topAcaPtcSpendingGaps": list(
+            comparisons.get("state_aca_ptc_spending_top_gaps", ())
+        )[:top_k],
         "topMarketplaceEnrollmentGaps": list(
             comparisons.get("state_marketplace_enrollment_top_gaps", ())
         )[:top_k],

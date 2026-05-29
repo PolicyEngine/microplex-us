@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -49,8 +50,31 @@ _DEFAULT_REQUIRED_GATES = (
     "artifact_size",
     "runtime",
     "ecps_comparison",
+    "arch_target_coverage",
     "benchmark_manifest",
 )
+_DEFAULT_ARCH_COVERAGE_PROFILE = "pe_native_broad_source_backed"
+_PROTECTED_ECPS_TARGET_FAMILIES = (
+    "ssi",
+    "snap",
+    "wages",
+    "self_employment_income",
+    "capital_gains",
+    "interest",
+    "dividends",
+    "retirement_income",
+    "disability",
+    "household_net_income",
+)
+_CORE_BENCHMARK_ECPS_TARGET_FAMILIES = (
+    "state_agi_distribution",
+    "state_age_distribution",
+    "national_ssa",
+    "national_irs_other",
+    "state_aca_spending",
+)
+_PROTECTED_FAMILY_RELATIVE_LOSS_TOLERANCE = 0.05
+_PROTECTED_FAMILY_ABSOLUTE_LOSS_TOLERANCE = 0.005
 _FORBIDDEN_SOURCE_DIAGNOSTIC_VARIABLES = frozenset(
     {
         "ssi_reported",
@@ -80,6 +104,44 @@ _FORBIDDEN_SOURCE_DIAGNOSTIC_SUFFIXES = (
     "_donor_source",
     "_imputation_source",
 )
+_REQUIRED_BENCHMARK_MANIFEST_EVIDENCE = {
+    "baseline_dataset.path": (
+        ("baseline_dataset", "path"),
+        ("baseline_dataset_path",),
+        ("enhanced_cps", "path"),
+        ("enhanced_cps_path",),
+    ),
+    "baseline_dataset.sha256": (
+        ("baseline_dataset", "sha256"),
+        ("baseline_dataset_sha256",),
+        ("enhanced_cps", "sha256"),
+        ("enhanced_cps_sha256",),
+    ),
+    "policyengine_us_data.commit": (
+        ("policyengine_us_data", "commit"),
+        ("policyengine_us_data", "commit_sha"),
+        ("policyengine_us_data_commit",),
+        ("policyengine_us_data_commit_sha",),
+        ("us_data_commit",),
+    ),
+    "policyengine_us.version": (
+        ("policyengine_us", "version"),
+        ("policyengine_us_version",),
+    ),
+    "target_db.path": (
+        ("target_db", "path"),
+        ("target_db_path",),
+        ("targets_db", "path"),
+        ("policyengine_targets_db",),
+    ),
+    "target_db.sha256": (
+        ("target_db", "sha256"),
+        ("target_db_sha256",),
+        ("targets_db", "sha256"),
+        ("policyengine_targets_db_sha256",),
+    ),
+}
+_HEX_RE = re.compile(r"^[0-9a-fA-F]+$")
 
 
 def build_mp300k_artifact_gate_report(
@@ -88,9 +150,11 @@ def build_mp300k_artifact_gate_report(
     candidate_dataset_path: str | Path | None = None,
     baseline_dataset_path: str | Path | None = None,
     ecps_comparison_payload: Any = None,
+    arch_coverage_payload: dict[str, Any] | None = None,
     runtime_smoke_payload: dict[str, Any] | None = None,
     benchmark_manifest_path: str | Path | None = None,
     period: int = 2024,
+    arch_coverage_profile: str = _DEFAULT_ARCH_COVERAGE_PROFILE,
     artifact_size_ratio_threshold: float = 2.0,
     runtime_ratio_threshold: float = 1.25,
     compute_native_scores: bool = True,
@@ -139,6 +203,11 @@ def build_mp300k_artifact_gate_report(
         policyengine_us_data_python=policyengine_us_data_python,
     )
     ecps_comparison_gate = _ecps_comparison_gate(resolved_ecps_comparison)
+    arch_coverage_gate = _arch_target_coverage_gate(
+        arch_coverage_payload,
+        expected_period=period,
+        expected_profile=arch_coverage_profile,
+    )
     runtime_gate = _runtime_gate(
         runtime_smoke_payload,
         runtime_ratio_threshold=runtime_ratio_threshold,
@@ -152,6 +221,7 @@ def build_mp300k_artifact_gate_report(
         "artifact_size": artifact_size_gate,
         "runtime": runtime_gate,
         "ecps_comparison": ecps_comparison_gate,
+        "arch_target_coverage": arch_coverage_gate,
         "benchmark_manifest": benchmark_gate,
     }
     required_gates = _required_gate_names(
@@ -177,6 +247,7 @@ def build_mp300k_artifact_gate_report(
         ),
         "gates": gates,
         "ecps_comparison_payload": resolved_ecps_comparison,
+        "arch_coverage": arch_coverage_payload,
         "runtime_smoke": runtime_smoke_payload,
         "benchmark_manifest": benchmark_descriptor,
     }
@@ -696,18 +767,31 @@ def _ecps_comparison_gate(
     ):
         details["reported_candidate_beats_baseline"] = reported_candidate_beats
         details["computed_candidate_beats_baseline"] = candidate_beats
+    contract = _ecps_comparison_contract_summary(
+        ecps_comparison_payload,
+        summary,
+    )
+    details.update(contract["details"])
+    missing_requirements = list(contract["missing_requirements"])
     status: GateStatus
     if candidate_beats is None:
         status = "unmeasured"
+    elif missing_requirements:
+        status = "fail"
     else:
         status = "pass" if bool(candidate_beats) else "fail"
     return _gate(
         status,
         (
-            "candidate beats pinned eCPS on PE-native broad loss"
+            "candidate beats pinned eCPS under the release comparison contract"
             if status == "pass"
             else (
-                "candidate does not beat pinned eCPS on PE-native broad loss"
+                (
+                    "eCPS comparison is missing release-contract evidence: "
+                    + ", ".join(missing_requirements)
+                )
+                if missing_requirements
+                else "candidate does not beat pinned eCPS on PE-native broad loss"
                 if status == "fail"
                 else "PE-native eCPS comparison payload is incomplete"
             )
@@ -717,6 +801,8 @@ def _ecps_comparison_gate(
             "baseline_enhanced_cps_native_loss": baseline_loss,
             "enhanced_cps_native_loss_delta": loss_delta,
             "n_targets_kept": summary.get("n_targets_kept"),
+            "matched_household_count": contract["matched_household_count"],
+            "holdout_target_fraction": contract["holdout_target_fraction"],
         },
         details=details,
     )
@@ -755,6 +841,331 @@ def _ecps_comparison_summary(payload: Any) -> dict[str, Any]:
             "candidate_beats_baseline": candidate_beats,
             "best_variant_label": payload.get("best_variant_label"),
         }
+    return {}
+
+
+def _ecps_comparison_contract_summary(
+    payload: Any,
+    summary: dict[str, Any],
+) -> dict[str, Any]:
+    candidate_households = _first_nested_present(
+        payload,
+        summary,
+        "candidate_household_count",
+        "candidate_households",
+        "candidate_n_households",
+        "candidate_record_count",
+    )
+    baseline_households = _first_nested_present(
+        payload,
+        summary,
+        "baseline_household_count",
+        "baseline_households",
+        "baseline_n_households",
+        "baseline_record_count",
+    )
+    matched_household_count = None
+    if candidate_households is not None and baseline_households is not None:
+        matched_household_count = int(candidate_households) == int(baseline_households)
+    else:
+        matched_household_count = _first_nested_present(
+            payload,
+            summary,
+            "matched_household_count",
+            "matched_n",
+            "matched_record_count",
+        )
+        if matched_household_count is not None:
+            matched_household_count = bool(matched_household_count)
+
+    symmetric_refit = _first_nested_present(
+        payload,
+        summary,
+        "symmetric_refit",
+        "symmetric_reweight",
+        "refit_both",
+    )
+    candidate_refit_config = _first_nested_present(
+        payload,
+        summary,
+        "candidate_refit_config",
+        "candidate_fit_config",
+    )
+    baseline_refit_config = _first_nested_present(
+        payload,
+        summary,
+        "baseline_refit_config",
+        "baseline_fit_config",
+    )
+    if symmetric_refit is None and (
+        isinstance(candidate_refit_config, dict)
+        and isinstance(baseline_refit_config, dict)
+    ):
+        symmetric_refit = candidate_refit_config == baseline_refit_config
+    if symmetric_refit is not None:
+        symmetric_refit = bool(symmetric_refit)
+
+    score_candidate_only = _first_nested_present(
+        payload,
+        summary,
+        "score_candidate_only",
+    )
+    if score_candidate_only is not None and bool(score_candidate_only):
+        symmetric_refit = False
+
+    objective_identity = _first_nested_present(
+        payload,
+        summary,
+        "refit_objective_matches_scoring",
+        "objective_identity_recovery_passed",
+    )
+    if objective_identity is None:
+        objective_identity = _refit_configs_are_dense_score_objective(
+            candidate_refit_config,
+            baseline_refit_config,
+        )
+    if objective_identity is not None:
+        objective_identity = bool(objective_identity)
+
+    ecps_refit_recovery = _first_nested_present(
+        payload,
+        summary,
+        "ecps_refit_recovery_passed",
+        "baseline_refit_recovery_passed",
+    )
+    if ecps_refit_recovery is not None:
+        ecps_refit_recovery = bool(ecps_refit_recovery)
+
+    holdout_target_fraction = _first_nested_present(
+        payload,
+        summary,
+        "holdout_target_fraction",
+    )
+    holdout_targets = _first_nested_present(
+        payload,
+        summary,
+        "holdout_targets",
+        "n_holdout_targets",
+    )
+    has_holdout_targets = False
+    if holdout_target_fraction is not None:
+        has_holdout_targets = float(holdout_target_fraction) > 0.0
+    elif holdout_targets is not None:
+        has_holdout_targets = int(holdout_targets) > 0
+
+    protected_summary = _protected_family_floor_summary(payload, summary)
+    core_benchmark_summary = _core_benchmark_family_floor_summary(payload, summary)
+
+    requirements = {
+        "matched_household_count": matched_household_count is True,
+        "symmetric_refit": symmetric_refit is True,
+        "refit_objective_matches_scoring": objective_identity is True,
+        "ecps_refit_recovery": ecps_refit_recovery is True,
+        "holdout_target_split": has_holdout_targets,
+        "protected_family_floors": protected_summary["passed"] is True,
+        "core_benchmark_family_floors": core_benchmark_summary["passed"] is True,
+    }
+    return {
+        "matched_household_count": matched_household_count,
+        "holdout_target_fraction": holdout_target_fraction,
+        "missing_requirements": [
+            key for key, passed in requirements.items() if not passed
+        ],
+        "details": {
+            "candidate_household_count": candidate_households,
+            "baseline_household_count": baseline_households,
+            "symmetric_refit": symmetric_refit,
+            "score_candidate_only": score_candidate_only,
+            "refit_objective_matches_scoring": objective_identity,
+            "ecps_refit_recovery_passed": ecps_refit_recovery,
+            "holdout_targets": holdout_targets,
+            "protected_family_floor": protected_summary,
+            "core_benchmark_family_floor": core_benchmark_summary,
+        },
+    }
+
+
+def _first_nested_present(
+    payload: Any,
+    summary: dict[str, Any],
+    *keys: str,
+) -> Any:
+    candidates: list[dict[str, Any]] = [summary]
+    if isinstance(payload, dict):
+        candidates.append(payload)
+        for nested_key in (
+            "comparison_contract",
+            "ecps_comparison_contract",
+            "release_contract",
+            "validation",
+            "metadata",
+        ):
+            nested = payload.get(nested_key)
+            if isinstance(nested, dict):
+                candidates.append(nested)
+    for candidate in candidates:
+        value = _first_present(candidate, *keys)
+        if value is not None:
+            return value
+    return None
+
+
+def _refit_configs_are_dense_score_objective(
+    candidate_refit_config: Any,
+    baseline_refit_config: Any,
+) -> bool | None:
+    if not isinstance(candidate_refit_config, dict) or not isinstance(
+        baseline_refit_config,
+        dict,
+    ):
+        return None
+    if candidate_refit_config != baseline_refit_config:
+        return False
+    config = candidate_refit_config
+    lambda_l0 = float(config.get("lambda_l0", config.get("l0_lambda", 0.0)) or 0.0)
+    lambda_l2 = float(config.get("lambda_l2", config.get("l2_penalty", 0.0)) or 0.0)
+    use_gates = bool(config.get("use_gates", False))
+    return lambda_l0 == 0.0 and lambda_l2 == 0.0 and not use_gates
+
+
+def _protected_family_floor_summary(
+    payload: Any,
+    summary: dict[str, Any],
+) -> dict[str, Any]:
+    return _family_floor_summary(
+        payload,
+        summary,
+        families=_PROTECTED_ECPS_TARGET_FAMILIES,
+        explicit_pass_keys=(
+            "protected_family_floors_passed",
+            "protected_family_floor_passed",
+        ),
+        row_keys=(
+            "protected_family_losses",
+            "protected_family_floor_results",
+            "family_loss_comparison",
+            "family_breakdown",
+        ),
+    )
+
+
+def _core_benchmark_family_floor_summary(
+    payload: Any,
+    summary: dict[str, Any],
+) -> dict[str, Any]:
+    return _family_floor_summary(
+        payload,
+        summary,
+        families=_CORE_BENCHMARK_ECPS_TARGET_FAMILIES,
+        explicit_pass_keys=(
+            "core_benchmark_family_floors_passed",
+            "core_benchmark_family_floor_passed",
+        ),
+        row_keys=(
+            "core_benchmark_family_losses",
+            "core_benchmark_family_floor_results",
+            "family_loss_comparison",
+            "family_breakdown",
+        ),
+    )
+
+
+def _family_floor_summary(
+    payload: Any,
+    summary: dict[str, Any],
+    *,
+    families: tuple[str, ...],
+    explicit_pass_keys: tuple[str, ...],
+    row_keys: tuple[str, ...],
+) -> dict[str, Any]:
+    explicit = _first_nested_present(
+        payload,
+        summary,
+        *explicit_pass_keys,
+    )
+    family_rows = _first_nested_present(payload, summary, *row_keys)
+    if family_rows is None and isinstance(payload, dict):
+        score_payload = payload.get("score")
+        if isinstance(score_payload, dict):
+            family_rows = _first_present(score_payload, *row_keys)
+            if family_rows is None:
+                score_summary = score_payload.get("summary")
+                if isinstance(score_summary, dict):
+                    family_rows = _first_present(score_summary, *row_keys)
+    if family_rows is None:
+        return {
+            "passed": None,
+            "reported_passed": explicit,
+            "missing_families": list(families),
+            "regressions": [],
+        }
+
+    rows_by_family = _family_loss_rows_by_name(family_rows)
+    missing: list[str] = []
+    regressions: list[dict[str, Any]] = []
+    for family in families:
+        row = rows_by_family.get(family)
+        if row is None:
+            missing.append(family)
+            continue
+        candidate_loss = _first_present(
+            row,
+            "candidate_loss",
+            "candidate_family_loss",
+            "candidate_loss_contribution",
+        )
+        baseline_loss = _first_present(
+            row,
+            "baseline_loss",
+            "baseline_family_loss",
+            "baseline_loss_contribution",
+        )
+        if candidate_loss is None or baseline_loss is None:
+            missing.append(family)
+            continue
+        delta = float(candidate_loss) - float(baseline_loss)
+        tolerance = max(
+            _PROTECTED_FAMILY_ABSOLUTE_LOSS_TOLERANCE,
+            _PROTECTED_FAMILY_RELATIVE_LOSS_TOLERANCE * abs(float(baseline_loss)),
+        )
+        if delta > tolerance:
+            regressions.append(
+                {
+                    "family": family,
+                    "candidate_loss": float(candidate_loss),
+                    "baseline_loss": float(baseline_loss),
+                    "loss_delta": delta,
+                    "allowed_delta": tolerance,
+                }
+            )
+    passed = not missing and not regressions
+    if explicit is not None:
+        passed = passed and bool(explicit)
+    return {
+        "passed": passed,
+        "missing_families": sorted(set(missing)),
+        "regressions": regressions,
+        "relative_tolerance": _PROTECTED_FAMILY_RELATIVE_LOSS_TOLERANCE,
+        "absolute_tolerance": _PROTECTED_FAMILY_ABSOLUTE_LOSS_TOLERANCE,
+    }
+
+
+def _family_loss_rows_by_name(family_rows: Any) -> dict[str, dict[str, Any]]:
+    if isinstance(family_rows, dict):
+        return {
+            str(family): dict(row)
+            for family, row in family_rows.items()
+            if isinstance(row, dict)
+        }
+    if isinstance(family_rows, list):
+        rows: dict[str, dict[str, Any]] = {}
+        for row in family_rows:
+            if not isinstance(row, dict):
+                continue
+            family = _first_present(row, "family", "target_family", "name")
+            if family is not None:
+                rows[str(family)] = dict(row)
+        return rows
     return {}
 
 
@@ -835,6 +1246,76 @@ def _runtime_gate(
     )
 
 
+def _arch_target_coverage_gate(
+    arch_coverage_payload: dict[str, Any] | None,
+    *,
+    expected_period: int,
+    expected_profile: str,
+) -> dict[str, Any]:
+    if arch_coverage_payload is None:
+        return _gate(
+            "unmeasured",
+            "Arch target coverage report has not been attached",
+            metrics={
+                "expected_profile": expected_profile,
+                "expected_period": int(expected_period),
+            },
+        )
+    if not isinstance(arch_coverage_payload, dict):
+        return _gate(
+            "fail",
+            "Arch target coverage report must be a JSON object",
+            metrics={
+                "expected_profile": expected_profile,
+                "expected_period": int(expected_period),
+            },
+        )
+    payload = dict(arch_coverage_payload)
+    profile_name = payload.get("profile_name")
+    period = payload.get("period")
+    target_cell_count = payload.get("target_cell_count")
+    covered_cell_count = payload.get("covered_cell_count")
+    uncovered_cell_count = payload.get("uncovered_cell_count")
+    coverage_rate = payload.get("coverage_rate")
+    failures: list[str] = []
+    if profile_name != expected_profile:
+        failures.append("profile_name")
+    if period is None or int(period) != int(expected_period):
+        failures.append("period")
+    if target_cell_count is None or int(target_cell_count) <= 0:
+        failures.append("target_cell_count")
+    if uncovered_cell_count is None or int(uncovered_cell_count) != 0:
+        failures.append("uncovered_cell_count")
+    if (
+        covered_cell_count is not None
+        and target_cell_count is not None
+        and int(covered_cell_count) != int(target_cell_count)
+    ):
+        failures.append("covered_cell_count")
+    if coverage_rate is None or float(coverage_rate) < 1.0:
+        failures.append("coverage_rate")
+    status: GateStatus = "pass" if not failures else "fail"
+    return _gate(
+        status,
+        (
+            "Arch source-backed target coverage is complete"
+            if status == "pass"
+            else "Arch source-backed target coverage is incomplete or mismatched"
+        ),
+        metrics={
+            "profile_name": profile_name,
+            "expected_profile": expected_profile,
+            "period": period,
+            "expected_period": int(expected_period),
+            "target_cell_count": target_cell_count,
+            "covered_cell_count": covered_cell_count,
+            "uncovered_cell_count": uncovered_cell_count,
+            "coverage_rate": coverage_rate,
+        },
+        details={"failures": failures} if failures else None,
+    )
+
+
 def _first_present(payload: dict[str, Any], *keys: str) -> Any:
     for key in keys:
         if key in payload:
@@ -864,14 +1345,96 @@ def _benchmark_manifest_gate(
             None,
         )
     descriptor = _file_descriptor(manifest_path)
+    try:
+        payload = json.loads(manifest_path.read_text())
+    except json.JSONDecodeError as exc:
+        return (
+            _gate(
+                "fail",
+                "frozen microsimulation benchmark manifest is not valid JSON",
+                details={"path": str(manifest_path), "error": str(exc)},
+            ),
+            descriptor,
+        )
+    evidence = _benchmark_manifest_evidence(payload)
+    if evidence["missing"]:
+        return (
+            _gate(
+                "fail",
+                "frozen microsimulation benchmark manifest is missing pinned evidence",
+                metrics={
+                    "required_evidence_count": len(
+                        _REQUIRED_BENCHMARK_MANIFEST_EVIDENCE
+                    ),
+                    "present_evidence_count": len(evidence["present"]),
+                },
+                details={
+                    **descriptor,
+                    "missing_evidence": evidence["missing"],
+                    "present_evidence": evidence["present"],
+                },
+            ),
+            descriptor,
+        )
     return (
         _gate(
             "pass",
-            "frozen microsimulation benchmark manifest attached",
-            details=descriptor,
+            "frozen microsimulation benchmark manifest pins baseline, target, and package evidence",
+            metrics={
+                "required_evidence_count": len(
+                    _REQUIRED_BENCHMARK_MANIFEST_EVIDENCE
+                ),
+                "present_evidence_count": len(evidence["present"]),
+            },
+            details={**descriptor, "present_evidence": evidence["present"]},
         ),
         descriptor,
     )
+
+
+def _benchmark_manifest_evidence(payload: Any) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        return {
+            "present": {},
+            "missing": list(_REQUIRED_BENCHMARK_MANIFEST_EVIDENCE),
+        }
+    present: dict[str, Any] = {}
+    missing: list[str] = []
+    for evidence_name, paths in _REQUIRED_BENCHMARK_MANIFEST_EVIDENCE.items():
+        value = _first_nested_path_value(payload, paths)
+        if not _valid_benchmark_evidence_value(evidence_name, value):
+            missing.append(evidence_name)
+            continue
+        present[evidence_name] = value
+    if _first_nested_path_value(payload, (("policyengine_us_data", "dirty"),)) is True:
+        missing.append("policyengine_us_data.clean")
+    return {"present": present, "missing": missing}
+
+
+def _first_nested_path_value(
+    payload: dict[str, Any],
+    paths: tuple[tuple[str, ...], ...],
+) -> Any:
+    for path in paths:
+        current: Any = payload
+        for part in path:
+            if not isinstance(current, dict) or part not in current:
+                current = None
+                break
+            current = current[part]
+        if current is not None:
+            return current
+    return None
+
+
+def _valid_benchmark_evidence_value(name: str, value: Any) -> bool:
+    if not isinstance(value, str) or not value:
+        return False
+    if name.endswith(".sha256"):
+        return len(value) == 64 and bool(_HEX_RE.fullmatch(value))
+    if name.endswith(".commit"):
+        return 7 <= len(value) <= 40 and bool(_HEX_RE.fullmatch(value))
+    return True
 
 
 def _required_gate_names(*, require_ecps_comparison: bool) -> list[str]:
@@ -1004,9 +1567,14 @@ def main(argv: list[str] | None = None) -> int:
         dest="ecps_comparison_json",
     )
     parser.add_argument("--runtime-smoke-json")
+    parser.add_argument("--arch-coverage-json")
     parser.add_argument("--benchmark-manifest")
     parser.add_argument("--output-json")
     parser.add_argument("--target-period", type=int, default=2024)
+    parser.add_argument(
+        "--arch-coverage-profile",
+        default=_DEFAULT_ARCH_COVERAGE_PROFILE,
+    )
     parser.add_argument("--artifact-size-ratio-threshold", type=float, default=2.0)
     parser.add_argument("--runtime-ratio-threshold", type=float, default=1.25)
     parser.add_argument("--policyengine-us-data-repo")
@@ -1049,9 +1617,11 @@ def main(argv: list[str] | None = None) -> int:
         candidate_dataset_path=args.candidate_dataset,
         baseline_dataset_path=args.baseline_dataset,
         ecps_comparison_payload=_load_json_file(args.ecps_comparison_json),
+        arch_coverage_payload=_load_json_file(args.arch_coverage_json),
         runtime_smoke_payload=_load_json_file(args.runtime_smoke_json),
         benchmark_manifest_path=args.benchmark_manifest,
         period=args.target_period,
+        arch_coverage_profile=args.arch_coverage_profile,
         artifact_size_ratio_threshold=args.artifact_size_ratio_threshold,
         runtime_ratio_threshold=args.runtime_ratio_threshold,
         compute_native_scores=not args.skip_ecps_computation,

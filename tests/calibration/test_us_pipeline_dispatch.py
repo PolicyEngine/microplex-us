@@ -75,7 +75,6 @@ def test_invalid_backend_still_raises() -> None:
     """Regression test: unknown backend strings surface a clear error."""
     # The Literal type is only checked by static tools; runtime dispatch
     # raises a ValueError, which we want to preserve.
-    cfg = USMicroplexBuildConfig.__dataclass_fields__["calibration_backend"]
     # Construct the dataclass bypassing the Literal constraint.
     bad_cfg = USMicroplexBuildConfig()
     object.__setattr__(bad_cfg, "calibration_backend", "no_such_backend")
@@ -110,4 +109,5 @@ def test_hardconcrete_deferred_stage_disables_sparsity_penalty() -> None:
     stage1 = pipeline._build_weight_calibrator(stage_index=1)
     stage2 = pipeline._build_weight_calibrator(stage_index=2)
     assert stage1.lambda_l0 == pytest.approx(1e-4)
-    assert stage2.lambda_l0 == 0.0
+    assert isinstance(stage2, MicrocalibrateAdapter)
+    assert stage2.config.regularize_with_l0 is False

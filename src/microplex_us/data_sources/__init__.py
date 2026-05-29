@@ -81,6 +81,21 @@ _EXPORTS: dict[str, tuple[str, str]] = {
         ),
     ),
     **_exports(
+        "microplex_us.data_sources.forbes",
+        (
+            "FixedSpineResidualizationResult",
+            "FixedSpineTargetContribution",
+            "ForbesFixedSpine",
+            "ForbesFixedSpineConfig",
+            "append_forbes_fixed_spine_tables",
+            "build_forbes_fixed_spine",
+            "fixed_spine_contribution_diagnostics_json",
+            "forbes_fixed_spine_variable_bindings",
+            "read_forbes_fixed_spine_records",
+            "residualize_targets_for_fixed_spine",
+        ),
+    ),
+    **_exports(
         "microplex_us.data_sources.puf",
         (
             "load_puf",

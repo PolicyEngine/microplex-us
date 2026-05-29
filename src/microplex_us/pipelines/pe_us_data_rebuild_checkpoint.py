@@ -2161,6 +2161,17 @@ def main(argv: list[str] | None = None) -> None:
             "only the calibration fit."
         ),
     )
+    parser.add_argument(
+        "--capital-gains-lots",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "Write an anchor-preserving synthetic capital-gains lot SQLite "
+            "sidecar artifact from PolicyEngine person tables."
+        ),
+    )
+    parser.add_argument("--capital-gains-lots-max-lots-per-person", type=int)
+    parser.add_argument("--capital-gains-lots-random-seed", type=int)
     args = parser.parse_args(argv)
 
     config_overrides = {
@@ -2188,6 +2199,16 @@ def main(argv: list[str] | None = None) -> None:
     if args.pipeline_checkpoint_save_post_microsim_path is not None:
         config_overrides["pipeline_checkpoint_save_post_microsim_path"] = (
             args.pipeline_checkpoint_save_post_microsim_path
+        )
+    if args.capital_gains_lots is not None:
+        config_overrides["capital_gains_lots_enabled"] = bool(args.capital_gains_lots)
+    if args.capital_gains_lots_max_lots_per_person is not None:
+        config_overrides["capital_gains_lots_max_lots_per_person"] = int(
+            args.capital_gains_lots_max_lots_per_person
+        )
+    if args.capital_gains_lots_random_seed is not None:
+        config_overrides["capital_gains_lots_random_seed"] = int(
+            args.capital_gains_lots_random_seed
         )
 
     result = run_policyengine_us_data_rebuild_checkpoint(

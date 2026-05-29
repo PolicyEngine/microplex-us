@@ -40,6 +40,13 @@ from microplex.hierarchical import TaxUnitOptimizer
 from microplex.synthesizer import Synthesizer
 from microplex.targets import TargetQuery, TargetSpec
 
+from microplex_us.data_sources.forbes import (
+    ForbesFixedSpine,
+    ForbesFixedSpineConfig,
+    append_forbes_fixed_spine_tables,
+    build_forbes_fixed_spine,
+    residualize_targets_for_fixed_spine,
+)
 from microplex_us.pe_source_impute_engine import (
     PE_SOURCE_IMPUTE_BLOCK_ENGINE,
     PESourceImputeBlockRunRequest,
@@ -121,6 +128,7 @@ def _emit_us_pipeline_progress(message: str, /, **context: object) -> None:
     LOGGER.info(line)
     if not LOGGER.handlers and not _root_logger_has_handlers():
         print(line, file=sys.stderr, flush=True)
+
 
 STATE_FIPS = {
     1: "AL",
@@ -345,9 +353,7 @@ def _precompute_constraint_metadata(
         name = getattr(constraint, "name", None)
         if name is None:
             continue
-        coefficients = np.asarray(
-            getattr(constraint, "coefficients", ()), dtype=float
-        )
+        coefficients = np.asarray(getattr(constraint, "coefficients", ()), dtype=float)
         if coefficients.size == 0:
             metadata[name] = {
                 "active_households": 0,
@@ -355,9 +361,7 @@ def _precompute_constraint_metadata(
             }
             continue
         metadata[name] = {
-            "active_households": int(
-                np.count_nonzero(np.abs(coefficients) > epsilon)
-            ),
+            "active_households": int(np.count_nonzero(np.abs(coefficients) > epsilon)),
             "coefficient_mass": float(np.abs(coefficients).sum()),
         }
     return metadata
@@ -397,9 +401,7 @@ def _build_policyengine_constraint_records(
         else:
             coefficient_mass = float(
                 np.abs(
-                    np.asarray(
-                        getattr(constraint, "coefficients", ()), dtype=float
-                    )
+                    np.asarray(getattr(constraint, "coefficients", ()), dtype=float)
                 ).sum()
             )
         records.append(
@@ -442,7 +444,9 @@ def _policyengine_target_variable_name(target: TargetSpec) -> str:
     ).upper()
     if aggregation_name == "COUNT":
         entity_value = (
-            target.entity.value if isinstance(target.entity, EntityType) else str(target.entity)
+            target.entity.value
+            if isinstance(target.entity, EntityType)
+            else str(target.entity)
         )
         return f"{entity_value}_count"
     return "unknown"
@@ -499,7 +503,9 @@ def _policyengine_target_ledger_entry(
     metadata = dict(target.metadata or {})
     required_features = sorted(str(feature) for feature in target.required_features)
     entity_value = (
-        target.entity.value if isinstance(target.entity, EntityType) else str(target.entity)
+        target.entity.value
+        if isinstance(target.entity, EntityType)
+        else str(target.entity)
     )
     aggregation_value = getattr(target.aggregation, "value", str(target.aggregation))
     active_support_share = None
@@ -577,20 +583,18 @@ def _summarize_policyengine_target_ledger(
         "stage_reason_counts": {
             stage: {
                 reason: int(count)
-                for reason, count in sorted(stage_reason_counts.get(stage, Counter()).items())
+                for reason, count in sorted(
+                    stage_reason_counts.get(stage, Counter()).items()
+                )
             }
             for stage in stage_order
         },
         "geo_level_stage_counts": {
-            geo_level: {
-                stage: int(count) for stage, count in sorted(counter.items())
-            }
+            geo_level: {stage: int(count) for stage, count in sorted(counter.items())}
             for geo_level, counter in sorted(geo_level_stage_counts.items())
         },
         "family_stage_counts": {
-            family: {
-                stage: int(count) for stage, count in sorted(counter.items())
-            }
+            family: {stage: int(count) for stage, count in sorted(counter.items())}
             for family, counter in sorted(family_stage_counts.items())
         },
     }
@@ -622,7 +626,9 @@ def _build_policyengine_calibration_target_ledger(
     classified_names: set[str] = set()
     for target in canonical_targets:
         missing_features = sorted(
-            str(feature) for feature in target.required_features if feature not in bindings
+            str(feature)
+            for feature in target.required_features
+            if feature not in bindings
         )
         has_entity_table = _policyengine_target_has_entity_table(target, tables)
         if not has_entity_table:
@@ -815,7 +821,10 @@ def _select_policyengine_deferred_stage_constraints(
         family_key = _policyengine_target_loss_family_key(ledger_entry)
         geography_key = _policyengine_target_loss_geography_key(ledger_entry)
         if family_focus_set or geography_focus_set:
-            if family_key not in family_focus_set and geography_key not in geography_focus_set:
+            if (
+                family_key not in family_focus_set
+                and geography_key not in geography_focus_set
+            ):
                 continue
         focus_eligible_count += 1
         candidate_targets.append(target)
@@ -842,16 +851,21 @@ def _select_policyengine_deferred_stage_constraints(
             priority_scores=priority_scores,
         )
     )
-    return selected_targets, selected_constraints, {
-        "min_active_households": min_required_households,
-        "top_family_count": top_family_count,
-        "top_geography_count": top_geography_count,
-        "focused_families": family_focus,
-        "focused_geographies": geography_focus,
-        "n_focus_eligible_constraints": focus_eligible_count,
-        "target_error_priority_available": deferred_target_priority_lookup is not None,
-        "feasibility_filter": feasibility_summary,
-    }
+    return (
+        selected_targets,
+        selected_constraints,
+        {
+            "min_active_households": min_required_households,
+            "top_family_count": top_family_count,
+            "top_geography_count": top_geography_count,
+            "focused_families": family_focus,
+            "focused_geographies": geography_focus,
+            "n_focus_eligible_constraints": focus_eligible_count,
+            "target_error_priority_available": deferred_target_priority_lookup
+            is not None,
+            "feasibility_filter": feasibility_summary,
+        },
+    )
 
 
 def _policyengine_unsupported_target_error_penalty(
@@ -1167,7 +1181,9 @@ def _evaluate_policyengine_target_fit_context(
 ) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, float]]]:
     target_by_name = {target.name: target for target in canonical_targets}
     ledger_by_name = {
-        str(entry["target_name"]): entry for entry in target_ledger if entry.get("target_name")
+        str(entry["target_name"]): entry
+        for entry in target_ledger
+        if entry.get("target_name")
     }
     deferred_targets = [
         target_by_name[entry["target_name"]]
@@ -1476,6 +1492,14 @@ class USMicroplexBuildConfig:
     checkpoint skips microsim too, leaving only the ~30 min calibration
     fit — useful for tuning calibration targets or backends.
     """
+    capital_gains_lots_enabled: bool = False
+    """Write an anchor-preserving synthetic capital-gains lot sidecar artifact."""
+    capital_gains_lots_max_lots_per_person: int = 4
+    capital_gains_lots_random_seed: int | None = None
+    forbes_fixed_spine_records_path: str | Path | None = None
+    """Normalized Forbes fixed-spine records to append after calibration."""
+    forbes_fixed_spine_snapshot_id: str = "forbes-us-top-tail"
+    forbes_fixed_spine_replicates_per_unit: int = 10
 
     def __post_init__(self) -> None:
         if (
@@ -1508,6 +1532,10 @@ class USMicroplexBuildConfig:
             raise ValueError(
                 "dependent_tax_leaf_soft_cap_multiplier must be non-negative when provided"
             )
+        if self.forbes_fixed_spine_replicates_per_unit < 1:
+            raise ValueError(
+                "forbes_fixed_spine_replicates_per_unit must be at least 1"
+            )
         if any(
             int(value) <= 0
             for value in self.policyengine_calibration_deferred_stage_min_active_households
@@ -1515,6 +1543,8 @@ class USMicroplexBuildConfig:
             raise ValueError(
                 "policyengine_calibration_deferred_stage_min_active_households must contain only positive values"
             )
+        if int(self.capital_gains_lots_max_lots_per_person) <= 0:
+            raise ValueError("capital_gains_lots_max_lots_per_person must be positive")
         if (
             self.policyengine_calibration_deferred_stage_max_constraints is not None
             and int(self.policyengine_calibration_deferred_stage_max_constraints) <= 0
@@ -1542,7 +1572,8 @@ class USMicroplexBuildConfig:
             )
         if (
             self.policyengine_calibration_deferred_stage_top_geography_count is not None
-            and int(self.policyengine_calibration_deferred_stage_top_geography_count) < 0
+            and int(self.policyengine_calibration_deferred_stage_top_geography_count)
+            < 0
         ):
             raise ValueError(
                 "policyengine_calibration_deferred_stage_top_geography_count must be nonnegative when provided"
@@ -1810,9 +1841,7 @@ class USMicroplexPipeline:
                 )
                 _emit_us_pipeline_progress(
                     "US microplex build: post-imputation checkpoint saved",
-                    path=str(
-                        self.config.pipeline_checkpoint_save_post_imputation_path
-                    ),
+                    path=str(self.config.pipeline_checkpoint_save_post_imputation_path),
                 )
             _emit_us_pipeline_progress(
                 "US microplex build: policyengine calibration start",
@@ -2443,6 +2472,21 @@ class USMicroplexPipeline:
                 max_iter=max(self.config.calibration_max_iter, 1_000),
             )
         if self.config.calibration_backend == "hardconcrete":
+            if l0_penalty <= 0.0:
+                from microplex_us.calibration import (
+                    MicrocalibrateAdapter,
+                    MicrocalibrateAdapterConfig,
+                )
+
+                return MicrocalibrateAdapter(
+                    MicrocalibrateAdapterConfig(
+                        epochs=max(self.config.calibration_max_iter, 32),
+                        learning_rate=1e-3,
+                        device=self.config.device,
+                        seed=self.config.random_seed,
+                        regularize_with_l0=False,
+                    )
+                )
             return HardConcreteCalibrator(
                 lambda_l0=l0_penalty,
                 epochs=max(self.config.calibration_max_iter, 500),
@@ -2828,6 +2872,7 @@ class USMicroplexPipeline:
             or self.config.policyengine_dataset_year
             or 2024
         )
+        forbes_fixed_spine = self._build_forbes_fixed_spine()
         (
             tables,
             bindings,
@@ -2840,10 +2885,12 @@ class USMicroplexPipeline:
             feasibility_filter_summary,
             materialized_variables,
             materialization_failures,
+            fixed_spine_residualization_summary,
         ) = self._resolve_policyengine_calibration_targets(
             tables,
             provider=provider,
             target_period=target_period,
+            forbes_fixed_spine=forbes_fixed_spine,
         )
         if self.config.pipeline_checkpoint_save_post_microsim_path is not None:
             save_us_pipeline_checkpoint(
@@ -2929,7 +2976,9 @@ class USMicroplexPipeline:
                 calibrated_households = stage_tables.households.copy()
                 pre_rescale_household_weight_sum = stage_input_household_weight_sum
             else:
-                stage_calibrator = self._build_weight_calibrator(stage_index=stage_index)
+                stage_calibrator = self._build_weight_calibrator(
+                    stage_index=stage_index
+                )
                 calibration_constraints = list(stage_constraints)
                 if self.config.policyengine_calibration_target_total_weight is not None:
                     n_hh = len(stage_tables.households)
@@ -3020,28 +3069,31 @@ class USMicroplexPipeline:
                 families=stage_tables.families,
                 marital_units=stage_tables.marital_units,
             )
-            return updated_stage_tables, calibrated_persons, {
-                "validation": validation,
-                "input_household_weight_sum": stage_input_household_weight_sum,
-                "pre_rescale_household_weight_sum": pre_rescale_household_weight_sum,
-                "post_rescale_household_weight_sum": float(
-                    calibrated_households["household_weight"].sum()
-                ),
-                "weight_sum_rescaled": weight_sum_rescaled,
-                "weight_sum_rescale_mode": weight_sum_rescale_mode,
-                "household_weight_diagnostics": _summarize_weight_diagnostics(
-                    calibrated_households["household_weight"]
-                ),
-                "person_weight_diagnostics": (
-                    _summarize_weight_diagnostics(calibrated_persons["weight"])
-                    if not calibrated_persons.empty and "weight" in calibrated_persons.columns
-                    else None
-                ),
-            }
+            return (
+                updated_stage_tables,
+                calibrated_persons,
+                {
+                    "validation": validation,
+                    "input_household_weight_sum": stage_input_household_weight_sum,
+                    "pre_rescale_household_weight_sum": pre_rescale_household_weight_sum,
+                    "post_rescale_household_weight_sum": float(
+                        calibrated_households["household_weight"].sum()
+                    ),
+                    "weight_sum_rescaled": weight_sum_rescaled,
+                    "weight_sum_rescale_mode": weight_sum_rescale_mode,
+                    "household_weight_diagnostics": _summarize_weight_diagnostics(
+                        calibrated_households["household_weight"]
+                    ),
+                    "person_weight_diagnostics": (
+                        _summarize_weight_diagnostics(calibrated_persons["weight"])
+                        if not calibrated_persons.empty
+                        and "weight" in calibrated_persons.columns
+                        else None
+                    ),
+                },
+            )
 
-        selected_stage_by_name = {
-            target.name: 1 for target in supported_targets
-        }
+        selected_stage_by_name = {target.name: 1 for target in supported_targets}
         all_selected_targets = list(supported_targets)
         all_selected_constraints = list(constraints)
         # Pre-compute the ledger-needed scalars once, while compiled_constraints'
@@ -3060,19 +3112,21 @@ class USMicroplexPipeline:
                 tuple(constraints),
             )
         )
-        target_plan_summary, target_ledger = _build_policyengine_calibration_target_ledger(
-            canonical_targets=canonical_targets,
-            tables=tables,
-            bindings=bindings,
-            compiled_targets=compiled_targets,
-            structurally_unsupported_targets=unsupported_targets,
-            compiled_constraints=compiled_constraints,
-            preselection_targets=preselection_supported_targets,
-            selected_stage_by_name=selected_stage_by_name,
-            household_count=target_planning_household_count,
-            min_active_households=self.config.policyengine_calibration_min_active_households,
-            materialization_failures=materialization_failures,
-            compiled_constraint_metadata=compiled_constraint_metadata,
+        target_plan_summary, target_ledger = (
+            _build_policyengine_calibration_target_ledger(
+                canonical_targets=canonical_targets,
+                tables=tables,
+                bindings=bindings,
+                compiled_targets=compiled_targets,
+                structurally_unsupported_targets=unsupported_targets,
+                compiled_constraints=compiled_constraints,
+                preselection_targets=preselection_supported_targets,
+                selected_stage_by_name=selected_stage_by_name,
+                household_count=target_planning_household_count,
+                min_active_households=self.config.policyengine_calibration_min_active_households,
+                materialization_failures=materialization_failures,
+                compiled_constraint_metadata=compiled_constraint_metadata,
+            )
         )
         oracle_loss, oracle_target_priority_lookup = (
             _evaluate_policyengine_target_fit_context(
@@ -3081,7 +3135,8 @@ class USMicroplexPipeline:
                 final_solve_targets=all_selected_targets,
                 target_ledger=target_ledger,
                 period=target_period,
-                dataset_year=self.config.policyengine_dataset_year or int(target_period),
+                dataset_year=self.config.policyengine_dataset_year
+                or int(target_period),
                 simulation_cls=self.config.policyengine_simulation_cls,
                 direct_override_variables=(
                     self.config.policyengine_direct_override_variables
@@ -3109,9 +3164,7 @@ class USMicroplexPipeline:
             pre_oracle_loss_snapshot: dict[str, dict[str, Any]] | None = None,
         ) -> None:
             validation = (
-                stage_result.get("validation", {})
-                if stage_result is not None
-                else {}
+                stage_result.get("validation", {}) if stage_result is not None else {}
             )
             linear_errors = list(validation.get("linear_errors", {}).values())
             stage_summary = {
@@ -3190,6 +3243,8 @@ class USMicroplexPipeline:
                             "person_weight_diagnostics"
                         ],
                         "max_error": float(validation.get("max_error", 0.0)),
+                        "effective_backend": validation.get("backend"),
+                        "uses_gates": validation.get("uses_gates"),
                         "mean_error": (
                             float(
                                 np.mean(
@@ -3217,12 +3272,13 @@ class USMicroplexPipeline:
         )
 
         deferred_stage_schedule: list[int] = []
-        for min_active_households in (
-            self.config.policyengine_calibration_deferred_stage_min_active_households
-        ):
+        for (
+            min_active_households
+        ) in self.config.policyengine_calibration_deferred_stage_min_active_households:
             resolved_min_active = int(min_active_households)
             if (
-                resolved_min_active >= self.config.policyengine_calibration_min_active_households
+                resolved_min_active
+                >= self.config.policyengine_calibration_min_active_households
                 or resolved_min_active in deferred_stage_schedule
             ):
                 continue
@@ -3237,9 +3293,7 @@ class USMicroplexPipeline:
                 pre_stage_trigger_metric_value = pre_stage_oracle_loss["full_oracle"][
                     "capped_mean_abs_relative_error"
                 ]
-                trigger_threshold = (
-                    self.config.policyengine_calibration_deferred_stage_min_full_oracle_capped_mean_abs_relative_error
-                )
+                trigger_threshold = self.config.policyengine_calibration_deferred_stage_min_full_oracle_capped_mean_abs_relative_error
                 if (
                     trigger_threshold is not None
                     and pre_stage_trigger_metric_value is not None
@@ -3307,12 +3361,14 @@ class USMicroplexPipeline:
                         pre_oracle_loss_snapshot=pre_stage_oracle_loss,
                     )
                     continue
-                candidate_tables, candidate_calibrated_persons, candidate_stage_summary = (
-                    _apply_policyengine_constraint_stage(
-                        updated_tables,
-                        stage_constraints,
-                        stage_index=stage_index,
-                    )
+                (
+                    candidate_tables,
+                    candidate_calibrated_persons,
+                    candidate_stage_summary,
+                ) = _apply_policyengine_constraint_stage(
+                    updated_tables,
+                    stage_constraints,
+                    stage_index=stage_index,
                 )
                 candidate_selected_stage_by_name = dict(selected_stage_by_name)
                 for target in stage_targets:
@@ -3496,10 +3552,32 @@ class USMicroplexPipeline:
         }
         if selection_summary is not None:
             summary["selection"] = selection_summary
+        if forbes_fixed_spine is not None:
+            updated_tables = append_forbes_fixed_spine_tables(
+                updated_tables,
+                forbes_fixed_spine,
+            )
+            calibrated_persons = (
+                updated_tables.persons.copy()
+                if updated_tables.persons is not None
+                else pd.DataFrame()
+            )
+            summary["fixed_spine"] = {
+                "enabled": True,
+                "source_metadata": forbes_fixed_spine.source_metadata,
+                "record_metadata_rows": int(len(forbes_fixed_spine.record_metadata)),
+                "residualization": fixed_spine_residualization_summary,
+                "post_append_households": int(len(updated_tables.households)),
+                "post_append_household_weight_sum": float(
+                    updated_tables.households["household_weight"].sum()
+                ),
+            }
+        else:
+            summary["fixed_spine"] = {"enabled": False}
         warning_messages = list(feasibility_filter_summary.get("warning_messages", ()))
         for stage in calibration_stages[1:]:
-            stage_warnings = (
-                stage.get("feasibility_filter", {}).get("warning_messages", ())
+            stage_warnings = stage.get("feasibility_filter", {}).get(
+                "warning_messages", ()
             )
             warning_messages.extend(
                 f"Deferred calibration stage {stage['stage_index']}: {message}"
@@ -3517,12 +3595,33 @@ class USMicroplexPipeline:
             warnings.warn(message, stacklevel=2)
         return updated_tables, calibrated_persons, summary
 
+    def _build_forbes_fixed_spine(self) -> ForbesFixedSpine | None:
+        path = self.config.forbes_fixed_spine_records_path
+        if path is None:
+            return None
+        return build_forbes_fixed_spine(
+            path,
+            config=ForbesFixedSpineConfig(
+                period=(
+                    self.config.policyengine_target_period
+                    or self.config.policyengine_dataset_year
+                    or 2024
+                ),
+                snapshot_id=self.config.forbes_fixed_spine_snapshot_id,
+                replicates_per_unit=self.config.forbes_fixed_spine_replicates_per_unit,
+            ),
+            source_metadata={
+                "configured_by": "USMicroplexBuildConfig.forbes_fixed_spine_records_path"
+            },
+        )
+
     def _resolve_policyengine_calibration_targets(
         self,
         tables: PolicyEngineUSEntityTableBundle,
         *,
         provider: PolicyEngineUSDBTargetProvider,
         target_period: int,
+        forbes_fixed_spine: ForbesFixedSpine | None = None,
     ) -> tuple[
         PolicyEngineUSEntityTableBundle,
         dict[str, PolicyEngineUSVariableBinding],
@@ -3535,6 +3634,7 @@ class USMicroplexPipeline:
         dict[str, Any],
         set[str],
         dict[str, str],
+        dict[str, Any] | None,
     ]:
         bindings = infer_policyengine_us_variable_bindings(tables)
         canonical_targets = self._load_policyengine_target_set(
@@ -3568,8 +3668,7 @@ class USMicroplexPipeline:
             tables = materialization_result.tables
             unmaterialized_forced_variables = (
                 force_materialize_variables
-                & missing_variables
-                - set(materialization_result.bindings)
+                & missing_variables - set(materialization_result.bindings)
             )
             bindings = {
                 variable: binding
@@ -3588,6 +3687,25 @@ class USMicroplexPipeline:
                 period=target_period,
                 for_calibration=True,
             ).targets
+        fixed_spine_residualization_summary: dict[str, Any] | None = None
+        if forbes_fixed_spine is not None:
+            residualization_result = residualize_targets_for_fixed_spine(
+                canonical_targets,
+                forbes_fixed_spine.tables,
+            )
+            canonical_targets = list(residualization_result.targets.targets)
+            fixed_spine_residualization_summary = {
+                "target_count": len(canonical_targets),
+                "supported_target_count": sum(
+                    contribution.status == "supported"
+                    for contribution in residualization_result.contributions
+                ),
+                "unsupported_target_count": sum(
+                    contribution.status != "supported"
+                    for contribution in residualization_result.contributions
+                ),
+                "contributions": residualization_result.diagnostics(),
+            }
         supported_targets = filter_supported_policyengine_us_targets(
             canonical_targets,
             tables,
@@ -3630,6 +3748,7 @@ class USMicroplexPipeline:
             feasibility_filter_summary,
             materialized_variables,
             materialization_failures,
+            fixed_spine_residualization_summary,
         )
 
     def _has_policyengine_calibration_targets(self) -> bool:
@@ -4259,9 +4378,7 @@ class USMicroplexPipeline:
                     shared_vars=shared_vars,
                     donor_block_spec=donor_block_spec,
                     donor_source_name=donor_source_name,
-                    prepare_pe_surface=(
-                        self._uses_pe_condition_surface()
-                    ),
+                    prepare_pe_surface=(self._uses_pe_condition_surface()),
                     can_project_to_entity=self._can_project_donor_block_to_entity,
                     project_frame_to_entity=self._project_frame_to_entity,
                     entity_key_fn=self._entity_key_column,
@@ -4301,7 +4418,9 @@ class USMicroplexPipeline:
                             )
                         )
                         for variable in challenger_condition_vars:
-                            donor_condition_source[variable] = donor_fit_source[variable]
+                            donor_condition_source[variable] = donor_fit_source[
+                                variable
+                            ]
                             current_condition_source[variable] = (
                                 current_generation_source[variable]
                             )
@@ -4638,13 +4757,17 @@ class USMicroplexPipeline:
         if multiplier is None:
             return seed_data
         if "is_tax_unit_dependent" in seed_data.columns:
-            dependent = pd.to_numeric(
-                seed_data["is_tax_unit_dependent"], errors="coerce"
-            ).fillna(0.0) > 0
+            dependent = (
+                pd.to_numeric(
+                    seed_data["is_tax_unit_dependent"], errors="coerce"
+                ).fillna(0.0)
+                > 0
+            )
         elif "is_dependent" in seed_data.columns:
-            dependent = pd.to_numeric(
-                seed_data["is_dependent"], errors="coerce"
-            ).fillna(0.0) > 0
+            dependent = (
+                pd.to_numeric(seed_data["is_dependent"], errors="coerce").fillna(0.0)
+                > 0
+            )
         else:
             return seed_data
         base_vars = [
@@ -4757,7 +4880,8 @@ class USMicroplexPipeline:
         donor_block: tuple[str, ...],
     ) -> list[str]:
         semantic_specs = tuple(
-            variable_semantic_spec_for(target_variable) for target_variable in donor_block
+            variable_semantic_spec_for(target_variable)
+            for target_variable in donor_block
         )
         preferred_condition_vars = tuple(
             dict.fromkeys(
@@ -5735,9 +5859,7 @@ class USMicroplexPipeline:
                 if len(preserved_households) == person_rows["household_id"].nunique():
                     return preserved_tax_units, preserved_person_rows
                 if not preserved_tax_units.empty:
-                    tax_unit_rows.extend(
-                        preserved_tax_units.to_dict(orient="records")
-                    )
+                    tax_unit_rows.extend(preserved_tax_units.to_dict(orient="records"))
                     person_to_tax_unit.update(
                         {
                             int(person_id): int(tax_unit_id)
@@ -5866,9 +5988,11 @@ class USMicroplexPipeline:
             return None
 
         person_rows = persons.copy()
-        household_has_complete_tax_unit_ids = raw_tax_unit_id.notna().groupby(
-            person_rows["household_id"]
-        ).transform("all")
+        household_has_complete_tax_unit_ids = (
+            raw_tax_unit_id.notna()
+            .groupby(person_rows["household_id"])
+            .transform("all")
+        )
         if not bool(household_has_complete_tax_unit_ids.any()):
             return None
 

@@ -59,6 +59,111 @@ def _write_artifact_manifest(
     (artifact_dir / "manifest.json").write_text(json.dumps(manifest))
 
 
+def _write_benchmark_manifest(path: Path) -> None:
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "period": 2024,
+                "target_profile": "pe_native_broad",
+                "baseline_dataset": {
+                    "path": "/tmp/enhanced_cps_2024.h5",
+                    "sha256": "a" * 64,
+                },
+                "policyengine_us_data": {
+                    "repo": "PolicyEngine/policyengine-us-data",
+                    "commit": "b" * 40,
+                },
+                "policyengine_us": {"version": "1.587.0"},
+                "target_db": {
+                    "path": "/tmp/policyengine_targets.db",
+                    "sha256": "c" * 64,
+                },
+            }
+        )
+    )
+
+
+def _arch_coverage_payload(
+    *,
+    profile_name: str = "pe_native_broad_source_backed",
+    period: int = 2024,
+    target_cell_count: int = 183,
+    uncovered_cell_count: int = 0,
+) -> dict[str, object]:
+    covered_cell_count = target_cell_count - uncovered_cell_count
+    return {
+        "profile_name": profile_name,
+        "period": period,
+        "target_cell_count": target_cell_count,
+        "covered_cell_count": covered_cell_count,
+        "uncovered_cell_count": uncovered_cell_count,
+        "coverage_rate": (
+            covered_cell_count / target_cell_count if target_cell_count else 0.0
+        ),
+    }
+
+
+def _sound_ecps_comparison_payload(
+    *,
+    candidate_loss: float = 0.12,
+    baseline_loss: float = 0.20,
+) -> dict[str, object]:
+    fit_config = {
+        "lambda_l0": 0.0,
+        "lambda_l2": 0.0,
+        "use_gates": False,
+        "epochs": 2000,
+    }
+    protected_family_losses = {
+        family: {"candidate_loss": 0.01, "baseline_loss": 0.01}
+        for family in (
+            "ssi",
+            "snap",
+            "wages",
+            "self_employment_income",
+            "capital_gains",
+            "interest",
+            "dividends",
+            "retirement_income",
+            "disability",
+            "household_net_income",
+        )
+    }
+    family_breakdown = [
+        {
+            "family": family,
+            "candidate_loss_contribution": 0.01,
+            "baseline_loss_contribution": 0.01,
+        }
+        for family in (
+            "state_agi_distribution",
+            "state_age_distribution",
+            "national_ssa",
+            "national_irs_other",
+            "state_aca_spending",
+        )
+    ]
+    return {
+        "summary": {
+            "candidate_enhanced_cps_native_loss": candidate_loss,
+            "baseline_enhanced_cps_native_loss": baseline_loss,
+            "enhanced_cps_native_loss_delta": candidate_loss - baseline_loss,
+            "candidate_beats_baseline": candidate_loss < baseline_loss,
+            "n_targets_kept": 150,
+            "candidate_household_count": 41_314,
+            "baseline_household_count": 41_314,
+            "candidate_refit_config": fit_config,
+            "baseline_refit_config": fit_config,
+            "refit_objective_matches_scoring": True,
+            "ecps_refit_recovery_passed": True,
+            "holdout_target_fraction": 0.2,
+            "protected_family_losses": protected_family_losses,
+        },
+        "score": {"family_breakdown": family_breakdown},
+    }
+
+
 def test_write_mp300k_artifact_gate_report_passes_with_all_evidence(tmp_path):
     artifact_dir = tmp_path / "artifact"
     artifact_dir.mkdir()
@@ -67,21 +172,13 @@ def test_write_mp300k_artifact_gate_report_passes_with_all_evidence(tmp_path):
     )
     baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
-    benchmark_manifest.write_text(json.dumps({"schema_version": 1, "frozen": True}))
+    _write_benchmark_manifest(benchmark_manifest)
     _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
 
     report_path = write_mp300k_artifact_gate_report(
         artifact_dir,
-        ecps_comparison_payload={
-            "metric": "enhanced_cps_native_loss",
-            "summary": {
-                "candidate_enhanced_cps_native_loss": 0.12,
-                "baseline_enhanced_cps_native_loss": 0.20,
-                "enhanced_cps_native_loss_delta": -0.08,
-                "candidate_beats_baseline": True,
-                "n_targets_kept": 150,
-            },
-        },
+        ecps_comparison_payload=_sound_ecps_comparison_payload(),
+        arch_coverage_payload=_arch_coverage_payload(),
         runtime_smoke_payload={
             "candidate_seconds": 11.0,
             "baseline_seconds": 10.0,
@@ -99,6 +196,7 @@ def test_write_mp300k_artifact_gate_report_passes_with_all_evidence(tmp_path):
     assert record["gates"]["compatibility"]["metrics"]["person_count"] == 3
     assert record["gates"]["artifact_size"]["status"] == "pass"
     assert record["gates"]["ecps_comparison"]["status"] == "pass"
+    assert record["gates"]["arch_target_coverage"]["status"] == "pass"
     assert record["gates"]["runtime"]["status"] == "pass"
     assert record["gates"]["runtime"]["metrics"]["runtime_ratio"] == 1.1
     assert record["gates"]["benchmark_manifest"]["status"] == "pass"
@@ -107,6 +205,103 @@ def test_write_mp300k_artifact_gate_report_passes_with_all_evidence(tmp_path):
         manifest["artifacts"]["mp300k_artifact_gates"] == "mp300k_artifact_gates.json"
     )
     assert manifest["mp300k_artifact_gates"]["status"] == "passed"
+
+
+def test_benchmark_manifest_gate_requires_pinned_release_evidence(tmp_path):
+    artifact_dir = tmp_path / "artifact"
+    artifact_dir.mkdir()
+    _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
+    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    benchmark_manifest = tmp_path / "benchmark_manifest.json"
+    benchmark_manifest.write_text(json.dumps({"schema_version": 1, "frozen": True}))
+    _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
+
+    report_path = write_mp300k_artifact_gate_report(
+        artifact_dir,
+        ecps_comparison_payload=_sound_ecps_comparison_payload(),
+        arch_coverage_payload=_arch_coverage_payload(),
+        runtime_smoke_payload={"runtime_ratio": 1.0},
+        benchmark_manifest_path=benchmark_manifest,
+        compute_native_scores=False,
+        update_manifest=False,
+    )
+
+    record = json.loads(report_path.read_text())
+    benchmark_gate = record["gates"]["benchmark_manifest"]
+
+    assert record["summary"]["status"] == "failed"
+    assert benchmark_gate["status"] == "fail"
+    assert benchmark_gate["details"]["missing_evidence"] == [
+        "baseline_dataset.path",
+        "baseline_dataset.sha256",
+        "policyengine_us_data.commit",
+        "policyengine_us.version",
+        "target_db.path",
+        "target_db.sha256",
+    ]
+
+
+def test_arch_target_coverage_gate_rejects_uncovered_source_backed_cells(tmp_path):
+    artifact_dir = tmp_path / "artifact"
+    artifact_dir.mkdir()
+    _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
+    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    benchmark_manifest = tmp_path / "benchmark_manifest.json"
+    _write_benchmark_manifest(benchmark_manifest)
+    _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
+
+    report_path = write_mp300k_artifact_gate_report(
+        artifact_dir,
+        ecps_comparison_payload=_sound_ecps_comparison_payload(),
+        arch_coverage_payload=_arch_coverage_payload(uncovered_cell_count=1),
+        runtime_smoke_payload={"runtime_ratio": 1.0},
+        benchmark_manifest_path=benchmark_manifest,
+        compute_native_scores=False,
+        update_manifest=False,
+    )
+
+    record = json.loads(report_path.read_text())
+    coverage_gate = record["gates"]["arch_target_coverage"]
+
+    assert record["summary"]["status"] == "failed"
+    assert coverage_gate["status"] == "fail"
+    assert coverage_gate["details"]["failures"] == [
+        "uncovered_cell_count",
+        "covered_cell_count",
+        "coverage_rate",
+    ]
+
+
+def test_benchmark_manifest_gate_rejects_dirty_us_data_pin(tmp_path):
+    artifact_dir = tmp_path / "artifact"
+    artifact_dir.mkdir()
+    _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
+    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    benchmark_manifest = tmp_path / "benchmark_manifest.json"
+    _write_benchmark_manifest(benchmark_manifest)
+    payload = json.loads(benchmark_manifest.read_text())
+    payload["policyengine_us_data"]["dirty"] = True
+    benchmark_manifest.write_text(json.dumps(payload))
+    _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
+
+    report_path = write_mp300k_artifact_gate_report(
+        artifact_dir,
+        ecps_comparison_payload=_sound_ecps_comparison_payload(),
+        arch_coverage_payload=_arch_coverage_payload(),
+        runtime_smoke_payload={"runtime_ratio": 1.0},
+        benchmark_manifest_path=benchmark_manifest,
+        compute_native_scores=False,
+        update_manifest=False,
+    )
+
+    record = json.loads(report_path.read_text())
+    benchmark_gate = record["gates"]["benchmark_manifest"]
+
+    assert record["summary"]["status"] == "failed"
+    assert benchmark_gate["status"] == "fail"
+    assert benchmark_gate["details"]["missing_evidence"] == [
+        "policyengine_us_data.clean"
+    ]
 
 
 def test_write_mp300k_artifact_gate_report_fails_missing_structural_array(tmp_path):
@@ -230,22 +425,16 @@ def test_main_writes_artifact_gate_report_from_payload_files(tmp_path, capsys):
     _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
     ecps_comparison_path = tmp_path / "ecps_comparison.json"
     ecps_comparison_path.write_text(
-        json.dumps(
-            {
-                "summary": {
-                    "candidate_enhanced_cps_native_loss": 0.10,
-                    "baseline_enhanced_cps_native_loss": 0.20,
-                    "enhanced_cps_native_loss_delta": -0.10,
-                }
-            }
-        )
+        json.dumps(_sound_ecps_comparison_payload(candidate_loss=0.10))
     )
     runtime_path = tmp_path / "runtime.json"
     runtime_path.write_text(
         json.dumps({"runtime_ratio": 1.2, "runtime_ratio_threshold": 1.25})
     )
+    arch_coverage_path = tmp_path / "arch_coverage.json"
+    arch_coverage_path.write_text(json.dumps(_arch_coverage_payload()))
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
-    benchmark_manifest.write_text(json.dumps({"schema_version": 1}))
+    _write_benchmark_manifest(benchmark_manifest)
 
     exit_code = main(
         [
@@ -255,6 +444,8 @@ def test_main_writes_artifact_gate_report_from_payload_files(tmp_path, capsys):
             str(ecps_comparison_path),
             "--runtime-smoke-json",
             str(runtime_path),
+            "--arch-coverage-json",
+            str(arch_coverage_path),
             "--benchmark-manifest",
             str(benchmark_manifest),
         ]
@@ -275,7 +466,7 @@ def test_ecps_comparison_can_become_nonblocking(tmp_path):
     baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
     _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
-    benchmark_manifest.write_text(json.dumps({"schema_version": 1}))
+    _write_benchmark_manifest(benchmark_manifest)
 
     report_path = write_mp300k_artifact_gate_report(
         artifact_dir,
@@ -283,6 +474,7 @@ def test_ecps_comparison_can_become_nonblocking(tmp_path):
             "runtime_ratio": 1.0,
             "runtime_ratio_threshold": 1.25,
         },
+        arch_coverage_payload=_arch_coverage_payload(),
         benchmark_manifest_path=benchmark_manifest,
         compute_native_scores=False,
         require_ecps_comparison=False,
@@ -304,16 +496,12 @@ def test_runtime_gate_accepts_repeated_loader_smoke_payload(tmp_path):
     baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
     _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
-    benchmark_manifest.write_text(json.dumps({"schema_version": 1}))
+    _write_benchmark_manifest(benchmark_manifest)
 
     report_path = write_mp300k_artifact_gate_report(
         artifact_dir,
-        ecps_comparison_payload={
-            "summary": {
-                "candidate_enhanced_cps_native_loss": 0.10,
-                "baseline_enhanced_cps_native_loss": 0.20,
-            }
-        },
+        ecps_comparison_payload=_sound_ecps_comparison_payload(candidate_loss=0.10),
+        arch_coverage_payload=_arch_coverage_payload(),
         runtime_smoke_payload={
             "median_runtime_ratio": 1.19,
             "candidate": {"median_elapsed_seconds": 0.137},
@@ -339,7 +527,7 @@ def test_ecps_comparison_accepts_existing_broad_loss_array_payload(tmp_path):
     _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
     baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
-    benchmark_manifest.write_text(json.dumps({"schema_version": 1}))
+    _write_benchmark_manifest(benchmark_manifest)
     _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
 
     report_path = write_mp300k_artifact_gate_report(
@@ -354,6 +542,7 @@ def test_ecps_comparison_accepts_existing_broad_loss_array_payload(tmp_path):
                 }
             }
         ],
+        arch_coverage_payload=_arch_coverage_payload(),
         runtime_smoke_payload={"runtime_ratio": 1.0},
         benchmark_manifest_path=benchmark_manifest,
         compute_native_scores=False,
@@ -372,13 +561,164 @@ def test_ecps_comparison_accepts_existing_broad_loss_array_payload(tmp_path):
     )
 
 
+def test_ecps_comparison_rejects_one_sided_unmatched_refit_win(tmp_path):
+    artifact_dir = tmp_path / "artifact"
+    artifact_dir.mkdir()
+    _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
+    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    benchmark_manifest = tmp_path / "benchmark_manifest.json"
+    _write_benchmark_manifest(benchmark_manifest)
+    _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
+
+    report_path = write_mp300k_artifact_gate_report(
+        artifact_dir,
+        ecps_comparison_payload={
+            "summary": {
+                "candidate_enhanced_cps_native_loss": 0.09,
+                "baseline_enhanced_cps_native_loss": 0.16,
+                "enhanced_cps_native_loss_delta": -0.07,
+                "candidate_beats_baseline": True,
+                "candidate_household_count": 120_000,
+                "baseline_household_count": 41_314,
+                "score_candidate_only": True,
+            }
+        },
+        arch_coverage_payload=_arch_coverage_payload(),
+        runtime_smoke_payload={"runtime_ratio": 1.0},
+        benchmark_manifest_path=benchmark_manifest,
+        compute_native_scores=False,
+        update_manifest=False,
+    )
+
+    record = json.loads(report_path.read_text())
+    ecps_gate = record["gates"]["ecps_comparison"]
+
+    assert record["summary"]["status"] == "failed"
+    assert ecps_gate["status"] == "fail"
+    assert "matched_household_count" in ecps_gate["summary"]
+    assert ecps_gate["details"]["score_candidate_only"] is True
+
+
+def test_ecps_comparison_rejects_protected_family_regression(tmp_path):
+    artifact_dir = tmp_path / "artifact"
+    artifact_dir.mkdir()
+    _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
+    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    benchmark_manifest = tmp_path / "benchmark_manifest.json"
+    _write_benchmark_manifest(benchmark_manifest)
+    _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
+    payload = _sound_ecps_comparison_payload(candidate_loss=0.10)
+    payload["summary"]["protected_family_losses"]["ssi"] = {
+        "candidate_loss": 0.0301,
+        "baseline_loss": 0.02,
+    }
+
+    report_path = write_mp300k_artifact_gate_report(
+        artifact_dir,
+        ecps_comparison_payload=payload,
+        arch_coverage_payload=_arch_coverage_payload(),
+        runtime_smoke_payload={"runtime_ratio": 1.0},
+        benchmark_manifest_path=benchmark_manifest,
+        compute_native_scores=False,
+        update_manifest=False,
+    )
+
+    record = json.loads(report_path.read_text())
+    ecps_gate = record["gates"]["ecps_comparison"]
+
+    assert record["summary"]["status"] == "failed"
+    assert ecps_gate["status"] == "fail"
+    assert "protected_family_floors" in ecps_gate["summary"]
+    assert ecps_gate["details"]["protected_family_floor"]["regressions"] == [
+        {
+            "family": "ssi",
+            "candidate_loss": 0.0301,
+            "baseline_loss": 0.02,
+            "loss_delta": pytest.approx(0.0101),
+            "allowed_delta": 0.005,
+        }
+    ]
+
+
+def test_ecps_comparison_rejects_core_benchmark_family_regression(tmp_path):
+    artifact_dir = tmp_path / "artifact"
+    artifact_dir.mkdir()
+    _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
+    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    benchmark_manifest = tmp_path / "benchmark_manifest.json"
+    _write_benchmark_manifest(benchmark_manifest)
+    _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
+    payload = _sound_ecps_comparison_payload(candidate_loss=0.10)
+    payload["score"]["family_breakdown"][0] = {
+        "family": "state_agi_distribution",
+        "candidate_loss_contribution": 0.0601,
+        "baseline_loss_contribution": 0.05,
+    }
+
+    report_path = write_mp300k_artifact_gate_report(
+        artifact_dir,
+        ecps_comparison_payload=payload,
+        arch_coverage_payload=_arch_coverage_payload(),
+        runtime_smoke_payload={"runtime_ratio": 1.0},
+        benchmark_manifest_path=benchmark_manifest,
+        compute_native_scores=False,
+        update_manifest=False,
+    )
+
+    record = json.loads(report_path.read_text())
+    ecps_gate = record["gates"]["ecps_comparison"]
+
+    assert record["summary"]["status"] == "failed"
+    assert ecps_gate["status"] == "fail"
+    assert "core_benchmark_family_floors" in ecps_gate["summary"]
+    assert ecps_gate["details"]["core_benchmark_family_floor"]["regressions"] == [
+        {
+            "family": "state_agi_distribution",
+            "candidate_loss": 0.0601,
+            "baseline_loss": 0.05,
+            "loss_delta": pytest.approx(0.0101),
+            "allowed_delta": 0.005,
+        }
+    ]
+
+
+def test_ecps_comparison_rejects_missing_ecps_refit_recovery(tmp_path):
+    artifact_dir = tmp_path / "artifact"
+    artifact_dir.mkdir()
+    _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
+    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    benchmark_manifest = tmp_path / "benchmark_manifest.json"
+    _write_benchmark_manifest(benchmark_manifest)
+    _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
+    payload = _sound_ecps_comparison_payload(candidate_loss=0.10)
+    payload["summary"]["ecps_refit_recovery_passed"] = False
+
+    report_path = write_mp300k_artifact_gate_report(
+        artifact_dir,
+        ecps_comparison_payload=payload,
+        arch_coverage_payload=_arch_coverage_payload(),
+        runtime_smoke_payload={"runtime_ratio": 1.0},
+        benchmark_manifest_path=benchmark_manifest,
+        compute_native_scores=False,
+        update_manifest=False,
+    )
+
+    record = json.loads(report_path.read_text())
+    ecps_gate = record["gates"]["ecps_comparison"]
+
+    assert record["summary"]["status"] == "failed"
+    assert ecps_gate["status"] == "fail"
+    assert "ecps_refit_recovery" in ecps_gate["summary"]
+    assert ecps_gate["details"]["ecps_refit_recovery_passed"] is False
+
+
 def test_runtime_gate_ignores_contradictory_producer_verdict(tmp_path):
     artifact_dir = tmp_path / "artifact"
     artifact_dir.mkdir()
     _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
     baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
-    benchmark_manifest.write_text(json.dumps({"schema_version": 1}))
+    _write_benchmark_manifest(benchmark_manifest)
     _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
 
     report_path = write_mp300k_artifact_gate_report(
@@ -389,6 +729,7 @@ def test_runtime_gate_ignores_contradictory_producer_verdict(tmp_path):
                 "baseline_enhanced_cps_native_loss": 0.2,
             }
         },
+        arch_coverage_payload=_arch_coverage_payload(),
         runtime_smoke_payload={
             "runtime_ratio": 10.0,
             "runtime_ratio_threshold": 100.0,
@@ -418,7 +759,7 @@ def test_ecps_gate_derives_verdict_from_losses_not_producer_flag(tmp_path):
     _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
     baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
-    benchmark_manifest.write_text(json.dumps({"schema_version": 1}))
+    _write_benchmark_manifest(benchmark_manifest)
     _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
 
     report_path = write_mp300k_artifact_gate_report(
@@ -431,6 +772,7 @@ def test_ecps_gate_derives_verdict_from_losses_not_producer_flag(tmp_path):
                 "candidate_beats_baseline": True,
             }
         },
+        arch_coverage_payload=_arch_coverage_payload(),
         runtime_smoke_payload={"runtime_ratio": 1.0},
         benchmark_manifest_path=benchmark_manifest,
         compute_native_scores=False,

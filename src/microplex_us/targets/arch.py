@@ -74,6 +74,7 @@ ARCH_POSITIVE_CONSTRAINT_ALIASES = {
     "medicaid": "medicaid_enrolled",
     "medicaid_enrolled": "medicaid_enrolled",
     "snap": "snap",
+    "ssi": "ssi",
 }
 
 ARCH_CONSTRAINT_OPERATOR_ALIASES = {
@@ -100,6 +101,7 @@ ARCH_AMOUNT_VARIABLE_ALIASES = {
     "qualified_dividends_amount": "qualified_dividend_income",
     "long_term_capital_gains_amount": "long_term_capital_gains",
     "short_term_capital_gains_amount": "short_term_capital_gains",
+    "employment_income_before_lsr_amount": "employment_income_before_lsr",
     "wages_salaries_amount": "employment_income",
     "net_capital_gains_amount": "net_capital_gains",
     "taxable_ira_distributions_amount": "taxable_ira_distributions",
@@ -130,9 +132,11 @@ ARCH_AMOUNT_VARIABLE_ALIASES = {
     "interest_paid_deduction_amount": "interest_deduction",
     "medical_amount": "medical_expense_deduction",
     "medical_dental_expense_amount": "medical_expense_deduction",
+    "net_worth_amount": "net_worth",
     "real_estate_taxes_amount": "real_estate_taxes",
     "aca_aptc_amount": "aca_ptc",
     "medicaid_benefits": "medicaid",
+    "medicare_part_b_premiums": "medicare_part_b_premiums",
     "social_security_benefits": "social_security",
     "social_security_dependents_benefits": "social_security_dependents",
     "social_security_disability_benefits": "social_security_disability",
@@ -143,7 +147,6 @@ ARCH_AMOUNT_VARIABLE_ALIASES = {
     "ssi_payments": "ssi",
     "ssi_total_payments": "ssi",
     "tanf_cash_assistance": "tanf",
-    "medicare_part_b_premiums": "medicare_part_b_premiums",
     "net_worth": "net_worth",
 }
 
@@ -218,6 +221,21 @@ ARCH_NATIONAL_ROLLUP_STATE_FIPS = frozenset(
     state_fips for state_fips in US_STATE_ABBR_BY_FIPS if state_fips != "72"
 )
 
+ARCH_BEA_REGIONAL_WAGE_COMPONENTS = {
+    "bea_regional_wages_salaries_place_of_work_amount": "wages",
+    "regional_supplements_to_wages_and_salaries": "supplements",
+    "regional_contributions_for_government_social_insurance": "contributions",
+    "regional_residence_adjustment": "residence_adjustment",
+}
+
+ARCH_BEA_REGIONAL_WAGE_COMPONENT_VARIABLES = frozenset(
+    ARCH_BEA_REGIONAL_WAGE_COMPONENTS
+)
+
+ARCH_BEA_STATE_EMPLOYMENT_INCOME_BEFORE_LSR_VARIABLE = (
+    "employment_income_before_lsr_amount"
+)
+
 ARCH_POSITIVE_AMOUNT_FILTER_VARIABLES = frozenset(
     {
         # SOI Table 1.4's taxable net capital gains amount is paired with
@@ -241,6 +259,50 @@ ARCH_BROAD_BUSINESS_INCOME_SELF_EMPLOYMENT_BLOCKLIST = frozenset(
         "cbo.net_business_income",
         "cbo.net_business_income_projection",
         "cbo.income_source:net_business_income",
+    }
+)
+
+ARCH_UNSUPPORTED_RATIO_OR_COMPONENT_VARIABLES = frozenset(
+    {
+        # BEA regional wage components are raw source ingredients. Microplex
+        # derives residence-adjusted state employment_income_before_lsr targets
+        # from the complete component panel instead of exposing the components.
+        *ARCH_BEA_REGIONAL_WAGE_COMPONENT_VARIABLES,
+        # Arch carries this as a convenient SSA diagnostic, but Microplex
+        # calibration constraints must be additive quantities.
+        "ssi_avg_monthly_payment",
+        # These are useful SSA components, but PolicyEngine exposes total SSI
+        # payments rather than separate federal and state supplementation
+        # payment variables in the exported calibration surface.
+        "ssi_federal_payments",
+        "ssi_state_supplementation",
+    }
+)
+
+ARCH_SKIPPED_FACT_CONCEPTS = frozenset(
+    {
+        # CBO revenue-projection rows are useful benchmark facts, but these
+        # concepts are not one-to-one source-backed calibration targets. Keep
+        # them out of the active MP target surface until an explicit adapter
+        # handles each tax-return projection/composite definition.
+        "cbo.adjusted_gross_income_projection",
+        "cbo.wages_and_salaries_projection",
+        "cbo.taxable_interest_and_ordinary_dividends_excluding_qualified_dividends_projection",
+        "cbo.qualified_dividend_income_projection",
+        "cbo.net_capital_gain_projection",
+        "cbo.net_business_income_projection",
+    }
+)
+
+ARCH_LATEST_CARRY_FORWARD_VARIABLES = frozenset(
+    {
+        # SSA publishes detailed SSI count/payment slices with a lag relative
+        # to the model year. Carry only these additive SSI controls forward;
+        # leave broader non-SOI sources to exact-year records unless they have
+        # source-specific aging logic.
+        "ssi_payments",
+        "ssi_recipients",
+        "ssi_total_payments",
     }
 )
 
@@ -290,6 +352,7 @@ ARCH_COUNT_VARIABLE_ALIASES = {
         EntityType.TAX_UNIT,
         "alimony_expense",
     ),
+    "ssi_recipients": ("person_count", EntityType.PERSON, "ssi"),
 }
 
 ARCH_FACT_CONCEPT_TO_TARGET = {
@@ -566,10 +629,6 @@ ARCH_FACT_CONCEPT_TO_TARGET = {
         "self_employed_pension_contribution_ald",
         "AMOUNT",
     ),
-    "federal_reserve.z1.households_nonprofits_net_worth": (
-        "net_worth",
-        "AMOUNT",
-    ),
     "cms_medicare.part_b_premium_income": (
         "medicare_part_b_premiums",
         "AMOUNT",
@@ -578,8 +637,8 @@ ARCH_FACT_CONCEPT_TO_TARGET = {
     "census_acs.person_count": ("population", "COUNT"),
     "census_decennial.resident_population": ("population", "COUNT"),
     "census_decennial.occupied_housing_units": ("household_count", "COUNT"),
-    "census_pep.resident_population": ("population", "COUNT"),
     "census.population_projection": ("population", "COUNT"),
+    "census_pep.resident_population": ("population", "COUNT"),
     "census_stc.individual_income_tax_collections": (
         "state_individual_income_tax_collections",
         "AMOUNT",
@@ -613,6 +672,12 @@ ARCH_FACT_CONCEPT_TO_TARGET = {
     ),
     "cms_nhe.medicaid_title_xix_expenditures": (
         "medicaid_benefits",
+        "AMOUNT",
+    ),
+    "ssa.ssi_recipient_count": ("ssi_recipients", "COUNT"),
+    "ssa.ssi_payment_amount": ("ssi_total_payments", "AMOUNT"),
+    "federal_reserve.z1.households_nonprofits_net_worth": (
+        "net_worth_amount",
         "AMOUNT",
     ),
     "hhs_acf_tanf.cash_assistance_expenditures": (
@@ -651,7 +716,10 @@ ARCH_FACT_CONCEPT_TO_TARGET = {
         "liheap_household_count",
         "COUNT",
     ),
-    "bea_nipa.wages_and_salaries": ("wages_salaries_amount", "AMOUNT"),
+    "bea_nipa.wages_and_salaries": (
+        ARCH_BEA_STATE_EMPLOYMENT_INCOME_BEFORE_LSR_VARIABLE,
+        "AMOUNT",
+    ),
     "bea_nipa.proprietors_income_with_inventory_valuation_and_capital_consumption_adjustments": (
         "proprietors_income_amount",
         "AMOUNT",
@@ -721,9 +789,20 @@ ARCH_FACT_CONCEPT_TO_TARGET = {
         "regional_personal_current_transfer_receipts",
         "RATE",
     ),
-    "bea_regional.wages_and_salaries": ("wages_salaries_amount", "AMOUNT"),
+    "bea_regional.wages_and_salaries": (
+        "bea_regional_wages_salaries_place_of_work_amount",
+        "AMOUNT",
+    ),
     "bea_regional.supplements_to_wages_and_salaries": (
         "regional_supplements_to_wages_and_salaries",
+        "RATE",
+    ),
+    "bea_regional.contributions_for_government_social_insurance": (
+        "regional_contributions_for_government_social_insurance",
+        "RATE",
+    ),
+    "bea_regional.residence_adjustment": (
+        "regional_residence_adjustment",
         "RATE",
     ),
     "bea_regional.proprietors_income": ("proprietors_income_amount", "AMOUNT"),
@@ -780,18 +859,19 @@ ARCH_FACT_DOMAIN_CONSTRAINTS = {
     "personal_income": (),
     "population_projection": (),
     "resident_population": (),
+    "total_population": (),
     "social_security_and_ssi_payments": (),
     "state_government_tax_collections": (),
     "supplemental_nutrition_assistance_program": (("snap", "==", "1"),),
     "tanf_cash_assistance": (),
     "tanf_caseload": (),
     "liheap_state_programs": (),
-    "total_population": (),
 }
 
 ARCH_FACT_CONSTRAINT_VARIABLE_ALIASES = {
     "age": "age",
-    "snap_receipt_status": "snap_receipt_status",
+    "snap_receipt_status": "snap",
+    "ssi_category": "ssi_category",
     "us.tax.earned_income_credit_qualifying_children": "eitc_child_count",
     "us_social_security_and_ssi.program_payment_type": "program_payment_type",
     "us:statutes/26/62#adjusted_gross_income": "adjusted_gross_income",
@@ -800,8 +880,8 @@ ARCH_FACT_CONSTRAINT_VARIABLE_ALIASES = {
 
 ARCH_IGNORED_FACT_CONSTRAINT_VARIABLES = frozenset(
     {
-        "administering_entity",
         "amount_basis",
+        "administering_entity",
         "bea_nipa.series_code",
         "bea_regional.geo_name",
         "bea_regional.line_code",
@@ -946,6 +1026,9 @@ ARCH_VARIABLE_LABEL_OVERRIDES = {
     "long_term_capital_gains_amount": "Long-term capital gains amount",
     "short_term_capital_gains_amount": "Short-term capital gains amount",
     "partnership_scorp_income_returns": "Returns with partnership and S-corp income",
+    "employment_income_before_lsr_amount": (
+        "Employment income before labor-supply responses amount"
+    ),
     "partnership_scorp_income_amount": "Partnership and S-corp income amount",
     "schedule_c_income_returns": "Returns with Schedule C income",
     "schedule_c_income_amount": "Schedule C income amount",
@@ -1029,6 +1112,9 @@ ARCH_MODEL_AMOUNT_VARIABLE_HINTS = {
         for source_variable, model_variable in ARCH_AMOUNT_VARIABLE_ALIASES.items()
     },
     "employment_income": "wages_salaries_amount",
+    "employment_income_before_lsr": (
+        ARCH_BEA_STATE_EMPLOYMENT_INCOME_BEFORE_LSR_VARIABLE
+    ),
     "income_tax_positive": "income_tax_liability",
     "income_tax_before_credits": "income_tax_before_credits_amount",
     "interest_deduction": "interest_paid_deduction_amount",
@@ -1080,6 +1166,7 @@ ARCH_BEA_FULL_POP_AMOUNT_VARIABLES = frozenset(
     {
         "dividend_income",
         "employment_income",
+        "employment_income_before_lsr",
         "rental_income",
         "unemployment_compensation",
     }
@@ -1088,6 +1175,9 @@ ARCH_BEA_FULL_POP_AMOUNT_VARIABLES = frozenset(
 ARCH_BEA_FULL_POP_AMOUNT_ARCH_VARIABLES = {
     "dividend_income": "personal_dividend_income_amount",
     "employment_income": "wages_salaries_amount",
+    "employment_income_before_lsr": (
+        ARCH_BEA_STATE_EMPLOYMENT_INCOME_BEFORE_LSR_VARIABLE
+    ),
     "rental_income": "rental_income_amount",
     "unemployment_compensation": "unemployment_insurance_benefits",
 }
@@ -1665,14 +1755,45 @@ class ArchSQLiteTargetProvider:
             jurisdiction=jurisdiction,
             sources=sources,
         )
+        current_records = _with_bea_state_employment_income_before_lsr_records(
+            current_records
+        )
         if sources and _normalize_arch_source("IRS_SOI") not in {
             _normalize_arch_source(source) for source in sources
         }:
-            return _with_state_to_national_rollup_records(current_records)
+            carry_forward_records = _latest_carry_forward_records_by_target_cell(
+                self.load_records(
+                    period=None,
+                    jurisdiction=jurisdiction,
+                    sources=sources,
+                ),
+                target_year=target_year,
+                sources=sources,
+            )
+            return _with_state_to_national_rollup_records(
+                [
+                    record
+                    for record in current_records
+                    if not _is_latest_carry_forward_candidate(record)
+                ]
+                + carry_forward_records
+            )
 
         non_soi_current_records = [
-            record for record in current_records if record.source != "IRS_SOI"
+            record
+            for record in current_records
+            if record.source != "IRS_SOI"
+            and not _is_latest_carry_forward_candidate(record)
         ]
+        carry_forward_records = _latest_carry_forward_records_by_target_cell(
+            self.load_records(
+                period=None,
+                jurisdiction=jurisdiction,
+                sources=sources,
+            ),
+            target_year=target_year,
+            sources=sources,
+        )
         soi_records = self._latest_soi_records_by_composition(
             target_year=target_year,
             jurisdiction=jurisdiction,
@@ -1684,7 +1805,7 @@ class ArchSQLiteTargetProvider:
                 jurisdiction=jurisdiction,
             )
         return _with_state_to_national_rollup_records(
-            [*non_soi_current_records, *soi_records]
+            [*non_soi_current_records, *carry_forward_records, *soi_records]
         )
 
     def _latest_soi_records_by_composition(
@@ -2476,15 +2597,36 @@ def _compose_arch_model_year_records(
         for record in records
         if record.period == target_year and _record_matches_sources(record, sources)
     ]
+    current_records = _with_bea_state_employment_income_before_lsr_records(
+        current_records
+    )
     normalized_sources = {_normalize_arch_source(source) for source in sources}
     if sources and _normalize_arch_source("IRS_SOI") not in normalized_sources:
-        return _with_state_to_national_rollup_records(current_records)
+        carry_forward_records = _latest_carry_forward_records_by_target_cell(
+            records,
+            target_year=target_year,
+            sources=sources,
+        )
+        return _with_state_to_national_rollup_records(
+            [
+                record
+                for record in current_records
+                if not _is_latest_carry_forward_candidate(record)
+            ]
+            + carry_forward_records
+        )
 
     non_soi_current_records = [
         record
         for record in current_records
         if _normalize_arch_source(record.source) != "IRS_SOI"
+        and not _is_latest_carry_forward_candidate(record)
     ]
+    carry_forward_records = _latest_carry_forward_records_by_target_cell(
+        records,
+        target_year=target_year,
+        sources=sources,
+    )
     soi_records = _latest_soi_records_by_composition(
         records,
         target_year=target_year,
@@ -2501,7 +2643,85 @@ def _compose_arch_model_year_records(
             for record in soi_records
         ]
     return _with_state_to_national_rollup_records(
-        [*non_soi_current_records, *soi_records]
+        [*non_soi_current_records, *carry_forward_records, *soi_records]
+    )
+
+
+def _latest_carry_forward_records_by_target_cell(
+    records: list[ArchTargetRecord],
+    *,
+    target_year: int,
+    sources: tuple[str, ...],
+) -> list[ArchTargetRecord]:
+    latest_by_cell: dict[tuple[Any, ...], tuple[tuple[Any, ...], ArchTargetRecord]] = {}
+    for record in records:
+        if record.period > target_year:
+            continue
+        if not _record_matches_sources(record, sources):
+            continue
+        if not _is_latest_carry_forward_candidate(record):
+            continue
+        target = arch_target_record_to_canonical_spec(record)
+        if target is None:
+            continue
+        cell_key = _arch_target_carry_forward_cell_key(target)
+        rank = _latest_carry_forward_record_rank(record)
+        current = latest_by_cell.get(cell_key)
+        if current is None or rank > current[0]:
+            latest_by_cell[cell_key] = (rank, record)
+    return [
+        (
+            record
+            if record.period == target_year
+            else _carry_forward_arch_record_to_model_year(
+                record,
+                target_year=target_year,
+            )
+        )
+        for _, record in sorted(
+            latest_by_cell.values(),
+            key=lambda item: (
+                _arch_record_geo_level(item[1]),
+                item[1].variable,
+                item[1].target_type,
+                tuple(sorted(item[1].constraints)),
+                item[1].target_id,
+            ),
+        )
+    ]
+
+
+def _is_latest_carry_forward_candidate(record: ArchTargetRecord) -> bool:
+    return (
+        _normalize_arch_source(record.source) == "SSA"
+        and record.variable in ARCH_LATEST_CARRY_FORWARD_VARIABLES
+        and record.target_type in {"AMOUNT", "COUNT"}
+    )
+
+
+def _arch_target_carry_forward_cell_key(
+    target: CanonicalTargetSpec,
+) -> tuple[Any, ...]:
+    domain_variables = _arch_target_domain_variables(target)
+    if _target_self_domain_is_redundant(target, domain_variables):
+        domain_variables = set()
+    return (
+        tuple(sorted(_arch_target_cell_variables(target))),
+        getattr(target.aggregation, "value", target.aggregation),
+        _normalize_geo_level(target.metadata.get("geo_level")),
+        tuple(sorted(domain_variables)),
+        _arch_target_geographic_id(target),
+    )
+
+
+def _latest_carry_forward_record_rank(record: ArchTargetRecord) -> tuple[Any, ...]:
+    source_table = str(record.source_table or "").lower()
+    return (
+        int(record.period),
+        "annual statistical report" in source_table,
+        bool(record.source_table),
+        record.variable == "ssi_total_payments",
+        int(record.target_id),
     )
 
 
@@ -2756,6 +2976,189 @@ def _state_records_to_national_rollup_record(
         source_record_id=f"microplex_state_rollup:{digest[:16]}",
         source_cell_keys=source_cell_keys,
         source_row_keys=source_row_keys,
+        source_target_id=None,
+        source_stratum_id=None,
+    )
+
+
+def _with_bea_state_employment_income_before_lsr_records(
+    records: list[ArchTargetRecord],
+) -> list[ArchTargetRecord]:
+    derived = _bea_state_employment_income_before_lsr_records(records)
+    if not derived:
+        return records
+    return [*records, *derived]
+
+
+def _bea_state_employment_income_before_lsr_records(
+    records: list[ArchTargetRecord],
+) -> list[ArchTargetRecord]:
+    national_wages = _bea_nipa_wages_record(records)
+    if national_wages is None:
+        return []
+
+    required_states = set(ARCH_NATIONAL_ROLLUP_STATE_FIPS)
+    components_by_state: dict[str, dict[str, ArchTargetRecord]] = {}
+    for record in records:
+        if _normalize_arch_source(record.source) != "BEA":
+            continue
+        component = ARCH_BEA_REGIONAL_WAGE_COMPONENTS.get(record.variable)
+        if component is None:
+            continue
+        if _arch_record_geo_level(record) != "state":
+            continue
+        state_fips = _arch_record_state_fips(record)
+        if state_fips is None or state_fips not in required_states:
+            continue
+        components_by_state.setdefault(state_fips, {}).setdefault(component, record)
+
+    required_components = set(ARCH_BEA_REGIONAL_WAGE_COMPONENTS.values())
+    if not required_states or set(components_by_state) != required_states:
+        return []
+    if any(
+        set(state_components) != required_components
+        for state_components in components_by_state.values()
+    ):
+        return []
+
+    adjusted_by_state: dict[str, float] = {}
+    for state_fips, components in components_by_state.items():
+        wages = components["wages"].value
+        supplements = components["supplements"].value
+        contributions = components["contributions"].value
+        residence_adjustment = components["residence_adjustment"].value
+        denominator = wages + supplements + contributions
+        if denominator <= 0:
+            return []
+        adjusted_by_state[state_fips] = (
+            wages + residence_adjustment * wages / denominator
+        )
+
+    adjusted_total = sum(adjusted_by_state.values())
+    if adjusted_total <= 0:
+        return []
+    scale_factor = national_wages.value / adjusted_total
+
+    return [
+        _bea_state_employment_income_before_lsr_record(
+            state_fips=state_fips,
+            state_components=components_by_state[state_fips],
+            national_wages=national_wages,
+            value=adjusted_by_state[state_fips] * scale_factor,
+            scale_factor=scale_factor,
+        )
+        for state_fips in sorted(components_by_state)
+    ]
+
+
+def _bea_nipa_wages_record(
+    records: list[ArchTargetRecord],
+) -> ArchTargetRecord | None:
+    candidates = [
+        record
+        for record in records
+        if _normalize_arch_source(record.source) == "BEA"
+        and record.variable == ARCH_BEA_STATE_EMPLOYMENT_INCOME_BEFORE_LSR_VARIABLE
+        and record.target_type == "AMOUNT"
+        and _arch_record_geo_level(record) in {"national", "country"}
+        and (
+            record.concept == "bea_nipa.wages_and_salaries"
+            or record.source_concept == "bea_nipa.a034rc_wages_and_salaries"
+            or "nipa" in str(record.source_record_id or "").lower()
+        )
+    ]
+    if not candidates:
+        return None
+    return sorted(
+        candidates,
+        key=lambda record: (
+            record.concept == "bea_nipa.wages_and_salaries",
+            bool(record.source_record_id),
+            int(record.target_id),
+        ),
+        reverse=True,
+    )[0]
+
+
+def _bea_state_employment_income_before_lsr_record(
+    *,
+    state_fips: str,
+    state_components: dict[str, ArchTargetRecord],
+    national_wages: ArchTargetRecord,
+    value: float,
+    scale_factor: float,
+) -> ArchTargetRecord:
+    component_records = tuple(
+        state_components[component]
+        for component in (
+            "wages",
+            "supplements",
+            "contributions",
+            "residence_adjustment",
+        )
+    )
+    first = component_records[0]
+    digest = sha1(
+        repr(
+            (
+                "bea_state_employment_income_before_lsr",
+                first.period,
+                state_fips,
+                tuple(record.source_record_id or record.target_id for record in component_records),
+                national_wages.source_record_id or national_wages.target_id,
+            )
+        ).encode("utf-8")
+    ).hexdigest()
+    source_cell_keys = tuple(
+        dict.fromkeys(
+            source_cell_key
+            for record in (*component_records, national_wages)
+            for source_cell_key in record.source_cell_keys
+        )
+    )
+    source_row_keys = tuple(
+        dict.fromkeys(
+            source_row_key
+            for record in (*component_records, national_wages)
+            for source_row_key in (
+                record.source_row_keys
+                or (str(record.source_record_id or record.target_id),)
+            )
+        )
+    )
+    state_abbr = US_STATE_ABBR_BY_FIPS.get(state_fips, state_fips)
+    notes = (
+        "Microplex derived BEA state employment_income_before_lsr from "
+        "SAINC5N line 50 wages, line 60 supplements, line 36 contributions, "
+        "and line 42 residence adjustment. Residence adjustment is allocated "
+        "to wages by wages / (wages + supplements + contributions), then "
+        f"scaled to national BEA NIPA wages with factor {scale_factor:.12g}."
+    )
+    return replace(
+        first,
+        target_id=-int(digest[:12], 16),
+        stratum_id=-int(digest[12:20], 16),
+        variable=ARCH_BEA_STATE_EMPLOYMENT_INCOME_BEFORE_LSR_VARIABLE,
+        value=float(value),
+        target_type="AMOUNT",
+        source_table="BEA Regional SAINC5N residence-adjusted state wages",
+        source_url=first.source_url or national_wages.source_url,
+        notes=notes,
+        stratum_name=f"{state_abbr} residence-adjusted wages",
+        constraints=(),
+        aggregate_fact_key=f"microplex.derived.bea_state_wages.{first.period}.{state_fips}",
+        semantic_fact_key=f"microplex.semantic.bea_state_wages.{first.period}.{state_fips}",
+        source_record_id=f"microplex.derived.bea_state_wages.{first.period}.{state_fips}",
+        source_cell_keys=source_cell_keys,
+        source_row_keys=source_row_keys,
+        concept="policyengine_us.employment_income_before_lsr",
+        source_concept="bea_regional.sainc5n_residence_adjusted_wages_scaled_to_nipa",
+        concept_relation="derived",
+        concept_authority="microplex-us",
+        concept_evidence_url=national_wages.concept_evidence_url
+        or first.concept_evidence_url,
+        concept_evidence_notes=notes,
+        legal_vintage=national_wages.legal_vintage or first.legal_vintage,
         source_target_id=None,
         source_stratum_id=None,
     )
@@ -4299,7 +4702,10 @@ def arch_target_record_to_canonical_spec(
 
 
 def _should_skip_arch_target_record(record: ArchTargetRecord) -> bool:
-    return _is_bea_regional_country_record(record)
+    return (
+        record.variable in ARCH_UNSUPPORTED_RATIO_OR_COMPONENT_VARIABLES
+        or _is_bea_regional_country_record(record)
+    )
 
 
 def _is_blocked_self_employment_binding(
@@ -4433,11 +4839,22 @@ def _consumer_fact_rows_to_records(
     records: list[ArchTargetRecord] = []
     stratum_ids: dict[tuple[tuple[str, str, str], ...], int] = {}
     for target_id, row in enumerate(rows, start=1):
+        concept = arch_consumer_fact_concept(row)
+        if concept is None:
+            continue
+        if _should_skip_arch_fact_concept(concept):
+            continue
+        target_identity = _arch_consumer_fact_target_identity(row)
+        if target_identity is None:
+            continue
+        domain_constraints = _arch_consumer_fact_domain_constraints(row)
+        if domain_constraints is None:
+            continue
         constraints = tuple(
             dict.fromkeys(
                 constraint
                 for constraint in (
-                    *_arch_consumer_fact_domain_constraints(row),
+                    *domain_constraints,
                     *(
                         _arch_consumer_fact_constraint(constraint)
                         for constraint in _consumer_fact_universe_constraints(row).get(
@@ -4449,9 +4866,6 @@ def _consumer_fact_rows_to_records(
             )
         )
         stratum_id = stratum_ids.setdefault(constraints, len(stratum_ids) + 1)
-        target_identity = _arch_consumer_fact_target_identity(row)
-        if target_identity is None:
-            continue
         variable, target_type = target_identity
         source = row.get("source") or {}
         observed_measure = row.get("observed_measure") or {}
@@ -4510,12 +4924,7 @@ def _arch_consumer_fact_target_identity(
         return None
     if concept == "ssa.annual_oasdi_or_ssi_payment_amount":
         return (_ssa_payment_variable_from_consumer_fact(row), "AMOUNT")
-    try:
-        return ARCH_FACT_CONCEPT_TO_TARGET[concept]
-    except KeyError as exc:
-        raise ValueError(
-            f"No Microplex Arch consumer fact mapping for concept {concept!r}"
-        ) from exc
+    return ARCH_FACT_CONCEPT_TO_TARGET.get(concept)
 
 
 def _ssa_payment_variable_from_consumer_fact(row: dict[str, Any]) -> str:
@@ -4537,7 +4946,7 @@ def _arch_consumer_fact_concept(row: dict[str, Any]) -> str:
 
 def _arch_consumer_fact_domain_constraints(
     row: dict[str, Any],
-) -> tuple[tuple[str, str, str], ...]:
+) -> tuple[tuple[str, str, str], ...] | None:
     domain = str(_consumer_fact_universe_constraints(row).get("domain"))
     return _arch_fact_domain_constraints_for_domain(domain)
 
@@ -4603,12 +5012,21 @@ def _group_arch_fact_rows(
     grouped: dict[str, dict[str, Any]] = {}
     stratum_ids: dict[tuple[tuple[str, str, str], ...], int] = {}
     for row in rows:
+        if _should_skip_arch_fact_concept(str(row["measure_concept"])):
+            continue
+        target_identity = _arch_fact_target_identity(row)
+        if target_identity is None:
+            continue
+        domain_constraints = _arch_fact_domain_constraints(row)
+        if domain_constraints is None:
+            continue
         fact_key = str(row["fact_key"])
         item = grouped.setdefault(
             fact_key,
             {
                 "row": row,
-                "constraints": list(_arch_fact_domain_constraints(row)),
+                "target_identity": target_identity,
+                "constraints": list(domain_constraints),
             },
         )
         if row["constraint_variable"] is not None:
@@ -4621,10 +5039,7 @@ def _group_arch_fact_rows(
         row = item["row"]
         constraints = tuple(dict.fromkeys(item["constraints"]))
         stratum_id = stratum_ids.setdefault(constraints, len(stratum_ids) + 1)
-        target_identity = _arch_fact_target_identity(row)
-        if target_identity is None:
-            continue
-        variable, target_type = target_identity
+        variable, target_type = item["target_identity"]
         period = int(row["period_value"])
         source_name = row["source_name"] or "arch"
         fact_lineage = lineage.get(fact_key, {})
@@ -4663,32 +5078,28 @@ def _group_arch_fact_rows(
     return records
 
 
+def _should_skip_arch_fact_concept(concept: str) -> bool:
+    return concept in ARCH_SKIPPED_FACT_CONCEPTS
+
+
 def _arch_fact_target_identity(row: sqlite3.Row) -> tuple[str, str] | None:
     concept = str(row["measure_concept"])
     if concept in ARCH_FACT_CONCEPTS_TO_SKIP:
         return None
-    try:
-        return ARCH_FACT_CONCEPT_TO_TARGET[concept]
-    except KeyError as exc:
-        raise ValueError(
-            f"No Microplex Arch fact mapping for concept {concept!r}"
-        ) from exc
+    return ARCH_FACT_CONCEPT_TO_TARGET.get(concept)
 
 
-def _arch_fact_domain_constraints(row: sqlite3.Row) -> tuple[tuple[str, str, str], ...]:
+def _arch_fact_domain_constraints(
+    row: sqlite3.Row,
+) -> tuple[tuple[str, str, str], ...] | None:
     domain = str(row["domain"])
     return _arch_fact_domain_constraints_for_domain(domain)
 
 
 def _arch_fact_domain_constraints_for_domain(
     domain: str,
-) -> tuple[tuple[str, str, str], ...]:
-    try:
-        return ARCH_FACT_DOMAIN_CONSTRAINTS[domain]
-    except KeyError as exc:
-        raise ValueError(
-            f"No Microplex Arch fact mapping for domain {domain!r}"
-        ) from exc
+) -> tuple[tuple[str, str, str], ...] | None:
+    return ARCH_FACT_DOMAIN_CONSTRAINTS.get(domain)
 
 
 def _arch_fact_constraint(row: sqlite3.Row) -> tuple[str, str, str] | None:
@@ -4920,14 +5331,22 @@ def _truthy_constraint_value(value: str) -> bool:
     try:
         return float(str(value)) == 1.0
     except ValueError:
-        return str(value).strip().lower() in {"true", "yes"}
+        return str(value).strip().lower() in {
+            "true",
+            "yes",
+            "receiving_food_stamps_snap",
+        }
 
 
 def _falsey_constraint_value(value: str) -> bool:
     try:
         return float(str(value)) == 0.0
     except ValueError:
-        return str(value).strip().lower() in {"false", "no"}
+        return str(value).strip().lower() in {
+            "false",
+            "no",
+            "not_receiving_food_stamps_snap",
+        }
 
 
 def _humanize_arch_source(source: str | None) -> str:
@@ -4956,6 +5375,14 @@ def _canonical_filters_for_arch_constraints(
     equalities = _constraint_equalities(constraints)
     for variable, operator, value in constraints:
         canonical_operator = _canonical_arch_constraint_operator(operator)
+        if variable == "ssi_category":
+            filters.extend(
+                _ssi_category_filters_for_arch_constraint(
+                    operator=canonical_operator,
+                    value=value,
+                )
+            )
+            continue
         if variable == "agi_bracket":
             filters.extend(_agi_bracket_filters(value))
             continue
@@ -4994,6 +5421,23 @@ def _canonical_filters_for_arch_constraints(
             TargetFilter(feature=feature, operator=canonical_operator, value=value)
         )
     return _dedupe_target_filters(filters)
+
+
+def _ssi_category_filters_for_arch_constraint(
+    *,
+    operator: str,
+    value: str,
+) -> tuple[TargetFilter, ...]:
+    if operator != "==":
+        return (TargetFilter(feature="ssi_category", operator=operator, value=value),)
+    category = str(value).strip().lower()
+    if category == "aged":
+        return (TargetFilter(feature="is_ssi_aged", operator="==", value=1),)
+    if category == "blind":
+        return (TargetFilter(feature="is_blind", operator="==", value=1),)
+    if category == "disabled":
+        return (TargetFilter(feature="is_ssi_disabled", operator="==", value=1),)
+    return (TargetFilter(feature="ssi_category", operator=operator, value=value),)
 
 
 def _target_filter_for_arch_geography(record: ArchTargetRecord) -> TargetFilter | None:
@@ -5060,8 +5504,8 @@ def _county_fips_from_arch_geography_id(geography_id: Any) -> str:
 
 def _congressional_district_from_arch_geography_id(geography_id: Any) -> str:
     raw = str(geography_id)
-    if raw.startswith(("5001700US", "5001800US", "5001900US")):
-        return raw[-4:]
+    if raw.startswith("500") and "US" in raw:
+        return raw.rsplit("US", 1)[-1]
     return raw
 
 
@@ -5178,9 +5622,9 @@ def _positive_support_filter_for_arch_constraint(
             numeric_value = float(str(value))
         except ValueError:
             numeric_value = None
-        if numeric_value == 1 or str(value).strip().lower() in {"true", "yes"}:
+        if numeric_value == 1 or _truthy_constraint_value(str(value)):
             return TargetFilter(feature=feature, operator=">", value=0)
-        if numeric_value == 0 or str(value).strip().lower() in {"false", "no"}:
+        if numeric_value == 0 or _falsey_constraint_value(str(value)):
             return TargetFilter(feature=feature, operator="==", value=0)
     return TargetFilter(feature=feature, operator=canonical_operator, value=value)
 
@@ -5737,6 +6181,8 @@ def _arch_gap_expected_source(cell: dict[str, Any]) -> str | None:
             and "age" in domain_variables
         ):
             return "CENSUS_ACS"
+        if "ssi" in domain_variables:
+            return "SSA"
         if "adjusted_gross_income" in domain_variables:
             return "IRS_SOI"
         if "age" in domain_variables or not domain_variables:
@@ -5804,6 +6250,8 @@ def _arch_gap_expected_arch_variable(cell: dict[str, Any]) -> str | None:
             return "aca_marketplace_enrollment"
         if domain_variable == "medicaid_enrolled":
             return "medicaid_total_enrollment"
+        if "ssi" in domain_variables:
+            return "ssi_recipients"
         if domain_variable == "adjusted_gross_income":
             return "tax_filer_individual_count"
         if domain_variable == "age" or not domain_variables:
@@ -5929,12 +6377,22 @@ def _arch_gap_expected_source_table(
     variable = str(cell.get("variable") or "")
     if expected_source == "BEA":
         geo_level = _normalize_geo_level(cell.get("geo_level"))
+        if (
+            geo_level == "state"
+            and variable == "employment_income_before_lsr"
+            and expected_arch_variable
+            == ARCH_BEA_STATE_EMPLOYMENT_INCOME_BEFORE_LSR_VARIABLE
+        ):
+            return "BEA Regional SAINC5N residence-adjusted state wages"
         if geo_level == "state" and expected_arch_variable in {
             "proprietors_income_amount",
             "wages_salaries_amount",
         }:
             return "BEA Regional SAINC5N annual state personal income"
-        if expected_arch_variable == "wages_salaries_amount":
+        if expected_arch_variable in {
+            "wages_salaries_amount",
+            ARCH_BEA_STATE_EMPLOYMENT_INCOME_BEFORE_LSR_VARIABLE,
+        }:
             return "BEA NIPA annual total wages and salaries"
         if expected_arch_variable in {
             "medicaid_benefits",

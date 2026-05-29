@@ -70,6 +70,13 @@ _EXPORT_MODULES: dict[str, str] = {
         ),
     ),
     **_exports(
+        "microplex_us.pipelines.ecps_replacement_comparison",
+        (
+            "build_sound_ecps_replacement_comparison",
+            "write_sound_ecps_replacement_comparison",
+        ),
+    ),
+    **_exports(
         "microplex_us.pipelines.index_db",
         (
             "append_us_microplex_run_index_entry",

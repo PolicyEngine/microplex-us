@@ -25,6 +25,10 @@ on:
         description: Optional URL to runtime smoke benchmark JSON.
         required: false
         type: string
+      arch_coverage_url:
+        description: Optional URL to Arch target coverage JSON.
+        required: false
+        type: string
       benchmark_manifest_url:
         description: Optional URL to the frozen microsimulation benchmark manifest.
         required: false
@@ -63,6 +67,9 @@ on:
         required: false
         type: string
       runtime_smoke_url:
+        required: false
+        type: string
+      arch_coverage_url:
         required: false
         type: string
       benchmark_manifest_url:
@@ -173,6 +180,9 @@ jobs:
           if [ -n "${{ inputs.runtime_smoke_url }}" ]; then
             curl --fail --location "${{ inputs.runtime_smoke_url }}" --output ../gate-inputs/evidence/runtime_smoke.json
           fi
+          if [ -n "${{ inputs.arch_coverage_url }}" ]; then
+            curl --fail --location "${{ inputs.arch_coverage_url }}" --output ../gate-inputs/evidence/arch_coverage.json
+          fi
           if [ -n "${{ inputs.benchmark_manifest_url }}" ]; then
             curl --fail --location "${{ inputs.benchmark_manifest_url }}" --output ../gate-inputs/evidence/benchmark_manifest.json
           fi
@@ -202,7 +212,7 @@ jobs:
                   )
               shutil.copyfile(archive_candidates[0], archive_target)
 
-          for name in ("ecps_comparison", "runtime_smoke", "benchmark_manifest"):
+          for name in ("ecps_comparison", "runtime_smoke", "arch_coverage", "benchmark_manifest"):
               source = root / f"{name}.json"
               destination = evidence_dir / f"{name}.json"
               if source.exists() and not destination.exists():
@@ -263,6 +273,9 @@ jobs:
           fi
           if [ -f ../gate-inputs/evidence/runtime_smoke.json ]; then
             args+=(--runtime-smoke-json ../gate-inputs/evidence/runtime_smoke.json)
+          fi
+          if [ -f ../gate-inputs/evidence/arch_coverage.json ]; then
+            args+=(--arch-coverage-json ../gate-inputs/evidence/arch_coverage.json)
           fi
           if [ -f ../gate-inputs/evidence/benchmark_manifest.json ]; then
             args+=(--benchmark-manifest ../gate-inputs/evidence/benchmark_manifest.json)

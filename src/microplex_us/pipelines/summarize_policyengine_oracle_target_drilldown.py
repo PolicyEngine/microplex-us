@@ -51,7 +51,9 @@ def summarize_us_policyengine_oracle_target_drilldown(
     target_db_path = Path(config.policyengine_targets_db).expanduser()
     if not target_db_path.is_absolute():
         target_db_path = (bundle_dir / target_db_path).resolve()
-    period = int(config.policyengine_target_period or config.policyengine_dataset_year or 2024)
+    period = int(
+        config.policyengine_target_period or config.policyengine_dataset_year or 2024
+    )
     pipeline = USMicroplexPipeline(config)
     tables = load_policyengine_us_entity_tables(dataset_path, period=period)
     provider = PolicyEngineUSDBTargetProvider(target_db_path)
@@ -67,6 +69,7 @@ def summarize_us_policyengine_oracle_target_drilldown(
         _feasibility_filter_summary,
         calibration_materialized_variables,
         _materialization_failures,
+        _fixed_spine_residualization_summary,
     ) = pipeline._resolve_policyengine_calibration_targets(
         tables,
         provider=provider,
@@ -98,10 +101,16 @@ def summarize_us_policyengine_oracle_target_drilldown(
     target_ledger = list(manifest.get("calibration", {}).get("target_ledger", ()))
     materialized_variables = {
         str(variable)
-        for variable in manifest.get("calibration", {}).get("materialized_variables", ())
+        for variable in manifest.get("calibration", {}).get(
+            "materialized_variables", ()
+        )
     }
-    materialized_variables.update(str(variable) for variable in calibration_materialized_variables)
-    materialized_variables.update(str(variable) for variable in report.materialized_variables)
+    materialized_variables.update(
+        str(variable) for variable in calibration_materialized_variables
+    )
+    materialized_variables.update(
+        str(variable) for variable in report.materialized_variables
+    )
     ledger_by_name = {
         str(entry["target_name"]): dict(entry)
         for entry in target_ledger
@@ -166,8 +175,12 @@ def summarize_us_policyengine_oracle_target_drilldown(
         },
         "summary": {
             "targetCount": len(filtered_rows),
-            "supportedTargetCount": sum(1 for row in filtered_rows if not row["unsupported"]),
-            "unsupportedTargetCount": sum(1 for row in filtered_rows if row["unsupported"]),
+            "supportedTargetCount": sum(
+                1 for row in filtered_rows if not row["unsupported"]
+            ),
+            "unsupportedTargetCount": sum(
+                1 for row in filtered_rows if row["unsupported"]
+            ),
             "stageCounts": {
                 key: int(value)
                 for key, value in sorted(
@@ -175,7 +188,9 @@ def summarize_us_policyengine_oracle_target_drilldown(
                 )
             },
             "largestFamilies": _top_counts(filtered_rows, "loss_family", top_k=10),
-            "largestGeographies": _top_counts(filtered_rows, "loss_geography", top_k=10),
+            "largestGeographies": _top_counts(
+                filtered_rows, "loss_geography", top_k=10
+            ),
             "largestFamiliesByCappedError": _top_error_mass(
                 filtered_rows,
                 "loss_family",
@@ -203,16 +218,24 @@ def _oracle_target_row(
     materialized_variables: set[str],
     unsupported_penalty: float | None = None,
 ) -> dict[str, Any]:
-    entry = dict(ledger_entry) if ledger_entry is not None else _policyengine_target_ledger_entry(
-        target=target,
-        stage="unknown",
-        reason="missing_manifest_ledger_entry",
-        household_count=household_count,
+    entry = (
+        dict(ledger_entry)
+        if ledger_entry is not None
+        else _policyengine_target_ledger_entry(
+            target=target,
+            stage="unknown",
+            reason="missing_manifest_ledger_entry",
+            household_count=household_count,
+        )
     )
-    abs_relative_error = abs(float(relative_error)) if relative_error is not None else None
+    abs_relative_error = (
+        abs(float(relative_error)) if relative_error is not None else None
+    )
     capped_abs_relative_error = abs_relative_error
     if capped_abs_relative_error is not None and relative_error_cap is not None:
-        capped_abs_relative_error = min(capped_abs_relative_error, float(relative_error_cap))
+        capped_abs_relative_error = min(
+            capped_abs_relative_error, float(relative_error_cap)
+        )
     if unsupported:
         capped_abs_relative_error = (
             float(unsupported_penalty)
@@ -273,9 +296,9 @@ def _top_counts(
     counter = Counter(str(row[key]) for row in rows if row.get(key) is not None)
     return [
         {"group": group, "count": int(count)}
-        for group, count in sorted(counter.items(), key=lambda item: (-int(item[1]), item[0]))[
-            :top_k
-        ]
+        for group, count in sorted(
+            counter.items(), key=lambda item: (-int(item[1]), item[0])
+        )[:top_k]
     ]
 
 
@@ -295,7 +318,9 @@ def _top_error_mass(
             str(group),
             {"cappedErrorMass": 0.0, "count": 0},
         )
-        bucket["cappedErrorMass"] = float(bucket["cappedErrorMass"]) + float(capped_error)
+        bucket["cappedErrorMass"] = float(bucket["cappedErrorMass"]) + float(
+            capped_error
+        )
         bucket["count"] = int(bucket["count"]) + 1
     ranked = sorted(
         grouped.items(),
@@ -310,7 +335,8 @@ def _top_error_mass(
             "group": group,
             "cappedErrorMass": float(metrics["cappedErrorMass"]),
             "count": int(metrics["count"]),
-            "meanCappedError": float(metrics["cappedErrorMass"]) / int(metrics["count"]),
+            "meanCappedError": float(metrics["cappedErrorMass"])
+            / int(metrics["count"]),
         }
         for group, metrics in ranked[:top_k]
     ]

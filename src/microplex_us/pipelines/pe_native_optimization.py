@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -222,6 +223,7 @@ def optimize_pe_native_loss_weights(
     l2_penalty: float = 0.0,
     tol: float = 1e-8,
     target_total_weight: float | None = None,
+    history_callback: Callable[[int, np.ndarray, float], None] | None = None,
 ) -> tuple[np.ndarray, dict[str, Any]]:
     """Optimize nonnegative household weights directly on the PE-native loss matrix.
 
@@ -258,27 +260,64 @@ def optimize_pe_native_loss_weights(
         return base
 
     current_loss = objective(weights)
+    loss_history: list[dict[str, float | int]] = [
+        {
+            "iteration": 0,
+            "objective_loss": float(current_loss),
+            "weight_sum": float(weights.sum()),
+            "positive_household_count": int((weights > 1e-9).sum()),
+        }
+    ]
+    if history_callback is not None:
+        history_callback(0, weights, current_loss)
     converged = False
     completed_iter = 0
+    total_backtracking_steps = 0
     for iteration in range(1, max_iter + 1):
         residual = matrix.T @ weights - target
         gradient = 2.0 * (matrix @ residual)
         if l2_penalty > 0.0:
             gradient += 2.0 * l2_penalty * (weights - initial_reference)
-        candidate = _project_to_budget_simplex(
-            weights - step_size * gradient,
-            total_weight,
-            budget,
-        )
-        candidate_loss = objective(candidate)
         completed_iter = iteration
-        if current_loss - candidate_loss < tol * max(1.0, current_loss):
-            weights = candidate
-            current_loss = candidate_loss
+
+        candidate = weights
+        candidate_loss = current_loss
+        accepted_descent_step = False
+        iteration_step_size = step_size
+        for backtrack in range(30):
+            trial = _project_to_budget_simplex(
+                weights - iteration_step_size * gradient,
+                total_weight,
+                budget,
+            )
+            trial_loss = objective(trial)
+            if trial_loss <= current_loss:
+                candidate = trial
+                candidate_loss = trial_loss
+                accepted_descent_step = True
+                total_backtracking_steps += backtrack
+                break
+            iteration_step_size *= 0.5
+        if not accepted_descent_step:
             converged = True
             break
+
+        improvement = current_loss - candidate_loss
         weights = candidate
         current_loss = candidate_loss
+        loss_history.append(
+            {
+                "iteration": int(iteration),
+                "objective_loss": float(current_loss),
+                "weight_sum": float(weights.sum()),
+                "positive_household_count": int((weights > 1e-9).sum()),
+            }
+        )
+        if history_callback is not None:
+            history_callback(iteration, weights, current_loss)
+        if improvement < tol * max(1.0, current_loss):
+            converged = True
+            break
 
     summary = {
         "initial_loss": float(objective(initial_reference)),
@@ -293,6 +332,8 @@ def optimize_pe_native_loss_weights(
         "iterations": int(completed_iter),
         "converged": bool(converged),
         "step_size": float(step_size),
+        "line_search_backtracking_steps": int(total_backtracking_steps),
+        "loss_history": loss_history,
     }
     return weights, summary
 

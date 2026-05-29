@@ -470,6 +470,23 @@ POLICYENGINE_US_EXPORT_DEFAULTS: dict[str, Any] = {
     "would_file_taxes_voluntarily": False,
 }
 
+POLICYENGINE_US_NUMERIC_ENUM_EXPORT_MAPS: dict[str, dict[float, str]] = {
+    # Microplex imports ACS tenure as compact source codes. PolicyEngine-US
+    # expects enum member names in its HDF5 inputs.
+    "tenure_type": {
+        0.0: "NONE",
+        1.0: "OWNED_WITH_MORTGAGE",
+        2.0: "RENTED",
+    },
+    # SPM tenure has no NONE value; no-cash/unknown tenure should not make the
+    # exported dataset unreadable, so use the same renter fallback as PE-US.
+    "spm_unit_tenure_type": {
+        0.0: "RENTER",
+        1.0: "OWNER_WITH_MORTGAGE",
+        2.0: "RENTER",
+    },
+}
+
 POLICYENGINE_US_LEGACY_CONTRACT_VARIABLE_ENTITIES: dict[str, str] = {
     "count_under_18": "person",
     "count_under_6": "person",
@@ -3293,10 +3310,43 @@ def _project_table_to_time_period_arrays(
                     string_values.notna() & string_values.ne(""),
                     other=default_value,
                 )
+        values = _normalize_policyengine_us_export_enum_values(
+            target_variable, values
+        )
         arrays[target_variable] = {
             period_key: _normalize_h5_value(values),
         }
     return arrays
+
+
+def _normalize_policyengine_us_export_enum_values(
+    target_variable: str,
+    values: pd.Series,
+) -> pd.Series:
+    enum_map = POLICYENGINE_US_NUMERIC_ENUM_EXPORT_MAPS.get(target_variable)
+    if enum_map is None:
+        return values
+
+    numeric = pd.to_numeric(values, errors="coerce")
+    numeric_mask = numeric.notna()
+    if not numeric_mask.any():
+        return values
+
+    normalized = values.copy()
+    mapped = numeric.map(enum_map)
+    if mapped[numeric_mask].isna().any():
+        bad_values = sorted(
+            {
+                str(value)
+                for value in values[numeric_mask & mapped.isna()].dropna().unique()
+            }
+        )
+        raise ValueError(
+            f"Unsupported numeric {target_variable} value(s) for PE-US export: "
+            + ", ".join(bad_values)
+        )
+    normalized.loc[numeric_mask] = mapped[numeric_mask]
+    return normalized
 
 
 def _normalize_id_value(values: Any) -> np.ndarray:

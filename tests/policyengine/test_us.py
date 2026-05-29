@@ -2647,6 +2647,51 @@ class TestPolicyEngineUSProjection:
         assert arrays["spm_unit_tenure_type"]["2024"].tolist() == [b"RENTER"]
         assert arrays["takes_up_snap_if_eligible"]["2024"].tolist() == [True]
 
+    def test_build_time_period_arrays_normalizes_numeric_tenure_codes(self):
+        tables = PolicyEngineUSEntityTableBundle(
+            households=pd.DataFrame(
+                {
+                    "household_id": [10, 20, 30],
+                    "household_weight": [1.0, 1.0, 1.0],
+                    "tenure_type": [0, 1, 2],
+                }
+            ),
+            persons=pd.DataFrame(
+                {
+                    "person_id": [1, 2, 3],
+                    "household_id": [10, 20, 30],
+                    "spm_unit_id": [100, 200, 300],
+                }
+            ),
+            spm_units=pd.DataFrame(
+                {
+                    "spm_unit_id": [100, 200, 300],
+                    "household_id": [10, 20, 30],
+                    "spm_unit_tenure_type": [0, 1, 2],
+                }
+            ),
+        )
+
+        arrays = build_policyengine_us_time_period_arrays(
+            tables,
+            period=2024,
+            household_variable_map={"tenure_type": "tenure_type"},
+            spm_unit_variable_map={
+                "spm_unit_tenure_type": "spm_unit_tenure_type"
+            },
+        )
+
+        assert arrays["tenure_type"]["2024"].tolist() == [
+            b"NONE",
+            b"OWNED_WITH_MORTGAGE",
+            b"RENTED",
+        ]
+        assert arrays["spm_unit_tenure_type"]["2024"].tolist() == [
+            b"RENTER",
+            b"OWNER_WITH_MORTGAGE",
+            b"RENTER",
+        ]
+
 
 class TestUSPipelinePolicyEngineTargets:
     def test_build_policyengine_continuous_targets_uses_adapter(self):

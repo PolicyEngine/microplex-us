@@ -2373,6 +2373,12 @@ class TestPolicyEngineUSProjection:
         class FakeSystem:
             variables = {
                 "ssn_card_type": FakeVariable("person"),
+                "takes_up_aca_if_eligible": FakeVariable("tax_unit"),
+                "takes_up_early_head_start_if_eligible": FakeVariable("person"),
+                "takes_up_eitc": FakeVariable("tax_unit"),
+                "takes_up_snap_if_eligible": FakeVariable("spm_unit"),
+                "would_claim_wic": FakeVariable("person"),
+                "would_file_taxes_voluntarily": FakeVariable("tax_unit"),
             }
 
         tables = PolicyEngineUSEntityTableBundle(
@@ -2388,6 +2394,18 @@ class TestPolicyEngineUSProjection:
                     "household_id": [10],
                 }
             ),
+            tax_units=pd.DataFrame(
+                {
+                    "tax_unit_id": [100],
+                    "household_id": [10],
+                }
+            ),
+            spm_units=pd.DataFrame(
+                {
+                    "spm_unit_id": [1000],
+                    "household_id": [10],
+                }
+            ),
         )
 
         export_maps = build_policyengine_us_export_variable_maps(
@@ -2397,6 +2415,16 @@ class TestPolicyEngineUSProjection:
 
         assert export_maps["person"] == {
             "ssn_card_type": "ssn_card_type",
+            "takes_up_early_head_start_if_eligible": "takes_up_early_head_start_if_eligible",
+            "would_claim_wic": "would_claim_wic",
+        }
+        assert export_maps["tax_unit"] == {
+            "takes_up_aca_if_eligible": "takes_up_aca_if_eligible",
+            "takes_up_eitc": "takes_up_eitc",
+            "would_file_taxes_voluntarily": "would_file_taxes_voluntarily",
+        }
+        assert export_maps["spm_unit"] == {
+            "takes_up_snap_if_eligible": "takes_up_snap_if_eligible",
         }
 
     def test_projects_frame_and_writes_time_period_dataset(self, tmp_path):
@@ -2458,7 +2486,7 @@ class TestPolicyEngineUSProjection:
 
         assert arrays["ssn_card_type"]["2024"].tolist() == [b"NONE", b"CITIZEN"]
 
-    def test_build_time_period_arrays_defaults_absent_ssn_card_type_to_citizen(self):
+    def test_build_time_period_arrays_defaults_absent_export_inputs(self):
         tables = PolicyEngineUSEntityTableBundle(
             households=pd.DataFrame(
                 {
@@ -2472,15 +2500,47 @@ class TestPolicyEngineUSProjection:
                     "household_id": [10],
                 }
             ),
+            tax_units=pd.DataFrame(
+                {
+                    "tax_unit_id": [100],
+                    "household_id": [10],
+                }
+            ),
+            spm_units=pd.DataFrame(
+                {
+                    "spm_unit_id": [1000],
+                    "household_id": [10],
+                }
+            ),
         )
 
         arrays = build_policyengine_us_time_period_arrays(
             tables,
             period=2024,
-            person_variable_map={"ssn_card_type": "ssn_card_type"},
+            person_variable_map={
+                "ssn_card_type": "ssn_card_type",
+                "takes_up_early_head_start_if_eligible": "takes_up_early_head_start_if_eligible",
+                "would_claim_wic": "would_claim_wic",
+            },
+            tax_unit_variable_map={
+                "takes_up_aca_if_eligible": "takes_up_aca_if_eligible",
+                "takes_up_eitc": "takes_up_eitc",
+                "would_file_taxes_voluntarily": "would_file_taxes_voluntarily",
+            },
+            spm_unit_variable_map={
+                "takes_up_snap_if_eligible": "takes_up_snap_if_eligible",
+            },
         )
 
         assert arrays["ssn_card_type"]["2024"].tolist() == [b"CITIZEN"]
+        assert arrays["takes_up_early_head_start_if_eligible"]["2024"].tolist() == [
+            True
+        ]
+        assert arrays["would_claim_wic"]["2024"].tolist() == [True]
+        assert arrays["takes_up_aca_if_eligible"]["2024"].tolist() == [True]
+        assert arrays["takes_up_eitc"]["2024"].tolist() == [True]
+        assert arrays["would_file_taxes_voluntarily"]["2024"].tolist() == [False]
+        assert arrays["takes_up_snap_if_eligible"]["2024"].tolist() == [True]
 
 
 class TestUSPipelinePolicyEngineTargets:

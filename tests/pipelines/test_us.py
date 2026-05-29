@@ -816,6 +816,33 @@ class TestUSMicroplexPipeline:
         assert person_rows.loc[:2, "family_id"].nunique() == 1
         assert person_rows.loc[3, "family_id"] != person_rows.loc[0, "family_id"]
 
+    def test_build_policyengine_entity_tables_uses_family_relationship_for_family_units(
+        self,
+    ):
+        pipeline = USMicroplexPipeline(USMicroplexBuildConfig())
+        population = pd.DataFrame(
+            {
+                "person_id": [1, 2, 3, 4, 5],
+                "household_id": [10, 10, 10, 10, 10],
+                "weight": [1.0, 1.0, 1.0, 1.0, 1.0],
+                "age": [45, 43, 12, 70, 30],
+                "income": [60_000.0, 15_000.0, 0.0, 5_000.0, 20_000.0],
+                "relationship_to_head": [0, 1, 2, 3, 3],
+                "family_relationship": [1, 2, 3, 4, 0],
+                "marital_status": [1, 1, 7, 4, 7],
+                "state_fips": [6, 6, 6, 6, 6],
+                "tenure": [1, 1, 1, 1, 1],
+            }
+        )
+
+        tables = pipeline.build_policyengine_entity_tables(population)
+        person_rows = tables.persons.sort_values("person_id").reset_index(drop=True)
+
+        assert len(tables.spm_units) == 1
+        assert len(tables.families) == 2
+        assert person_rows.loc[:3, "family_id"].nunique() == 1
+        assert person_rows.loc[4, "family_id"] != person_rows.loc[0, "family_id"]
+
     def test_build_policyengine_entity_tables_derives_tax_input_columns(self):
         pipeline = USMicroplexPipeline(USMicroplexBuildConfig())
         population = pd.DataFrame(

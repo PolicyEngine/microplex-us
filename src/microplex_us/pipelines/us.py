@@ -7064,7 +7064,7 @@ class USMicroplexPipeline:
         for _, household_persons in result.groupby("household_id", sort=False):
             household_spm_id = next_spm_unit_id
             next_spm_unit_id += 1
-            primary_mask = household_persons["relationship_to_head"].isin({0, 1, 2})
+            primary_mask = self._primary_family_member_mask(household_persons)
             if primary_mask.any():
                 primary_family_id = next_family_id
                 next_family_id += 1
@@ -7073,11 +7073,7 @@ class USMicroplexPipeline:
 
             for _, row in household_persons.iterrows():
                 spm_unit_ids[int(row.name)] = household_spm_id
-                if primary_family_id is not None and row["relationship_to_head"] in {
-                    0,
-                    1,
-                    2,
-                }:
+                if primary_family_id is not None and bool(primary_mask.loc[row.name]):
                     family_ids[int(row.name)] = primary_family_id
                     continue
 
@@ -7087,6 +7083,27 @@ class USMicroplexPipeline:
         result["family_id"] = result.index.map(family_ids).astype(np.int64)
         result["spm_unit_id"] = result.index.map(spm_unit_ids).astype(np.int64)
         return result
+
+    def _primary_family_member_mask(
+        self,
+        household_persons: pd.DataFrame,
+    ) -> pd.Series:
+        """Identify people who belong to the household's primary family."""
+
+        relationship_primary = household_persons["relationship_to_head"].isin(
+            {0, 1, 2}
+        )
+        if "family_relationship" not in household_persons.columns:
+            return relationship_primary
+
+        family_relationship = pd.to_numeric(
+            household_persons["family_relationship"],
+            errors="coerce",
+        )
+        # CPS A_FAMREL is a family-membership code: 0 means not in a family;
+        # positive values are reference person, spouse, child, or other relative.
+        family_member = family_relationship.isin({1, 2, 3, 4})
+        return relationship_primary | family_member
 
     def _assign_marital_units(
         self,

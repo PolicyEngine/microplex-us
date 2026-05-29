@@ -353,6 +353,7 @@ SAFE_POLICYENGINE_US_EXPORT_VARIABLES: set[str] = {
     "is_surviving_spouse",
     "net_worth",
     "ssn_card_type",
+    "spm_unit_tenure_type",
     "taxable_private_pension_income",
     "taxable_public_pension_income",
     "tax_exempt_private_pension_income",

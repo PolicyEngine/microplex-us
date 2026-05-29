@@ -2014,6 +2014,7 @@ class TestPolicyEngineUSProjection:
             "unrecaptured_section_1250_gain",
             "unreported_payroll_tax",
         )
+        spm_unit_contract_inputs = ("spm_unit_tenure_type",)
 
         class FakeSystem:
             variables = {
@@ -2023,6 +2024,10 @@ class TestPolicyEngineUSProjection:
                     for name in household_contract_inputs
                 },
                 **{name: FakeVariable("tax_unit") for name in tax_unit_contract_inputs},
+                **{
+                    name: FakeVariable("spm_unit")
+                    for name in spm_unit_contract_inputs
+                },
                 "self_employed_health_insurance_ald": FakeVariable("tax_unit"),
                 "self_employed_pension_contribution_ald": FakeVariable("tax_unit"),
             }
@@ -2051,6 +2056,13 @@ class TestPolicyEngineUSProjection:
                     "self_employed_pension_contribution_ald": [4.0],
                 }
             ),
+            spm_units=pd.DataFrame(
+                {
+                    "spm_unit_id": [1000],
+                    "household_id": [10],
+                    **{name: ["RENTER"] for name in spm_unit_contract_inputs},
+                }
+            ),
         )
 
         export_maps = build_policyengine_us_export_variable_maps(
@@ -2066,6 +2078,9 @@ class TestPolicyEngineUSProjection:
         }
         assert export_maps["tax_unit"] == {
             name: name for name in tax_unit_contract_inputs
+        }
+        assert export_maps["spm_unit"] == {
+            name: name for name in spm_unit_contract_inputs
         }
 
     def test_build_policyengine_us_export_variable_maps_include_direct_overrides_with_safe_inputs(self):
@@ -2222,6 +2237,7 @@ class TestPolicyEngineUSProjection:
         assert "receives_wic" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         assert "ssn_card_type" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         assert "tenure_type" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
+        assert "spm_unit_tenure_type" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         assert "is_separated" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         assert "is_surviving_spouse" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         assert "is_blind" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES

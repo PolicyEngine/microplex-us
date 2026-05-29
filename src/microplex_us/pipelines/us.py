@@ -4126,6 +4126,13 @@ class USMicroplexPipeline:
         persons = self._assign_family_and_spm_units(persons)
         families = self._collapse_group_table(persons, "family_id")
         spm_units = self._collapse_group_table(persons, "spm_unit_id")
+        if "tenure_type" in persons.columns:
+            spm_tenure = (
+                persons.groupby("spm_unit_id", as_index=False)["tenure_type"]
+                .first()
+                .rename(columns={"tenure_type": "spm_unit_tenure_type"})
+            )
+            spm_units = spm_units.merge(spm_tenure, on="spm_unit_id", how="left")
         persons = self._assign_marital_units(persons)
         marital_units = self._collapse_group_table(persons, "marital_unit_id")
 

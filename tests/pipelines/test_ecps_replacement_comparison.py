@@ -107,6 +107,34 @@ def _fake_pe_native_scores(**kwargs) -> dict[str, object]:
     }
 
 
+def test_protected_family_losses_match_pe_native_labels_with_spaces():
+    target_names = [
+        "nation/bea/wages and salaries",
+        "nation/irs/capital gains gross/total/AGI in -inf-inf/taxable/All",
+        "nation/census/household net income",
+    ]
+    candidate_inputs = {
+        "scaled_matrix": np.asarray([[2.0, 2.0, 2.0]]),
+        "scaled_target": np.ones(len(target_names), dtype=np.float64),
+    }
+    baseline_inputs = {
+        "scaled_matrix": np.asarray([[1.0, 1.0, 1.0]]),
+        "scaled_target": np.ones(len(target_names), dtype=np.float64),
+    }
+
+    rows = ecps._protected_family_losses(
+        target_names=target_names,
+        candidate_inputs=candidate_inputs,
+        baseline_inputs=baseline_inputs,
+        candidate_weights=np.asarray([1.0]),
+        baseline_weights=np.asarray([1.0]),
+    )
+
+    assert rows["wages"]["n_targets"] == 1
+    assert rows["capital_gains"]["n_targets"] == 1
+    assert rows["household_net_income"]["n_targets"] == 1
+
+
 def _artifact_manifest(artifact_dir: Path, baseline_dataset: Path) -> None:
     (artifact_dir / "manifest.json").write_text(
         json.dumps(

@@ -566,7 +566,12 @@ def _target_matches_protected_family(
     family: str,
     patterns: tuple[str, ...],
 ) -> bool:
-    normalized = target_name.lower().replace("-", "_")
+    normalized = (
+        target_name.lower()
+        .replace("-", "_")
+        .replace(" ", "_")
+        .replace("/", "_")
+    )
     if family == "wages" and (
         "self_employment" in normalized or "business_income" in normalized
     ):

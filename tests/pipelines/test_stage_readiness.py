@@ -51,6 +51,56 @@ def test_build_us_stage_reuse_key_ignores_checkpoint_output_paths(tmp_path):
     )
 
 
+def test_build_us_stage_reuse_key_uses_stage_scoped_config(tmp_path):
+    (tmp_path / "synthetic_data.parquet").write_text("synthetic")
+    base_manifest = {
+        "config": {
+            "n_synthetic": 10,
+            "synthesis_backend": "bootstrap",
+            "policyengine_dataset_year": 2024,
+        },
+        "rows": {"synthetic": 1},
+        "synthesis": {"source_names": ["source"], "scaffold_source": "source"},
+        "calibration": {},
+        "artifacts": {"synthetic_data": "synthetic_data.parquet"},
+    }
+    changed_stage8_config = {
+        **base_manifest,
+        "config": {
+            **base_manifest["config"],
+            "policyengine_dataset_year": 2025,
+        },
+    }
+    changed_stage5_config = {
+        **base_manifest,
+        "config": {
+            **base_manifest["config"],
+            "n_synthetic": 20,
+        },
+    }
+    inventory = build_us_stage_artifact_inventory(
+        tmp_path,
+        manifest_payload=base_manifest,
+        max_hash_bytes=None,
+    )
+
+    base_key = build_us_stage_reuse_key(
+        "05_donor_integration_synthesis",
+        base_manifest,
+        inventory,
+    )
+    assert base_key == build_us_stage_reuse_key(
+        "05_donor_integration_synthesis",
+        changed_stage8_config,
+        inventory,
+    )
+    assert base_key != build_us_stage_reuse_key(
+        "05_donor_integration_synthesis",
+        changed_stage5_config,
+        inventory,
+    )
+
+
 def test_conditional_readiness_reports_config_mismatch_as_rerun(tmp_path):
     (tmp_path / "synthetic_data.parquet").write_text("synthetic")
     manifest = {
@@ -71,8 +121,9 @@ def test_conditional_readiness_reports_config_mismatch_as_rerun(tmp_path):
     assert stages["05_donor_integration_synthesis"]["compatibility"] == "mismatch"
     assert stages["05_donor_integration_synthesis"]["readiness"] == "must_rerun"
     assert stages["05_donor_integration_synthesis"]["reason"] == (
-        "Requested configuration does not match the saved run."
+        "Requested configuration does not match this stage's saved run inputs."
     )
+    assert stages["08_dataset_assembly"]["compatibility"] == "match"
 
 
 def test_conditional_readiness_reports_manual_replay_without_requested_config(tmp_path):
@@ -136,7 +187,6 @@ def test_conditional_readiness_reports_stage9_from_stage8_dataset(tmp_path):
     )
 
     stages = {stage["stageId"]: stage for stage in report["stages"]}
-    assert stages["08_dataset_assembly"]["readiness"] == "post_artifact_evidence"
     assert stages["09_validation_benchmarking"]["status"] == "deferred"
     assert stages["09_validation_benchmarking"]["readiness"] == (
         "post_artifact_evidence"
@@ -160,6 +210,7 @@ def test_write_and_load_us_conditional_readiness_report(tmp_path):
     loaded = load_us_conditional_readiness_report(path)
 
     assert loaded["schemaVersion"] == 1
+    assert loaded["generatedAt"] is None
     assert loaded["stages"][0]["stageId"] == "01_run_profile"
 
 

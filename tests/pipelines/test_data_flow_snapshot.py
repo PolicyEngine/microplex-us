@@ -220,7 +220,11 @@ def test_write_us_microplex_data_flow_snapshot_ignores_stale_stage_manifest(
         artifact_dir,
         artifact_dir / "data_flow_snapshot.json",
         manifest_payload=manifest,
-        assume_existing_stage_artifact_keys=("stage_manifest",),
+        assume_existing_stage_artifact_keys=(
+            "stage_manifest",
+            "artifact_inventory",
+            "conditional_readiness",
+        ),
     )
 
     snapshot = json.loads((artifact_dir / "data_flow_snapshot.json").read_text())

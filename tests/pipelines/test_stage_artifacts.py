@@ -8,9 +8,11 @@ import pytest
 from microplex_us.pipelines.stage_artifacts import (
     build_us_stage_artifact_inventory,
     load_us_calibrated_stage_artifacts,
+    load_us_candidate_calibration_replay_artifacts,
     load_us_candidate_stage_artifacts,
     load_us_dataset_assembly_artifacts,
     load_us_policyengine_entity_stage_artifacts,
+    load_us_seed_scaffold_stage_artifacts,
     load_us_stage_artifact_inventory,
     load_us_stage_json_artifact,
     resolve_us_stage_artifact_from_inventory,
@@ -163,7 +165,58 @@ def test_load_us_stage_artifact_inventory_rejects_unknown_schema(tmp_path):
         load_us_stage_artifact_inventory(path)
 
 
-def test_load_us_candidate_stage_artifacts_reads_resume_boundary(tmp_path):
+def test_load_us_candidate_stage_artifacts_reads_stage5_boundary(tmp_path):
+    pytest.importorskip("pyarrow")
+    seed = pd.DataFrame({"person_id": [1], "income": [20]})
+    synthetic = pd.DataFrame({"person_id": [1, 2], "income": [20, 30]})
+    seed.to_parquet(tmp_path / "seed_data.parquet", index=False)
+    synthetic.to_parquet(tmp_path / "synthetic_data.parquet", index=False)
+    manifest = {
+        "config": {"calibration_backend": "none"},
+        "rows": {"seed": 1, "synthetic": 2},
+        "synthesis": {"source_names": ["source"], "scaffold_source": "source"},
+        "calibration": {},
+        "artifacts": {
+            "seed_data": "seed_data.parquet",
+            "synthetic_data": "synthetic_data.parquet",
+        },
+    }
+
+    loaded = load_us_candidate_stage_artifacts(tmp_path, manifest_payload=manifest)
+
+    pd.testing.assert_frame_equal(loaded.seed_data, seed)
+    pd.testing.assert_frame_equal(loaded.synthetic_data, synthetic)
+    assert loaded.artifact_paths["synthetic_data"] == tmp_path / "synthetic_data.parquet"
+
+
+def test_load_us_seed_scaffold_stage_artifacts_reads_stage4_boundary(tmp_path):
+    pytest.importorskip("pyarrow")
+    scaffold = pd.DataFrame({"person_id": [1], "income": [10]})
+    scaffold_path = (
+        tmp_path / "stage_artifacts" / "04_seed_scaffold" / "scaffold_seed_data.parquet"
+    )
+    scaffold_path.parent.mkdir(parents=True)
+    scaffold.to_parquet(scaffold_path, index=False)
+    manifest = {
+        "config": {"calibration_backend": "none"},
+        "synthesis": {"source_names": ["source"], "scaffold_source": "source"},
+        "calibration": {},
+        "artifacts": {
+            "scaffold_seed_data": (
+                "stage_artifacts/04_seed_scaffold/scaffold_seed_data.parquet"
+            ),
+        },
+    }
+
+    loaded = load_us_seed_scaffold_stage_artifacts(tmp_path, manifest_payload=manifest)
+
+    pd.testing.assert_frame_equal(loaded.scaffold_seed_data, scaffold)
+    assert loaded.artifact_paths["scaffold_seed_data"] == scaffold_path
+
+
+def test_load_us_candidate_calibration_replay_artifacts_combines_boundaries(
+    tmp_path,
+):
     pytest.importorskip("pyarrow")
     scaffold = pd.DataFrame({"person_id": [1], "income": [10]})
     seed = pd.DataFrame({"person_id": [1], "income": [20]})
@@ -193,13 +246,16 @@ def test_load_us_candidate_stage_artifacts_reads_resume_boundary(tmp_path):
         },
     }
 
-    loaded = load_us_candidate_stage_artifacts(tmp_path, manifest_payload=manifest)
+    loaded = load_us_candidate_calibration_replay_artifacts(
+        tmp_path,
+        manifest_payload=manifest,
+    )
 
-    pd.testing.assert_frame_equal(loaded.scaffold_seed_data, scaffold)
-    pd.testing.assert_frame_equal(loaded.seed_data, seed)
-    pd.testing.assert_frame_equal(loaded.synthetic_data, synthetic)
+    pd.testing.assert_frame_equal(loaded.candidate.synthetic_data, synthetic)
+    assert loaded.seed_scaffold is not None
+    pd.testing.assert_frame_equal(loaded.seed_scaffold.scaffold_seed_data, scaffold)
     assert loaded.targets.continuous == {"income": 1.0}
-    assert loaded.artifact_paths["synthetic_data"] == tmp_path / "synthetic_data.parquet"
+    assert loaded.artifact_paths["targets"] == tmp_path / "targets.json"
 
 
 def test_load_us_policyengine_entity_stage_artifacts_reads_checkpoint(tmp_path):
@@ -271,6 +327,10 @@ def test_load_us_dataset_assembly_artifacts_resolves_stage8_paths(tmp_path):
     (tmp_path / "stage_manifest.json").write_text("{}")
     (tmp_path / "data_flow_snapshot.json").write_text("{}")
     (tmp_path / "policyengine_us.h5").write_text("dataset")
+    stage_artifacts = tmp_path / "stage_artifacts"
+    stage_artifacts.mkdir()
+    (stage_artifacts / "artifact_inventory.json").write_text("{}")
+    (stage_artifacts / "conditional_readiness.json").write_text("{}")
     manifest = {
         "config": {"calibration_backend": "none"},
         "synthesis": {"source_names": ["source"], "scaffold_source": "source"},
@@ -279,6 +339,8 @@ def test_load_us_dataset_assembly_artifacts_resolves_stage8_paths(tmp_path):
             "policyengine_dataset": "policyengine_us.h5",
             "stage_manifest": "stage_manifest.json",
             "data_flow_snapshot": "data_flow_snapshot.json",
+            "artifact_inventory": "stage_artifacts/artifact_inventory.json",
+            "conditional_readiness": "stage_artifacts/conditional_readiness.json",
         },
     }
 
@@ -287,6 +349,8 @@ def test_load_us_dataset_assembly_artifacts_resolves_stage8_paths(tmp_path):
     assert loaded.policyengine_dataset == tmp_path / "policyengine_us.h5"
     assert loaded.stage_manifest == tmp_path / "stage_manifest.json"
     assert loaded.data_flow_snapshot == tmp_path / "data_flow_snapshot.json"
+    assert loaded.artifact_inventory == stage_artifacts / "artifact_inventory.json"
+    assert loaded.conditional_readiness == stage_artifacts / "conditional_readiness.json"
 
 
 def test_stage_artifact_checked_resolver_enforces_format_and_existence(tmp_path):

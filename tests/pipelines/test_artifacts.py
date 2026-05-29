@@ -350,6 +350,7 @@ class TestSaveUSMicroplexArtifacts:
             (record["stageId"], record["key"]): record
             for record in artifact_inventory["artifacts"]
         }
+        assert inventory_records[("01_run_profile", "manifest")]["exists"] is True
         assert inventory_records[
             ("08_dataset_assembly", "policyengine_dataset")
         ]["classification"] == "post_artifact_evidence"

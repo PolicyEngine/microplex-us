@@ -44,8 +44,10 @@ from microplex_us.pipelines.stage_artifacts import (
     build_us_stage_artifact_inventory,
     write_us_stage_artifact_inventory,
 )
+from microplex_us.pipelines.stage_contracts import (
+    resolve_us_stage_artifact_contract_path,
+)
 from microplex_us.pipelines.stage_manifest import (
-    US_STAGE_ARTIFACT_ROOT,
     write_us_policyengine_entity_stage_artifact,
     write_us_stage_manifest,
     write_us_validation_evidence_manifest,
@@ -781,7 +783,11 @@ def _maybe_write_capital_gains_lot_artifact(
             "lot_rows": int(len(lots)),
         }
     )
-    path = output_dir / "capital_gains_lots.sqlite"
+    path = resolve_us_stage_artifact_contract_path(
+        output_dir,
+        "08_dataset_assembly",
+        "capital_gains_lots",
+    )
     write_capital_gains_lots_sqlite(lots, path, metadata=metadata)
     return path, {
         "enabled": True,
@@ -822,37 +828,108 @@ def save_us_microplex_artifacts(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    seed_data_path = output_dir / "seed_data.parquet"
-    synthetic_data_path = output_dir / "synthetic_data.parquet"
-    calibrated_data_path = output_dir / "calibrated_data.parquet"
-    targets_path = output_dir / "targets.json"
-    manifest_path = output_dir / "manifest.json"
-    source_weight_diagnostics_path = output_dir / "source_weight_diagnostics.json"
-    synthesizer_path = output_dir / "synthesizer.pt" if result.synthesizer else None
-    policyengine_dataset_path = (
-        output_dir / "policyengine_us.h5" if result.policyengine_tables is not None else None
+    seed_data_path = resolve_us_stage_artifact_contract_path(
+        output_dir,
+        "05_donor_integration_synthesis",
+        "seed_data",
     )
-    data_flow_snapshot_path = output_dir / "data_flow_snapshot.json"
-    stage_manifest_path = output_dir / "stage_manifest.json"
-    stage_artifact_root = output_dir / US_STAGE_ARTIFACT_ROOT
-    artifact_inventory_path = stage_artifact_root / "artifact_inventory.json"
-    conditional_readiness_path = stage_artifact_root / "conditional_readiness.json"
-    source_plan_path = stage_artifact_root / "03_source_planning" / "source_plan.json"
+    synthetic_data_path = resolve_us_stage_artifact_contract_path(
+        output_dir,
+        "05_donor_integration_synthesis",
+        "synthetic_data",
+    )
+    calibrated_data_path = resolve_us_stage_artifact_contract_path(
+        output_dir,
+        "07_calibration",
+        "calibrated_data",
+    )
+    targets_path = resolve_us_stage_artifact_contract_path(
+        output_dir,
+        "07_calibration",
+        "targets",
+    )
+    manifest_path = resolve_us_stage_artifact_contract_path(
+        output_dir,
+        "01_run_profile",
+        "manifest",
+    )
+    source_weight_diagnostics_path = resolve_us_stage_artifact_contract_path(
+        output_dir,
+        "05_donor_integration_synthesis",
+        "source_weight_diagnostics",
+    )
+    synthesizer_path = (
+        resolve_us_stage_artifact_contract_path(
+            output_dir,
+            "05_donor_integration_synthesis",
+            "synthesizer",
+        )
+        if result.synthesizer
+        else None
+    )
+    policyengine_dataset_path = (
+        resolve_us_stage_artifact_contract_path(
+            output_dir,
+            "08_dataset_assembly",
+            "policyengine_dataset",
+        )
+        if result.policyengine_tables is not None
+        else None
+    )
+    data_flow_snapshot_path = resolve_us_stage_artifact_contract_path(
+        output_dir,
+        "08_dataset_assembly",
+        "data_flow_snapshot",
+    )
+    stage_manifest_path = resolve_us_stage_artifact_contract_path(
+        output_dir,
+        "08_dataset_assembly",
+        "stage_manifest",
+    )
+    artifact_inventory_path = resolve_us_stage_artifact_contract_path(
+        output_dir,
+        "08_dataset_assembly",
+        "artifact_inventory",
+    )
+    conditional_readiness_path = resolve_us_stage_artifact_contract_path(
+        output_dir,
+        "08_dataset_assembly",
+        "conditional_readiness",
+    )
+    source_plan_path = resolve_us_stage_artifact_contract_path(
+        output_dir,
+        "03_source_planning",
+        "source_plan",
+    )
     scaffold_seed_data_path = (
-        stage_artifact_root / "04_seed_scaffold" / "scaffold_seed_data.parquet"
+        resolve_us_stage_artifact_contract_path(
+            output_dir,
+            "04_seed_scaffold",
+            "scaffold_seed_data",
+        )
         if result.scaffold_seed_data is not None
         else None
     )
     policyengine_entity_tables_path = (
-        stage_artifact_root / "06_policyengine_entities" / "metadata.json"
+        resolve_us_stage_artifact_contract_path(
+            output_dir,
+            "06_policyengine_entities",
+            "policyengine_entity_tables",
+        )
         if result.policyengine_tables is not None
         else None
     )
-    calibration_summary_path = (
-        stage_artifact_root / "07_calibration" / "calibration_summary.json"
+    calibration_summary_path = resolve_us_stage_artifact_contract_path(
+        output_dir,
+        "07_calibration",
+        "calibration_summary",
     )
     validation_evidence_path = (
-        stage_artifact_root / "09_validation_benchmarking" / "evidence_manifest.json"
+        resolve_us_stage_artifact_contract_path(
+            output_dir,
+            "09_validation_benchmarking",
+            "validation_evidence",
+        )
         if result.policyengine_tables is not None
         else None
     )
@@ -928,7 +1005,11 @@ def save_us_microplex_artifacts(
     )
     if precomputed_policyengine_harness_payload is not None:
         harness_payload = dict(precomputed_policyengine_harness_payload)
-        policyengine_harness_path = output_dir / "policyengine_harness.json"
+        policyengine_harness_path = resolve_us_stage_artifact_contract_path(
+            output_dir,
+            "09_validation_benchmarking",
+            "policyengine_harness",
+        )
         policyengine_harness_path.write_text(
             json.dumps(harness_payload, indent=2, sort_keys=True)
         )
@@ -953,13 +1034,21 @@ def save_us_microplex_artifacts(
             metadata=resolved_harness_metadata,
             cache=policyengine_comparison_cache,
         )
-        policyengine_harness_path = output_dir / "policyengine_harness.json"
+        policyengine_harness_path = resolve_us_stage_artifact_contract_path(
+            output_dir,
+            "09_validation_benchmarking",
+            "policyengine_harness",
+        )
         harness_run.save(policyengine_harness_path)
         harness_payload = harness_run.to_dict()
         harness_summary = harness_payload["summary"]
 
     if native_scores_payload is not None:
-        policyengine_native_scores_path = output_dir / "policyengine_native_scores.json"
+        policyengine_native_scores_path = resolve_us_stage_artifact_contract_path(
+            output_dir,
+            "09_validation_benchmarking",
+            "policyengine_native_scores",
+        )
         policyengine_native_scores_path.write_text(
             json.dumps(native_scores_payload, indent=2, sort_keys=True)
         )
@@ -975,8 +1064,10 @@ def save_us_microplex_artifacts(
                 period=result.config.policyengine_dataset_year or 2024,
                 policyengine_us_data_repo=policyengine_us_data_repo,
             )
-            policyengine_native_scores_path = (
-                output_dir / "policyengine_native_scores.json"
+            policyengine_native_scores_path = resolve_us_stage_artifact_contract_path(
+                output_dir,
+                "09_validation_benchmarking",
+                "policyengine_native_scores",
             )
             policyengine_native_scores_path.write_text(
                 json.dumps(native_scores_payload, indent=2, sort_keys=True)
@@ -989,7 +1080,11 @@ def save_us_microplex_artifacts(
     child_tax_unit_agi_drift_summary: dict[str, Any] | None = None
     if enable_child_tax_unit_agi_drift:
         try:
-            drift_path = output_dir / "child_tax_unit_agi_drift.json"
+            drift_path = resolve_us_stage_artifact_contract_path(
+                output_dir,
+                "09_validation_benchmarking",
+                "child_tax_unit_agi_drift",
+            )
             variables = (
                 child_tax_unit_agi_drift_variables
                 or DEFAULT_CHILD_TAX_UNIT_AGI_DRIFT_VARIABLES
@@ -1139,6 +1234,7 @@ def save_us_microplex_artifacts(
             "path": str(resolved_run_index_path),
             "artifact_id": recorded_entry.artifact_id,
         }
+    _write_json_atomically(manifest_path, manifest)
     if validation_evidence_path is not None:
         write_us_validation_evidence_manifest(
             output_dir,
@@ -1214,7 +1310,6 @@ def save_us_microplex_artifacts(
             else ()
         ),
     )
-    _write_json_atomically(manifest_path, manifest)
 
     return USMicroplexArtifactPaths(
         output_dir=output_dir,

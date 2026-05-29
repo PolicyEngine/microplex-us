@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Literal
 
 US_STAGE_CONTRACT_VERSION = "us-runtime-stages-v2"
@@ -36,6 +37,15 @@ StageArtifactHashMode = Literal[
     "none",
     "file_sha256",
     "directory_sha256",
+]
+
+StageResourceKind = Literal[
+    "artifact",
+    "config",
+    "external_data",
+    "manifest",
+    "runtime_object",
+    "stage_output",
 ]
 
 US_CANONICAL_STAGE_IDS = (
@@ -118,6 +128,23 @@ class USStageValidationContract:
 
 
 @dataclass(frozen=True)
+class USStageResourceContract:
+    """Structured input or output dependency for one canonical build stage."""
+
+    key: str
+    description: str
+    kind: StageResourceKind
+    required: bool = True
+    stage_id: str | None = None
+    artifact_key: str | None = None
+    config_key: str | None = None
+    manifest_key: str | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
 class USPipelineStageContract:
     """Stable contract for one canonical US Microplex runtime stage."""
 
@@ -127,6 +154,8 @@ class USPipelineStageContract:
     purpose: str
     consumes: tuple[str, ...]
     produces: tuple[str, ...]
+    inputs: tuple[USStageResourceContract, ...]
+    outputs: tuple[USStageResourceContract, ...]
     artifacts: tuple[USStageArtifactContract, ...]
     diagnostics: tuple[str, ...]
     validations: tuple[USStageValidationContract, ...]
@@ -135,11 +164,107 @@ class USPipelineStageContract:
 
     def to_dict(self) -> dict[str, object]:
         payload = asdict(self)
+        payload["inputs"] = [resource.to_dict() for resource in self.inputs]
+        payload["outputs"] = [resource.to_dict() for resource in self.outputs]
         payload["artifacts"] = [artifact.to_dict() for artifact in self.artifacts]
         payload["validations"] = [
             validation.to_dict() for validation in self.validations
         ]
         return payload
+
+
+def _artifact_resource(
+    key: str,
+    description: str,
+    *,
+    stage_id: str,
+    artifact_key: str | None = None,
+    required: bool = True,
+) -> USStageResourceContract:
+    return USStageResourceContract(
+        key=key,
+        description=description,
+        kind="artifact",
+        required=required,
+        stage_id=stage_id,
+        artifact_key=artifact_key or key,
+    )
+
+
+def _config_resource(
+    key: str,
+    description: str,
+    *,
+    config_key: str | None = None,
+    required: bool = True,
+) -> USStageResourceContract:
+    return USStageResourceContract(
+        key=key,
+        description=description,
+        kind="config",
+        required=required,
+        config_key=config_key or key,
+    )
+
+
+def _external_resource(
+    key: str,
+    description: str,
+    *,
+    required: bool = True,
+) -> USStageResourceContract:
+    return USStageResourceContract(
+        key=key,
+        description=description,
+        kind="external_data",
+        required=required,
+    )
+
+
+def _manifest_resource(
+    key: str,
+    description: str,
+    *,
+    manifest_key: str | None = None,
+    required: bool = True,
+) -> USStageResourceContract:
+    return USStageResourceContract(
+        key=key,
+        description=description,
+        kind="manifest",
+        required=required,
+        manifest_key=manifest_key or key,
+    )
+
+
+def _runtime_resource(
+    key: str,
+    description: str,
+    *,
+    required: bool = True,
+) -> USStageResourceContract:
+    return USStageResourceContract(
+        key=key,
+        description=description,
+        kind="runtime_object",
+        required=required,
+    )
+
+
+def _stage_output_resource(
+    key: str,
+    description: str,
+    *,
+    stage_id: str,
+    required: bool = True,
+) -> USStageResourceContract:
+    return USStageResourceContract(
+        key=key,
+        description=description,
+        kind="stage_output",
+        required=required,
+        stage_id=stage_id,
+    )
 
 
 def default_us_pipeline_stage_contracts() -> tuple[USPipelineStageContract, ...]:
@@ -153,6 +278,39 @@ def default_us_pipeline_stage_contracts() -> tuple[USPipelineStageContract, ...]
             purpose="Resolve the build profile, runtime config, providers, queries, and run-level options.",
             consumes=("user configuration", "provider defaults", "runtime overrides"),
             produces=("resolved build config", "provider/query plan"),
+            inputs=(
+                _config_resource(
+                    "build_profile",
+                    "Selected build profile and runtime overrides.",
+                    config_key="profile",
+                    required=False,
+                ),
+                _config_resource(
+                    "policyengine_target_period",
+                    "Target period used by downstream PolicyEngine export and validation.",
+                ),
+                _config_resource(
+                    "calibration_backend",
+                    "Calibration backend selected for this run.",
+                ),
+                _config_resource(
+                    "source_names",
+                    "Requested source names or provider defaults.",
+                    required=False,
+                ),
+            ),
+            outputs=(
+                _artifact_resource(
+                    "manifest",
+                    "Top-level manifest containing resolved configuration and artifact map.",
+                    stage_id="01_run_profile",
+                ),
+                _stage_output_resource(
+                    "provider_query_plan",
+                    "Resolved provider and source-query plan for source loading.",
+                    stage_id="01_run_profile",
+                ),
+            ),
             artifacts=(
                 USStageArtifactContract(
                     key="manifest",
@@ -193,6 +351,27 @@ def default_us_pipeline_stage_contracts() -> tuple[USPipelineStageContract, ...]
                 "source descriptors",
                 "entity relationships",
             ),
+            inputs=(
+                _stage_output_resource(
+                    "provider_query_plan",
+                    "Resolved provider and source-query plan from Stage 1.",
+                    stage_id="01_run_profile",
+                ),
+                _external_resource(
+                    "source_datasets",
+                    "External source datasets requested by the provider/query plan.",
+                ),
+            ),
+            outputs=(
+                _runtime_resource(
+                    "observation_frames",
+                    "Loaded Microplex observation frames with source metadata.",
+                ),
+                _runtime_resource(
+                    "source_relationships",
+                    "Validated entity relationships in loaded source frames.",
+                ),
+            ),
             artifacts=(),
             diagnostics=(
                 "source row counts",
@@ -216,11 +395,34 @@ def default_us_pipeline_stage_contracts() -> tuple[USPipelineStageContract, ...]
             purpose="Choose the scaffold source and map donor/source coverage before seed construction.",
             consumes=("observation frames", "source descriptors"),
             produces=("fusion plan", "scaffold selection", "donor/source plan"),
+            inputs=(
+                _runtime_resource(
+                    "observation_frames",
+                    "Loaded observation frames from Stage 2.",
+                ),
+                _runtime_resource(
+                    "source_descriptors",
+                    "Source descriptors attached to the loaded frames.",
+                ),
+            ),
+            outputs=(
+                _artifact_resource(
+                    "source_plan",
+                    "Saved scaffold and donor/source planning summary.",
+                    stage_id="03_source_planning",
+                ),
+                _stage_output_resource(
+                    "scaffold_selection",
+                    "Selected scaffold/backbone source and donor plan.",
+                    stage_id="03_source_planning",
+                ),
+            ),
             artifacts=(
                 USStageArtifactContract(
                     key="source_plan",
                     description="Compact JSON summary of source names, scaffold, and donor variable plan.",
                     path_hint="stage_artifacts/03_source_planning/source_plan.json",
+                    required=True,
                     resume_role="diagnostic",
                     format="json",
                     hash_mode="file_sha256",
@@ -248,6 +450,35 @@ def default_us_pipeline_stage_contracts() -> tuple[USPipelineStageContract, ...]
             purpose="Project the selected scaffold source into the canonical seed structure.",
             consumes=("source plan", "scaffold frame", "identifier rules"),
             produces=("scaffold-derived seed frame", "seed schema metadata"),
+            inputs=(
+                _artifact_resource(
+                    "source_plan",
+                    "Saved scaffold and donor/source planning summary from Stage 3.",
+                    stage_id="03_source_planning",
+                    required=False,
+                ),
+                _stage_output_resource(
+                    "scaffold_selection",
+                    "Selected scaffold/backbone source from Stage 3.",
+                    stage_id="03_source_planning",
+                ),
+                _runtime_resource(
+                    "scaffold_frame",
+                    "Loaded source frame selected as the population scaffold.",
+                ),
+            ),
+            outputs=(
+                _artifact_resource(
+                    "scaffold_seed_data",
+                    "Scaffold-projected seed population before donor integration.",
+                    stage_id="04_seed_scaffold",
+                ),
+                _stage_output_resource(
+                    "seed_schema_metadata",
+                    "Canonical identifier and required-column metadata for the seed.",
+                    stage_id="04_seed_scaffold",
+                ),
+            ),
             artifacts=(
                 USStageArtifactContract(
                     key="scaffold_seed_data",
@@ -289,6 +520,43 @@ def default_us_pipeline_stage_contracts() -> tuple[USPipelineStageContract, ...]
                 "donor-integrated seed frame",
                 "synthetic/candidate frame",
                 "synthesis metadata",
+            ),
+            inputs=(
+                _artifact_resource(
+                    "scaffold_seed_data",
+                    "Scaffold-projected seed population from Stage 4.",
+                    stage_id="04_seed_scaffold",
+                ),
+                _runtime_resource(
+                    "donor_frames",
+                    "Loaded donor source frames used for variable integration.",
+                ),
+                _config_resource(
+                    "synthesis_backend",
+                    "Configured synthesis backend.",
+                ),
+                _config_resource(
+                    "n_synthetic",
+                    "Requested synthetic population size.",
+                    required=False,
+                ),
+            ),
+            outputs=(
+                _artifact_resource(
+                    "seed_data",
+                    "Seed population after donor integration and semantic guards.",
+                    stage_id="05_donor_integration_synthesis",
+                ),
+                _artifact_resource(
+                    "synthetic_data",
+                    "Candidate population before final calibration.",
+                    stage_id="05_donor_integration_synthesis",
+                ),
+                _manifest_resource(
+                    "synthesis_metadata",
+                    "Synthesis metadata recorded in the saved manifest.",
+                    manifest_key="synthesis",
+                ),
             ),
             artifacts=(
                 USStageArtifactContract(
@@ -351,11 +619,35 @@ def default_us_pipeline_stage_contracts() -> tuple[USPipelineStageContract, ...]
             purpose="Convert candidate rows into PE entity tables and materialize PE-facing inputs.",
             consumes=("synthetic/candidate frame", "PE input mapping rules"),
             produces=("PolicyEngine entity table bundle", "materialized PE variables"),
+            inputs=(
+                _artifact_resource(
+                    "synthetic_data",
+                    "Candidate population from Stage 5.",
+                    stage_id="05_donor_integration_synthesis",
+                ),
+                _runtime_resource(
+                    "policyengine_mapping_rules",
+                    "Rules mapping Microplex candidate rows into PolicyEngine entities.",
+                ),
+            ),
+            outputs=(
+                _artifact_resource(
+                    "policyengine_entity_tables",
+                    "Reloadable PolicyEngine entity-table checkpoint.",
+                    stage_id="06_policyengine_entities",
+                ),
+                _stage_output_resource(
+                    "materialized_policyengine_inputs",
+                    "PolicyEngine-facing variables materialized for calibration/export.",
+                    stage_id="06_policyengine_entities",
+                ),
+            ),
             artifacts=(
                 USStageArtifactContract(
                     key="policyengine_entity_tables",
                     description="Reloadable PE entity-table bundle saved as parquet files plus metadata.",
                     path_hint="stage_artifacts/06_policyengine_entities/metadata.json",
+                    required=True,
                     resume_role="manual_resume",
                     format="policyengine_entity_bundle",
                     hash_mode="directory_sha256",
@@ -383,6 +675,48 @@ def default_us_pipeline_stage_contracts() -> tuple[USPipelineStageContract, ...]
             purpose="Resolve target constraints, solve weights, and summarize fit quality.",
             consumes=("PE entity table bundle", "target provider/query", "calibration config"),
             produces=("calibrated tables", "calibration summary", "target ledger"),
+            inputs=(
+                _artifact_resource(
+                    "policyengine_entity_tables",
+                    "PolicyEngine entity-table checkpoint from Stage 6.",
+                    stage_id="06_policyengine_entities",
+                ),
+                _external_resource(
+                    "target_provider",
+                    "Target provider or target database queried for calibration.",
+                ),
+                _config_resource(
+                    "calibration_backend",
+                    "Configured calibration backend.",
+                ),
+                _config_resource(
+                    "calibration_epochs",
+                    "Configured calibration epoch count.",
+                    required=False,
+                ),
+                _config_resource(
+                    "calibration_l0_lambda",
+                    "Configured L0 regularization strength.",
+                    required=False,
+                ),
+            ),
+            outputs=(
+                _artifact_resource(
+                    "calibrated_data",
+                    "Calibrated output frame.",
+                    stage_id="07_calibration",
+                ),
+                _artifact_resource(
+                    "targets",
+                    "Target payload used by the build.",
+                    stage_id="07_calibration",
+                ),
+                _artifact_resource(
+                    "calibration_summary",
+                    "Stage-local calibration summary.",
+                    stage_id="07_calibration",
+                ),
+            ),
             artifacts=(
                 USStageArtifactContract(
                     key="calibrated_data",
@@ -406,6 +740,7 @@ def default_us_pipeline_stage_contracts() -> tuple[USPipelineStageContract, ...]
                     key="calibration_summary",
                     description="Stage-local calibration summary JSON.",
                     path_hint="stage_artifacts/07_calibration/calibration_summary.json",
+                    required=True,
                     resume_role="diagnostic",
                     format="json",
                     hash_mode="file_sha256",
@@ -435,11 +770,56 @@ def default_us_pipeline_stage_contracts() -> tuple[USPipelineStageContract, ...]
             purpose="Assemble the calibrated output into the distributable PE dataset artifact.",
             consumes=("calibrated entity tables", "export variable maps", "period config"),
             produces=("PolicyEngine H5 dataset", "artifact manifest", "data-flow snapshot"),
+            inputs=(
+                _artifact_resource(
+                    "calibrated_data",
+                    "Calibrated output frame from Stage 7.",
+                    stage_id="07_calibration",
+                ),
+                _artifact_resource(
+                    "policyengine_entity_tables",
+                    "PolicyEngine entity-table checkpoint from Stage 6.",
+                    stage_id="06_policyengine_entities",
+                ),
+                _config_resource(
+                    "policyengine_dataset_year",
+                    "PolicyEngine dataset period used during H5 export.",
+                    required=False,
+                ),
+            ),
+            outputs=(
+                _artifact_resource(
+                    "policyengine_dataset",
+                    "PolicyEngine-readable H5 dataset.",
+                    stage_id="08_dataset_assembly",
+                ),
+                _artifact_resource(
+                    "stage_manifest",
+                    "Canonical saved-run stage manifest.",
+                    stage_id="08_dataset_assembly",
+                ),
+                _artifact_resource(
+                    "data_flow_snapshot",
+                    "Site-facing saved-run pipeline snapshot.",
+                    stage_id="08_dataset_assembly",
+                ),
+                _artifact_resource(
+                    "artifact_inventory",
+                    "Stage-owned artifact inventory.",
+                    stage_id="08_dataset_assembly",
+                ),
+                _artifact_resource(
+                    "conditional_readiness",
+                    "Conditional-readiness report.",
+                    stage_id="08_dataset_assembly",
+                ),
+            ),
             artifacts=(
                 USStageArtifactContract(
                     key="policyengine_dataset",
                     description="PolicyEngine-readable H5 dataset.",
                     path_hint="policyengine_us.h5",
+                    required=True,
                     resume_role="post_artifact_evidence",
                     format="h5_dataset",
                     hash_mode="file_sha256",
@@ -472,6 +852,7 @@ def default_us_pipeline_stage_contracts() -> tuple[USPipelineStageContract, ...]
                     key="artifact_inventory",
                     description="Stage-owned artifact inventory with existence, role, and hash metadata.",
                     path_hint="stage_artifacts/artifact_inventory.json",
+                    required=True,
                     resume_role="diagnostic",
                     format="json",
                     hash_mode="none",
@@ -480,6 +861,7 @@ def default_us_pipeline_stage_contracts() -> tuple[USPipelineStageContract, ...]
                     key="conditional_readiness",
                     description="Conditional-readiness report for manual reuse decisions.",
                     path_hint="stage_artifacts/conditional_readiness.json",
+                    required=True,
                     resume_role="diagnostic",
                     format="json",
                     hash_mode="none",
@@ -507,6 +889,53 @@ def default_us_pipeline_stage_contracts() -> tuple[USPipelineStageContract, ...]
             purpose="Evaluate the assembled dataset and attach benchmark evidence.",
             consumes=("PolicyEngine H5 dataset", "baseline dataset", "target provider/query"),
             produces=("harness evidence", "native scores", "audits", "run registry/index evidence"),
+            inputs=(
+                _artifact_resource(
+                    "policyengine_dataset",
+                    "PolicyEngine-readable H5 dataset from Stage 8.",
+                    stage_id="08_dataset_assembly",
+                ),
+                _external_resource(
+                    "baseline_dataset",
+                    "Baseline dataset used by validation or comparison harnesses.",
+                    required=False,
+                ),
+                _external_resource(
+                    "target_provider",
+                    "Target provider or target database used for benchmark evidence.",
+                    required=False,
+                ),
+                _config_resource(
+                    "policyengine_dataset_year",
+                    "PolicyEngine dataset period used during validation.",
+                    required=False,
+                ),
+            ),
+            outputs=(
+                _artifact_resource(
+                    "validation_evidence",
+                    "Stage-local evidence manifest for validation sidecars.",
+                    stage_id="09_validation_benchmarking",
+                ),
+                _artifact_resource(
+                    "policyengine_harness",
+                    "PolicyEngine harness comparison payload.",
+                    stage_id="09_validation_benchmarking",
+                    required=False,
+                ),
+                _artifact_resource(
+                    "policyengine_native_scores",
+                    "PE-US-data native score comparison payload.",
+                    stage_id="09_validation_benchmarking",
+                    required=False,
+                ),
+                _artifact_resource(
+                    "policyengine_native_audit",
+                    "PE-US-data native score audit payload.",
+                    stage_id="09_validation_benchmarking",
+                    required=False,
+                ),
+            ),
             artifacts=(
                 USStageArtifactContract(
                     key="policyengine_harness",
@@ -552,6 +981,7 @@ def default_us_pipeline_stage_contracts() -> tuple[USPipelineStageContract, ...]
                     key="validation_evidence",
                     description="Stage-local evidence manifest for validation sidecars.",
                     path_hint="stage_artifacts/09_validation_benchmarking/evidence_manifest.json",
+                    required=True,
                     resume_role="diagnostic",
                     format="json",
                     hash_mode="file_sha256",
@@ -585,6 +1015,45 @@ def get_us_pipeline_stage_contract(stage_id: str) -> USPipelineStageContract:
     raise KeyError(f"Unknown US pipeline stage contract: {stage_id}")
 
 
+def get_us_stage_artifact_contract(
+    stage_id: str,
+    artifact_key: str,
+) -> USStageArtifactContract:
+    """Return one artifact contract from a canonical stage."""
+
+    contract = get_us_pipeline_stage_contract(stage_id)
+    for artifact in contract.artifacts:
+        if artifact.key == artifact_key:
+            return artifact
+    raise KeyError(f"Unknown US stage artifact contract: {stage_id}.{artifact_key}")
+
+
+def resolve_us_stage_artifact_contract_path(
+    artifact_dir: str | Path,
+    stage_id: str,
+    artifact_key: str,
+) -> Path:
+    """Resolve a stage artifact's canonical path from its contract path hint."""
+
+    artifact = get_us_stage_artifact_contract(stage_id, artifact_key)
+    if artifact.path_hint is None:
+        raise KeyError(f"US stage artifact has no path hint: {stage_id}.{artifact_key}")
+    return Path(artifact_dir) / artifact.path_hint
+
+
+def config_keys_for_us_pipeline_stage(stage_id: str) -> tuple[str, ...]:
+    """Return config keys that affect one canonical stage's reuse checks."""
+
+    contract = get_us_pipeline_stage_contract(stage_id)
+    return tuple(
+        dict.fromkeys(
+            resource.config_key
+            for resource in contract.inputs
+            if resource.kind == "config" and resource.config_key is not None
+        )
+    )
+
+
 def serialize_us_pipeline_stage_contracts() -> dict[str, object]:
     """Serialize the canonical US stage contract registry."""
 
@@ -601,15 +1070,20 @@ __all__ = [
     "StageArtifactFormat",
     "StageArtifactHashMode",
     "StageArtifactResumeRole",
+    "StageResourceKind",
     "StageResumeMode",
     "US_CANONICAL_STAGE_IDS",
     "US_LEGACY_STAGE_ID_ALIASES",
     "US_STAGE_CONTRACT_VERSION",
     "USPipelineStageContract",
     "USStageArtifactContract",
+    "USStageResourceContract",
     "USStageValidationContract",
     "canonicalize_us_pipeline_stage_id",
+    "config_keys_for_us_pipeline_stage",
     "default_us_pipeline_stage_contracts",
+    "get_us_stage_artifact_contract",
     "get_us_pipeline_stage_contract",
+    "resolve_us_stage_artifact_contract_path",
     "serialize_us_pipeline_stage_contracts",
 ]

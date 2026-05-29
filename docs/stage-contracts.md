@@ -10,6 +10,19 @@ the machine-readable saved-run overlay for the stage taxonomy. It records the
 canonical stages, status for the current run, artifact paths, diagnostics owned
 by each stage, and the current resume posture.
 
+The registry exposes two seam layers:
+
+- `inputs` and `outputs` are structured stage resources. They identify artifact,
+  config, manifest, runtime, and external-data dependencies with explicit keys.
+- `consumes` and `produces` remain short human-readable summaries for diagrams
+  and documentation.
+
+Artifact `required` means required for a complete canonical saved bundle. It is
+separate from `resume_role`, which says whether an existing artifact is useful
+for diagnostics, manual replay, manual resume, or post-artifact validation.
+Partial bundles can therefore still expose a valid replay boundary while the
+manifest honestly reports that the complete publication bundle is incomplete.
+
 ## Legacy run-contract IDs
 
 Older run-contract summaries and dashboard payloads used operational labels

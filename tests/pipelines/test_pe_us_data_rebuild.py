@@ -95,7 +95,7 @@ def test_default_policyengine_us_data_rebuild_config_uses_incumbent_defaults() -
         "self_employed_health_insurance_ald",
         "self_employed_pension_contribution_ald",
     )
-    assert config.policyengine_prefer_existing_tax_unit_ids is False
+    assert config.policyengine_prefer_existing_tax_unit_ids is True
     assert config.random_seed == 123
     assert config.cps_asec_source_year == 2022
 

@@ -89,7 +89,7 @@ def default_policyengine_us_data_rebuild_config(
             "self_employed_health_insurance_ald",
             "self_employed_pension_contribution_ald",
         ),
-        policyengine_prefer_existing_tax_unit_ids=False,
+        policyengine_prefer_existing_tax_unit_ids=True,
     )
     return replace(defaults, **overrides)
 

@@ -1421,7 +1421,7 @@ class USMicroplexBuildConfig:
     policyengine_baseline_dataset: str | None = None
     policyengine_dataset_year: int | None = None
     policyengine_direct_override_variables: tuple[str, ...] = ()
-    policyengine_prefer_existing_tax_unit_ids: bool = False
+    policyengine_prefer_existing_tax_unit_ids: bool = True
     policyengine_quantity_targets: tuple[PolicyEngineUSQuantityTarget, ...] = ()
     policyengine_targets_db: str | None = None
     arch_targets_db: str | tuple[str, ...] | None = None

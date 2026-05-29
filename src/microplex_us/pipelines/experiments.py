@@ -31,6 +31,9 @@ from microplex_us.pipelines.registry import (
     load_us_microplex_run_registry,
     select_us_microplex_frontier_entry,
 )
+from microplex_us.pipelines.stage_contracts import (
+    resolve_us_stage_artifact_contract_path,
+)
 from microplex_us.pipelines.us import USMicroplexBuildConfig
 from microplex_us.policyengine.harness import (
     PolicyEngineUSComparisonCache,
@@ -788,7 +791,13 @@ def _refresh_experiment_artifact_paths(
         data_flow_snapshot=_resolve_optional_result_artifact_path(
             artifact_root,
             artifacts.get("data_flow_snapshot"),
-            fallback="data_flow_snapshot.json",
+            fallback=str(
+                resolve_us_stage_artifact_contract_path(
+                    artifact_root,
+                    "08_dataset_assembly",
+                    "data_flow_snapshot",
+                ).relative_to(artifact_root)
+            ),
         ),
         artifact_inventory=_resolve_optional_result_artifact_path(
             artifact_root,

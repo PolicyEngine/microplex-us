@@ -11,6 +11,9 @@ from microplex_us.pipelines.data_flow_snapshot import (
     build_us_microplex_data_flow_snapshot,
 )
 from microplex_us.pipelines.site_snapshot import build_us_microplex_site_snapshot
+from microplex_us.pipelines.stage_contracts import (
+    resolve_us_stage_artifact_contract_path,
+)
 
 
 def check_us_microplex_site_snapshot(
@@ -84,7 +87,11 @@ def _resolve_artifact_dir(snapshot_file: Path, source_artifact: dict) -> Path:
 
 
 def _check_data_flow_snapshot_current(artifact_dir: Path) -> None:
-    snapshot_path = artifact_dir / "data_flow_snapshot.json"
+    snapshot_path = resolve_us_stage_artifact_contract_path(
+        artifact_dir,
+        "08_dataset_assembly",
+        "data_flow_snapshot",
+    )
     if not snapshot_path.exists():
         raise SystemExit("US data-flow snapshot is missing from the artifact bundle.")
     frozen_snapshot = json.loads(snapshot_path.read_text())

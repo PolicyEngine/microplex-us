@@ -1145,6 +1145,94 @@ def test_attach_policyengine_us_data_rebuild_checkpoint_evidence_registers_calib
     assert registry_entries[0].full_oracle_mean_abs_relative_error == 0.12
 
 
+def test_load_checkpoint_versioned_artifacts_hydrates_stage_sidecar_paths(
+    tmp_path,
+) -> None:
+    artifact_dir = tmp_path / "artifact"
+    artifact_dir.mkdir()
+    stage_artifacts = artifact_dir / "stage_artifacts"
+    for path in (
+        artifact_dir / "seed_data.parquet",
+        artifact_dir / "synthetic_data.parquet",
+        artifact_dir / "calibrated_data.parquet",
+        artifact_dir / "targets.json",
+        artifact_dir / "policyengine_us.h5",
+        artifact_dir / "stage_manifest.json",
+        artifact_dir / "data_flow_snapshot.json",
+        stage_artifacts / "03_source_planning" / "source_plan.json",
+        stage_artifacts / "04_seed_scaffold" / "scaffold_seed_data.parquet",
+        stage_artifacts / "06_policyengine_entities" / "metadata.json",
+        stage_artifacts / "07_calibration" / "calibration_summary.json",
+        stage_artifacts / "09_validation_benchmarking" / "evidence_manifest.json",
+        stage_artifacts / "artifact_inventory.json",
+        stage_artifacts / "conditional_readiness.json",
+        artifact_dir / "policyengine_native_scores.json",
+        artifact_dir / "source_weight_diagnostics.json",
+    ):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{}")
+    manifest = {
+        "artifacts": {
+            "seed_data": "seed_data.parquet",
+            "synthetic_data": "synthetic_data.parquet",
+            "calibrated_data": "calibrated_data.parquet",
+            "targets": "targets.json",
+            "policyengine_dataset": "policyengine_us.h5",
+            "stage_manifest": "stage_manifest.json",
+            "data_flow_snapshot": "data_flow_snapshot.json",
+            "source_plan": "stage_artifacts/03_source_planning/source_plan.json",
+            "scaffold_seed_data": (
+                "stage_artifacts/04_seed_scaffold/scaffold_seed_data.parquet"
+            ),
+            "policyengine_entity_tables": (
+                "stage_artifacts/06_policyengine_entities/metadata.json"
+            ),
+            "calibration_summary": (
+                "stage_artifacts/07_calibration/calibration_summary.json"
+            ),
+            "validation_evidence": (
+                "stage_artifacts/09_validation_benchmarking/evidence_manifest.json"
+            ),
+            "artifact_inventory": "stage_artifacts/artifact_inventory.json",
+            "conditional_readiness": "stage_artifacts/conditional_readiness.json",
+            "policyengine_native_scores": "policyengine_native_scores.json",
+            "source_weight_diagnostics": "source_weight_diagnostics.json",
+        }
+    }
+    (artifact_dir / "manifest.json").write_text(json.dumps(manifest))
+
+    loaded = checkpoint_module._load_checkpoint_versioned_artifacts(
+        build_result=SimpleNamespace(),
+        artifact_root=artifact_dir,
+        frontier_metric="full_oracle_mean_abs_relative_error",
+    )
+    paths = loaded.artifact_paths
+
+    assert paths.stage_manifest == artifact_dir / "stage_manifest.json"
+    assert paths.data_flow_snapshot == artifact_dir / "data_flow_snapshot.json"
+    assert paths.artifact_inventory == stage_artifacts / "artifact_inventory.json"
+    assert paths.conditional_readiness == stage_artifacts / "conditional_readiness.json"
+    assert paths.source_plan == stage_artifacts / "03_source_planning" / "source_plan.json"
+    assert paths.scaffold_seed_data == (
+        stage_artifacts / "04_seed_scaffold" / "scaffold_seed_data.parquet"
+    )
+    assert paths.policyengine_entity_tables == (
+        stage_artifacts / "06_policyengine_entities" / "metadata.json"
+    )
+    assert paths.calibration_summary == (
+        stage_artifacts / "07_calibration" / "calibration_summary.json"
+    )
+    assert paths.validation_evidence == (
+        stage_artifacts / "09_validation_benchmarking" / "evidence_manifest.json"
+    )
+    assert paths.policyengine_native_scores == (
+        artifact_dir / "policyengine_native_scores.json"
+    )
+    assert paths.source_weight_diagnostics == (
+        artifact_dir / "source_weight_diagnostics.json"
+    )
+
+
 def test_attach_policyengine_us_data_rebuild_checkpoint_evidence_computes_imputation_ablation_with_build_result(
     monkeypatch,
     tmp_path,

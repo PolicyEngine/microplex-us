@@ -7,6 +7,7 @@ from microplex_us.pipelines.stage_contracts import (
     config_keys_for_us_pipeline_stage,
     default_us_pipeline_stage_contracts,
     get_us_pipeline_stage_contract,
+    get_us_stage_artifact_contract,
     resolve_us_stage_artifact_contract_path,
     serialize_us_pipeline_stage_contracts,
 )
@@ -97,3 +98,40 @@ def test_stage_contracts_expose_config_scope_and_canonical_paths(tmp_path):
         "08_dataset_assembly",
         "artifact_inventory",
     ) == (tmp_path / "stage_artifacts" / "artifact_inventory.json")
+
+
+def test_required_stage_inputs_reference_prior_outputs_and_artifacts():
+    contracts = default_us_pipeline_stage_contracts()
+    contracts_by_id = {contract.id: contract for contract in contracts}
+
+    for contract in contracts:
+        for resource in contract.inputs:
+            if not resource.required:
+                continue
+            if resource.kind == "stage_output":
+                assert resource.stage_id is not None
+                upstream = contracts_by_id[resource.stage_id]
+                assert any(
+                    output.key == resource.key
+                    and output.kind == "stage_output"
+                    and output.stage_id == resource.stage_id
+                    for output in upstream.outputs
+                )
+            if resource.kind == "artifact":
+                assert resource.stage_id is not None
+                artifact = get_us_stage_artifact_contract(
+                    resource.stage_id,
+                    resource.artifact_key or resource.key,
+                )
+                assert artifact.required
+
+
+def test_source_planning_seam_exposes_descriptors_for_stage3():
+    stage2 = get_us_pipeline_stage_contract("02_source_loading")
+    stage3 = get_us_pipeline_stage_contract("03_source_planning")
+
+    stage2_outputs = {resource.key for resource in stage2.outputs}
+    stage3_inputs = {resource.key for resource in stage3.inputs}
+
+    assert "source_descriptors" in stage2_outputs
+    assert "source_descriptors" in stage3_inputs

@@ -6069,6 +6069,7 @@ class USMicroplexPipeline:
                 ["relationship_to_head", "age", "person_id"],
                 ascending=[True, False, True],
             ).copy()
+            ordered = self._cohere_tax_unit_role_flags_for_household(ordered)
             head_rows = ordered.loc[ordered["_is_tax_unit_head_flag"]]
             if head_rows.empty:
                 continue
@@ -6326,6 +6327,204 @@ class USMicroplexPipeline:
         )
         resolved_head = head_flag & ~resolved_spouse & ~resolved_dependent
         return resolved_head, resolved_spouse, resolved_dependent
+
+    def _cohere_tax_unit_role_flags_for_household(
+        self,
+        household_persons: pd.DataFrame,
+    ) -> pd.DataFrame:
+        if household_persons.empty:
+            return household_persons
+
+        result = household_persons.copy()
+        relationship = (
+            pd.to_numeric(result["relationship_to_head"], errors="coerce")
+            .fillna(-1)
+            .astype(int)
+            if "relationship_to_head" in result.columns
+            else pd.Series(-1, index=result.index, dtype=int)
+        )
+        family_relationship = (
+            pd.to_numeric(result["family_relationship"], errors="coerce")
+            .fillna(-1)
+            .astype(int)
+            if "family_relationship" in result.columns
+            else pd.Series(-1, index=result.index, dtype=int)
+        )
+        age = (
+            pd.to_numeric(result["age"], errors="coerce").fillna(0.0)
+            if "age" in result.columns
+            else pd.Series(0.0, index=result.index, dtype=float)
+        )
+        income = (
+            pd.to_numeric(result["income"], errors="coerce").fillna(0.0)
+            if "income" in result.columns
+            else pd.Series(0.0, index=result.index, dtype=float)
+        )
+        head_hint = relationship.eq(0) | family_relationship.isin([0, 1])
+        spouse_hint = relationship.eq(1) | family_relationship.eq(2)
+        dependent_hint = relationship.isin([2, 3]) | family_relationship.isin([3, 4])
+
+        head_flag = result["_is_tax_unit_head_flag"].astype(bool)
+        spouse_flag = result["_is_tax_unit_spouse_flag"].astype(bool)
+        dependent_flag = result["_is_tax_unit_dependent_flag"].astype(bool)
+
+        rank = pd.Series(4, index=result.index, dtype=int)
+        rank.loc[age.ge(18)] = 3
+        rank.loc[head_flag] = 2
+        rank.loc[head_hint] = 1
+        rank.loc[head_flag & head_hint] = 0
+        primary_index = (
+            pd.DataFrame(
+                {
+                    "rank": rank,
+                    "relationship": relationship.where(relationship.ge(0), 99),
+                    "age": -age,
+                    "person_id": pd.to_numeric(
+                        result["person_id"],
+                        errors="coerce",
+                    ).fillna(0),
+                },
+                index=result.index,
+            )
+            .sort_values(["rank", "relationship", "age", "person_id"])
+            .index[0]
+        )
+
+        coherent_head = pd.Series(False, index=result.index, dtype=bool)
+        coherent_spouse = pd.Series(False, index=result.index, dtype=bool)
+        coherent_dependent = pd.Series(False, index=result.index, dtype=bool)
+        coherent_head.loc[primary_index] = True
+
+        primary_person_number = self._household_role_person_number(
+            result,
+            primary_index,
+        )
+        primary_spouse_number = self._household_role_spouse_number(
+            result,
+            primary_index,
+        )
+        spouse_candidates = result.index[
+            (result.index != primary_index) & ~dependent_flag
+        ]
+        spouse_index: Any | None = None
+        if primary_spouse_number > 0:
+            spouse_index = self._find_household_role_person_number_index(
+                result,
+                spouse_candidates,
+                primary_spouse_number,
+            )
+            if (
+                spouse_index is not None
+                and primary_person_number > 0
+                and self._household_role_spouse_number(result, spouse_index)
+                not in {0, primary_person_number}
+            ):
+                spouse_index = None
+        if spouse_index is None:
+            spouse_pool = spouse_candidates[
+                (
+                    spouse_flag.loc[spouse_candidates]
+                    | (
+                        spouse_hint.loc[spouse_candidates]
+                        & self._role_flag_series(result, "tax_unit_is_joint").loc[
+                            spouse_candidates
+                        ]
+                    )
+                )
+            ]
+            if len(spouse_pool):
+                spouse_index = (
+                    pd.DataFrame(
+                        {
+                            "source_spouse": ~spouse_flag.loc[spouse_pool],
+                            "relationship": ~spouse_hint.loc[spouse_pool],
+                            "age": -age.loc[spouse_pool],
+                            "person_id": pd.to_numeric(
+                                result.loc[spouse_pool, "person_id"],
+                                errors="coerce",
+                            ).fillna(0),
+                        },
+                        index=spouse_pool,
+                    )
+                    .sort_values(
+                        ["source_spouse", "relationship", "age", "person_id"]
+                    )
+                    .index[0]
+                )
+        if spouse_index is not None:
+            coherent_spouse.loc[spouse_index] = True
+
+        available = ~(coherent_head | coherent_spouse)
+        coherent_dependent.loc[
+            available
+            & (
+                dependent_flag
+                | (
+                    dependent_hint
+                    & (age.lt(24) | income.le(0.0))
+                )
+                | (spouse_hint & income.le(0.0))
+            )
+        ] = True
+
+        available = ~(coherent_head | coherent_spouse | coherent_dependent)
+        coherent_head.loc[
+            available
+            & age.ge(18)
+            & (head_flag | income.gt(0.0))
+        ] = True
+
+        coherent_dependent.loc[
+            ~(coherent_head | coherent_spouse | coherent_dependent)
+            & (age.lt(18) | dependent_hint | income.le(0.0))
+        ] = True
+        coherent_head.loc[~(coherent_head | coherent_spouse | coherent_dependent)] = True
+
+        result["_is_tax_unit_head_flag"] = coherent_head
+        result["_is_tax_unit_spouse_flag"] = coherent_spouse
+        result["_is_tax_unit_dependent_flag"] = coherent_dependent
+        return result
+
+    def _household_role_person_number(
+        self,
+        household_persons: pd.DataFrame,
+        index: Any,
+    ) -> int:
+        if "person_number" not in household_persons.columns:
+            return 0
+        value = pd.to_numeric(
+            pd.Series([household_persons.loc[index, "person_number"]]),
+            errors="coerce",
+        ).fillna(0)
+        return int(value.iloc[0])
+
+    def _household_role_spouse_number(
+        self,
+        household_persons: pd.DataFrame,
+        index: Any,
+    ) -> int:
+        if "spouse_person_number" not in household_persons.columns:
+            return 0
+        value = pd.to_numeric(
+            pd.Series([household_persons.loc[index, "spouse_person_number"]]),
+            errors="coerce",
+        ).fillna(0)
+        return int(value.iloc[0])
+
+    def _find_household_role_person_number_index(
+        self,
+        household_persons: pd.DataFrame,
+        candidate_indices: pd.Index,
+        person_number: int,
+    ) -> Any | None:
+        if "person_number" not in household_persons.columns:
+            return None
+        person_numbers = pd.to_numeric(
+            household_persons.loc[candidate_indices, "person_number"],
+            errors="coerce",
+        ).fillna(0)
+        matches = person_numbers.index[person_numbers.astype(int).eq(person_number)]
+        return matches[0] if len(matches) else None
 
     def _assign_role_flag_spouses(
         self,

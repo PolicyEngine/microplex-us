@@ -838,6 +838,12 @@ class TestUSMicroplexPipeline:
         assert households["net_worth"].tolist() == [300_000.0, 50_000.0]
         assert households["auto_loan_balance"].tolist() == [12_000.0, 0.0]
         assert households["auto_loan_interest"].tolist() == [600.0, 0.0]
+        assert tables.spm_units.sort_values("household_id")[
+            "spm_unit_tenure_type"
+        ].tolist() == [
+            "OWNER_WITH_MORTGAGE",
+            "RENTER",
+        ]
 
     def test_build_policyengine_entity_tables_uses_household_level_spm_fallback(
         self,

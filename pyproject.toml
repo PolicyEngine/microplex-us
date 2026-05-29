@@ -51,6 +51,7 @@ microplex-us-mp300k-artifact-gates = "microplex_us.pipelines.mp300k_artifact_gat
 microplex-us-package-mp300k-gate-inputs = "microplex_us.pipelines.mp300k_gate_inputs:main"
 microplex-us-pe-dataset-readiness = "microplex_us.pipelines.pe_us_dataset_readiness:main"
 microplex-us-dashboard = "microplex_us.pipelines.dashboard:main"
+microplex-us-ecps-replacement-comparison = "microplex_us.pipelines.ecps_replacement_comparison:main"
 microplex-us-pe-native-calibration-benchmark = "microplex_us.pipelines.pe_native_calibration_benchmark:main"
 microplex-us-pe-native-target-diagnostics = "microplex_us.pipelines.pe_native_scores:main_target_diagnostics"
 microplex-us-r2-archive-artifact = "microplex_us.pipelines.r2_artifacts:main"

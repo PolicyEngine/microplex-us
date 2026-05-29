@@ -152,6 +152,17 @@ API/CLI read. So the schema gained two blocks:
   aggregate outputs anywhere"** gap Pavel flagged, and the columns *are* the
   calibration dashboard's columns. Emitted incrementally so a live dashboard
   renders build progress.
+  - **Vocabulary aligned with Codex's comparison `target_diagnostics`**
+    (`ecps_replacement_comparison`, #85): `target_name`, `family`
+    (`classify_pe_native_target_family`), and `split` are the *same* keys, so the
+    two tables join cleanly and we don't grow a third divergent schema. They are
+    complementary, not duplicative: `target_diagnostics` is **comparison-time**
+    (per-target loss term + winner, candidate-vs-baseline on a train/holdout
+    split) — it answers *"did mp beat eCPS on this target?"*; this
+    `calibration_diagnostics` is **build-time** (per-target `target_value` /
+    `estimate` / `source` / `in_loss_function`) — it answers *"what did this one
+    build hit, and where did the target come from?"* The build-time aggregates are
+    exactly Pavel's gap, which the loss-term diagnostics don't carry.
 - **`run`** — a unique, non-trampled `run_id`; `emitted_at_stage` for live
   emission; and an `upload` policy: **default auto-upload** to a central store
   (Supabase, PolicyEngine org), **opt-out via `incognito`** for purely-experimental

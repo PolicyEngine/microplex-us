@@ -1,0 +1,124 @@
+"""Tests for pinned MP replacement benchmark manifests."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import subprocess
+from pathlib import Path
+
+import pytest
+
+from microplex_us.pipelines.mp_benchmark_manifest import (
+    build_mp_benchmark_manifest,
+    main,
+)
+
+
+def _write_file(path: Path, contents: bytes) -> Path:
+    path.write_bytes(contents)
+    return path
+
+
+def _sha256(contents: bytes) -> str:
+    return hashlib.sha256(contents).hexdigest()
+
+
+def test_build_mp_benchmark_manifest_pins_release_inputs(tmp_path):
+    baseline_contents = b"baseline h5"
+    target_contents = b"target db"
+    baseline = _write_file(tmp_path / "enhanced_cps_2024.h5", baseline_contents)
+    target_db = _write_file(tmp_path / "policyengine_targets.db", target_contents)
+
+    manifest = build_mp_benchmark_manifest(
+        baseline_dataset_path=baseline,
+        target_db_path=target_db,
+        period=2024,
+        target_profile="pe_native_broad",
+        policyengine_us_data_commit="b" * 40,
+        policyengine_us_version="1.587.0",
+    )
+
+    assert manifest["schema_version"] == 1
+    assert manifest["period"] == 2024
+    assert manifest["target_profile"] == "pe_native_broad"
+    assert manifest["baseline_dataset"]["path"] == str(baseline.resolve())
+    assert manifest["baseline_dataset"]["sha256"] == _sha256(baseline_contents)
+    assert manifest["target_db"]["path"] == str(target_db.resolve())
+    assert manifest["target_db"]["sha256"] == _sha256(target_contents)
+    assert manifest["policyengine_us_data"]["commit"] == "b" * 40
+    assert manifest["policyengine_us"]["version"] == "1.587.0"
+
+
+def test_main_writes_mp_benchmark_manifest(tmp_path, capsys):
+    baseline = _write_file(tmp_path / "enhanced_cps_2024.h5", b"baseline")
+    target_db = _write_file(tmp_path / "policyengine_targets.db", b"targets")
+    output = tmp_path / "benchmark_manifest.json"
+
+    exit_code = main(
+        [
+            "--baseline-dataset",
+            str(baseline),
+            "--target-db",
+            str(target_db),
+            "--output-json",
+            str(output),
+            "--policyengine-us-data-commit",
+            "c" * 40,
+            "--policyengine-us-version",
+            "1.587.0",
+        ]
+    )
+
+    printed_path = Path(capsys.readouterr().out.strip())
+    payload = json.loads(output.read_text())
+
+    assert exit_code == 0
+    assert printed_path == output
+    assert payload["policyengine_us_data"]["commit"] == "c" * 40
+
+
+def test_dirty_policyengine_us_data_repo_is_rejected_unless_explicit(tmp_path):
+    baseline = _write_file(tmp_path / "enhanced_cps_2024.h5", b"baseline")
+    target_db = _write_file(tmp_path / "policyengine_targets.db", b"targets")
+    repo = tmp_path / "policyengine-us-data"
+    repo.mkdir()
+    subprocess.run(["git", "-C", str(repo), "init"], check=True, capture_output=True)
+    _write_file(repo / "tracked.txt", b"clean")
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "-c",
+            "user.name=Codex",
+            "-c",
+            "user.email=codex@example.com",
+            "commit",
+            "-m",
+            "init",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    (repo / "tracked.txt").write_text("dirty")
+
+    with pytest.raises(ValueError, match="uncommitted changes"):
+        build_mp_benchmark_manifest(
+            baseline_dataset_path=baseline,
+            target_db_path=target_db,
+            policyengine_us_data_repo=repo,
+            policyengine_us_version="1.587.0",
+        )
+
+    manifest = build_mp_benchmark_manifest(
+        baseline_dataset_path=baseline,
+        target_db_path=target_db,
+        policyengine_us_data_repo=repo,
+        policyengine_us_version="1.587.0",
+        allow_dirty_policyengine_us_data=True,
+    )
+
+    assert manifest["policyengine_us_data"]["dirty"] is True
+    assert len(manifest["policyengine_us_data"]["commit"]) == 40

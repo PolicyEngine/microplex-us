@@ -1271,6 +1271,8 @@ def _benchmark_manifest_evidence(payload: Any) -> dict[str, Any]:
             missing.append(evidence_name)
             continue
         present[evidence_name] = value
+    if _first_nested_path_value(payload, (("policyengine_us_data", "dirty"),)) is True:
+        missing.append("policyengine_us_data.clean")
     return {"present": present, "missing": missing}
 
 

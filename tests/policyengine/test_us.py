@@ -2000,7 +2000,7 @@ class TestPolicyEngineUSProjection:
             "stock_assets",
             "taxable_ira_distributions",
             "tip_income",
-            "traditional_ira_contributions",
+            "traditional_ira_contributions_desired",
             "unreimbursed_business_employee_expenses",
         )
         household_contract_inputs = (
@@ -2203,6 +2203,60 @@ class TestPolicyEngineUSProjection:
             "social_security_retirement": "social_security_retirement_reported",
         }
 
+    def test_build_policyengine_us_export_variable_maps_aliases_contribution_inputs(
+        self,
+    ):
+        class FakeEntity:
+            def __init__(self, key):
+                self.key = key
+
+        class FakeVariable:
+            def __init__(self, entity):
+                self.entity = FakeEntity(entity)
+
+        class FakeSystem:
+            variables = {
+                "medicare_part_b_premiums_reported": FakeVariable("person"),
+                "roth_ira_contributions_desired": FakeVariable("person"),
+                "self_employed_pension_contributions_desired": FakeVariable("person"),
+                "traditional_ira_contributions_desired": FakeVariable("person"),
+            }
+
+        tables = PolicyEngineUSEntityTableBundle(
+            households=pd.DataFrame(
+                {
+                    "household_id": [10],
+                    "household_weight": [1.0],
+                }
+            ),
+            persons=pd.DataFrame(
+                {
+                    "person_id": [1],
+                    "household_id": [10],
+                    "medicare_part_b_premiums": [1_800.0],
+                    "roth_ira_contributions": [2_000.0],
+                    "self_employed_pension_contributions": [4_000.0],
+                    "traditional_ira_contributions": [3_000.0],
+                }
+            ),
+        )
+
+        export_maps = build_policyengine_us_export_variable_maps(
+            tables,
+            tax_benefit_system=FakeSystem(),
+        )
+
+        assert export_maps["person"] == {
+            "medicare_part_b_premiums": "medicare_part_b_premiums_reported",
+            "roth_ira_contributions": "roth_ira_contributions_desired",
+            "self_employed_pension_contributions": (
+                "self_employed_pension_contributions_desired"
+            ),
+            "traditional_ira_contributions": (
+                "traditional_ira_contributions_desired"
+            ),
+        }
+
     def test_default_policyengine_us_export_surface_avoids_formula_aggregates(self):
         from policyengine_us import CountryTaxBenefitSystem
 
@@ -2234,8 +2288,18 @@ class TestPolicyEngineUSProjection:
         assert "farm_rent_income" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         assert "health_savings_account_ald" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         assert "filing_status" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
-        assert "social_security_retirement" not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
+        assert "social_security_retirement" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         assert "social_security_retirement_reported" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
+        assert "medicare_part_b_premiums_reported" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
+        assert "traditional_ira_contributions" not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
+        assert "traditional_ira_contributions_desired" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
+        assert "roth_ira_contributions" not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
+        assert "roth_ira_contributions_desired" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
+        assert "self_employed_pension_contributions" not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
+        assert (
+            "self_employed_pension_contributions_desired"
+            in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
+        )
         assert "non_sch_d_capital_gains" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         assert "receives_wic" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         assert "ssn_card_type" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
@@ -2375,11 +2439,19 @@ class TestPolicyEngineUSProjection:
 
         class FakeSystem:
             variables = {
+                "auto_loan_balance": FakeVariable("household"),
+                "first_home_mortgage_balance": FakeVariable("tax_unit"),
+                "immigration_status_str": FakeVariable("person"),
+                "net_worth": FakeVariable("household"),
+                "spm_unit_pre_subsidy_childcare_expenses": FakeVariable("spm_unit"),
+                "spm_unit_tenure_type": FakeVariable("spm_unit"),
                 "ssn_card_type": FakeVariable("person"),
                 "takes_up_aca_if_eligible": FakeVariable("tax_unit"),
                 "takes_up_early_head_start_if_eligible": FakeVariable("person"),
                 "takes_up_eitc": FakeVariable("tax_unit"),
                 "takes_up_snap_if_eligible": FakeVariable("spm_unit"),
+                "tenure_type": FakeVariable("household"),
+                "weeks_unemployed": FakeVariable("person"),
                 "would_claim_wic": FakeVariable("person"),
                 "would_file_taxes_voluntarily": FakeVariable("tax_unit"),
             }
@@ -2417,16 +2489,26 @@ class TestPolicyEngineUSProjection:
         )
 
         assert export_maps["person"] == {
+            "immigration_status_str": "immigration_status_str",
             "ssn_card_type": "ssn_card_type",
             "takes_up_early_head_start_if_eligible": "takes_up_early_head_start_if_eligible",
+            "weeks_unemployed": "weeks_unemployed",
             "would_claim_wic": "would_claim_wic",
         }
+        assert export_maps["household"] == {
+            "auto_loan_balance": "auto_loan_balance",
+            "net_worth": "net_worth",
+            "tenure_type": "tenure_type",
+        }
         assert export_maps["tax_unit"] == {
+            "first_home_mortgage_balance": "first_home_mortgage_balance",
             "takes_up_aca_if_eligible": "takes_up_aca_if_eligible",
             "takes_up_eitc": "takes_up_eitc",
             "would_file_taxes_voluntarily": "would_file_taxes_voluntarily",
         }
         assert export_maps["spm_unit"] == {
+            "spm_unit_pre_subsidy_childcare_expenses": "spm_unit_pre_subsidy_childcare_expenses",
+            "spm_unit_tenure_type": "spm_unit_tenure_type",
             "takes_up_snap_if_eligible": "takes_up_snap_if_eligible",
         }
 
@@ -2521,28 +2603,48 @@ class TestPolicyEngineUSProjection:
             tables,
             period=2024,
             person_variable_map={
+                "immigration_status_str": "immigration_status_str",
                 "ssn_card_type": "ssn_card_type",
                 "takes_up_early_head_start_if_eligible": "takes_up_early_head_start_if_eligible",
+                "weeks_unemployed": "weeks_unemployed",
                 "would_claim_wic": "would_claim_wic",
             },
+            household_variable_map={
+                "auto_loan_balance": "auto_loan_balance",
+                "net_worth": "net_worth",
+                "tenure_type": "tenure_type",
+            },
             tax_unit_variable_map={
+                "first_home_mortgage_balance": "first_home_mortgage_balance",
                 "takes_up_aca_if_eligible": "takes_up_aca_if_eligible",
                 "takes_up_eitc": "takes_up_eitc",
                 "would_file_taxes_voluntarily": "would_file_taxes_voluntarily",
             },
             spm_unit_variable_map={
+                "spm_unit_pre_subsidy_childcare_expenses": "spm_unit_pre_subsidy_childcare_expenses",
+                "spm_unit_tenure_type": "spm_unit_tenure_type",
                 "takes_up_snap_if_eligible": "takes_up_snap_if_eligible",
             },
         )
 
         assert arrays["ssn_card_type"]["2024"].tolist() == [b"CITIZEN"]
+        assert arrays["immigration_status_str"]["2024"].tolist() == [b"CITIZEN"]
+        assert arrays["auto_loan_balance"]["2024"].tolist() == [0.0]
+        assert arrays["net_worth"]["2024"].tolist() == [0]
+        assert arrays["tenure_type"]["2024"].tolist() == [b"NONE"]
         assert arrays["takes_up_early_head_start_if_eligible"]["2024"].tolist() == [
             True
         ]
+        assert arrays["weeks_unemployed"]["2024"].tolist() == [0]
         assert arrays["would_claim_wic"]["2024"].tolist() == [True]
+        assert arrays["first_home_mortgage_balance"]["2024"].tolist() == [0.0]
         assert arrays["takes_up_aca_if_eligible"]["2024"].tolist() == [True]
         assert arrays["takes_up_eitc"]["2024"].tolist() == [True]
         assert arrays["would_file_taxes_voluntarily"]["2024"].tolist() == [False]
+        assert arrays["spm_unit_pre_subsidy_childcare_expenses"]["2024"].tolist() == [
+            0
+        ]
+        assert arrays["spm_unit_tenure_type"]["2024"].tolist() == [b"RENTER"]
         assert arrays["takes_up_snap_if_eligible"]["2024"].tolist() == [True]
 
 

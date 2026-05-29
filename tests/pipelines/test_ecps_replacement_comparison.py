@@ -72,6 +72,8 @@ def _fake_loss_inputs(input_dataset_path: str | Path, **_kwargs) -> dict[str, ob
         "scaled_matrix": matrix,
         "scaled_target": np.ones(len(_TARGET_NAMES), dtype=np.float64),
         "initial_weights": _read_weights(path),
+        "unscaled_target": np.ones(len(_TARGET_NAMES), dtype=np.float64),
+        "scaling": np.ones(len(_TARGET_NAMES), dtype=np.float64),
         "metadata": {
             "target_names": list(_TARGET_NAMES),
             "n_targets_kept": len(_TARGET_NAMES),
@@ -324,6 +326,13 @@ def test_sound_ecps_replacement_comparison_satisfies_gate_contract(
     assert target_diagnostics["top_regressions"]
     assert target_diagnostics["top_improvements"]
     assert len(target_diagnostics["targets"]) == len(_TARGET_NAMES)
+    first_target = target_diagnostics["targets"][0]
+    assert first_target["value_scale"] == "native"
+    assert first_target["target_value"] == pytest.approx(1.0)
+    assert "candidate_estimate" in first_target
+    assert "baseline_estimate" in first_target
+    assert "candidate_relative_error" in first_target
+    assert "baseline_relative_error" in first_target
     assert {
         row["split"] for row in target_diagnostics["targets"]
     } == {"train", "holdout"}

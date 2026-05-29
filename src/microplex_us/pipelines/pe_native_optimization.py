@@ -97,6 +97,8 @@ weights = sim.calculate(
 np.save(OUTPUT_PREFIX.with_suffix(".matrix.npy"), scaled_matrix)
 np.save(OUTPUT_PREFIX.with_suffix(".target.npy"), scaled_target)
 np.save(OUTPUT_PREFIX.with_suffix(".weights.npy"), weights)
+np.save(OUTPUT_PREFIX.with_suffix(".target_unscaled.npy"), filtered_targets)
+np.save(OUTPUT_PREFIX.with_suffix(".scaling.npy"), scaling)
 with open(OUTPUT_PREFIX.with_suffix(".meta.json"), "w") as handle:
     json.dump(
         {

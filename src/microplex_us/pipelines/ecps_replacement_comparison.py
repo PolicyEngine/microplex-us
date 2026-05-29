@@ -610,8 +610,16 @@ def _extract_pe_native_loss_inputs(
             "scaled_matrix": np.load(prefix.with_suffix(".matrix.npy")),
             "scaled_target": np.load(prefix.with_suffix(".target.npy")),
             "initial_weights": np.load(prefix.with_suffix(".weights.npy")),
+            "unscaled_target": _load_optional_array(
+                prefix.with_suffix(".target_unscaled.npy")
+            ),
+            "scaling": _load_optional_array(prefix.with_suffix(".scaling.npy")),
             "metadata": json.loads(prefix.with_suffix(".meta.json").read_text()),
         }
+
+
+def _load_optional_array(path: Path) -> np.ndarray | None:
+    return np.load(path) if path.exists() else None
 
 
 def _validate_common_targets(
@@ -796,6 +804,18 @@ def _target_loss_diagnostics(
 ) -> dict[str, Any]:
     candidate_terms = _loss_terms(candidate_inputs, candidate_weights)
     baseline_terms = _loss_terms(baseline_inputs, baseline_weights)
+    candidate_values = _target_value_diagnostics(
+        candidate_inputs,
+        candidate_weights,
+    )
+    baseline_values = _target_value_diagnostics(
+        baseline_inputs,
+        baseline_weights,
+    )
+    if candidate_values["value_scale"] != baseline_values["value_scale"]:
+        raise ValueError("candidate and baseline target diagnostic scales differ")
+    if not np.allclose(candidate_values["target"], baseline_values["target"]):
+        raise ValueError("candidate and baseline target diagnostic values differ")
     if candidate_terms.shape != baseline_terms.shape:
         raise ValueError("candidate and baseline target loss term shapes differ")
     if len(target_names) != candidate_terms.shape[0]:
@@ -826,6 +846,18 @@ def _target_loss_diagnostics(
                 "target_name": str(target_name),
                 "family": classify_pe_native_target_family(target_name),
                 "split": "holdout" if bool(holdout_mask[index]) else "train",
+                "value_scale": candidate_values["value_scale"],
+                "target_value": float(candidate_values["target"][index]),
+                "candidate_estimate": float(candidate_values["estimate"][index]),
+                "baseline_estimate": float(baseline_values["estimate"][index]),
+                "candidate_error": float(candidate_values["error"][index]),
+                "baseline_error": float(baseline_values["error"][index]),
+                "candidate_relative_error": float(
+                    candidate_values["relative_error"][index]
+                ),
+                "baseline_relative_error": float(
+                    baseline_values["relative_error"][index]
+                ),
                 "candidate_loss_term": candidate_loss,
                 "baseline_loss_term": baseline_loss,
                 "loss_delta": float(loss_delta),
@@ -862,6 +894,39 @@ def _target_loss_diagnostics(
         "top_regressions": regressions,
         "top_improvements": improvements,
         "targets": rows,
+    }
+
+
+def _target_value_diagnostics(
+    loss_inputs: dict[str, Any],
+    weights: np.ndarray,
+) -> dict[str, np.ndarray | str]:
+    matrix = np.asarray(loss_inputs["scaled_matrix"], dtype=np.float64)
+    scaled_target = np.asarray(loss_inputs["scaled_target"], dtype=np.float64)
+    scaled_estimate = matrix.T @ weights
+    unscaled_target = loss_inputs.get("unscaled_target")
+    scaling = loss_inputs.get("scaling")
+    if unscaled_target is not None and scaling is not None:
+        scaling_array = np.asarray(scaling, dtype=np.float64)
+        if np.any(np.isclose(scaling_array, 0.0)):
+            raise ValueError("PE-native target scaling contains zero values")
+        target = np.asarray(unscaled_target, dtype=np.float64)
+        estimate = scaled_estimate / scaling_array
+        value_scale = "native"
+    else:
+        target = scaled_target
+        estimate = scaled_estimate
+        value_scale = "scaled"
+    if target.shape != estimate.shape:
+        raise ValueError("target and estimate shapes differ")
+    error = estimate - target
+    relative_error = ((estimate - target) + 1.0) / (target + 1.0)
+    return {
+        "value_scale": value_scale,
+        "target": target,
+        "estimate": estimate,
+        "error": error,
+        "relative_error": relative_error,
     }
 
 

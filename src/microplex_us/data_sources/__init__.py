@@ -87,6 +87,7 @@ _EXPORTS: dict[str, tuple[str, str]] = {
             "FixedSpineTargetContribution",
             "ForbesFixedSpine",
             "ForbesFixedSpineConfig",
+            "append_forbes_fixed_spine_tables",
             "build_forbes_fixed_spine",
             "fixed_spine_contribution_diagnostics_json",
             "forbes_fixed_spine_variable_bindings",

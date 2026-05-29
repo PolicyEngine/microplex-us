@@ -16,12 +16,16 @@ from microplex.targets import (
 
 from microplex_us.data_sources.forbes import (
     ForbesFixedSpineConfig,
+    append_forbes_fixed_spine_tables,
     build_forbes_fixed_spine,
     fixed_spine_contribution_diagnostics_json,
     read_forbes_fixed_spine_records,
     residualize_targets_for_fixed_spine,
 )
-from microplex_us.policyengine.us import build_policyengine_us_export_variable_maps
+from microplex_us.policyengine.us import (
+    PolicyEngineUSEntityTableBundle,
+    build_policyengine_us_export_variable_maps,
+)
 
 
 def _records() -> pd.DataFrame:
@@ -62,7 +66,7 @@ def test_build_forbes_fixed_spine_splits_weights_and_keeps_metadata_separate():
     assert spine.tables.households["net_worth"].tolist() == pytest.approx(
         [10_000_000_000.0] * 4
     )
-    assert spine.tables.households["state_fips"].tolist() == ["06"] * 4
+    assert spine.tables.households["state_fips"].tolist() == [6] * 4
 
     for table in (
         spine.tables.households,
@@ -136,6 +140,37 @@ def test_read_forbes_fixed_spine_records_tracks_source_checksum(tmp_path):
     assert spine.source_metadata["source_path"] == str(path)
     assert isinstance(spine.source_metadata["source_sha256"], str)
     assert len(spine.source_metadata["source_sha256"]) == 64
+
+
+def test_append_forbes_fixed_spine_tables_keeps_fixed_weights_post_calibration():
+    base = PolicyEngineUSEntityTableBundle(
+        households=pd.DataFrame(
+            {
+                "household_id": [1],
+                "household_weight": [99.0],
+                "state_fips": [6],
+            }
+        ),
+        persons=pd.DataFrame(
+            {
+                "person_id": [10],
+                "household_id": [1],
+                "weight": [99.0],
+            }
+        ),
+    )
+    spine = build_forbes_fixed_spine(
+        _records(),
+        config=ForbesFixedSpineConfig(replicates_per_unit=2),
+    )
+
+    appended = append_forbes_fixed_spine_tables(base, spine)
+
+    assert appended.households["household_weight"].sum() == pytest.approx(100.0)
+    assert appended.persons["weight"].sum() == pytest.approx(100.0)
+    assert not any(
+        column.startswith("forbes_") for column in appended.households.columns
+    )
 
 
 def test_residualize_targets_for_fixed_spine_subtracts_additive_contributions():

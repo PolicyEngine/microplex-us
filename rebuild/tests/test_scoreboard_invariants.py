@@ -13,7 +13,7 @@ import pytest
 
 from mp_rebuild import (
     CalibrationProblem,
-    compare,
+    compare_problems,
     fit,
     score,
     split_targets,
@@ -94,8 +94,8 @@ def test_compare_is_symmetric():
     init_a = rng.uniform(1.0, 6.0, size=prob_a.n_records)
     init_b = rng.uniform(1.0, 6.0, size=prob_b.n_records)
 
-    forward = compare(prob_a, prob_b, init_a, init_b)
-    swapped = compare(prob_b, prob_a, init_b, init_a)
+    forward = compare_problems(prob_a, prob_b, init_a, init_b)
+    swapped = compare_problems(prob_b, prob_a, init_b, init_a)
 
     assert forward["candidate_loss"] == pytest.approx(swapped["baseline_loss"])
     assert forward["baseline_loss"] == pytest.approx(swapped["candidate_loss"])

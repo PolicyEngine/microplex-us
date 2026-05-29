@@ -200,14 +200,14 @@ def split_targets(
     return problem.subset(train_idx), problem.subset(holdout_idx)
 
 
-def compare(
+def compare_problems(
     candidate: CalibrationProblem,
     baseline: CalibrationProblem,
     candidate_init: ArrayLike,
     baseline_init: ArrayLike,
     **fit_kwargs,
 ) -> dict[str, float]:
-    """Apply the IDENTICAL fit to both datasets and report scores.
+    """Apply the IDENTICAL fit to both problems and report scores.
 
     The comparison is symmetric by construction: there is no way to refit only
     one side. (The old harness's ``--score-candidate-only`` path is structurally

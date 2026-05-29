@@ -26,13 +26,18 @@ Full findings: `~/microplex-vs-policyengine-us-data-review.md` (Entries 1-4).
 
 ## What "achieved" means
 
-- [ ] Scoreboard with invariants passing: fit==score, monotone non-increase
-      (operator can't worsen a dataset), symmetric comparison, held-out split,
-      matched-N as a first-class axis. (unit level: DONE; integration: pending)
-- [ ] End-to-end recovery: refit(eCPS) recovers ~0.166, not 0.544.
+- [x] Scoreboard with invariants passing: fit==score, monotone non-increase
+      (operator can't worsen a dataset), symmetric comparison, held-out split.
+      (22 fast tests green.)
+- [x] End-to-end recovery: refit(eCPS) recovers ~0.166, not 0.544.
+      RESULT: shipped 0.16637 (reproduces baseline exactly), refit 0.16420
+      (improves, never worse). See results/ecps_recovery.json.
+- [~] An HONEST Microplex@N vs eCPS@N comparison on **held-out** targets, both
+      calibrated by the identical operator. Symmetric + held-out harness DONE
+      (mp_rebuild/compare.py); first run launched at UNMATCHED N (candidate
+      ~120k vs eCPS ~41k). Matched-N is the next step.
+- [ ] Matched N: candidate subsampled to 41,314 (careful multi-entity H5).
 - [ ] A dumb reweighted-CPS baseline built end-to-end to a PE-ingestable H5.
-- [ ] An HONEST Microplex@N vs eCPS@N comparison on **held-out** targets at
-      matched N, both calibrated by the identical operator, committed + pushed.
 - [ ] Short writeup: the honest number vs the old 0.094 claim, and vs Codex.
 
 ## The honesty contract (important)
@@ -85,5 +90,16 @@ one-sided refitting, that is a bug, not a result.
   Caveat: us-data's `utils/loss.py` has uncommitted edits, so the live target
   set may differ slightly from the original 0.166 baseline -- recovery
   (non-increase) holds regardless; baseline reproduction is checked with abs=0.03.
+- **Iter 3** — RECOVERY PROVEN (shipped 0.16637 == published baseline to 10
+  digits; refit 0.16420, never worse; old harness gave 0.544). Built the
+  symmetric, shared-scaling, held-out comparison harness: refactored
+  `pe_native.py` to expose raw (unscaled) pieces + a `pe_native_scaling` helper
+  (scaling depends only on the target set, so both datasets get identical
+  scaling on their common targets); `compare.py` fits both on a TRAIN target
+  split and scores on a disjoint HOLDOUT split. Renamed scoreboard `compare`
+  -> `compare_problems` (collision with the compare module). 22 fast tests
+  green. Launched the first honest comparison (candidate mp_top120000 vs eCPS,
+  unmatched N) in background -> `~/microplex-review-rescore/clean_comparison.log`
+  (COMPARISON_RESULT json). Honest expectation: ~parity on held-out.
   TODO next: matched-N candidate loader (>50k households needs batching),
   reweighted-CPS baseline, then the honest Microplex@N vs eCPS@N held-out run.

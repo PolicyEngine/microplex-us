@@ -1,0 +1,17 @@
+{
+  "what": "Recovery invariant: does the clean harness reproduce eCPS's PE-native broad loss, and does the sound optimizer avoid degrading it?",
+  "dataset": "enhanced_cps_2024",
+  "period": 2024,
+  "n_targets": 2818,
+  "n_households": 41314,
+  "shipped_loss": 0.1663667310529426,
+  "refit_loss": 0.1641988293285348,
+  "non_increase_holds": true,
+  "reproduces_baseline_0166": true,
+  "seconds": 627.2,
+  "notes": [
+    "shipped_loss matches the original published eCPS PE-native loss (0.16636673113) to ~10 digits -> clean loader/metric is faithful.",
+    "refit_loss <= shipped_loss: the sound optimizer (backtracking GD on the same loss it scores) cannot worsen eCPS. The OLD harness (run_pe_native_l0_falsification.py, one-sided refit) drove this exact operation to 0.544.",
+    "Therefore the honest baseline a candidate must beat is refit-eCPS ~0.1642 (symmetric), NOT the un-refit 0.166 from a one-sided comparison."
+  ]
+}

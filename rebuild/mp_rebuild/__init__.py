@@ -18,7 +18,7 @@ Design principles (see rebuild/PLAN.md):
 
 from .scoreboard import (
     CalibrationProblem,
-    compare,
+    compare_problems,
     fit,
     score,
     split_targets,
@@ -26,7 +26,7 @@ from .scoreboard import (
 
 __all__ = [
     "CalibrationProblem",
-    "compare",
+    "compare_problems",
     "fit",
     "score",
     "split_targets",

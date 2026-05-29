@@ -845,6 +845,29 @@ class TestUSMicroplexPipeline:
             "RENTER",
         ]
 
+    def test_build_policyengine_entity_tables_recomputes_child_count_contract_inputs(
+        self,
+    ):
+        pipeline = USMicroplexPipeline(USMicroplexBuildConfig())
+        population = pd.DataFrame(
+            {
+                "person_id": [1, 2, 3, 4],
+                "household_id": [10, 10, 10, 20],
+                "weight": [1.0, 1.0, 1.0, 2.0],
+                "age": [45, 4, 17, 18],
+                "income": [60_000.0, 0.0, 0.0, 25_000.0],
+                "relationship_to_head": [0, 2, 2, 0],
+                "count_under_18": [99, 99, 99, 99],
+                "count_under_6": [99, 99, 99, 99],
+            }
+        )
+
+        tables = pipeline.build_policyengine_entity_tables(population)
+        persons = tables.persons.sort_values("person_id").reset_index(drop=True)
+
+        assert persons["count_under_18"].tolist() == [2, 2, 2, 0]
+        assert persons["count_under_6"].tolist() == [1, 1, 1, 0]
+
     def test_build_policyengine_entity_tables_uses_household_level_spm_fallback(
         self,
     ):

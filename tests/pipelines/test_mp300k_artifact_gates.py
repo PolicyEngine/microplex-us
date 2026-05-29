@@ -59,6 +59,31 @@ def _write_artifact_manifest(
     (artifact_dir / "manifest.json").write_text(json.dumps(manifest))
 
 
+def _write_benchmark_manifest(path: Path) -> None:
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "period": 2024,
+                "target_profile": "pe_native_broad",
+                "baseline_dataset": {
+                    "path": "/tmp/enhanced_cps_2024.h5",
+                    "sha256": "a" * 64,
+                },
+                "policyengine_us_data": {
+                    "repo": "PolicyEngine/policyengine-us-data",
+                    "commit": "b" * 40,
+                },
+                "policyengine_us": {"version": "1.587.0"},
+                "target_db": {
+                    "path": "/tmp/policyengine_targets.db",
+                    "sha256": "c" * 64,
+                },
+            }
+        )
+    )
+
+
 def _sound_ecps_comparison_payload(
     *,
     candidate_loss: float = 0.12,
@@ -112,7 +137,7 @@ def test_write_mp300k_artifact_gate_report_passes_with_all_evidence(tmp_path):
     )
     baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
-    benchmark_manifest.write_text(json.dumps({"schema_version": 1, "frozen": True}))
+    _write_benchmark_manifest(benchmark_manifest)
     _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
 
     report_path = write_mp300k_artifact_gate_report(
@@ -143,6 +168,39 @@ def test_write_mp300k_artifact_gate_report_passes_with_all_evidence(tmp_path):
         manifest["artifacts"]["mp300k_artifact_gates"] == "mp300k_artifact_gates.json"
     )
     assert manifest["mp300k_artifact_gates"]["status"] == "passed"
+
+
+def test_benchmark_manifest_gate_requires_pinned_release_evidence(tmp_path):
+    artifact_dir = tmp_path / "artifact"
+    artifact_dir.mkdir()
+    _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
+    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    benchmark_manifest = tmp_path / "benchmark_manifest.json"
+    benchmark_manifest.write_text(json.dumps({"schema_version": 1, "frozen": True}))
+    _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
+
+    report_path = write_mp300k_artifact_gate_report(
+        artifact_dir,
+        ecps_comparison_payload=_sound_ecps_comparison_payload(),
+        runtime_smoke_payload={"runtime_ratio": 1.0},
+        benchmark_manifest_path=benchmark_manifest,
+        compute_native_scores=False,
+        update_manifest=False,
+    )
+
+    record = json.loads(report_path.read_text())
+    benchmark_gate = record["gates"]["benchmark_manifest"]
+
+    assert record["summary"]["status"] == "failed"
+    assert benchmark_gate["status"] == "fail"
+    assert benchmark_gate["details"]["missing_evidence"] == [
+        "baseline_dataset.path",
+        "baseline_dataset.sha256",
+        "policyengine_us_data.commit",
+        "policyengine_us.version",
+        "target_db.path",
+        "target_db.sha256",
+    ]
 
 
 def test_write_mp300k_artifact_gate_report_fails_missing_structural_array(tmp_path):
@@ -273,7 +331,7 @@ def test_main_writes_artifact_gate_report_from_payload_files(tmp_path, capsys):
         json.dumps({"runtime_ratio": 1.2, "runtime_ratio_threshold": 1.25})
     )
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
-    benchmark_manifest.write_text(json.dumps({"schema_version": 1}))
+    _write_benchmark_manifest(benchmark_manifest)
 
     exit_code = main(
         [
@@ -303,7 +361,7 @@ def test_ecps_comparison_can_become_nonblocking(tmp_path):
     baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
     _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
-    benchmark_manifest.write_text(json.dumps({"schema_version": 1}))
+    _write_benchmark_manifest(benchmark_manifest)
 
     report_path = write_mp300k_artifact_gate_report(
         artifact_dir,
@@ -332,7 +390,7 @@ def test_runtime_gate_accepts_repeated_loader_smoke_payload(tmp_path):
     baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
     _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
-    benchmark_manifest.write_text(json.dumps({"schema_version": 1}))
+    _write_benchmark_manifest(benchmark_manifest)
 
     report_path = write_mp300k_artifact_gate_report(
         artifact_dir,
@@ -362,7 +420,7 @@ def test_ecps_comparison_accepts_existing_broad_loss_array_payload(tmp_path):
     _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
     baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
-    benchmark_manifest.write_text(json.dumps({"schema_version": 1}))
+    _write_benchmark_manifest(benchmark_manifest)
     _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
 
     report_path = write_mp300k_artifact_gate_report(
@@ -401,7 +459,7 @@ def test_ecps_comparison_rejects_one_sided_unmatched_refit_win(tmp_path):
     _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
     baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
-    benchmark_manifest.write_text(json.dumps({"schema_version": 1}))
+    _write_benchmark_manifest(benchmark_manifest)
     _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
 
     report_path = write_mp300k_artifact_gate_report(
@@ -438,7 +496,7 @@ def test_ecps_comparison_rejects_protected_family_regression(tmp_path):
     _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
     baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
-    benchmark_manifest.write_text(json.dumps({"schema_version": 1}))
+    _write_benchmark_manifest(benchmark_manifest)
     _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
     payload = _sound_ecps_comparison_payload(candidate_loss=0.10)
     payload["summary"]["protected_family_losses"]["ssi"] = {
@@ -478,7 +536,7 @@ def test_ecps_comparison_rejects_missing_ecps_refit_recovery(tmp_path):
     _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
     baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
-    benchmark_manifest.write_text(json.dumps({"schema_version": 1}))
+    _write_benchmark_manifest(benchmark_manifest)
     _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
     payload = _sound_ecps_comparison_payload(candidate_loss=0.10)
     payload["summary"]["ecps_refit_recovery_passed"] = False
@@ -507,7 +565,7 @@ def test_runtime_gate_ignores_contradictory_producer_verdict(tmp_path):
     _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
     baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
-    benchmark_manifest.write_text(json.dumps({"schema_version": 1}))
+    _write_benchmark_manifest(benchmark_manifest)
     _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
 
     report_path = write_mp300k_artifact_gate_report(
@@ -547,7 +605,7 @@ def test_ecps_gate_derives_verdict_from_losses_not_producer_flag(tmp_path):
     _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
     baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
-    benchmark_manifest.write_text(json.dumps({"schema_version": 1}))
+    _write_benchmark_manifest(benchmark_manifest)
     _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
 
     report_path = write_mp300k_artifact_gate_report(

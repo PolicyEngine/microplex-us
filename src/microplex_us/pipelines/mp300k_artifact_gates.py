@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -94,6 +95,44 @@ _FORBIDDEN_SOURCE_DIAGNOSTIC_SUFFIXES = (
     "_donor_source",
     "_imputation_source",
 )
+_REQUIRED_BENCHMARK_MANIFEST_EVIDENCE = {
+    "baseline_dataset.path": (
+        ("baseline_dataset", "path"),
+        ("baseline_dataset_path",),
+        ("enhanced_cps", "path"),
+        ("enhanced_cps_path",),
+    ),
+    "baseline_dataset.sha256": (
+        ("baseline_dataset", "sha256"),
+        ("baseline_dataset_sha256",),
+        ("enhanced_cps", "sha256"),
+        ("enhanced_cps_sha256",),
+    ),
+    "policyengine_us_data.commit": (
+        ("policyengine_us_data", "commit"),
+        ("policyengine_us_data", "commit_sha"),
+        ("policyengine_us_data_commit",),
+        ("policyengine_us_data_commit_sha",),
+        ("us_data_commit",),
+    ),
+    "policyengine_us.version": (
+        ("policyengine_us", "version"),
+        ("policyengine_us_version",),
+    ),
+    "target_db.path": (
+        ("target_db", "path"),
+        ("target_db_path",),
+        ("targets_db", "path"),
+        ("policyengine_targets_db",),
+    ),
+    "target_db.sha256": (
+        ("target_db", "sha256"),
+        ("target_db_sha256",),
+        ("targets_db", "sha256"),
+        ("policyengine_targets_db_sha256",),
+    ),
+}
+_HEX_RE = re.compile(r"^[0-9a-fA-F]+$")
 
 
 def build_mp300k_artifact_gate_report(
@@ -1171,14 +1210,94 @@ def _benchmark_manifest_gate(
             None,
         )
     descriptor = _file_descriptor(manifest_path)
+    try:
+        payload = json.loads(manifest_path.read_text())
+    except json.JSONDecodeError as exc:
+        return (
+            _gate(
+                "fail",
+                "frozen microsimulation benchmark manifest is not valid JSON",
+                details={"path": str(manifest_path), "error": str(exc)},
+            ),
+            descriptor,
+        )
+    evidence = _benchmark_manifest_evidence(payload)
+    if evidence["missing"]:
+        return (
+            _gate(
+                "fail",
+                "frozen microsimulation benchmark manifest is missing pinned evidence",
+                metrics={
+                    "required_evidence_count": len(
+                        _REQUIRED_BENCHMARK_MANIFEST_EVIDENCE
+                    ),
+                    "present_evidence_count": len(evidence["present"]),
+                },
+                details={
+                    **descriptor,
+                    "missing_evidence": evidence["missing"],
+                    "present_evidence": evidence["present"],
+                },
+            ),
+            descriptor,
+        )
     return (
         _gate(
             "pass",
-            "frozen microsimulation benchmark manifest attached",
-            details=descriptor,
+            "frozen microsimulation benchmark manifest pins baseline, target, and package evidence",
+            metrics={
+                "required_evidence_count": len(
+                    _REQUIRED_BENCHMARK_MANIFEST_EVIDENCE
+                ),
+                "present_evidence_count": len(evidence["present"]),
+            },
+            details={**descriptor, "present_evidence": evidence["present"]},
         ),
         descriptor,
     )
+
+
+def _benchmark_manifest_evidence(payload: Any) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        return {
+            "present": {},
+            "missing": list(_REQUIRED_BENCHMARK_MANIFEST_EVIDENCE),
+        }
+    present: dict[str, Any] = {}
+    missing: list[str] = []
+    for evidence_name, paths in _REQUIRED_BENCHMARK_MANIFEST_EVIDENCE.items():
+        value = _first_nested_path_value(payload, paths)
+        if not _valid_benchmark_evidence_value(evidence_name, value):
+            missing.append(evidence_name)
+            continue
+        present[evidence_name] = value
+    return {"present": present, "missing": missing}
+
+
+def _first_nested_path_value(
+    payload: dict[str, Any],
+    paths: tuple[tuple[str, ...], ...],
+) -> Any:
+    for path in paths:
+        current: Any = payload
+        for part in path:
+            if not isinstance(current, dict) or part not in current:
+                current = None
+                break
+            current = current[part]
+        if current is not None:
+            return current
+    return None
+
+
+def _valid_benchmark_evidence_value(name: str, value: Any) -> bool:
+    if not isinstance(value, str) or not value:
+        return False
+    if name.endswith(".sha256"):
+        return len(value) == 64 and bool(_HEX_RE.fullmatch(value))
+    if name.endswith(".commit"):
+        return 7 <= len(value) <= 40 and bool(_HEX_RE.fullmatch(value))
+    return True
 
 
 def _required_gate_names(*, require_ecps_comparison: bool) -> list[str]:

@@ -105,7 +105,20 @@ def _fake_pe_native_scores(**kwargs) -> dict[str, object]:
             "n_targets_kept": len(_TARGET_NAMES),
         },
         "broad_loss": {},
-        "family_breakdown": [],
+        "family_breakdown": [
+            {
+                "family": family,
+                "candidate_loss_contribution": 0.01,
+                "baseline_loss_contribution": 0.01,
+            }
+            for family in (
+                "state_agi_distribution",
+                "state_age_distribution",
+                "national_ssa",
+                "national_irs_other",
+                "state_aca_spending",
+            )
+        ],
     }
 
 

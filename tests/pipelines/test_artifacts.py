@@ -334,7 +334,7 @@ class TestSaveUSMicroplexArtifacts:
         source_diagnostics = json.loads(paths.source_weight_diagnostics.read_text())
         assert (
             source_diagnostics["summary"]["diagnostic_scope"]
-            == "saved_artifact_household_weight_by_source_rows"
+            == "saved_artifact_entity_weight_by_source_rows"
         )
         assert source_diagnostics["summary"]["support_household_weight_share"] == 0.0
         assert (
@@ -342,9 +342,15 @@ class TestSaveUSMicroplexArtifacts:
             == 0.0
         )
         assert source_diagnostics["summary"]["total_household_weight"] == 2.0
+        assert source_diagnostics["summary"]["total_person_weight"] == 2.0
+        assert source_diagnostics["summary"]["total_tax_unit_weight"] == 2.0
         assert source_diagnostics["sources"][0]["source_class"] == (
             "synthetic_population"
         )
+        assert source_diagnostics["sources"][0]["person_count"] == 2
+        assert source_diagnostics["sources"][0]["person_weight_share"] == 1.0
+        assert source_diagnostics["sources"][0]["tax_unit_count"] == 2
+        assert source_diagnostics["sources"][0]["tax_unit_weight_share"] == 1.0
 
         with h5py.File(paths.policyengine_dataset, "r") as handle:
             assert "household_id" in handle

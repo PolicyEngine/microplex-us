@@ -1,0 +1,90 @@
+# Worked example: the eCPS-shaped national canonical build for Microplex.
+# Validates against build_manifest.schema.json.
+#
+# Fields marked `pending` are NOT yet confirmed from code (contract rule #7:
+# unconfirmed = pending, never guessed). The open questions are flagged so the
+# manifest itself records what we still need to verify — which is the point.
+
+manifest_version: 1
+
+build:
+  id: mp-national-canonical-2024
+  engine: microplex-us
+  derives_from: null          # this IS the canonical; experiments derive FROM it
+  delta_label: null
+  period: 2024
+  created_at: pending          # set at emit time
+  code_ref:
+    repo: PolicyEngine/microplex-us
+    git_sha: pending
+    dirty: pending
+  environment:
+    python: "3.13"
+    key_packages:
+      microimpute: "1.1.2"     # NOTE: lacks zero_inflated -> regime_aware not runnable here
+      policyengine-us: pending
+      policyengine-us-data: pending
+  reproduce:
+    command: "uv run --extra dev --extra policyengine python -m microplex_us.pipelines.<entrypoint> --config national_canonical"
+    config_ref: default_policyengine_us_data_rebuild_config
+
+population:
+  frame: cps_asec
+  spines:
+    - { source: cps_asec, role: base_candidate, households: pending, clone_of: null }
+    - { source: cps_asec, role: support_clone,  households: pending, clone_of: cps_asec, clone_strategy: donor_attribute_support_clone }
+  total_households: pending
+  # ACS is intentionally NOT a spine in the canonical national build (it is a
+  # donor below). The tested mp_top120000 build promoted ACS to a spine
+  # (+200k ACS rows) -> that was a delta/experiment, not the canonical.
+
+donors:
+  - source: irs_soi_puf
+    shareability: restricted   # blocked from being a spine by the Shareability.PUBLIC gate
+    method: qrf                # production default; regime_aware (-/0/+ sign classifier) wired but not default
+    predictors: [age, is_male, tax_unit_is_joint, tax_unit_count_dependents,
+                 is_tax_unit_head, is_tax_unit_spouse, is_tax_unit_dependent]
+    applies_to: [base, clone]
+    stripped: ["MARS==0 aggregate record", "calculated tax outputs barred as conditions",
+               "geography/tenure scaffold filler"]
+  # The following donors HAVE providers + donor-block specs in microplex-us, but
+  # whether default_policyengine_us_data_rebuild_config ACTIVATES them is PENDING
+  # verification (this was an open question; do not assert).
+  - { source: acs,  method: pending, applies_to: pending }   # residence value / property (pending: wired by default?)
+  - { source: sipp, method: pending, applies_to: pending }   # assets (pending: wired by default?)
+  - { source: scf,  method: pending, applies_to: pending }   # net worth (pending: wired by default?)
+
+variables:
+  # Treatments mirror eCPS semantics (IMPUTED vs OVERRIDDEN); confirm mp parity per variable.
+  employment_income:         { source: cps_asec,    treatment: kept }
+  social_security:           { source: cps_asec,    treatment: kept }
+  taxable_pension_income:    { source: cps_asec,    treatment: imputed_on_clone, donor: irs_soi_puf, method: qrf }
+  long_term_capital_gains:   { source: cps_asec,    treatment: imputed_on_clone, donor: irs_soi_puf, method: qrf }
+  qualified_dividend_income: { source: cps_asec,    treatment: imputed_on_clone, donor: irs_soi_puf, method: qrf }
+  rental_income:             { source: cps_asec,    treatment: imputed_on_clone, donor: irs_soi_puf, method: qrf }
+  partnership_s_corp_income: { source: irs_soi_puf, treatment: overridden_everywhere, donor: irs_soi_puf, method: qrf }
+  deductible_mortgage_interest: { source: irs_soi_puf, treatment: overridden_everywhere, donor: irs_soi_puf, method: qrf }
+  charitable_cash_donations: { source: irs_soi_puf, treatment: overridden_everywhere, donor: irs_soi_puf, method: qrf }
+  w2_wages_from_qualified_business: { source: irs_soi_puf, treatment: overridden_everywhere, donor: irs_soi_puf, method: qrf }
+  net_worth:                 { source: scf,  treatment: pending, donor: scf,  method: pending }   # pending: SCF wired by default?
+  real_estate_taxes:         { source: acs,  treatment: pending, donor: acs,  method: pending }   # pending: ACS wired by default?
+  adjusted_gross_income:     { source: runtime, treatment: derived }
+
+calibration:
+  method: l0                  # confirm: entropy vs l0 vs projected_gd for the canonical
+  target_set: { name: pe_native_broad, version: 2024, count: 2818 }
+  household_budget: null
+  holdout: { fraction: 0.2, seed: 20260529 }
+
+outputs:
+  dataset: { path: pending, sha256: pending, n_households: pending }
+
+measured:
+  total_weight: pending
+  nonzero_households: pending
+  effective_sample_size: pending
+  pe_native_broad_loss: pending
+
+validation:
+  spec_matches_output: pending
+  reproduced_clean: pending

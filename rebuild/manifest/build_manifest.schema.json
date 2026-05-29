@@ -1,0 +1,152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://policyengine.org/schemas/build-manifest/v1.json",
+  "title": "Microdata build manifest",
+  "description": "Authoritative, reproducible record of what a microdata dataset is and how it was built. Works for policyengine-us-data (eCPS) and microplex-us.",
+  "type": "object",
+  "required": ["manifest_version", "build", "population", "donors", "variables", "calibration", "outputs"],
+  "additionalProperties": false,
+  "properties": {
+    "manifest_version": { "const": 1 },
+    "build": {
+      "type": "object",
+      "required": ["id", "engine", "period", "created_at", "code_ref", "environment", "reproduce"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]+$", "description": "Stable, meaningful name. Never a bare timestamp." },
+        "engine": { "enum": ["microplex-us", "policyengine-us-data"] },
+        "derives_from": { "type": ["string", "null"], "description": "Parent build id if this is a delta." },
+        "delta_label": { "type": ["string", "null"], "description": "What changed vs the parent, e.g. 'canonical + acs-spine'." },
+        "period": { "type": "integer" },
+        "created_at": { "type": "string", "format": "date-time" },
+        "code_ref": {
+          "type": "object",
+          "required": ["repo", "git_sha", "dirty"],
+          "properties": {
+            "repo": { "type": "string" },
+            "git_sha": { "type": "string" },
+            "dirty": { "type": ["boolean", "string"] }
+          }
+        },
+        "environment": {
+          "type": "object",
+          "required": ["python", "key_packages"],
+          "properties": {
+            "python": { "type": "string" },
+            "key_packages": { "type": "object", "additionalProperties": { "type": "string" } }
+          }
+        },
+        "reproduce": {
+          "type": "object",
+          "required": ["command"],
+          "properties": {
+            "command": { "type": "string" },
+            "config_ref": { "type": ["string", "null"] }
+          }
+        }
+      }
+    },
+    "population": {
+      "type": "object",
+      "required": ["frame", "spines", "total_households"],
+      "additionalProperties": false,
+      "properties": {
+        "frame": { "type": "string", "description": "Base household frame source name." },
+        "spines": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["source", "role", "households"],
+            "properties": {
+              "source": { "type": "string" },
+              "role": { "enum": ["base_candidate", "support_clone"] },
+              "households": { "type": ["integer", "string"], "minimum": 0 },
+              "clone_of": { "type": ["string", "null"] },
+              "clone_strategy": { "type": ["string", "null"], "description": "e.g. doubled, geographic_clone, none" }
+            }
+          }
+        },
+        "total_households": { "type": ["integer", "string"], "minimum": 0 }
+      }
+    },
+    "donors": {
+      "type": "array",
+      "description": "Sources that impute variables but contribute NO rows.",
+      "items": {
+        "type": "object",
+        "required": ["source", "method", "applies_to"],
+        "properties": {
+          "source": { "type": "string" },
+          "shareability": { "enum": ["public", "restricted", "pending"] },
+          "method": { "enum": ["qrf", "regime_aware", "statmatch", "maf", "pending"] },
+          "predictors": { "type": "array", "items": { "type": "string" } },
+          "applies_to": { "oneOf": [ { "type": "array", "items": { "enum": ["base", "clone"] } }, { "const": "pending" } ] },
+          "stripped": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "variables": {
+      "type": "object",
+      "description": "Per-variable provenance. Key = variable name.",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["source", "treatment"],
+        "properties": {
+          "source": { "type": "string", "description": "Authoritative source, or 'runtime' for derived." },
+          "treatment": {
+            "enum": ["kept", "imputed_on_clone", "overridden_everywhere", "imputed_from_donor", "derived", "pending"],
+            "description": "kept=base value used as-is; imputed_on_clone=base keeps, clone gets donor; overridden_everywhere=donor replaces on all rows; imputed_from_donor=not on frame, donor-only; derived=computed by runtime."
+          },
+          "donor": { "type": ["string", "null"] },
+          "method": { "enum": ["qrf", "regime_aware", "statmatch", "maf", "pending"] }
+        }
+      }
+    },
+    "calibration": {
+      "type": "object",
+      "required": ["method", "target_set"],
+      "properties": {
+        "method": { "enum": ["l0", "projected_gd", "entropy", "pending"] },
+        "target_set": {
+          "type": "object",
+          "required": ["name", "version", "count"],
+          "properties": {
+            "name": { "type": "string" },
+            "version": { "type": ["integer", "string"] },
+            "count": { "type": ["integer", "string"] }
+          }
+        },
+        "household_budget": { "type": ["integer", "null"] },
+        "holdout": { "type": ["object", "null"] }
+      }
+    },
+    "outputs": {
+      "type": "object",
+      "required": ["dataset"],
+      "properties": {
+        "dataset": {
+          "type": "object",
+          "required": ["path", "sha256", "n_households"],
+          "properties": {
+            "path": { "type": "string" },
+            "sha256": { "type": "string" },
+            "n_households": { "type": ["integer", "string"] }
+          }
+        }
+      }
+    },
+    "measured": {
+      "type": "object",
+      "description": "Filled post-build by the validator from the actual H5. 'pending' until computed; never guessed.",
+      "additionalProperties": true
+    },
+    "validation": {
+      "type": "object",
+      "properties": {
+        "spec_matches_output": { "type": ["boolean", "string"] },
+        "reproduced_clean": { "type": ["boolean", "string"] }
+      }
+    }
+  }
+}

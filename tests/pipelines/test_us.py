@@ -807,6 +807,38 @@ class TestUSMicroplexPipeline:
             {"SINGLE", "JOINT", "SEPARATE", "HEAD_OF_HOUSEHOLD", "SURVIVING_SPOUSE"}
         )
 
+    def test_build_policyengine_entity_tables_preserves_household_contract_inputs(
+        self,
+    ):
+        pipeline = USMicroplexPipeline(USMicroplexBuildConfig())
+        population = pd.DataFrame(
+            {
+                "person_id": [1, 2, 3],
+                "household_id": [10, 10, 20],
+                "weight": [1.0, 1.0, 2.0],
+                "age": [45, 12, 70],
+                "income": [60_000.0, 0.0, 25_000.0],
+                "relationship_to_head": [0, 2, 0],
+                "state_fips": [6, 6, 36],
+                "tenure": [1, 1, 2],
+                "tenure_type": ["OWNER_WITH_MORTGAGE", "OWNER_WITH_MORTGAGE", "RENTER"],
+                "net_worth": [300_000.0, 300_000.0, 50_000.0],
+                "auto_loan_balance": [12_000.0, 12_000.0, 0.0],
+                "auto_loan_interest": [600.0, 600.0, 0.0],
+            }
+        )
+
+        tables = pipeline.build_policyengine_entity_tables(population)
+        households = tables.households.sort_values("household_id").reset_index(drop=True)
+
+        assert households["tenure_type"].tolist() == [
+            "OWNER_WITH_MORTGAGE",
+            "RENTER",
+        ]
+        assert households["net_worth"].tolist() == [300_000.0, 50_000.0]
+        assert households["auto_loan_balance"].tolist() == [12_000.0, 0.0]
+        assert households["auto_loan_interest"].tolist() == [600.0, 0.0]
+
     def test_build_policyengine_entity_tables_uses_household_level_spm_fallback(
         self,
     ):
@@ -1688,18 +1720,26 @@ class TestUSMicroplexPipeline:
                 "income": [60_000.0, 15_000.0],
                 "relationship_to_head": [0, 1],
                 "filing_status": ["JOINT", "JOINT"],
+                "domestic_production_ald": [7.0, 2.0],
                 "health_savings_account_ald": [60.0, 15.0],
+                "recapture_of_investment_credit": [3.0, 4.0],
                 "self_employed_health_insurance_ald": [20.0, 5.0],
                 "self_employed_pension_contribution_ald": [30.0, 10.0],
+                "unrecaptured_section_1250_gain": [11.0, 13.0],
+                "unreported_payroll_tax": [17.0, 19.0],
             }
         )
 
         tables = pipeline.build_policyengine_entity_tables(population)
         tax_units = tables.tax_units.sort_values("tax_unit_id").reset_index(drop=True)
 
+        assert tax_units["domestic_production_ald"].tolist() == [9.0]
         assert tax_units["health_savings_account_ald"].tolist() == [75.0]
+        assert tax_units["recapture_of_investment_credit"].tolist() == [7.0]
         assert tax_units["self_employed_health_insurance_ald"].tolist() == [25.0]
         assert tax_units["self_employed_pension_contribution_ald"].tolist() == [40.0]
+        assert tax_units["unrecaptured_section_1250_gain"].tolist() == [24.0]
+        assert tax_units["unreported_payroll_tax"].tolist() == [36.0]
 
     def test_build_policyengine_entity_tables_deduplicates_repeated_tax_unit_ald_values(
         self,
@@ -1718,6 +1758,7 @@ class TestUSMicroplexPipeline:
                 "relationship_to_head": [0, 1],
                 "filing_status": ["JOINT", "JOINT"],
                 "self_employed_pension_contribution_ald": [30.0, 30.0],
+                "unrecaptured_section_1250_gain": [50.0, 50.0],
             }
         )
 
@@ -1725,6 +1766,7 @@ class TestUSMicroplexPipeline:
         tax_units = tables.tax_units.sort_values("tax_unit_id").reset_index(drop=True)
 
         assert tax_units["self_employed_pension_contribution_ald"].tolist() == [30.0]
+        assert tax_units["unrecaptured_section_1250_gain"].tolist() == [50.0]
 
     def test_build_policyengine_entity_tables_preserved_tax_units_require_reciprocal_spouse_pointer_for_joint(
         self,

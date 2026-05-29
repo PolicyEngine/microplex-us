@@ -2003,7 +2003,12 @@ class TestPolicyEngineUSProjection:
             "traditional_ira_contributions",
             "unreimbursed_business_employee_expenses",
         )
+        household_contract_inputs = (
+            "auto_loan_balance",
+            "auto_loan_interest",
+        )
         tax_unit_contract_inputs = (
+            "domestic_production_ald",
             "recapture_of_investment_credit",
             "unrecaptured_section_1250_gain",
             "unreported_payroll_tax",
@@ -2012,6 +2017,10 @@ class TestPolicyEngineUSProjection:
         class FakeSystem:
             variables = {
                 **{name: FakeVariable("person") for name in person_contract_inputs},
+                **{
+                    name: FakeVariable("household")
+                    for name in household_contract_inputs
+                },
                 **{name: FakeVariable("tax_unit") for name in tax_unit_contract_inputs},
                 "self_employed_health_insurance_ald": FakeVariable("tax_unit"),
                 "self_employed_pension_contribution_ald": FakeVariable("tax_unit"),
@@ -2022,6 +2031,7 @@ class TestPolicyEngineUSProjection:
                 {
                     "household_id": [10],
                     "household_weight": [1.0],
+                    **{name: [5.0] for name in household_contract_inputs},
                 }
             ),
             persons=pd.DataFrame(
@@ -2049,6 +2059,9 @@ class TestPolicyEngineUSProjection:
 
         assert export_maps["person"] == {
             name: name for name in person_contract_inputs
+        }
+        assert export_maps["household"] == {
+            name: name for name in household_contract_inputs
         }
         assert export_maps["tax_unit"] == {
             name: name for name in tax_unit_contract_inputs

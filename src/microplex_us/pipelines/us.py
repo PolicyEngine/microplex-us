@@ -7474,6 +7474,20 @@ class USMicroplexPipeline:
                 )
             result["medicare_part_b_premiums"] = medicare_part_b_premiums
 
+        if "takes_up_ssi_if_eligible" in result.columns:
+            result["takes_up_ssi_if_eligible"] = (
+                pd.to_numeric(
+                    result["takes_up_ssi_if_eligible"],
+                    errors="coerce",
+                )
+                .fillna(0.0)
+                .ne(0.0)
+            )
+        elif "ssi_reported" in result.columns:
+            result["takes_up_ssi_if_eligible"] = first_present("ssi_reported").gt(0.0)
+        elif "ssi" in result.columns:
+            result["takes_up_ssi_if_eligible"] = first_present("ssi").gt(0.0)
+
         known_nonemployment = (
             first_present("self_employment_income")
             + first_present("taxable_interest_income", "interest_income")

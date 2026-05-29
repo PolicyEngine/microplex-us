@@ -23,6 +23,7 @@ from microplex.targets import (
     apply_target_query,
 )
 
+from microplex_us.microdata_roles import POLICYENGINE_US_TAKEUP_INPUT_VARIABLES
 from microplex_us.policyengine.target_profiles import PolicyEngineUSTargetCell
 
 GEOGRAPHIC_CONSTRAINT_VARIABLES: set[str] = {
@@ -327,7 +328,7 @@ SAFE_POLICYENGINE_US_EXPORT_VARIABLES: set[str] = {
     "student_loan_interest",
     "state_fips",
     "county_fips",
-}
+} | set(POLICYENGINE_US_TAKEUP_INPUT_VARIABLES)
 
 POLICYENGINE_US_EXPORT_COLUMN_ALIASES: dict[str, str] = {
     "race": "cps_race",

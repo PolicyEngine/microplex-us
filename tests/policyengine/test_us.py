@@ -2121,6 +2121,7 @@ class TestPolicyEngineUSProjection:
         assert "ssn_card_type" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         assert "is_separated" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         assert "is_surviving_spouse" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
+        assert "is_blind" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         assert "takes_up_ssi_if_eligible" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         assert "ssi" not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         assert "ssi_reported" not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES

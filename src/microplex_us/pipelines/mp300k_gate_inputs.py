@@ -19,6 +19,7 @@ def package_mp300k_gate_inputs(
     candidate_dataset_path: str | Path | None = None,
     baseline_dataset_path: str | Path | None = None,
     ecps_comparison_path: str | Path | None = None,
+    arch_coverage_path: str | Path | None = None,
     runtime_smoke_path: str | Path | None = None,
     benchmark_manifest_path: str | Path | None = None,
     archive_name: str = "artifact.tar.gz",
@@ -90,6 +91,10 @@ def package_mp300k_gate_inputs(
         "ecps_comparison": _copy_optional_evidence(
             ecps_comparison_path,
             output_root / "ecps_comparison.json",
+        ),
+        "arch_coverage": _copy_optional_evidence(
+            arch_coverage_path,
+            output_root / "arch_coverage.json",
         ),
         "runtime_smoke": _copy_optional_evidence(
             runtime_smoke_path,
@@ -286,6 +291,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--candidate-dataset")
     parser.add_argument("--baseline-dataset")
     parser.add_argument("--ecps-comparison-json")
+    parser.add_argument("--arch-coverage-json")
     parser.add_argument("--runtime-smoke-json")
     parser.add_argument("--benchmark-manifest")
     parser.add_argument("--archive-name", default="artifact.tar.gz")
@@ -297,6 +303,7 @@ def main(argv: list[str] | None = None) -> int:
         candidate_dataset_path=args.candidate_dataset,
         baseline_dataset_path=args.baseline_dataset,
         ecps_comparison_path=args.ecps_comparison_json,
+        arch_coverage_path=args.arch_coverage_json,
         runtime_smoke_path=args.runtime_smoke_json,
         benchmark_manifest_path=args.benchmark_manifest,
         archive_name=args.archive_name,

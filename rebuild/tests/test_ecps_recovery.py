@@ -1,32 +1,50 @@
 """End-to-end recovery invariant against the real PE-native target estate.
 
-This is the integration-level version of ``test_fit_never_increases_loss``: when
-the sound operator is applied to the *already-calibrated* enhanced CPS, the
-PE-native broad loss must be RECOVERED (~0.166), not blown up to ~0.544 the way
-the old ``run_pe_native_l0_falsification.py`` path did.
+The integration-level version of ``test_fit_never_increases_loss``: applying the
+sound operator to the *already-calibrated* enhanced CPS must RECOVER its
+PE-native broad loss (~0.166), not blow it up to ~0.544 the way the old
+``run_pe_native_l0_falsification.py`` path did.
 
-It is skipped until the PE-native target loader + matrix builder are wired into
-this clean package (next loop iteration). Wiring it here -- rather than importing
-the old monolith's matrix code -- is deliberate: the bug may live in how the old
-code builds the fitting vs scoring matrices, so we re-derive scoring cleanly and
-verify it against the cached baseline (eCPS shipped ~0.166).
+Slow (builds the PE-native matrix via PolicyEngine, a few minutes), so it is
+gated behind ``MPR_RUN_SLOW=1`` to keep the fast invariant suite fast.
 """
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 import pytest
 
-pytestmark = pytest.mark.skip(
-    reason="PE-native loader/matrix builder not wired into mp_rebuild yet "
-    "(next iteration). Target: refit(eCPS) recovers ~0.166, not 0.544."
+from mp_rebuild import fit, score
+
+ECPS_H5 = (
+    Path.home()
+    / "PolicyEngine/policyengine-us-data/policyengine_us_data/storage/enhanced_cps_2024.h5"
 )
+RUN_SLOW = os.environ.get("MPR_RUN_SLOW") == "1"
 
 
+@pytest.mark.skipif(
+    not RUN_SLOW, reason="set MPR_RUN_SLOW=1 (slow: builds the PE-native matrix)"
+)
+@pytest.mark.skipif(not ECPS_H5.exists(), reason="enhanced_cps_2024.h5 not present")
 def test_refit_ecps_recovers_shipped_loss():
-    # Pseudocode for the wired version:
-    #   problem = load_pe_native_problem(ecps_h5, period=2024)      # clean re-derivation
-    #   w0 = load_household_weights(ecps_h5, period=2024)           # shipped weights
-    #   assert score(problem, w0) == pytest.approx(0.166, abs=0.01) # baseline sanity
-    #   w1 = fit(problem, w0)
-    #   assert score(problem, w1) <= score(problem, w0) + 1e-6      # never worse
-    raise AssertionError("not wired yet")
+    from mp_rebuild.pe_native import load_pe_native_problem
+
+    pn = load_pe_native_problem(ECPS_H5, period=2024)
+
+    # 1) Baseline sanity: the clean loader reproduces the published eCPS
+    #    PE-native broad loss (cached baseline reports ~0.1664).
+    shipped_loss = score(pn.problem, pn.weights)
+    assert shipped_loss == pytest.approx(0.1664, abs=0.03), (
+        f"clean loader should reproduce eCPS ~0.166, got {shipped_loss}"
+    )
+
+    # 2) Recovery / non-increase: the sound operator must not degrade a
+    #    calibrated dataset. The old harness drove this to ~0.544.
+    refit = fit(pn.problem, pn.weights, max_steps=2000)
+    refit_loss = score(pn.problem, refit)
+    assert refit_loss <= shipped_loss + 1e-6, (
+        f"refit must not worsen eCPS: shipped={shipped_loss} refit={refit_loss}"
+    )

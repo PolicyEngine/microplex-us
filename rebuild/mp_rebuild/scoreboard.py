@@ -53,10 +53,15 @@ class CalibrationProblem:
     target: ArrayLike
     normalization: ArrayLike | None = None
     names: tuple[str, ...] | None = None
+    reduction: str = "mean"
 
     def __post_init__(self) -> None:
-        self.matrix = np.asarray(self.matrix, dtype=np.float64)
+        # Preserve the input dtype (PE-native matrices are float32 and large;
+        # forcing float64 would double the memory of a 2818 x N matrix).
+        self.matrix = np.asarray(self.matrix)
         self.target = np.asarray(self.target, dtype=np.float64)
+        if self.reduction not in ("mean", "sum"):
+            raise ValueError("reduction must be 'mean' or 'sum'")
         if self.matrix.ndim != 2:
             raise ValueError("matrix must be 2-D (n_targets, n_records)")
         if self.matrix.shape[0] != self.target.shape[0]:
@@ -86,15 +91,23 @@ class CalibrationProblem:
         return (self.estimate(weights) - self.target) / self.normalization
 
     def loss(self, weights: ArrayLike) -> float:
-        """THE loss: mean squared relative error. Fitting and scoring agree."""
-        err = self.relative_errors(weights)
-        return float(np.mean(err**2))
+        """THE loss: squared relative error. Fitting and scoring use this same fn.
+
+        ``reduction="mean"`` (default) is mean squared relative error.
+        ``reduction="sum"`` is the unreduced sum, used when per-target weighting
+        is already folded into ``matrix``/``normalization`` (the PE-native case,
+        whose ``build_loss_matrix`` bakes the 1/n_targets and national/state
+        balancing into the matrix scaling).
+        """
+        sq = self.relative_errors(weights) ** 2
+        return float(np.sum(sq) if self.reduction == "sum" else np.mean(sq))
 
     def gradient(self, weights: ArrayLike) -> np.ndarray:
         """Analytic gradient of ``loss`` with respect to ``weights``."""
         err = self.relative_errors(weights)  # (n_targets,)
-        scaled = err / self.normalization  # d loss / d estimate, up to 2/T
-        return (2.0 / self.n_targets) * (self.matrix.T @ scaled)
+        scaled = err / self.normalization  # d loss / d estimate, up to the factor
+        factor = 2.0 if self.reduction == "sum" else (2.0 / self.n_targets)
+        return factor * np.asarray(self.matrix.T @ scaled, dtype=np.float64)
 
     def subset(self, target_indices: ArrayLike) -> "CalibrationProblem":
         """Return the problem restricted to a subset of targets (same weights)."""
@@ -105,6 +118,7 @@ class CalibrationProblem:
             target=self.target[idx],
             normalization=self.normalization[idx],
             names=names,
+            reduction=self.reduction,
         )
 
 

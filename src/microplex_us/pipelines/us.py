@@ -2440,6 +2440,21 @@ class USMicroplexPipeline:
                 max_iter=max(self.config.calibration_max_iter, 1_000),
             )
         if self.config.calibration_backend == "hardconcrete":
+            if l0_penalty <= 0.0:
+                from microplex_us.calibration import (
+                    MicrocalibrateAdapter,
+                    MicrocalibrateAdapterConfig,
+                )
+
+                return MicrocalibrateAdapter(
+                    MicrocalibrateAdapterConfig(
+                        epochs=max(self.config.calibration_max_iter, 32),
+                        learning_rate=1e-3,
+                        device=self.config.device,
+                        seed=self.config.random_seed,
+                        regularize_with_l0=False,
+                    )
+                )
             return HardConcreteCalibrator(
                 lambda_l0=l0_penalty,
                 epochs=max(self.config.calibration_max_iter, 500),
@@ -3187,6 +3202,8 @@ class USMicroplexPipeline:
                             "person_weight_diagnostics"
                         ],
                         "max_error": float(validation.get("max_error", 0.0)),
+                        "effective_backend": validation.get("backend"),
+                        "uses_gates": validation.get("uses_gates"),
                         "mean_error": (
                             float(
                                 np.mean(

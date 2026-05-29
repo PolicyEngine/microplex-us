@@ -102,6 +102,8 @@ class PolicyEngineL0Calibrator:
         self.max_error_: float = 0.0
         self.converged_: bool = False
         self.n_iterations_: int = 0
+        self.effective_backend_: str = "policyengine_l0"
+        self.loss_history_: list[dict[str, float | int]] = []
 
     def fit(
         self,
@@ -166,8 +168,11 @@ class PolicyEngineL0Calibrator:
         self.weights_ = weights
         self.calibration_error_ = float(np.sqrt(np.mean(rel_errors**2)))
         self.max_error_ = float(rel_errors.max()) if len(rel_errors) else 0.0
-        self.converged_ = bool(self.max_error_ < self.tol)
-        self.n_iterations_ = self.epochs
+        if self.effective_backend_ == "dense_projected_gradient":
+            self.converged_ = bool(self.converged_ or self.max_error_ < self.tol)
+        else:
+            self.converged_ = bool(self.max_error_ < self.tol)
+            self.n_iterations_ = self.epochs
         self.is_fitted_ = True
         return self
 
@@ -179,6 +184,14 @@ class PolicyEngineL0Calibrator:
         initial_weights: np.ndarray,
         target_names: list[str],
     ) -> np.ndarray:
+        if self.lambda_l0 <= 0.0:
+            self.effective_backend_ = "dense_projected_gradient"
+            return self._fit_dense_no_l0_weights(
+                X_sparse=X_sparse,
+                targets=targets,
+                initial_weights=initial_weights,
+            )
+        self.effective_backend_ = "policyengine_l0"
         try:
             from policyengine_us_data.calibration.unified_calibration import (
                 fit_l0_weights,
@@ -206,6 +219,86 @@ class PolicyEngineL0Calibrator:
                 initial_weights=initial_weights,
                 target_names=target_names,
             )
+
+    def _fit_dense_no_l0_weights(
+        self,
+        *,
+        X_sparse,
+        targets: np.ndarray,
+        initial_weights: np.ndarray,
+    ) -> np.ndarray:
+        matrix = X_sparse.tocsr() if sp.issparse(X_sparse) else sp.csr_matrix(X_sparse)
+        target = np.asarray(targets, dtype=np.float64)
+        weights = np.maximum(np.asarray(initial_weights, dtype=np.float64), 0.0)
+        initial_reference = weights.copy()
+        scale = 1.0 / np.maximum(np.abs(target), 1.0)
+
+        def objective(candidate: np.ndarray) -> float:
+            residual = (matrix @ candidate - target) * scale
+            loss = float(np.dot(residual, residual))
+            if self.lambda_l2 > 0.0:
+                delta = candidate - initial_reference
+                loss += float(self.lambda_l2 * np.dot(delta, delta))
+            return loss
+
+        def gradient(candidate: np.ndarray) -> np.ndarray:
+            residual = (matrix @ candidate - target) * scale
+            grad = 2.0 * np.asarray(matrix.T @ (residual * scale)).reshape(-1)
+            if self.lambda_l2 > 0.0:
+                grad += 2.0 * self.lambda_l2 * (candidate - initial_reference)
+            return grad
+
+        step_size = 1.0 / _estimate_sparse_quadratic_lipschitz(
+            matrix,
+            scale,
+            self.lambda_l2,
+        )
+        current_loss = objective(weights)
+        self.loss_history_ = [
+            {
+                "iteration": 0,
+                "objective_loss": float(current_loss),
+                "weight_sum": float(weights.sum()),
+                "positive_record_count": int((weights > 1e-9).sum()),
+            }
+        ]
+        self.converged_ = False
+        completed_iter = 0
+        for iteration in range(1, self.epochs + 1):
+            completed_iter = iteration
+            grad = gradient(weights)
+            accepted = False
+            iteration_step_size = step_size
+            candidate = weights
+            candidate_loss = current_loss
+            for _ in range(30):
+                trial = np.maximum(weights - iteration_step_size * grad, 0.0)
+                trial_loss = objective(trial)
+                if trial_loss <= current_loss:
+                    candidate = trial
+                    candidate_loss = trial_loss
+                    accepted = True
+                    break
+                iteration_step_size *= 0.5
+            if not accepted:
+                self.converged_ = True
+                break
+            improvement = current_loss - candidate_loss
+            weights = candidate
+            current_loss = candidate_loss
+            self.loss_history_.append(
+                {
+                    "iteration": int(iteration),
+                    "objective_loss": float(current_loss),
+                    "weight_sum": float(weights.sum()),
+                    "positive_record_count": int((weights > 1e-9).sum()),
+                }
+            )
+            if improvement < self.tol * max(1.0, current_loss):
+                self.converged_ = True
+                break
+        self.n_iterations_ = completed_iter
+        return weights
 
     def _fit_weights_via_policyengine_python(
         self,
@@ -331,12 +424,16 @@ class PolicyEngineL0Calibrator:
 
         weights = self.weights_
         results = {
+            "backend": self.effective_backend_,
+            "uses_gates": self.effective_backend_ == "policyengine_l0",
             "targets": {},
             "marginal_errors": {},
             "continuous_errors": {},
             "linear_errors": {},
             "sparsity": self.get_sparsity(),
             "converged": self.converged_,
+            "iterations": self.n_iterations_,
+            "loss_history": self.loss_history_,
         }
 
         if self.marginal_targets_:
@@ -390,3 +487,28 @@ class PolicyEngineL0Calibrator:
         results["mean_error"] = float(np.mean(errors)) if errors else 0.0
         results["rmse"] = self.calibration_error_
         return results
+
+
+def _estimate_sparse_quadratic_lipschitz(
+    matrix,
+    row_scale: np.ndarray,
+    l2_penalty: float,
+) -> float:
+    if matrix.shape[0] == 0 or matrix.shape[1] == 0:
+        return max(2.0 * l2_penalty, 1.0)
+    scale_squared = np.square(np.asarray(row_scale, dtype=np.float64))
+    vector = np.ones(matrix.shape[1], dtype=np.float64)
+    vector /= np.linalg.norm(vector)
+    for _ in range(25):
+        transformed = np.asarray(
+            matrix.T @ (scale_squared * np.asarray(matrix @ vector).reshape(-1))
+        ).reshape(-1)
+        norm = np.linalg.norm(transformed)
+        if norm < 1e-12:
+            return max(2.0 * l2_penalty, 1.0)
+        vector = transformed / norm
+    transformed = np.asarray(
+        matrix.T @ (scale_squared * np.asarray(matrix @ vector).reshape(-1))
+    ).reshape(-1)
+    eigenvalue = float(np.dot(vector, transformed))
+    return max(2.0 * eigenvalue + 2.0 * l2_penalty, 1e-6)

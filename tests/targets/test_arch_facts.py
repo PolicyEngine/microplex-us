@@ -2897,7 +2897,11 @@ def test_arch_consumer_fact_jsonl_provider_maps_ssi_detail_targets(
             if target.metadata["arch_variable"] != arch_variable:
                 continue
             filters = {
-                (target_filter.feature, target_filter.operator.value, target_filter.value)
+                (
+                    target_filter.feature,
+                    target_filter.operator.value,
+                    target_filter.value,
+                )
                 for target_filter in target.filters
             }
             if required_filters.issubset(filters):
@@ -2908,7 +2912,7 @@ def test_arch_consumer_fact_jsonl_provider_maps_ssi_detail_targets(
 
     aged_count = find_target(
         "ssi_recipients",
-        {("is_ssi_aged", "==", 1), ("ssi", ">", 0)},
+        {("ssi_category", "==", "AGED"), ("ssi", ">", 0)},
     )
     assert aged_count.measure is None
     assert aged_count.entity.value == "person"
@@ -2917,7 +2921,7 @@ def test_arch_consumer_fact_jsonl_provider_maps_ssi_detail_targets(
     assert {
         (target_filter.feature, target_filter.operator.value, target_filter.value)
         for target_filter in aged_count.filters
-    } == {("is_ssi_aged", "==", 1), ("ssi", ">", 0)}
+    } == {("ssi_category", "==", "AGED"), ("ssi", ">", 0)}
 
     ca_payments = find_target(
         "ssi_total_payments",
@@ -2934,7 +2938,11 @@ def test_arch_consumer_fact_jsonl_provider_maps_ssi_detail_targets(
 
     ca_disabled_count = find_target(
         "ssi_recipients",
-        {("is_ssi_disabled", "==", 1), ("ssi", ">", 0), ("state_fips", "==", "06")},
+        {
+            ("ssi_category", "==", "DISABLED"),
+            ("ssi", ">", 0),
+            ("state_fips", "==", "06"),
+        },
     )
     assert ca_disabled_count.measure is None
     assert ca_disabled_count.value == pytest.approx(877_000)
@@ -2942,7 +2950,7 @@ def test_arch_consumer_fact_jsonl_provider_maps_ssi_detail_targets(
         (target_filter.feature, target_filter.operator.value, target_filter.value)
         for target_filter in ca_disabled_count.filters
     } == {
-        ("is_ssi_disabled", "==", 1),
+        ("ssi_category", "==", "DISABLED"),
         ("ssi", ">", 0),
         ("state_fips", "==", "06"),
     }

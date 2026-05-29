@@ -57,7 +57,10 @@ class CalibrationProblem:
 
     def __post_init__(self) -> None:
         # Preserve the input dtype (PE-native matrices are float32 and large;
-        # forcing float64 would double the memory of a 2818 x N matrix).
+        # forcing float64 would double the memory of a 2818 x N matrix). The
+        # matmul accumulates in float64 (weights are float64), but float32 matrix
+        # *storage* means the metric is reproduced to ~1e-8, not bit-exact, vs a
+        # float64-matrix reference. Negligible at the ~0.16 loss scale.
         self.matrix = np.asarray(self.matrix)
         self.target = np.asarray(self.target, dtype=np.float64)
         if self.reduction not in ("mean", "sum"):

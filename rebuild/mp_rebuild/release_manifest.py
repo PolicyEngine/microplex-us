@@ -61,20 +61,32 @@ def build_data_artifact(
     revision: str | None = None,
     kind: str = "dataset",
     certified: bool = False,
+    status: str = "unverified",
+    missing_reason: str | None = None,
     sha256: str | None = None,
     size_bytes: int | None = None,
 ) -> dict[str, Any]:
-    """One ``DataArtifact`` entry. Computes sha256/size from ``path`` if given."""
+    """One ``DataArtifact`` entry. Computes sha256/size from ``path`` if given.
+
+    The bundles ``DataArtifact`` model requires a ``missing_reason`` whenever the
+    status is not ``certified``; we auto-fill one so non-certified manifests stay
+    valid (a candidate dataset is legitimately ``unverified`` until a bundle run
+    certifies it).
+    """
     if path is not None and (sha256 is None or size_bytes is None):
         sha256, size_bytes = sha256_and_size(path)
+    resolved_status = "certified" if certified else status
+    if resolved_status != "certified" and not missing_reason:
+        missing_reason = "not yet certified"
     return {
         "kind": kind,
         "uri": uri,
         "path": (Path(path).name if path is not None else None),
         "repo_id": repo_id,
         "revision": revision,
-        "status": "certified" if certified else "unverified",
+        "status": resolved_status,
         "sha256": sha256,
+        "missing_reason": (None if resolved_status == "certified" else missing_reason),
         "size_bytes": size_bytes,
         "release_manifest_artifact_key": key,
         "preservation_mirrors": [],

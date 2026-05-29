@@ -84,6 +84,28 @@ def test_build_provenance_fed_from_build_manifest(tmp_path):
     assert build["metadata"]["engine"] == "microplex-us"
 
 
+def _uncertified_manifest(tmp_path: Path):
+    h5 = tmp_path / "mp_300k_2024.h5"
+    h5.write_bytes(b"candidate bytes" * 60)
+    return build_release_manifest(
+        data_package_name="microplex-us",
+        data_package_version="0.1.0",
+        artifacts={"mp_300k_2024": h5},
+        repo_id="policyengine/microplex-us",
+        compatible_model_packages=[("policyengine-us", ">=1.715,<2")],
+        compatible_core_packages=[("policyengine-core", ">=3.26,<4")],
+        default_datasets={"us": "mp_300k_2024"},
+        certified=False,
+    )
+
+
+def test_uncertified_artifact_has_missing_reason(tmp_path):
+    """Non-certified artifacts must carry a missing_reason (bundles model requires it)."""
+    art = _uncertified_manifest(tmp_path)["artifacts"]["mp_300k_2024"]
+    assert art["status"] == "unverified"
+    assert art["missing_reason"]  # non-empty
+
+
 def test_validates_against_bundles_schema(tmp_path):
     jsonschema = pytest.importorskip("jsonschema")
     if not DEFAULT_BUNDLES_SCHEMA.exists():
@@ -91,5 +113,23 @@ def test_validates_against_bundles_schema(tmp_path):
     import json
 
     schema = json.loads(DEFAULT_BUNDLES_SCHEMA.read_text())
-    manifest, _ = _manifest_for(tmp_path)
-    jsonschema.validate(manifest, schema)  # raises if non-conforming
+    jsonschema.validate(_manifest_for(tmp_path)[0], schema)  # certified
+    jsonschema.validate(_uncertified_manifest(tmp_path), schema)  # uncertified
+
+
+def test_validates_against_bundles_pydantic_model(tmp_path):
+    """The real oracle: both certified and uncertified must pass the bundles model."""
+    import sys
+
+    bundles_src = Path.home() / "PolicyEngine/policyengine-bundles/src"
+    if not bundles_src.exists():
+        pytest.skip("policyengine-bundles repo not present")
+    pytest.importorskip("pydantic")
+    sys.path.insert(0, str(bundles_src))
+    try:
+        from policyengine_bundles.models import DataReleaseManifest
+    except Exception as exc:  # pragma: no cover - environment dependent
+        pytest.skip(f"policyengine_bundles import failed: {exc}")
+
+    DataReleaseManifest.model_validate(_manifest_for(tmp_path)[0])  # certified
+    DataReleaseManifest.model_validate(_uncertified_manifest(tmp_path))  # uncertified

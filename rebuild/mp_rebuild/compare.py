@@ -23,6 +23,11 @@ from .scoreboard import fit, score
 
 def align_common(raw_a: RawPeNative, raw_b: RawPeNative):
     """Restrict both datasets to common targets with identical shared scaling."""
+    # Names must be unique: alignment maps by name, so a duplicate would silently
+    # double-count one row and drop the other.
+    for label, names in (("candidate", raw_a.names), ("baseline", raw_b.names)):
+        if len(set(names)) != len(names):
+            raise ValueError(f"{label} target names must be unique for alignment")
     pos_b = {n: i for i, n in enumerate(raw_b.names)}
     common = [n for n in raw_a.names if n in pos_b]
     if not common:

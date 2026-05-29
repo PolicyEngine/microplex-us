@@ -203,6 +203,37 @@ def test_benchmark_manifest_gate_requires_pinned_release_evidence(tmp_path):
     ]
 
 
+def test_benchmark_manifest_gate_rejects_dirty_us_data_pin(tmp_path):
+    artifact_dir = tmp_path / "artifact"
+    artifact_dir.mkdir()
+    _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
+    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    benchmark_manifest = tmp_path / "benchmark_manifest.json"
+    _write_benchmark_manifest(benchmark_manifest)
+    payload = json.loads(benchmark_manifest.read_text())
+    payload["policyengine_us_data"]["dirty"] = True
+    benchmark_manifest.write_text(json.dumps(payload))
+    _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
+
+    report_path = write_mp300k_artifact_gate_report(
+        artifact_dir,
+        ecps_comparison_payload=_sound_ecps_comparison_payload(),
+        runtime_smoke_payload={"runtime_ratio": 1.0},
+        benchmark_manifest_path=benchmark_manifest,
+        compute_native_scores=False,
+        update_manifest=False,
+    )
+
+    record = json.loads(report_path.read_text())
+    benchmark_gate = record["gates"]["benchmark_manifest"]
+
+    assert record["summary"]["status"] == "failed"
+    assert benchmark_gate["status"] == "fail"
+    assert benchmark_gate["details"]["missing_evidence"] == [
+        "policyengine_us_data.clean"
+    ]
+
+
 def test_write_mp300k_artifact_gate_report_fails_missing_structural_array(tmp_path):
     artifact_dir = tmp_path / "artifact"
     artifact_dir.mkdir()

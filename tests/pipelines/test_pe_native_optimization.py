@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import h5py
 import numpy as np
 
+from microplex_us.pipelines import pe_native_optimization as pe_opt
 from microplex_us.pipelines.pe_native_optimization import (
     PolicyEngineUSNativeWeightOptimizationResult,
     optimize_pe_native_loss_weights,
@@ -100,6 +101,35 @@ def test_optimize_pe_native_loss_weights_respects_target_total_weight():
     assert summary["target_total_weight"] == 5.0
     assert np.isclose(summary["optimized_weight_sum"], 5.0, atol=1e-6)
     assert summary["optimized_loss"] < summary["initial_loss"]
+
+
+def test_optimize_pe_native_loss_weights_rejects_objective_increasing_steps(
+    monkeypatch,
+):
+    """An overlarge initial step must not make an already-good fit worse."""
+    scaled_matrix = np.eye(2, dtype=np.float64)
+    scaled_target = np.asarray([0.6, 0.4], dtype=np.float64)
+    initial_weights = np.asarray([0.5, 0.5], dtype=np.float64)
+    initial_loss = np.square(scaled_matrix.T @ initial_weights - scaled_target).sum()
+    monkeypatch.setattr(
+        pe_opt,
+        "_estimate_quadratic_lipschitz",
+        lambda matrix, l2_penalty: 0.01,
+    )
+
+    optimized_weights, summary = optimize_pe_native_loss_weights(
+        scaled_matrix=scaled_matrix,
+        scaled_target=scaled_target,
+        initial_weights=initial_weights,
+        max_iter=20,
+    )
+
+    optimized_loss = np.square(
+        scaled_matrix.T @ optimized_weights - scaled_target
+    ).sum()
+    assert optimized_loss <= initial_loss + 1e-12
+    assert summary["optimized_loss"] <= summary["initial_loss"] + 1e-12
+    assert summary["line_search_backtracking_steps"] > 0
 
 
 def test_rewrite_policyengine_us_dataset_weights_updates_group_weights(tmp_path: Path):

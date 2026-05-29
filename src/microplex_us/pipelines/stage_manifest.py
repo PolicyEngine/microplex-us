@@ -14,6 +14,7 @@ from microplex_us.pipelines.stage_contracts import (
     StageResumeMode,
     USPipelineStageContract,
     USStageArtifactContract,
+    USStageResourceContract,
     default_us_pipeline_stage_contracts,
 )
 from microplex_us.policyengine.us import (
@@ -79,6 +80,19 @@ class USStageValidationRecord(TypedDict):
     status: USStageValidationStatus
 
 
+class USStageResourceRecord(TypedDict):
+    """Saved-run view of one structured stage input or output."""
+
+    key: str
+    description: str
+    kind: str
+    required: bool
+    stage_id: str | None
+    artifact_key: str | None
+    config_key: str | None
+    manifest_key: str | None
+
+
 class USStageRecord(TypedDict):
     """One stage entry in a US stage manifest."""
 
@@ -89,6 +103,8 @@ class USStageRecord(TypedDict):
     status: USStageStatus
     consumes: list[str]
     produces: list[str]
+    inputs: list[USStageResourceRecord]
+    outputs: list[USStageResourceRecord]
     artifacts: list[USStageArtifactRecord]
     diagnostics: list[str]
     validations: list[USStageValidationRecord]
@@ -406,6 +422,8 @@ def _stage_record(
         ),
         "consumes": list(contract.consumes),
         "produces": list(contract.produces),
+        "inputs": _resource_records(contract.inputs),
+        "outputs": _resource_records(contract.outputs),
         "artifacts": artifacts,
         "diagnostics": list(contract.diagnostics),
         "validations": cast(
@@ -444,6 +462,15 @@ def _artifact_record(
     }
 
 
+def _resource_records(
+    resources: tuple[USStageResourceContract, ...],
+) -> list[USStageResourceRecord]:
+    return cast(
+        list[USStageResourceRecord],
+        [resource.to_dict() for resource in resources],
+    )
+
+
 def _stage_status(
     stage_id: str,
     *,
@@ -457,7 +484,7 @@ def _stage_status(
     calibration = dict(manifest.get("calibration", {}))
     rows = dict(manifest.get("rows", {}))
     if stage_id == "01_run_profile":
-        if _referenced_artifact_missing(artifacts):
+        if _artifact_missing(artifacts, required_only=True):
             return "incomplete"
         if _artifact_exists(artifacts, "manifest"):
             return "ready"
@@ -465,13 +492,13 @@ def _stage_status(
     if stage_id == "02_source_loading":
         return "metadata_only" if synthesis.get("source_names") else "missing"
     if stage_id == "03_source_planning":
-        if _referenced_artifact_missing(artifacts):
+        if _artifact_missing(artifacts):
             return "incomplete"
         if _artifact_exists(artifacts, "source_plan"):
             return "ready"
         return "metadata_only" if synthesis.get("scaffold_source") else "missing"
     if stage_id == "04_seed_scaffold":
-        if _referenced_artifact_missing(artifacts, required_only=True):
+        if _artifact_missing(artifacts, required_only=True):
             return "incomplete"
         if _required_artifacts_exist(artifacts):
             return "ready"
@@ -481,7 +508,7 @@ def _stage_status(
             else "missing"
         )
     if stage_id == "05_donor_integration_synthesis":
-        if _referenced_artifact_missing(artifacts, required_only=True):
+        if _artifact_missing(artifacts, required_only=True):
             return "incomplete"
         if _required_artifacts_exist(artifacts):
             return "ready"
@@ -489,7 +516,7 @@ def _stage_status(
             "metadata_only" if rows.get("seed") or rows.get("synthetic") else "missing"
         )
     if stage_id == "06_policyengine_entities":
-        if _referenced_artifact_missing(artifacts):
+        if _artifact_missing(artifacts):
             return "incomplete"
         if _artifact_exists(artifacts, "policyengine_entity_tables"):
             return "ready"
@@ -502,18 +529,13 @@ def _stage_status(
             return "metadata_only"
         return "missing"
     if stage_id == "07_calibration":
-        if _referenced_artifact_missing(artifacts, required_only=True):
+        if _artifact_missing(artifacts, required_only=True):
             return "incomplete"
         if calibration and _required_artifacts_exist(artifacts):
             return "ready"
         return "metadata_only" if calibration and rows.get("calibrated") else "missing"
     if stage_id == "08_dataset_assembly":
-        if _manifest_artifact_missing(
-            manifest,
-            artifact_root,
-            ("policyengine_dataset", "stage_manifest", "data_flow_snapshot"),
-            assume_existing_artifact_keys=assume_existing_artifact_keys,
-        ):
+        if _artifact_missing(artifacts, required_only=True):
             return "incomplete"
         if _manifest_artifact_exists(
             manifest,
@@ -580,15 +602,17 @@ def _artifact_exists(artifacts: list[USStageArtifactRecord], key: str) -> bool:
     )
 
 
-def _referenced_artifact_missing(
+def _artifact_missing(
     artifacts: list[USStageArtifactRecord],
     *,
     required_only: bool = False,
 ) -> bool:
     return any(
-        bool(artifact.get("referenced"))
-        and not bool(artifact.get("exists"))
-        and (not required_only or bool(artifact.get("required")))
+        not bool(artifact.get("exists"))
+        and (
+            bool(artifact.get("required"))
+            or (not required_only and bool(artifact.get("referenced")))
+        )
         for artifact in artifacts
     )
 
@@ -750,6 +774,7 @@ __all__ = [
     "USStageMetric",
     "USStageMetricValue",
     "USStageRecord",
+    "USStageResourceRecord",
     "USStageResumeRecord",
     "USStageStatus",
     "USStageValidationRecord",

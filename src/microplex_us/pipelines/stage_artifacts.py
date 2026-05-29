@@ -6,7 +6,6 @@ import hashlib
 import json
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, TypedDict, cast
 
@@ -79,7 +78,7 @@ class USStageArtifactInventory(TypedDict):
 
     schemaVersion: int
     contractVersion: str
-    generatedAt: str
+    generatedAt: str | None
     pipeline: str
     artifactRoot: str
     manifest: str
@@ -88,13 +87,29 @@ class USStageArtifactInventory(TypedDict):
 
 
 @dataclass(frozen=True)
+class USSeedScaffoldStageArtifacts:
+    """Reloaded Stage 4 seed/scaffold artifact."""
+
+    scaffold_seed_data: pd.DataFrame
+    artifact_paths: Mapping[str, Path] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class USCandidateStageArtifacts:
-    """Reloaded Stage 4/5 candidate artifacts for manual downstream replay."""
+    """Reloaded Stage 5 candidate artifacts for manual downstream replay."""
 
     seed_data: pd.DataFrame
     synthetic_data: pd.DataFrame
+    artifact_paths: Mapping[str, Path] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class USCandidateCalibrationReplayArtifacts:
+    """Cross-stage artifacts for manually replaying candidate calibration."""
+
+    candidate: USCandidateStageArtifacts
     targets: USMicroplexTargets
-    scaffold_seed_data: pd.DataFrame | None = None
+    seed_scaffold: USSeedScaffoldStageArtifacts | None = None
     artifact_paths: Mapping[str, Path] = field(default_factory=dict)
 
 
@@ -125,6 +140,8 @@ class USDatasetAssemblyArtifacts:
     manifest: Path
     stage_manifest: Path
     data_flow_snapshot: Path
+    artifact_inventory: Path
+    conditional_readiness: Path
 
 
 def build_us_stage_artifact_inventory(
@@ -176,7 +193,7 @@ def build_us_stage_artifact_inventory(
     return {
         "schemaVersion": US_STAGE_ARTIFACT_INVENTORY_SCHEMA_VERSION,
         "contractVersion": US_STAGE_CONTRACT_VERSION,
-        "generatedAt": datetime.now(UTC).isoformat(),
+        "generatedAt": _optional_str(manifest.get("created_at")),
         "pipeline": "us_microplex",
         "artifactRoot": ".",
         "manifest": str(manifest_artifacts.get("manifest", "manifest.json")),
@@ -335,9 +352,7 @@ def load_us_candidate_stage_artifacts(
     manifest_payload: dict[str, Any] | None = None,
     stage_manifest: USStageManifest | dict[str, Any] | None = None,
 ) -> USCandidateStageArtifacts:
-    """Load the saved candidate population artifacts for manual replay."""
-
-    from microplex_us.pipelines.us import USMicroplexTargets
+    """Load the saved Stage 5 candidate population artifacts."""
 
     seed_path = resolve_us_stage_artifact_path_checked(
         artifact_dir,
@@ -355,6 +370,54 @@ def load_us_candidate_stage_artifacts(
         stage_manifest=stage_manifest,
         expected_format="parquet_dataframe",
     )
+    return USCandidateStageArtifacts(
+        seed_data=pd.read_parquet(seed_path),
+        synthetic_data=pd.read_parquet(synthetic_path),
+        artifact_paths={
+            "seed_data": seed_path,
+            "synthetic_data": synthetic_path,
+        },
+    )
+
+
+def load_us_seed_scaffold_stage_artifacts(
+    artifact_dir: str | Path,
+    *,
+    manifest_payload: dict[str, Any] | None = None,
+    stage_manifest: USStageManifest | dict[str, Any] | None = None,
+) -> USSeedScaffoldStageArtifacts:
+    """Load the saved Stage 4 seed/scaffold artifact."""
+
+    scaffold_seed_path = resolve_us_stage_artifact_path_checked(
+        artifact_dir,
+        "04_seed_scaffold",
+        "scaffold_seed_data",
+        manifest_payload=manifest_payload,
+        stage_manifest=stage_manifest,
+        expected_format="parquet_dataframe",
+    )
+    return USSeedScaffoldStageArtifacts(
+        scaffold_seed_data=pd.read_parquet(scaffold_seed_path),
+        artifact_paths={"scaffold_seed_data": scaffold_seed_path},
+    )
+
+
+def load_us_candidate_calibration_replay_artifacts(
+    artifact_dir: str | Path,
+    *,
+    manifest_payload: dict[str, Any] | None = None,
+    stage_manifest: USStageManifest | dict[str, Any] | None = None,
+    include_seed_scaffold: bool = True,
+) -> USCandidateCalibrationReplayArtifacts:
+    """Load the cross-stage artifacts needed to manually replay calibration."""
+
+    from microplex_us.pipelines.us import USMicroplexTargets
+
+    candidate = load_us_candidate_stage_artifacts(
+        artifact_dir,
+        manifest_payload=manifest_payload,
+        stage_manifest=stage_manifest,
+    )
     targets_path = resolve_us_stage_artifact_path_checked(
         artifact_dir,
         "07_calibration",
@@ -363,37 +426,31 @@ def load_us_candidate_stage_artifacts(
         stage_manifest=stage_manifest,
         expected_format="json",
     )
-    scaffold_seed_path = _resolve_optional_stage_artifact_path(
-        artifact_dir,
-        "04_seed_scaffold",
-        "scaffold_seed_data",
-        manifest_payload=manifest_payload,
-        stage_manifest=stage_manifest,
-        expected_format="parquet_dataframe",
-    )
+    seed_scaffold = None
+    if include_seed_scaffold:
+        try:
+            seed_scaffold = load_us_seed_scaffold_stage_artifacts(
+                artifact_dir,
+                manifest_payload=manifest_payload,
+                stage_manifest=stage_manifest,
+            )
+        except (KeyError, FileNotFoundError):
+            seed_scaffold = None
     targets_payload = json.loads(targets_path.read_text())
-    return USCandidateStageArtifacts(
-        seed_data=pd.read_parquet(seed_path),
-        synthetic_data=pd.read_parquet(synthetic_path),
+    artifact_paths = {
+        **dict(candidate.artifact_paths),
+        "targets": targets_path,
+    }
+    if seed_scaffold is not None:
+        artifact_paths.update(seed_scaffold.artifact_paths)
+    return USCandidateCalibrationReplayArtifacts(
+        candidate=candidate,
         targets=USMicroplexTargets(
             marginal=dict(targets_payload.get("marginal", {})),
             continuous=dict(targets_payload.get("continuous", {})),
         ),
-        scaffold_seed_data=(
-            pd.read_parquet(scaffold_seed_path)
-            if scaffold_seed_path is not None
-            else None
-        ),
-        artifact_paths={
-            "seed_data": seed_path,
-            "synthetic_data": synthetic_path,
-            "targets": targets_path,
-            **(
-                {"scaffold_seed_data": scaffold_seed_path}
-                if scaffold_seed_path is not None
-                else {}
-            ),
-        },
+        seed_scaffold=seed_scaffold,
+        artifact_paths=artifact_paths,
     )
 
 
@@ -506,6 +563,22 @@ def load_us_dataset_assembly_artifacts(
             stage_manifest=stage_manifest,
             expected_format="json",
         ),
+        artifact_inventory=resolve_us_stage_artifact_path_checked(
+            artifact_root,
+            "08_dataset_assembly",
+            "artifact_inventory",
+            manifest_payload=manifest_payload,
+            stage_manifest=stage_manifest,
+            expected_format="json",
+        ),
+        conditional_readiness=resolve_us_stage_artifact_path_checked(
+            artifact_root,
+            "08_dataset_assembly",
+            "conditional_readiness",
+            manifest_payload=manifest_payload,
+            stage_manifest=stage_manifest,
+            expected_format="json",
+        ),
     )
 
 
@@ -609,9 +682,11 @@ def _artifact_classification(
     artifact: Mapping[str, Any],
 ) -> USStageArtifactClassification:
     if not bool(artifact.get("exists")):
-        if not bool(artifact.get("referenced")):
-            return "contract_only"
-        return "missing_required" if bool(artifact.get("required")) else "missing_optional"
+        if bool(artifact.get("required")):
+            return "missing_required"
+        if bool(artifact.get("referenced")):
+            return "missing_optional"
+        return "contract_only"
     resume_role = artifact.get("resume_role")
     if resume_role == "diagnostic":
         return "diagnostic_only"
@@ -730,17 +805,21 @@ __all__ = [
     "US_STAGE_ARTIFACT_INVENTORY_SCHEMA_VERSION",
     "USCalibratedStageArtifacts",
     "USCandidateStageArtifacts",
+    "USCandidateCalibrationReplayArtifacts",
     "USDatasetAssemblyArtifacts",
     "USPolicyEngineEntityStageArtifacts",
+    "USSeedScaffoldStageArtifacts",
     "USStageArtifactClassification",
     "USStageArtifactHashStatus",
     "USStageArtifactInventory",
     "USStageArtifactInventoryRecord",
     "build_us_stage_artifact_inventory",
     "load_us_calibrated_stage_artifacts",
+    "load_us_candidate_calibration_replay_artifacts",
     "load_us_candidate_stage_artifacts",
     "load_us_dataset_assembly_artifacts",
     "load_us_policyengine_entity_stage_artifacts",
+    "load_us_seed_scaffold_stage_artifacts",
     "load_us_stage_json_artifact",
     "load_us_stage_parquet_artifact",
     "load_us_stage_artifact_inventory",

@@ -29,6 +29,19 @@ def test_build_us_stage_manifest_reports_nine_stage_statuses(tmp_path):
     (tmp_path / "calibrated_data.parquet").write_text("calibrated")
     (tmp_path / "targets.json").write_text("{}")
     (tmp_path / "policyengine_us.h5").write_text("dataset")
+    source_plan_path = tmp_path / "stage_artifacts" / "03_source_planning"
+    source_plan_path.mkdir(parents=True)
+    (source_plan_path / "source_plan.json").write_text("{}")
+    entity_path = tmp_path / "stage_artifacts" / "06_policyengine_entities"
+    entity_path.mkdir(parents=True)
+    (entity_path / "metadata.json").write_text("{}")
+    calibration_path = tmp_path / "stage_artifacts" / "07_calibration"
+    calibration_path.mkdir(parents=True)
+    (calibration_path / "calibration_summary.json").write_text("{}")
+    (tmp_path / "stage_manifest.json").write_text("{}")
+    (tmp_path / "data_flow_snapshot.json").write_text("{}")
+    (tmp_path / "stage_artifacts" / "artifact_inventory.json").write_text("{}")
+    (tmp_path / "stage_artifacts" / "conditional_readiness.json").write_text("{}")
     manifest = {
         "created_at": "2026-05-28T00:00:00+00:00",
         "config": {"calibration_backend": "entropy"},
@@ -48,7 +61,18 @@ def test_build_us_stage_manifest_reports_nine_stage_statuses(tmp_path):
             "synthetic_data": "synthetic_data.parquet",
             "calibrated_data": "calibrated_data.parquet",
             "targets": "targets.json",
+            "source_plan": "stage_artifacts/03_source_planning/source_plan.json",
+            "policyengine_entity_tables": (
+                "stage_artifacts/06_policyengine_entities/metadata.json"
+            ),
+            "calibration_summary": (
+                "stage_artifacts/07_calibration/calibration_summary.json"
+            ),
             "policyengine_dataset": "policyengine_us.h5",
+            "stage_manifest": "stage_manifest.json",
+            "data_flow_snapshot": "data_flow_snapshot.json",
+            "artifact_inventory": "stage_artifacts/artifact_inventory.json",
+            "conditional_readiness": "stage_artifacts/conditional_readiness.json",
         },
     }
 
@@ -70,10 +94,10 @@ def test_build_us_stage_manifest_reports_nine_stage_statuses(tmp_path):
     statuses = {stage["id"]: stage["status"] for stage in payload["stages"]}
     assert statuses["01_run_profile"] == "ready"
     assert statuses["02_source_loading"] == "metadata_only"
-    assert statuses["03_source_planning"] == "metadata_only"
+    assert statuses["03_source_planning"] == "ready"
     assert statuses["04_seed_scaffold"] == "ready"
     assert statuses["05_donor_integration_synthesis"] == "ready"
-    assert statuses["06_policyengine_entities"] == "metadata_only"
+    assert statuses["06_policyengine_entities"] == "ready"
     assert statuses["07_calibration"] == "ready"
     assert statuses["08_dataset_assembly"] == "ready"
     assert statuses["09_validation_benchmarking"] == "deferred"
@@ -123,6 +147,14 @@ def test_load_us_stage_manifest_accepts_v1_and_v2(tmp_path):
 
 def test_build_us_stage_manifest_keeps_empty_validation_index_deferred(tmp_path):
     (tmp_path / "policyengine_us.h5").write_text("dataset")
+    (tmp_path / "stage_manifest.json").write_text("{}")
+    (tmp_path / "data_flow_snapshot.json").write_text("{}")
+    (tmp_path / "stage_artifacts" / "artifact_inventory.json").parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+    (tmp_path / "stage_artifacts" / "artifact_inventory.json").write_text("{}")
+    (tmp_path / "stage_artifacts" / "conditional_readiness.json").write_text("{}")
     evidence_path = (
         tmp_path
         / "stage_artifacts"
@@ -146,6 +178,10 @@ def test_build_us_stage_manifest_keeps_empty_validation_index_deferred(tmp_path)
         "calibration": {},
         "artifacts": {
             "policyengine_dataset": "policyengine_us.h5",
+            "stage_manifest": "stage_manifest.json",
+            "data_flow_snapshot": "data_flow_snapshot.json",
+            "artifact_inventory": "stage_artifacts/artifact_inventory.json",
+            "conditional_readiness": "stage_artifacts/conditional_readiness.json",
             "validation_evidence": (
                 "stage_artifacts/09_validation_benchmarking/evidence_manifest.json"
             ),

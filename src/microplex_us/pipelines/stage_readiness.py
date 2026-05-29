@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, TypedDict, cast
 
@@ -15,7 +14,10 @@ from microplex_us.pipelines.stage_artifacts import (
     build_us_stage_artifact_inventory,
     load_us_stage_artifact_inventory,
 )
-from microplex_us.pipelines.stage_contracts import US_STAGE_CONTRACT_VERSION
+from microplex_us.pipelines.stage_contracts import (
+    US_STAGE_CONTRACT_VERSION,
+    config_keys_for_us_pipeline_stage,
+)
 from microplex_us.pipelines.stage_manifest import (
     USStageManifest,
     USStageStatus,
@@ -59,6 +61,8 @@ class USConditionalReadinessStageRecord(TypedDict):
     reason: str
     compatibility: USStageCompatibility
     reuseKey: str | None
+    savedConfigHash: str | None
+    requestedConfigHash: str | None
     availableArtifacts: list[str]
     missingArtifacts: list[str]
     diagnosticArtifacts: list[str]
@@ -70,7 +74,7 @@ class USConditionalReadinessReport(TypedDict):
 
     schemaVersion: int
     contractVersion: str
-    generatedAt: str
+    generatedAt: str | None
     pipeline: str
     artifactRoot: str
     manifest: str
@@ -111,7 +115,7 @@ def build_us_stage_reuse_key(
         return None
     payload = {
         "stageId": stage_id,
-        "configHash": _config_hash(manifest_payload.get("config")),
+        "configHash": _stage_config_hash(stage_id, manifest_payload.get("config")),
         "artifacts": sorted(evidence, key=lambda item: item["key"]),
     }
     return _hash_json(payload)
@@ -147,15 +151,10 @@ def build_us_conditional_readiness_report(
     requested_config_hash = (
         _config_hash(requested_config) if requested_config is not None else None
     )
-    compatibility = _config_compatibility(
-        saved_config_hash,
-        requested_config_hash,
-        requested_config_supplied=requested_config is not None,
-    )
     return {
         "schemaVersion": US_CONDITIONAL_READINESS_SCHEMA_VERSION,
         "contractVersion": US_STAGE_CONTRACT_VERSION,
-        "generatedAt": datetime.now(UTC).isoformat(),
+        "generatedAt": _optional_str(manifest.get("created_at")),
         "pipeline": "us_microplex",
         "artifactRoot": ".",
         "manifest": str(dict(manifest.get("artifacts", {})).get("manifest", "manifest.json")),
@@ -169,7 +168,7 @@ def build_us_conditional_readiness_report(
                 stage,
                 manifest=manifest,
                 inventory=inventory,
-                compatibility=compatibility,
+                requested_config=requested_config,
             )
             for stage in stages.get("stages", ())
             if isinstance(stage, dict)
@@ -223,9 +222,20 @@ def _readiness_stage_record(
     *,
     manifest: Mapping[str, Any],
     inventory: Mapping[str, Any],
-    compatibility: USStageCompatibility,
+    requested_config: Mapping[str, Any] | None,
 ) -> USConditionalReadinessStageRecord:
     stage_id = str(stage.get("id", ""))
+    saved_stage_config_hash = _stage_config_hash(stage_id, manifest.get("config"))
+    requested_stage_config_hash = (
+        _stage_config_hash(stage_id, requested_config)
+        if requested_config is not None
+        else None
+    )
+    compatibility = _config_compatibility(
+        saved_stage_config_hash,
+        requested_stage_config_hash,
+        requested_config_supplied=requested_config is not None,
+    )
     artifacts = _inventory_artifacts_for_stage(inventory, stage_id)
     available = [
         _artifact_label(artifact)
@@ -263,6 +273,8 @@ def _readiness_stage_record(
         "reason": reason,
         "compatibility": compatibility,
         "reuseKey": build_us_stage_reuse_key(stage_id, manifest, inventory),
+        "savedConfigHash": saved_stage_config_hash,
+        "requestedConfigHash": requested_stage_config_hash,
         "availableArtifacts": available,
         "missingArtifacts": missing,
         "diagnosticArtifacts": diagnostic,
@@ -279,10 +291,6 @@ def _stage_readiness(
 ) -> tuple[USStageReadiness, str]:
     stage_id = str(stage.get("id", ""))
     status = stage.get("status")
-    if status in {"missing", "incomplete"}:
-        return "must_rerun", f"Stage status is {status}."
-    if compatibility == "mismatch":
-        return "must_rerun", "Requested configuration does not match the saved run."
     if stage_id == "09_validation_benchmarking" and status == "deferred":
         if stage8_dataset_available:
             return (
@@ -290,6 +298,8 @@ def _stage_readiness(
                 "Stage 8 dataset is available for validation or benchmark evidence.",
             )
         return "must_rerun", "Validation is deferred and no Stage 8 dataset is available."
+    if compatibility == "mismatch":
+        return "must_rerun", "Requested configuration does not match this stage's saved run inputs."
     classifications = {
         str(artifact.get("classification"))
         for artifact in artifacts
@@ -302,6 +312,8 @@ def _stage_readiness(
             )
     if "diagnostic_only" in classifications:
         return "diagnostic_only", "Stage has diagnostic artifacts but no replay boundary."
+    if status in {"missing", "incomplete"}:
+        return "must_rerun", f"Stage status is {status}."
     if status == "metadata_only":
         return "metadata_only", "Stage has metadata but no reloadable artifact."
     return "not_applicable", "No reusable artifact boundary is available."
@@ -363,6 +375,16 @@ def _config_hash(config: Any) -> str | None:
     if not isinstance(config, Mapping):
         return None
     return _hash_json(_canonical_config(config))
+
+
+def _stage_config_hash(stage_id: str, config: Any) -> str | None:
+    keys = config_keys_for_us_pipeline_stage(stage_id)
+    if not keys:
+        return _hash_json({})
+    if not isinstance(config, Mapping):
+        return None
+    scoped = {key: config.get(key) for key in keys if key in config}
+    return _hash_json(_canonical_config(scoped))
 
 
 def _canonical_config(config: Mapping[str, Any]) -> dict[str, Any]:

@@ -57,6 +57,9 @@ from microplex_us.pipelines.stage_artifacts import (
     build_us_stage_artifact_inventory,
     write_us_stage_artifact_inventory,
 )
+from microplex_us.pipelines.stage_contracts import (
+    resolve_us_stage_artifact_contract_path,
+)
 from microplex_us.pipelines.stage_manifest import (
     write_us_stage_manifest,
     write_us_validation_evidence_manifest,
@@ -1057,18 +1060,25 @@ def _refresh_checkpoint_data_flow_snapshot(
     extra_outputs: tuple[str, ...] = (),
 ) -> Path | None:
     snapshot_path = artifact_root / "data_flow_snapshot.json"
-    stage_manifest_path = artifact_root / "stage_manifest.json"
-    artifact_inventory_path = (
-        artifact_root / "stage_artifacts" / "artifact_inventory.json"
+    stage_manifest_path = resolve_us_stage_artifact_contract_path(
+        artifact_root,
+        "08_dataset_assembly",
+        "stage_manifest",
     )
-    conditional_readiness_path = (
-        artifact_root / "stage_artifacts" / "conditional_readiness.json"
+    artifact_inventory_path = resolve_us_stage_artifact_contract_path(
+        artifact_root,
+        "08_dataset_assembly",
+        "artifact_inventory",
     )
-    validation_evidence_path = (
-        artifact_root
-        / "stage_artifacts"
-        / "09_validation_benchmarking"
-        / "evidence_manifest.json"
+    conditional_readiness_path = resolve_us_stage_artifact_contract_path(
+        artifact_root,
+        "08_dataset_assembly",
+        "conditional_readiness",
+    )
+    validation_evidence_path = resolve_us_stage_artifact_contract_path(
+        artifact_root,
+        "09_validation_benchmarking",
+        "validation_evidence",
     )
     artifacts = dict(manifest.get("artifacts", {}))
     artifacts.setdefault("stage_manifest", stage_manifest_path.name)
@@ -1521,7 +1531,11 @@ def attach_policyengine_us_data_rebuild_checkpoint_evidence(
         )
         harness_payload = harness_run.to_dict()
     if harness_payload is not None:
-        harness_path = artifact_root / "policyengine_harness.json"
+        harness_path = resolve_us_stage_artifact_contract_path(
+            artifact_root,
+            "09_validation_benchmarking",
+            "policyengine_harness",
+        )
         _write_json_atomically(harness_path, harness_payload)
         artifacts["policyengine_harness"] = harness_path.name
         manifest["policyengine_harness"] = dict(harness_payload.get("summary", {}))
@@ -1552,7 +1566,11 @@ def attach_policyengine_us_data_rebuild_checkpoint_evidence(
             policyengine_us_data_python=policyengine_us_data_python,
         )
     if native_scores_payload is not None:
-        native_scores_path = artifact_root / "policyengine_native_scores.json"
+        native_scores_path = resolve_us_stage_artifact_contract_path(
+            artifact_root,
+            "09_validation_benchmarking",
+            "policyengine_native_scores",
+        )
         _write_json_atomically(native_scores_path, native_scores_payload)
         artifacts["policyengine_native_scores"] = native_scores_path.name
         manifest["policyengine_native_scores"] = dict(
@@ -1580,7 +1598,11 @@ def attach_policyengine_us_data_rebuild_checkpoint_evidence(
             manifest=manifest,
         )
     if imputation_ablation_payload is not None:
-        imputation_ablation_path = artifact_root / "imputation_ablation.json"
+        imputation_ablation_path = resolve_us_stage_artifact_contract_path(
+            artifact_root,
+            "09_validation_benchmarking",
+            "imputation_ablation",
+        )
         _write_json_atomically(imputation_ablation_path, imputation_ablation_payload)
         artifacts["imputation_ablation"] = imputation_ablation_path.name
         manifest["imputation_ablation"] = dict(
@@ -1650,13 +1672,21 @@ def attach_policyengine_us_data_rebuild_checkpoint_evidence(
             policyengine_us_data_repo=policyengine_us_data_repo,
             policyengine_us_data_python=policyengine_us_data_python,
         )
-        native_audit_path = artifact_root / "pe_us_data_rebuild_native_audit.json"
+        native_audit_path = resolve_us_stage_artifact_contract_path(
+            artifact_root,
+            "09_validation_benchmarking",
+            "policyengine_native_audit",
+        )
         _write_json_atomically(native_audit_path, native_audit_payload)
         artifacts["policyengine_native_audit"] = native_audit_path.name
         manifest["policyengine_native_audit"] = dict(
             native_audit_payload.get("verdictHints", {})
         )
-    stage_manifest_path = artifact_root / "stage_manifest.json"
+    stage_manifest_path = resolve_us_stage_artifact_contract_path(
+        artifact_root,
+        "08_dataset_assembly",
+        "stage_manifest",
+    )
     validation_evidence_path = (
         artifact_root
         / "stage_artifacts"

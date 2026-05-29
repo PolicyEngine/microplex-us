@@ -4,8 +4,10 @@ import pytest
 
 from microplex_us.pipelines.stage_contracts import (
     canonicalize_us_pipeline_stage_id,
+    config_keys_for_us_pipeline_stage,
     default_us_pipeline_stage_contracts,
     get_us_pipeline_stage_contract,
+    resolve_us_stage_artifact_contract_path,
     serialize_us_pipeline_stage_contracts,
 )
 
@@ -33,6 +35,8 @@ def test_default_us_pipeline_stage_contracts_are_stable_and_complete():
         assert contract.purpose
         assert contract.consumes
         assert contract.produces
+        assert contract.inputs
+        assert contract.outputs
         assert contract.diagnostics
         assert contract.validations
         assert contract.resume_mode
@@ -67,6 +71,7 @@ def test_serialize_us_pipeline_stage_contracts_is_json_ready():
     assert payload["contractVersion"] == "us-runtime-stages-v2"
     assert len(payload["stages"]) == 9
     assert payload["stages"][5]["id"] == "06_policyengine_entities"
+    assert payload["stages"][5]["inputs"][0]["artifact_key"] == "synthetic_data"
     assert payload["stages"][7]["artifacts"][-1]["key"] == "conditional_readiness"
     assert payload["stages"][7]["artifacts"][-1]["format"] == "json"
 
@@ -81,3 +86,14 @@ def test_canonicalize_us_pipeline_stage_id_maps_legacy_runtime_ids():
     assert canonicalize_us_pipeline_stage_id("benchmark") == "09_validation_benchmarking"
     assert canonicalize_us_pipeline_stage_id("08_dataset_assembly") == "08_dataset_assembly"
     assert canonicalize_us_pipeline_stage_id("custom-stage") == "custom-stage"
+
+
+def test_stage_contracts_expose_config_scope_and_canonical_paths(tmp_path):
+    assert "n_synthetic" in config_keys_for_us_pipeline_stage(
+        "05_donor_integration_synthesis"
+    )
+    assert resolve_us_stage_artifact_contract_path(
+        tmp_path,
+        "08_dataset_assembly",
+        "artifact_inventory",
+    ) == (tmp_path / "stage_artifacts" / "artifact_inventory.json")

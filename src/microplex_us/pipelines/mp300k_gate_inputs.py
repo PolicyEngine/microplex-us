@@ -75,6 +75,28 @@ def package_mp300k_gate_inputs(
         staged_baseline = stage_root / baseline_relpath
         staged_baseline.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(baseline_dataset, staged_baseline)
+    source_weight_diagnostics = _resolve_manifest_artifact_path(
+        artifact_root,
+        manifest,
+        "source_weight_diagnostics",
+    )
+    source_weight_diagnostics_relpath = None
+    if source_weight_diagnostics is not None:
+        if not source_weight_diagnostics.exists():
+            raise FileNotFoundError(
+                "source weight diagnostics not found: "
+                f"{source_weight_diagnostics}"
+            )
+        source_weight_diagnostics_relpath = _manifest_artifact_archive_relpath(
+            manifest,
+            artifact_key="source_weight_diagnostics",
+            fallback=Path("source_weight_diagnostics.json"),
+        )
+        staged_source_weight_diagnostics = (
+            stage_root / source_weight_diagnostics_relpath
+        )
+        staged_source_weight_diagnostics.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source_weight_diagnostics, staged_source_weight_diagnostics)
 
     staged_manifest = _manifest_for_archive(
         manifest,
@@ -83,6 +105,8 @@ def package_mp300k_gate_inputs(
         candidate_relpath=candidate_relpath,
         source_baseline_dataset=baseline_dataset,
         baseline_relpath=baseline_relpath,
+        source_weight_diagnostics=source_weight_diagnostics,
+        source_weight_diagnostics_relpath=source_weight_diagnostics_relpath,
     )
     _write_json(stage_root / "manifest.json", staged_manifest)
     _write_archive(archive_path, stage_root)
@@ -113,6 +137,11 @@ def package_mp300k_gate_inputs(
         "source_candidate_dataset": _file_descriptor(candidate_dataset),
         "source_baseline_dataset": (
             _file_descriptor(baseline_dataset) if baseline_dataset is not None else None
+        ),
+        "source_weight_diagnostics": (
+            _file_descriptor(source_weight_diagnostics)
+            if source_weight_diagnostics is not None
+            else None
         ),
         "artifact_archive": _file_descriptor(archive_path),
         "evidence": evidence,
@@ -213,6 +242,32 @@ def _baseline_archive_relpath(
     return Path("baseline") / baseline_dataset.name
 
 
+def _resolve_manifest_artifact_path(
+    artifact_root: Path,
+    manifest: dict[str, Any],
+    artifact_key: str,
+) -> Path | None:
+    value = dict(manifest.get("artifacts", {})).get(artifact_key)
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"manifest.artifacts.{artifact_key} must be a path string")
+    path = Path(value).expanduser()
+    return path if path.is_absolute() else artifact_root / path
+
+
+def _manifest_artifact_archive_relpath(
+    manifest: dict[str, Any],
+    *,
+    artifact_key: str,
+    fallback: Path,
+) -> Path:
+    value = dict(manifest.get("artifacts", {})).get(artifact_key)
+    if isinstance(value, str) and value:
+        return _safe_archive_relpath(Path(value), fallback=fallback)
+    return fallback
+
+
 def _manifest_for_archive(
     manifest: dict[str, Any],
     *,
@@ -221,10 +276,14 @@ def _manifest_for_archive(
     candidate_relpath: Path,
     source_baseline_dataset: Path | None,
     baseline_relpath: Path | None,
+    source_weight_diagnostics: Path | None,
+    source_weight_diagnostics_relpath: Path | None,
 ) -> dict[str, Any]:
     updated = dict(manifest)
     artifacts = dict(updated.get("artifacts", {}))
     artifacts["policyengine_dataset"] = str(candidate_relpath)
+    if source_weight_diagnostics_relpath is not None:
+        artifacts["source_weight_diagnostics"] = str(source_weight_diagnostics_relpath)
     updated["artifacts"] = artifacts
     config = dict(updated.get("config", {}))
     if baseline_relpath is not None:
@@ -237,6 +296,11 @@ def _manifest_for_archive(
         "source_baseline_dataset": (
             str(source_baseline_dataset.resolve())
             if source_baseline_dataset is not None
+            else None
+        ),
+        "source_weight_diagnostics": (
+            str(source_weight_diagnostics.resolve())
+            if source_weight_diagnostics is not None
             else None
         ),
     }

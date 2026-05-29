@@ -49,6 +49,7 @@ _DEFAULT_REQUIRED_GATES = (
     "compatibility",
     "artifact_size",
     "runtime",
+    "source_weight_diagnostics",
     "ecps_comparison",
     "arch_target_coverage",
     "benchmark_manifest",
@@ -75,6 +76,7 @@ _CORE_BENCHMARK_ECPS_TARGET_FAMILIES = (
 )
 _PROTECTED_FAMILY_RELATIVE_LOSS_TOLERANCE = 0.05
 _PROTECTED_FAMILY_ABSOLUTE_LOSS_TOLERANCE = 0.005
+_DEFAULT_MAX_SUPPORT_WEIGHT_SHARE = 0.25
 _FORBIDDEN_SOURCE_DIAGNOSTIC_VARIABLES = frozenset(
     {
         "ssi_reported",
@@ -152,11 +154,14 @@ def build_mp300k_artifact_gate_report(
     ecps_comparison_payload: Any = None,
     arch_coverage_payload: dict[str, Any] | None = None,
     runtime_smoke_payload: dict[str, Any] | None = None,
+    source_weight_diagnostics_payload: dict[str, Any] | None = None,
+    source_weight_diagnostics_path: str | Path | None = None,
     benchmark_manifest_path: str | Path | None = None,
     period: int = 2024,
     arch_coverage_profile: str = _DEFAULT_ARCH_COVERAGE_PROFILE,
     artifact_size_ratio_threshold: float = 2.0,
     runtime_ratio_threshold: float = 1.25,
+    max_support_weight_share: float = _DEFAULT_MAX_SUPPORT_WEIGHT_SHARE,
     compute_native_scores: bool = True,
     require_ecps_comparison: bool = True,
     policyengine_us_data_repo: str | Path | None = None,
@@ -212,6 +217,16 @@ def build_mp300k_artifact_gate_report(
         runtime_smoke_payload,
         runtime_ratio_threshold=runtime_ratio_threshold,
     )
+    resolved_source_weight_diagnostics = _resolve_source_weight_diagnostics_payload(
+        artifact_root,
+        manifest,
+        source_weight_diagnostics_payload=source_weight_diagnostics_payload,
+        source_weight_diagnostics_path=source_weight_diagnostics_path,
+    )
+    source_weight_diagnostics_gate = _source_weight_diagnostics_gate(
+        resolved_source_weight_diagnostics,
+        max_support_weight_share=max_support_weight_share,
+    )
     benchmark_gate, benchmark_descriptor = _benchmark_manifest_gate(
         benchmark_manifest_path
     )
@@ -220,6 +235,7 @@ def build_mp300k_artifact_gate_report(
         "compatibility": compatibility_gate,
         "artifact_size": artifact_size_gate,
         "runtime": runtime_gate,
+        "source_weight_diagnostics": source_weight_diagnostics_gate,
         "ecps_comparison": ecps_comparison_gate,
         "arch_target_coverage": arch_coverage_gate,
         "benchmark_manifest": benchmark_gate,
@@ -249,6 +265,7 @@ def build_mp300k_artifact_gate_report(
         "ecps_comparison_payload": resolved_ecps_comparison,
         "arch_coverage": arch_coverage_payload,
         "runtime_smoke": runtime_smoke_payload,
+        "source_weight_diagnostics": resolved_source_weight_diagnostics,
         "benchmark_manifest": benchmark_descriptor,
     }
 
@@ -1246,6 +1263,214 @@ def _runtime_gate(
     )
 
 
+def _resolve_source_weight_diagnostics_payload(
+    artifact_root: Path,
+    manifest: dict[str, Any],
+    *,
+    source_weight_diagnostics_payload: dict[str, Any] | None,
+    source_weight_diagnostics_path: str | Path | None,
+) -> dict[str, Any] | None:
+    if source_weight_diagnostics_payload is not None:
+        return source_weight_diagnostics_payload
+    path = _resolve_optional_manifest_artifact_path(
+        artifact_root,
+        manifest,
+        source_weight_diagnostics_path,
+        "source_weight_diagnostics",
+        "source_diagnostics",
+    )
+    if path is None:
+        return None
+    return _load_json_file(path)
+
+
+def _resolve_optional_manifest_artifact_path(
+    artifact_root: Path,
+    manifest: dict[str, Any],
+    explicit_path: str | Path | None,
+    *artifact_keys: str,
+) -> Path | None:
+    if explicit_path is not None:
+        return Path(explicit_path).expanduser()
+    artifacts = dict(manifest.get("artifacts", {}))
+    for key in artifact_keys:
+        value = artifacts.get(key)
+        if isinstance(value, str) and value:
+            path = Path(value).expanduser()
+            return path if path.is_absolute() else artifact_root / path
+    return None
+
+
+def _source_weight_diagnostics_gate(
+    payload: dict[str, Any] | None,
+    *,
+    max_support_weight_share: float,
+) -> dict[str, Any]:
+    threshold = float(max_support_weight_share)
+    if payload is None:
+        return _gate(
+            "unmeasured",
+            "source-weight diagnostics sidecar has not been attached",
+            metrics={"max_support_weight_share": threshold},
+        )
+    if not isinstance(payload, dict):
+        return _gate(
+            "fail",
+            "source-weight diagnostics sidecar must be a JSON object",
+            metrics={"max_support_weight_share": threshold},
+        )
+
+    entries = _source_weight_entries(payload)
+    summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
+    support_share = _first_present(
+        payload,
+        "support_household_weight_share",
+        "support_weight_share",
+        "puf_support_household_weight_share",
+        "puf_clone_household_weight_share",
+        "clone_household_weight_share",
+    )
+    puf_support_share = _first_present(
+        payload,
+        "puf_support_household_weight_share",
+        "puf_clone_household_weight_share",
+    )
+    max_source_share = _first_present(
+        payload,
+        "max_source_household_weight_share",
+        "largest_source_household_weight_share",
+    )
+    if isinstance(summary, dict):
+        support_share = support_share if support_share is not None else _first_present(
+            summary,
+            "support_household_weight_share",
+            "support_weight_share",
+            "puf_support_household_weight_share",
+            "puf_clone_household_weight_share",
+            "clone_household_weight_share",
+        )
+        puf_support_share = (
+            puf_support_share
+            if puf_support_share is not None
+            else _first_present(
+                summary,
+                "puf_support_household_weight_share",
+                "puf_clone_household_weight_share",
+            )
+        )
+        max_source_share = max_source_share if max_source_share is not None else _first_present(
+            summary,
+            "max_source_household_weight_share",
+            "largest_source_household_weight_share",
+        )
+
+    if entries:
+        entry_shares = [_entry_household_weight_share(entry) for entry in entries]
+        numeric_entry_shares = [
+            share for share in entry_shares if share is not None and share >= 0
+        ]
+        if max_source_share is None and numeric_entry_shares:
+            max_source_share = max(numeric_entry_shares)
+        if support_share is None:
+            support_share = sum(
+                share
+                for entry, share in zip(entries, entry_shares, strict=True)
+                if share is not None and _is_support_source_entry(entry)
+            )
+        if puf_support_share is None:
+            puf_support_share = sum(
+                share
+                for entry, share in zip(entries, entry_shares, strict=True)
+                if share is not None
+                and _is_support_source_entry(entry)
+                and _is_puf_source_entry(entry)
+            )
+
+    support_share_float = _optional_float(support_share)
+    puf_support_share_float = _optional_float(puf_support_share)
+    max_source_share_float = _optional_float(max_source_share)
+    failures: list[str] = []
+    if not entries and support_share_float is None and puf_support_share_float is None:
+        failures.append("source_breakdown")
+    if support_share_float is not None and support_share_float > threshold:
+        failures.append("support_household_weight_share")
+    if puf_support_share_float is not None and puf_support_share_float > threshold:
+        failures.append("puf_support_household_weight_share")
+
+    status: GateStatus = "pass" if not failures else "fail"
+    return _gate(
+        status,
+        (
+            "source/support weight diagnostics are within dominance thresholds"
+            if status == "pass"
+            else "source/support weight diagnostics are missing or exceed dominance thresholds"
+        ),
+        metrics={
+            "source_entry_count": len(entries),
+            "support_household_weight_share": support_share_float,
+            "puf_support_household_weight_share": puf_support_share_float,
+            "max_source_household_weight_share": max_source_share_float,
+            "max_support_weight_share": threshold,
+        },
+        details={"failures": failures} if failures else None,
+    )
+
+
+def _source_weight_entries(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    for key in ("sources", "source_classes", "source_weight_shares"):
+        value = payload.get(key)
+        if isinstance(value, list):
+            return [item for item in value if isinstance(item, dict)]
+        if isinstance(value, dict):
+            entries: list[dict[str, Any]] = []
+            for name, item in value.items():
+                if isinstance(item, dict):
+                    entries.append({"source_name": name, **item})
+            return entries
+    return []
+
+
+def _entry_household_weight_share(entry: dict[str, Any]) -> float | None:
+    return _optional_float(
+        _first_present(
+            entry,
+            "household_weight_share",
+            "weight_share",
+            "share",
+        )
+    )
+
+
+def _is_support_source_entry(entry: dict[str, Any]) -> bool:
+    source_class = str(
+        _first_present(entry, "source_class", "class", "kind", "category") or ""
+    ).lower()
+    source_name = str(_first_present(entry, "source_name", "name") or "").lower()
+    if "fixed" in source_class or "forbes" in source_name:
+        return False
+    support_tokens = ("support", "clone", "donor_replay")
+    return any(token in source_class for token in support_tokens) or any(
+        token in source_name for token in support_tokens
+    )
+
+
+def _is_puf_source_entry(entry: dict[str, Any]) -> bool:
+    source_name = str(_first_present(entry, "source_name", "name") or "").lower()
+    source_class = str(
+        _first_present(entry, "source_class", "class", "kind", "category") or ""
+    ).lower()
+    return "puf" in source_name or "irs_soi" in source_name or "puf" in source_class
+
+
+def _optional_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _arch_target_coverage_gate(
     arch_coverage_payload: dict[str, Any] | None,
     *,
@@ -1567,6 +1792,7 @@ def main(argv: list[str] | None = None) -> int:
         dest="ecps_comparison_json",
     )
     parser.add_argument("--runtime-smoke-json")
+    parser.add_argument("--source-weight-diagnostics-json")
     parser.add_argument("--arch-coverage-json")
     parser.add_argument("--benchmark-manifest")
     parser.add_argument("--output-json")
@@ -1577,6 +1803,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--artifact-size-ratio-threshold", type=float, default=2.0)
     parser.add_argument("--runtime-ratio-threshold", type=float, default=1.25)
+    parser.add_argument(
+        "--max-support-weight-share",
+        type=float,
+        default=_DEFAULT_MAX_SUPPORT_WEIGHT_SHARE,
+    )
     parser.add_argument("--policyengine-us-data-repo")
     parser.add_argument("--policyengine-us-data-python")
     parser.add_argument(
@@ -1619,11 +1850,15 @@ def main(argv: list[str] | None = None) -> int:
         ecps_comparison_payload=_load_json_file(args.ecps_comparison_json),
         arch_coverage_payload=_load_json_file(args.arch_coverage_json),
         runtime_smoke_payload=_load_json_file(args.runtime_smoke_json),
+        source_weight_diagnostics_payload=_load_json_file(
+            args.source_weight_diagnostics_json
+        ),
         benchmark_manifest_path=args.benchmark_manifest,
         period=args.target_period,
         arch_coverage_profile=args.arch_coverage_profile,
         artifact_size_ratio_threshold=args.artifact_size_ratio_threshold,
         runtime_ratio_threshold=args.runtime_ratio_threshold,
+        max_support_weight_share=args.max_support_weight_share,
         compute_native_scores=not args.skip_ecps_computation,
         require_ecps_comparison=not args.no_require_ecps_comparison,
         policyengine_us_data_repo=args.policyengine_us_data_repo,

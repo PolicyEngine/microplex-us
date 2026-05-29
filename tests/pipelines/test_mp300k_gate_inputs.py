@@ -42,6 +42,9 @@ def _write_manifest(
     candidate_path: str = "policyengine_us.h5",
     baseline_path: str = "baseline/enhanced_cps_2024.h5",
 ) -> None:
+    (artifact_dir / "source_weight_diagnostics.json").write_text(
+        json.dumps(_source_weight_diagnostics_payload())
+    )
     (artifact_dir / "manifest.json").write_text(
         json.dumps(
             {
@@ -50,7 +53,10 @@ def _write_manifest(
                     "policyengine_dataset_year": 2024,
                     "policyengine_baseline_dataset": baseline_path,
                 },
-                "artifacts": {"policyengine_dataset": candidate_path},
+                "artifacts": {
+                    "policyengine_dataset": candidate_path,
+                    "source_weight_diagnostics": "source_weight_diagnostics.json",
+                },
             }
         )
     )
@@ -89,6 +95,24 @@ def _arch_coverage_payload() -> dict[str, object]:
         "covered_cell_count": 183,
         "uncovered_cell_count": 0,
         "coverage_rate": 1.0,
+    }
+
+
+def _source_weight_diagnostics_payload() -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "sources": [
+            {
+                "source_name": "cps_asec",
+                "source_class": "base",
+                "household_weight_share": 0.95,
+            },
+            {
+                "source_name": "irs_soi_puf_support_clone",
+                "source_class": "puf_support",
+                "household_weight_share": 0.05,
+            },
+        ],
     }
 
 
@@ -193,6 +217,10 @@ def test_package_mp300k_gate_inputs_rewrites_external_candidate(tmp_path):
     assert (output_dir / "gate_inputs.json").exists()
     assert manifest["artifacts"]["policyengine_dataset"] == "pe_l0_candidate.h5"
     assert (
+        manifest["artifacts"]["source_weight_diagnostics"]
+        == "source_weight_diagnostics.json"
+    )
+    assert (
         manifest["config"]["policyengine_baseline_dataset"]
         == "baseline/enhanced_cps_2024.h5"
     )
@@ -201,6 +229,9 @@ def test_package_mp300k_gate_inputs_rewrites_external_candidate(tmp_path):
     )
     assert manifest["mp300k_gate_inputs"]["source_baseline_dataset"] == str(
         baseline_dataset.resolve()
+    )
+    assert manifest["mp300k_gate_inputs"]["source_weight_diagnostics"] == str(
+        (artifact_dir / "source_weight_diagnostics.json").resolve()
     )
     assert metadata["artifact_archive"]["path"] == str(archive_path.resolve())
     assert metadata["workflow_call"]["with"]["gate_inputs_artifact"] == "gate-inputs"
@@ -257,6 +288,10 @@ def test_packaged_inputs_run_gates_from_clean_extract(tmp_path):
 
     packaged_manifest = _archive_manifest(output_dir / "artifact.tar.gz")
     assert packaged_manifest["artifacts"]["policyengine_dataset"] == "candidate.h5"
+    assert (
+        packaged_manifest["artifacts"]["source_weight_diagnostics"]
+        == "source_weight_diagnostics.json"
+    )
     assert (
         packaged_manifest["config"]["policyengine_baseline_dataset"]
         == "baseline/baseline.h5"

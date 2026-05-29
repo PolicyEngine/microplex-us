@@ -9,6 +9,8 @@ from typing import Any, Literal, TypedDict, cast
 
 from microplex_us.pipelines.stage_contracts import (
     US_STAGE_CONTRACT_VERSION,
+    StageArtifactFormat,
+    StageArtifactHashMode,
     StageResumeMode,
     USPipelineStageContract,
     USStageArtifactContract,
@@ -20,7 +22,8 @@ from microplex_us.policyengine.us import (
     save_us_pipeline_checkpoint,
 )
 
-US_STAGE_MANIFEST_SCHEMA_VERSION = 1
+US_STAGE_MANIFEST_SCHEMA_VERSION = 2
+SUPPORTED_US_STAGE_MANIFEST_SCHEMA_VERSIONS = frozenset({1, 2})
 US_STAGE_ARTIFACT_ROOT = "stage_artifacts"
 US_POLICYENGINE_ENTITY_STAGE_ID = "06_policyengine_entities"
 US_VALIDATION_STAGE_ID = "09_validation_benchmarking"
@@ -54,6 +57,8 @@ class USStageArtifactRecord(TypedDict):
     path_hint: str | None
     required: bool
     resume_role: str | None
+    format: StageArtifactFormat
+    hash_mode: StageArtifactHashMode
     path: str | None
     exists: bool
     referenced: bool
@@ -163,7 +168,7 @@ def load_us_stage_manifest(path: str | Path) -> USStageManifest:
 
     manifest_path = Path(path)
     payload = json.loads(manifest_path.read_text())
-    if payload.get("schemaVersion") != US_STAGE_MANIFEST_SCHEMA_VERSION:
+    if payload.get("schemaVersion") not in SUPPORTED_US_STAGE_MANIFEST_SCHEMA_VERSIONS:
         raise RuntimeError(
             "Unsupported US stage manifest schema: "
             f"{payload.get('schemaVersion')!r}"
@@ -735,6 +740,7 @@ def _write_json_atomically(path: Path, payload: Mapping[str, Any]) -> None:
 
 
 __all__ = [
+    "SUPPORTED_US_STAGE_MANIFEST_SCHEMA_VERSIONS",
     "USDataFlowStageSummary",
     "US_POLICYENGINE_ENTITY_STAGE_ID",
     "US_STAGE_ARTIFACT_ROOT",

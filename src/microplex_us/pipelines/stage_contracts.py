@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Literal
 
-US_STAGE_CONTRACT_VERSION = "us-runtime-stages-v1"
+US_STAGE_CONTRACT_VERSION = "us-runtime-stages-v2"
 
 StageResumeMode = Literal[
     "none",
@@ -13,6 +13,29 @@ StageResumeMode = Literal[
     "manual_replay",
     "manual_resume",
     "post_artifact_evidence",
+]
+
+StageArtifactResumeRole = Literal[
+    "diagnostic",
+    "manual_replay",
+    "manual_resume",
+    "post_artifact_evidence",
+]
+
+StageArtifactFormat = Literal[
+    "json",
+    "parquet_dataframe",
+    "policyengine_entity_bundle",
+    "h5_dataset",
+    "model_file",
+    "sqlite",
+    "unknown",
+]
+
+StageArtifactHashMode = Literal[
+    "none",
+    "file_sha256",
+    "directory_sha256",
 ]
 
 US_CANONICAL_STAGE_IDS = (
@@ -74,7 +97,9 @@ class USStageArtifactContract:
     description: str
     path_hint: str | None = None
     required: bool = False
-    resume_role: str | None = None
+    resume_role: StageArtifactResumeRole | None = None
+    format: StageArtifactFormat = "unknown"
+    hash_mode: StageArtifactHashMode = "none"
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -134,6 +159,8 @@ def default_us_pipeline_stage_contracts() -> tuple[USPipelineStageContract, ...]
                     description="Top-level artifact manifest with resolved config.",
                     path_hint="manifest.json",
                     required=True,
+                    format="json",
+                    hash_mode="file_sha256",
                 ),
             ),
             diagnostics=(
@@ -195,6 +222,8 @@ def default_us_pipeline_stage_contracts() -> tuple[USPipelineStageContract, ...]
                     description="Compact JSON summary of source names, scaffold, and donor variable plan.",
                     path_hint="stage_artifacts/03_source_planning/source_plan.json",
                     resume_role="diagnostic",
+                    format="json",
+                    hash_mode="file_sha256",
                 ),
             ),
             diagnostics=(
@@ -226,6 +255,8 @@ def default_us_pipeline_stage_contracts() -> tuple[USPipelineStageContract, ...]
                     path_hint="stage_artifacts/04_seed_scaffold/scaffold_seed_data.parquet",
                     required=True,
                     resume_role="manual_replay",
+                    format="parquet_dataframe",
+                    hash_mode="file_sha256",
                 ),
             ),
             diagnostics=(
@@ -266,6 +297,8 @@ def default_us_pipeline_stage_contracts() -> tuple[USPipelineStageContract, ...]
                     path_hint="seed_data.parquet",
                     required=True,
                     resume_role="diagnostic",
+                    format="parquet_dataframe",
+                    hash_mode="file_sha256",
                 ),
                 USStageArtifactContract(
                     key="synthetic_data",
@@ -273,12 +306,24 @@ def default_us_pipeline_stage_contracts() -> tuple[USPipelineStageContract, ...]
                     path_hint="synthetic_data.parquet",
                     required=True,
                     resume_role="manual_replay",
+                    format="parquet_dataframe",
+                    hash_mode="file_sha256",
                 ),
                 USStageArtifactContract(
                     key="synthesizer",
                     description="Optional fitted synthesis model.",
                     path_hint="synthesizer.pt",
                     resume_role="diagnostic",
+                    format="model_file",
+                    hash_mode="file_sha256",
+                ),
+                USStageArtifactContract(
+                    key="source_weight_diagnostics",
+                    description="Diagnostic summary of source-level contribution weights.",
+                    path_hint="source_weight_diagnostics.json",
+                    resume_role="diagnostic",
+                    format="json",
+                    hash_mode="file_sha256",
                 ),
             ),
             diagnostics=(
@@ -312,6 +357,8 @@ def default_us_pipeline_stage_contracts() -> tuple[USPipelineStageContract, ...]
                     description="Reloadable PE entity-table bundle saved as parquet files plus metadata.",
                     path_hint="stage_artifacts/06_policyengine_entities/metadata.json",
                     resume_role="manual_resume",
+                    format="policyengine_entity_bundle",
+                    hash_mode="directory_sha256",
                 ),
             ),
             diagnostics=(
@@ -343,6 +390,8 @@ def default_us_pipeline_stage_contracts() -> tuple[USPipelineStageContract, ...]
                     path_hint="calibrated_data.parquet",
                     required=True,
                     resume_role="manual_replay",
+                    format="parquet_dataframe",
+                    hash_mode="file_sha256",
                 ),
                 USStageArtifactContract(
                     key="targets",
@@ -350,12 +399,16 @@ def default_us_pipeline_stage_contracts() -> tuple[USPipelineStageContract, ...]
                     path_hint="targets.json",
                     required=True,
                     resume_role="manual_replay",
+                    format="json",
+                    hash_mode="file_sha256",
                 ),
                 USStageArtifactContract(
                     key="calibration_summary",
                     description="Stage-local calibration summary JSON.",
                     path_hint="stage_artifacts/07_calibration/calibration_summary.json",
                     resume_role="diagnostic",
+                    format="json",
+                    hash_mode="file_sha256",
                 ),
             ),
             diagnostics=(
@@ -388,18 +441,48 @@ def default_us_pipeline_stage_contracts() -> tuple[USPipelineStageContract, ...]
                     description="PolicyEngine-readable H5 dataset.",
                     path_hint="policyengine_us.h5",
                     resume_role="post_artifact_evidence",
+                    format="h5_dataset",
+                    hash_mode="file_sha256",
+                ),
+                USStageArtifactContract(
+                    key="capital_gains_lots",
+                    description="Optional synthetic capital-gains lot sidecar database.",
+                    path_hint="capital_gains_lots.sqlite",
+                    resume_role="diagnostic",
+                    format="sqlite",
+                    hash_mode="file_sha256",
                 ),
                 USStageArtifactContract(
                     key="stage_manifest",
                     description="Canonical stage manifest for the saved run.",
                     path_hint="stage_manifest.json",
                     required=True,
+                    format="json",
+                    hash_mode="file_sha256",
                 ),
                 USStageArtifactContract(
                     key="data_flow_snapshot",
                     description="Site-facing saved-run pipeline snapshot.",
                     path_hint="data_flow_snapshot.json",
                     required=True,
+                    format="json",
+                    hash_mode="file_sha256",
+                ),
+                USStageArtifactContract(
+                    key="artifact_inventory",
+                    description="Stage-owned artifact inventory with existence, role, and hash metadata.",
+                    path_hint="stage_artifacts/artifact_inventory.json",
+                    resume_role="diagnostic",
+                    format="json",
+                    hash_mode="file_sha256",
+                ),
+                USStageArtifactContract(
+                    key="conditional_readiness",
+                    description="Conditional-readiness report for manual reuse decisions.",
+                    path_hint="stage_artifacts/conditional_readiness.json",
+                    resume_role="diagnostic",
+                    format="json",
+                    hash_mode="file_sha256",
                 ),
             ),
             diagnostics=(
@@ -430,18 +513,48 @@ def default_us_pipeline_stage_contracts() -> tuple[USPipelineStageContract, ...]
                     description="PolicyEngine harness comparison payload.",
                     path_hint="policyengine_harness.json",
                     resume_role="diagnostic",
+                    format="json",
+                    hash_mode="file_sha256",
                 ),
                 USStageArtifactContract(
                     key="policyengine_native_scores",
                     description="PE-US-data native score comparison payload.",
                     path_hint="policyengine_native_scores.json",
                     resume_role="diagnostic",
+                    format="json",
+                    hash_mode="file_sha256",
+                ),
+                USStageArtifactContract(
+                    key="policyengine_native_audit",
+                    description="PE-US-data native score audit payload.",
+                    path_hint="pe_us_data_rebuild_native_audit.json",
+                    resume_role="diagnostic",
+                    format="json",
+                    hash_mode="file_sha256",
+                ),
+                USStageArtifactContract(
+                    key="imputation_ablation",
+                    description="Imputation ablation benchmark payload.",
+                    path_hint="imputation_ablation.json",
+                    resume_role="diagnostic",
+                    format="json",
+                    hash_mode="file_sha256",
+                ),
+                USStageArtifactContract(
+                    key="child_tax_unit_agi_drift",
+                    description="Child tax-unit AGI drift diagnostic payload.",
+                    path_hint="child_tax_unit_agi_drift.json",
+                    resume_role="diagnostic",
+                    format="json",
+                    hash_mode="file_sha256",
                 ),
                 USStageArtifactContract(
                     key="validation_evidence",
                     description="Stage-local evidence manifest for validation sidecars.",
                     path_hint="stage_artifacts/09_validation_benchmarking/evidence_manifest.json",
                     resume_role="diagnostic",
+                    format="json",
+                    hash_mode="file_sha256",
                 ),
             ),
             diagnostics=(
@@ -485,6 +598,10 @@ def serialize_us_pipeline_stage_contracts() -> dict[str, object]:
 
 
 __all__ = [
+    "StageArtifactFormat",
+    "StageArtifactHashMode",
+    "StageArtifactResumeRole",
+    "StageResumeMode",
     "US_CANONICAL_STAGE_IDS",
     "US_LEGACY_STAGE_ID_ALIASES",
     "US_STAGE_CONTRACT_VERSION",

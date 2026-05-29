@@ -7675,6 +7675,14 @@ class USMicroplexPipeline:
                 .astype(float)
                 .ne(0.0)
             )
+        if "is_blind" in result.columns:
+            result["is_blind"] = (
+                pd.to_numeric(result["is_blind"], errors="coerce")
+                .fillna(0.0)
+                .ne(0.0)
+            )
+        elif "difficulty_seeing" in result.columns:
+            result["is_blind"] = first_present("difficulty_seeing").gt(0.0)
         if "medicare_part_b_premiums" in result.columns:
             medicare_part_b_premiums = (
                 pd.to_numeric(

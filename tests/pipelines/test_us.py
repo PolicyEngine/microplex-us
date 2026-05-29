@@ -3540,6 +3540,20 @@ class TestUSMicroplexPipeline:
             400.0,
         ]
 
+    def test_augment_policyengine_person_inputs_derives_blind_flag(self):
+        pipeline = USMicroplexPipeline(USMicroplexBuildConfig())
+        persons = pd.DataFrame(
+            {
+                "difficulty_seeing": [0, 1, None, 2],
+                "age": [30, 45, 70, 12],
+                "sex": [1, 2, 1, 2],
+            }
+        )
+
+        augmented = pipeline._augment_policyengine_person_inputs(persons)
+
+        assert augmented["is_blind"].tolist() == [False, True, False, True]
+
     def test_augment_policyengine_person_inputs_uses_reported_ssi_for_takeup_only(
         self,
     ):

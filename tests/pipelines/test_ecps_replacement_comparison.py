@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 import h5py
@@ -149,6 +151,42 @@ def _artifact_manifest(artifact_dir: Path, baseline_dataset: Path) -> None:
     )
 
 
+def _benchmark_manifest(path: Path) -> None:
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "period": 2024,
+                "target_profile": "pe_native_broad",
+                "baseline_dataset": {
+                    "path": "/tmp/enhanced_cps_2024.h5",
+                    "sha256": "a" * 64,
+                },
+                "policyengine_us_data": {
+                    "repo": "PolicyEngine/policyengine-us-data",
+                    "commit": "b" * 40,
+                },
+                "policyengine_us": {"version": "1.587.0"},
+                "target_db": {
+                    "path": "/tmp/policyengine_targets.db",
+                    "sha256": "c" * 64,
+                },
+            }
+        )
+    )
+
+
+def _arch_coverage_payload() -> dict[str, object]:
+    return {
+        "profile_name": "pe_native_broad_source_backed",
+        "period": 2024,
+        "target_cell_count": 183,
+        "covered_cell_count": 183,
+        "uncovered_cell_count": 0,
+        "coverage_rate": 1.0,
+    }
+
+
 def test_sound_ecps_replacement_comparison_satisfies_gate_contract(
     monkeypatch,
     tmp_path,
@@ -209,11 +247,12 @@ def test_sound_ecps_replacement_comparison_satisfies_gate_contract(
     shutil.copy2(candidate, artifact_dir / "candidate.h5")
     _artifact_manifest(artifact_dir, baseline)
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
-    benchmark_manifest.write_text(json.dumps({"schema_version": 1}))
+    _benchmark_manifest(benchmark_manifest)
     report_path = write_mp300k_artifact_gate_report(
         artifact_dir,
         ecps_comparison_payload=payload,
         runtime_smoke_payload={"runtime_ratio": 1.0},
+        arch_coverage_payload=_arch_coverage_payload(),
         benchmark_manifest_path=benchmark_manifest,
         compute_native_scores=False,
         update_manifest=False,
@@ -269,3 +308,22 @@ def test_sound_ecps_replacement_comparison_refuses_stale_matched_files(
             output_dir=output_dir,
             optimizer_max_iter=50,
         )
+
+
+def test_ecps_replacement_comparison_module_cli_help_runs():
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "microplex_us.pipelines.ecps_replacement_comparison",
+            "--help",
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert completed.returncode == 0
+    assert "Build a sound Microplex-vs-eCPS replacement comparison payload" in (
+        completed.stdout
+    )

@@ -663,6 +663,10 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+
 __all__ = [
     "build_sound_ecps_replacement_comparison",
     "write_sound_ecps_replacement_comparison",

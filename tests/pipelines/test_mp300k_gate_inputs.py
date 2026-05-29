@@ -63,6 +63,42 @@ def _archive_manifest(archive_path: Path) -> dict:
         return json.loads(manifest.read())
 
 
+def _sound_ecps_comparison_payload() -> dict[str, object]:
+    fit_config = {
+        "lambda_l0": 0.0,
+        "lambda_l2": 0.0,
+        "use_gates": False,
+        "epochs": 2000,
+    }
+    protected_family_losses = {
+        family: {"candidate_loss": 0.01, "baseline_loss": 0.01}
+        for family in (
+            "ssi",
+            "snap",
+            "wages",
+            "self_employment_income",
+            "capital_gains",
+            "interest",
+            "dividends",
+            "retirement_income",
+            "disability",
+            "household_net_income",
+        )
+    }
+    return {
+        "summary": {
+            "candidate_enhanced_cps_native_loss": 0.1,
+            "baseline_enhanced_cps_native_loss": 0.2,
+            "candidate_household_count": 2,
+            "baseline_household_count": 2,
+            "candidate_refit_config": fit_config,
+            "baseline_refit_config": fit_config,
+            "holdout_target_fraction": 0.2,
+            "protected_family_losses": protected_family_losses,
+        }
+    }
+
+
 def test_package_mp300k_gate_inputs_rewrites_external_candidate(tmp_path):
     artifact_dir = tmp_path / "artifact"
     artifact_dir.mkdir()
@@ -174,12 +210,7 @@ def test_packaged_inputs_run_gates_from_clean_extract(tmp_path):
 
     report_path = write_mp300k_artifact_gate_report(
         packaged_artifact_dir,
-        ecps_comparison_payload={
-            "summary": {
-                "candidate_enhanced_cps_native_loss": 0.1,
-                "baseline_enhanced_cps_native_loss": 0.2,
-            }
-        },
+        ecps_comparison_payload=_sound_ecps_comparison_payload(),
         runtime_smoke_payload={"runtime_ratio": 1.0},
         benchmark_manifest_path=output_dir / "benchmark_manifest.json",
         compute_native_scores=False,

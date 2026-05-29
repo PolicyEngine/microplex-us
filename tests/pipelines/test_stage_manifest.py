@@ -78,6 +78,60 @@ def test_build_us_stage_manifest_reports_nine_stage_statuses(tmp_path):
     assert statuses["09_validation_benchmarking"] == "deferred"
 
 
+def test_build_us_stage_manifest_keeps_empty_validation_index_deferred(tmp_path):
+    (tmp_path / "policyengine_us.h5").write_text("dataset")
+    evidence_path = (
+        tmp_path
+        / "stage_artifacts"
+        / "09_validation_benchmarking"
+        / "evidence_manifest.json"
+    )
+    evidence_path.parent.mkdir(parents=True)
+    evidence_path.write_text(
+        json.dumps(
+            {
+                "formatVersion": 1,
+                "stageId": "09_validation_benchmarking",
+                "evidence": [],
+                "summaries": {},
+            }
+        )
+    )
+    manifest = {
+        "config": {"calibration_backend": "entropy"},
+        "synthesis": {"source_names": ["source"], "scaffold_source": "source"},
+        "calibration": {},
+        "artifacts": {
+            "policyengine_dataset": "policyengine_us.h5",
+            "validation_evidence": (
+                "stage_artifacts/09_validation_benchmarking/evidence_manifest.json"
+            ),
+        },
+    }
+
+    payload = build_us_stage_manifest(tmp_path, manifest_payload=manifest)
+
+    statuses = {stage["id"]: stage["status"] for stage in payload["stages"]}
+    assert statuses["09_validation_benchmarking"] == "deferred"
+
+
+def test_stage_summary_omits_unreferenced_path_hints(tmp_path):
+    manifest = {
+        "config": {"calibration_backend": "entropy"},
+        "rows": {"seed": 1},
+        "synthesis": {"source_names": ["source"], "scaffold_source": "source"},
+        "calibration": {},
+        "artifacts": {},
+    }
+
+    payload = build_us_stage_manifest(tmp_path, manifest_payload=manifest)
+    summaries = stage_summary_for_data_flow_snapshot(payload)
+
+    outputs = {stage["id"]: stage["outputs"] for stage in summaries}
+    assert outputs["04_seed_scaffold"] == []
+    assert outputs["05_donor_integration_synthesis"] == []
+
+
 def test_build_us_stage_manifest_reports_incomplete_referenced_artifacts(tmp_path):
     manifest = {
         "created_at": "2026-05-28T00:00:00+00:00",

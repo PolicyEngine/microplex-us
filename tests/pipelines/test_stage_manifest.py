@@ -8,6 +8,7 @@ import pytest
 from microplex_us.pipelines.stage_manifest import (
     build_us_stage_manifest,
     load_us_policyengine_entity_stage_artifact,
+    load_us_stage_manifest,
     resolve_us_stage_artifact_path,
     stage_summary_for_data_flow_snapshot,
     write_us_policyengine_entity_stage_artifact,
@@ -53,7 +54,7 @@ def test_build_us_stage_manifest_reports_nine_stage_statuses(tmp_path):
 
     payload = build_us_stage_manifest(tmp_path, manifest_payload=manifest)
 
-    assert payload["schemaVersion"] == 1
+    assert payload["schemaVersion"] == 2
     assert payload["generatedAt"] == "2026-05-28T00:00:00+00:00"
     assert [stage["id"] for stage in payload["stages"]] == [
         "01_run_profile",
@@ -76,6 +77,48 @@ def test_build_us_stage_manifest_reports_nine_stage_statuses(tmp_path):
     assert statuses["07_calibration"] == "ready"
     assert statuses["08_dataset_assembly"] == "ready"
     assert statuses["09_validation_benchmarking"] == "deferred"
+    stage5_artifacts = {
+        artifact["key"]: artifact
+        for stage in payload["stages"]
+        if stage["id"] == "05_donor_integration_synthesis"
+        for artifact in stage["artifacts"]
+    }
+    assert stage5_artifacts["synthetic_data"]["format"] == "parquet_dataframe"
+    assert stage5_artifacts["synthetic_data"]["hash_mode"] == "file_sha256"
+
+
+def test_load_us_stage_manifest_accepts_v1_and_v2(tmp_path):
+    v1_path = tmp_path / "stage_manifest_v1.json"
+    v1_path.write_text(
+        json.dumps(
+            {
+                "schemaVersion": 1,
+                "contractVersion": "us-runtime-stages-v1",
+                "generatedAt": None,
+                "pipeline": "us_microplex",
+                "artifactRoot": ".",
+                "manifest": "manifest.json",
+                "stages": [],
+            }
+        )
+    )
+    v2_path = tmp_path / "stage_manifest_v2.json"
+    v2_path.write_text(
+        json.dumps(
+            {
+                "schemaVersion": 2,
+                "contractVersion": "us-runtime-stages-v2",
+                "generatedAt": None,
+                "pipeline": "us_microplex",
+                "artifactRoot": ".",
+                "manifest": "manifest.json",
+                "stages": [],
+            }
+        )
+    )
+
+    assert load_us_stage_manifest(v1_path)["schemaVersion"] == 1
+    assert load_us_stage_manifest(v2_path)["schemaVersion"] == 2
 
 
 def test_build_us_stage_manifest_keeps_empty_validation_index_deferred(tmp_path):

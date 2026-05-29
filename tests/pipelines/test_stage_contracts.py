@@ -36,6 +36,16 @@ def test_default_us_pipeline_stage_contracts_are_stable_and_complete():
         assert contract.diagnostics
         assert contract.validations
         assert contract.resume_mode
+        for artifact in contract.artifacts:
+            assert artifact.format
+            assert artifact.hash_mode
+            if artifact.resume_role is not None:
+                assert artifact.resume_role in {
+                    "diagnostic",
+                    "manual_replay",
+                    "manual_resume",
+                    "post_artifact_evidence",
+                }
 
 
 def test_get_us_pipeline_stage_contract_returns_one_stage():
@@ -54,9 +64,11 @@ def test_serialize_us_pipeline_stage_contracts_is_json_ready():
     payload = serialize_us_pipeline_stage_contracts()
 
     assert payload["schemaVersion"] == 1
-    assert payload["contractVersion"] == "us-runtime-stages-v1"
+    assert payload["contractVersion"] == "us-runtime-stages-v2"
     assert len(payload["stages"]) == 9
     assert payload["stages"][5]["id"] == "06_policyengine_entities"
+    assert payload["stages"][7]["artifacts"][-1]["key"] == "conditional_readiness"
+    assert payload["stages"][7]["artifacts"][-1]["format"] == "json"
 
 
 def test_canonicalize_us_pipeline_stage_id_maps_legacy_runtime_ids():

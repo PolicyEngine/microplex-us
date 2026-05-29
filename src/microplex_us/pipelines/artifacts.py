@@ -23,6 +23,7 @@ from microplex_us.capital_gains_lots import (
     validate_capital_gains_lot_anchors,
     write_capital_gains_lots_sqlite,
 )
+from microplex_us.data_sources.forbes import ForbesFixedSpineConfig
 from microplex_us.pipelines.data_flow_snapshot import (
     write_us_microplex_data_flow_snapshot,
 )
@@ -96,6 +97,7 @@ class USMicroplexArtifactPaths:
     policyengine_native_audit: Path | None = None
     child_tax_unit_agi_drift: Path | None = None
     capital_gains_lots: Path | None = None
+    source_weight_diagnostics: Path | None = None
     run_registry: Path | None = None
     run_index_db: Path | None = None
 
@@ -329,6 +331,229 @@ def _write_us_source_plan_artifact(
     _write_json_atomically(output_path, payload)
 
 
+def _build_source_weight_diagnostics(
+    result: USMicroplexBuildResult,
+) -> dict[str, Any]:
+    """Summarize source-weight provenance without exporting diagnostics to H5."""
+
+    household_summary = _household_weight_summary(result)
+    total_household_weight = household_summary["household_weight_sum"]
+    source_names = _source_names_for_diagnostics(result)
+    scaffold_source = _scaffold_source_for_diagnostics(result)
+    donor_sources = [
+        source_name
+        for source_name in source_names
+        if scaffold_source is None or source_name != scaffold_source
+    ]
+    sources: list[dict[str, Any]] = []
+
+    fixed_spine_entry = _fixed_spine_source_entry(
+        result,
+        total_household_weight=total_household_weight,
+    )
+    fixed_spine_weight = (
+        fixed_spine_entry.get("household_weight_sum")
+        if fixed_spine_entry is not None
+        else None
+    )
+    ordinary_household_weight = total_household_weight
+    if isinstance(fixed_spine_weight, int | float):
+        ordinary_household_weight = max(
+            total_household_weight - float(fixed_spine_weight),
+            0.0,
+        )
+
+    sources.append(
+        {
+            "source_name": scaffold_source or "microplex_synthetic_population",
+            "source_class": "synthetic_population",
+            "household_count": household_summary["household_count"],
+            "household_weight_sum": ordinary_household_weight,
+            "household_weight_share": _weight_share(
+                ordinary_household_weight,
+                total_household_weight,
+            ),
+            "source_role": "scaffold",
+            "source_names": source_names,
+        }
+    )
+
+    donor_integrated_variables = list(
+        result.synthesis_metadata.get("donor_integrated_variables", ())
+    )
+    for source_name in donor_sources:
+        sources.append(
+            {
+                "source_name": source_name,
+                "source_class": "donor_imputation",
+                "household_count": 0,
+                "household_weight_sum": 0.0,
+                "household_weight_share": 0.0,
+                "source_role": "donor",
+                "integrated_variable_count": len(donor_integrated_variables),
+                "row_contribution": "variables_imputed_into_synthetic_rows",
+            }
+        )
+
+    if fixed_spine_entry is not None:
+        sources.append(fixed_spine_entry)
+
+    numeric_shares = [
+        float(source["household_weight_share"])
+        for source in sources
+        if isinstance(source.get("household_weight_share"), int | float)
+    ]
+    summary = {
+        "diagnostic_scope": "saved_artifact_household_weight_by_source_rows",
+        "household_count": household_summary["household_count"],
+        "total_household_weight": total_household_weight,
+        "source_entry_count": len(sources),
+        "donor_source_count": len(donor_sources),
+        "donor_integrated_variable_count": len(donor_integrated_variables),
+        "support_rows_appended": False,
+        "donor_rows_appended": False,
+        "support_household_weight_sum": 0.0,
+        "support_household_weight_share": 0.0,
+        "puf_support_household_weight_sum": 0.0,
+        "puf_support_household_weight_share": 0.0,
+        "max_source_household_weight_share": (
+            max(numeric_shares) if numeric_shares else None
+        ),
+        "fixed_spine_enabled": bool(
+            isinstance(result.calibration_summary.get("fixed_spine"), dict)
+            and result.calibration_summary.get("fixed_spine", {}).get("enabled")
+        ),
+        "h5_exported": False,
+    }
+
+    return {
+        "formatVersion": 1,
+        "created_at": datetime.now(UTC).isoformat(),
+        "summary": summary,
+        "sources": sources,
+        "notes": [
+            "Donor sources contribute imputed variables to synthetic rows; they are not appended as weighted source rows.",
+            "Source diagnostics are written as a sidecar and are intentionally not exported into PolicyEngine H5 variables.",
+        ],
+    }
+
+
+def _household_weight_summary(result: USMicroplexBuildResult) -> dict[str, Any]:
+    if result.policyengine_tables is not None:
+        households = result.policyengine_tables.households
+        if households is not None and "household_weight" in households.columns:
+            weights = pd.to_numeric(
+                households["household_weight"],
+                errors="coerce",
+            ).fillna(0.0)
+            return {
+                "household_count": int(len(households)),
+                "household_weight_sum": float(weights.sum()),
+            }
+
+    frame = result.calibrated_data
+    if frame.empty:
+        return {"household_count": 0, "household_weight_sum": 0.0}
+    weight_column = "household_weight" if "household_weight" in frame.columns else "weight"
+    if weight_column not in frame.columns:
+        return {"household_count": int(len(frame)), "household_weight_sum": 0.0}
+    weights = pd.to_numeric(frame[weight_column], errors="coerce").fillna(0.0)
+    if "household_id" in frame.columns:
+        household_weights = weights.groupby(frame["household_id"], sort=False).first()
+        return {
+            "household_count": int(len(household_weights)),
+            "household_weight_sum": float(household_weights.sum()),
+        }
+    return {
+        "household_count": int(len(frame)),
+        "household_weight_sum": float(weights.sum()),
+    }
+
+
+def _source_names_for_diagnostics(result: USMicroplexBuildResult) -> list[str]:
+    synthesis = dict(result.synthesis_metadata)
+    names: list[str] = []
+    if result.fusion_plan is not None:
+        names.extend(str(name) for name in result.fusion_plan.source_names)
+    names.extend(str(name) for name in synthesis.get("source_names", ()) if name)
+    scaffold_source = synthesis.get("scaffold_source")
+    if scaffold_source:
+        names.append(str(scaffold_source))
+    for frame in result.source_frames:
+        source = getattr(frame, "source", None)
+        source_name = getattr(source, "name", None)
+        if source_name:
+            names.append(str(source_name))
+    return list(dict.fromkeys(names))
+
+
+def _scaffold_source_for_diagnostics(result: USMicroplexBuildResult) -> str | None:
+    scaffold_source = result.synthesis_metadata.get("scaffold_source")
+    if scaffold_source:
+        return str(scaffold_source)
+    source_names = _source_names_for_diagnostics(result)
+    return source_names[0] if source_names else None
+
+
+def _fixed_spine_source_entry(
+    result: USMicroplexBuildResult,
+    *,
+    total_household_weight: float,
+) -> dict[str, Any] | None:
+    fixed_spine = result.calibration_summary.get("fixed_spine")
+    if not isinstance(fixed_spine, dict) or not fixed_spine.get("enabled"):
+        return None
+
+    source_metadata = dict(fixed_spine.get("source_metadata", {}))
+    entry: dict[str, Any] = {
+        "source_name": source_metadata.get("source", "forbes_fixed_spine"),
+        "source_class": "fixed_spine",
+        "source_role": "post_calibration_append",
+        "source_metadata": source_metadata,
+    }
+    if result.policyengine_tables is None:
+        return entry
+    households = result.policyengine_tables.households
+    if households is None or "household_id" not in households.columns:
+        return entry
+    if "household_weight" not in households.columns:
+        return entry
+
+    fixed_spine_config = ForbesFixedSpineConfig()
+    household_ids = pd.to_numeric(households["household_id"], errors="coerce")
+    fixed_mask = household_ids >= fixed_spine_config.household_id_start
+    fixed_households = households.loc[fixed_mask]
+    fixed_weight = float(
+        pd.to_numeric(
+            fixed_households["household_weight"],
+            errors="coerce",
+        )
+        .fillna(0.0)
+        .sum()
+    )
+    entry.update(
+        {
+            "household_count": int(len(fixed_households)),
+            "household_weight_sum": fixed_weight,
+            "household_weight_share": _weight_share(
+                fixed_weight,
+                total_household_weight,
+            ),
+            "household_id_detection": {
+                "method": "forbes_default_household_id_floor",
+                "minimum_household_id": fixed_spine_config.household_id_start,
+            },
+        }
+    )
+    return entry
+
+
+def _weight_share(value: float, denominator: float) -> float | None:
+    if denominator <= 0:
+        return None
+    return float(value) / float(denominator)
+
+
 def _summarize_child_tax_unit_agi_drift_ratios(
     payload: dict[str, Any],
     *,
@@ -449,6 +674,7 @@ def save_us_microplex_artifacts(
     calibrated_data_path = output_dir / "calibrated_data.parquet"
     targets_path = output_dir / "targets.json"
     manifest_path = output_dir / "manifest.json"
+    source_weight_diagnostics_path = output_dir / "source_weight_diagnostics.json"
     synthesizer_path = output_dir / "synthesizer.pt" if result.synthesizer else None
     policyengine_dataset_path = (
         output_dir / "policyengine_us.h5" if result.policyengine_tables is not None else None
@@ -503,6 +729,11 @@ def save_us_microplex_artifacts(
 
     _write_us_source_plan_artifact(result, source_plan_path)
     _write_json_atomically(calibration_summary_path, result.calibration_summary)
+    source_weight_diagnostics_payload = _build_source_weight_diagnostics(result)
+    _write_json_atomically(
+        source_weight_diagnostics_path,
+        source_weight_diagnostics_payload,
+    )
 
     if result.policyengine_tables is not None and policyengine_dataset_path is not None:
         if policyengine_entity_tables_path is not None:
@@ -656,6 +887,7 @@ def save_us_microplex_artifacts(
             "targets": targets_path.name,
             "synthesizer": synthesizer_path.name if synthesizer_path else None,
             "source_plan": str(source_plan_path.relative_to(output_dir)),
+            "source_weight_diagnostics": source_weight_diagnostics_path.name,
             "calibration_summary": str(
                 calibration_summary_path.relative_to(output_dir)
             ),
@@ -707,6 +939,9 @@ def save_us_microplex_artifacts(
         manifest.setdefault("diagnostics", {})[
             "capital_gains_lots"
         ] = capital_gains_lots_summary
+    manifest.setdefault("diagnostics", {})["source_weight_diagnostics"] = dict(
+        source_weight_diagnostics_payload.get("summary", {})
+    )
     if harness_summary is not None or native_scores_payload is not None:
         resolved_run_registry_path = Path(run_registry_path or output_dir.parent / "run_registry.jsonl")
         run_entry = build_us_microplex_run_registry_entry(
@@ -773,6 +1008,7 @@ def save_us_microplex_artifacts(
             "synthetic_data",
             "calibrated_data",
             "targets",
+            "source_weight_diagnostics",
             *(
                 ("policyengine_native_scores",)
                 if native_scores_payload is not None
@@ -813,6 +1049,7 @@ def save_us_microplex_artifacts(
         policyengine_native_audit=None,
         child_tax_unit_agi_drift=child_tax_unit_agi_drift_path,
         capital_gains_lots=capital_gains_lots_path,
+        source_weight_diagnostics=source_weight_diagnostics_path,
         run_registry=resolved_run_registry_path,
         run_index_db=resolved_run_index_path,
     )

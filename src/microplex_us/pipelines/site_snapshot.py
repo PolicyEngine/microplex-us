@@ -16,6 +16,9 @@ from microplex_us.pipelines.data_flow_snapshot import (
 from microplex_us.pipelines.stage_contracts import (
     resolve_us_stage_artifact_contract_path,
 )
+from microplex_us.pipelines.stage_run import (
+    resolve_us_manifest_or_contract_artifact_path,
+)
 
 FOCUS_TAG_PRIORITY: tuple[str, ...] = (
     "state",
@@ -36,7 +39,6 @@ def build_us_microplex_site_snapshot(
     """Build one site-facing snapshot from a versioned US artifact bundle."""
     artifact_root = Path(artifact_dir)
     manifest = json.loads((artifact_root / "manifest.json").read_text())
-    artifacts = dict(manifest.get("artifacts", {}))
     assert_valid_benchmark_artifact_manifest(
         manifest,
         artifact_dir=artifact_root,
@@ -55,9 +57,9 @@ def build_us_microplex_site_snapshot(
             "mean_abs_relative_error_delta",
         ),
     )
-    harness_path = _resolve_manifest_artifact_path(
+    harness_path = resolve_us_manifest_or_contract_artifact_path(
         artifact_root,
-        artifacts,
+        manifest,
         "policyengine_harness",
         stage_id="09_validation_benchmarking",
     )
@@ -72,9 +74,9 @@ def build_us_microplex_site_snapshot(
     synthesis = dict(manifest.get("synthesis", {}))
     calibration = dict(manifest.get("calibration", {}))
     config = dict(manifest.get("config", {}))
-    data_flow_path = _resolve_manifest_artifact_path(
+    data_flow_path = resolve_us_manifest_or_contract_artifact_path(
         artifact_root,
-        artifacts,
+        manifest,
         "data_flow_snapshot",
         stage_id="08_dataset_assembly",
     )
@@ -198,22 +200,6 @@ def _artifact_ref(artifact_root: Path) -> str:
         if parent.name == "artifacts":
             return str(artifact_root.relative_to(parent))
     return artifact_root.name
-
-
-def _resolve_manifest_artifact_path(
-    artifact_root: Path,
-    artifacts: dict[str, Any],
-    artifact_key: str,
-    *,
-    stage_id: str,
-) -> Path:
-    declared = artifacts.get(artifact_key)
-    if declared is not None:
-        path = Path(str(declared))
-        if not path.is_absolute():
-            path = artifact_root / path
-        return path
-    return resolve_us_stage_artifact_contract_path(artifact_root, stage_id, artifact_key)
 
 
 def _artifact_path_for_manifest(artifact_root: Path, path: Path) -> str:

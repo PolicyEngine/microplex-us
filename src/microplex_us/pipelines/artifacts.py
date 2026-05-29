@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
@@ -24,9 +24,6 @@ from microplex_us.capital_gains_lots import (
     write_capital_gains_lots_sqlite,
 )
 from microplex_us.data_sources.forbes import ForbesFixedSpineConfig
-from microplex_us.pipelines.data_flow_snapshot import (
-    write_us_microplex_data_flow_snapshot,
-)
 from microplex_us.pipelines.index_db import (
     append_us_microplex_run_index_entry,
 )
@@ -40,20 +37,15 @@ from microplex_us.pipelines.registry import (
     load_us_microplex_run_registry,
     select_us_microplex_frontier_entry,
 )
-from microplex_us.pipelines.stage_artifacts import (
-    build_us_stage_artifact_inventory,
-    write_us_stage_artifact_inventory,
-)
 from microplex_us.pipelines.stage_contracts import (
     resolve_us_stage_artifact_contract_path,
 )
 from microplex_us.pipelines.stage_manifest import (
     write_us_policyengine_entity_stage_artifact,
-    write_us_stage_manifest,
-    write_us_validation_evidence_manifest,
 )
-from microplex_us.pipelines.stage_readiness import (
-    write_us_conditional_readiness_report,
+from microplex_us.pipelines.stage_run import (
+    USStageInputOverride,
+    write_us_stage_run_manifests_from_artifact_manifest,
 )
 from microplex_us.pipelines.summarize_child_tax_unit_agi_drift import (
     DEFAULT_VARIABLES as DEFAULT_CHILD_TAX_UNIT_AGI_DRIFT_VARIABLES,
@@ -823,6 +815,8 @@ def save_us_microplex_artifacts(
     run_registry_metadata: dict[str, Any] | None = None,
     enable_child_tax_unit_agi_drift: bool = False,
     child_tax_unit_agi_drift_variables: tuple[str, ...] | None = None,
+    allow_stage_input_overrides: bool = False,
+    stage_input_overrides: tuple[USStageInputOverride, ...] = (),
 ) -> USMicroplexArtifactPaths:
     """Persist a build result as a reproducible artifact bundle."""
     output_dir = Path(output_dir)
@@ -1234,51 +1228,11 @@ def save_us_microplex_artifacts(
             "path": str(resolved_run_index_path),
             "artifact_id": recorded_entry.artifact_id,
         }
-    _write_json_atomically(manifest_path, manifest)
-    if validation_evidence_path is not None:
-        write_us_validation_evidence_manifest(
-            output_dir,
-            validation_evidence_path,
-            manifest_payload=manifest,
-        )
-    write_us_microplex_data_flow_snapshot(
+    manifest = write_us_stage_run_manifests_from_artifact_manifest(
         output_dir,
-        data_flow_snapshot_path,
-        manifest_payload=manifest,
-        assume_existing_stage_artifact_keys=(
-            "stage_manifest",
-            "artifact_inventory",
-            "conditional_readiness",
-        ),
-    )
-    write_us_stage_manifest(
-        output_dir,
-        stage_manifest_path,
-        manifest_payload=manifest,
-        assume_existing_artifact_keys=(
-            "artifact_inventory",
-            "conditional_readiness",
-        ),
-    )
-    readiness_inventory = build_us_stage_artifact_inventory(
-        output_dir,
-        manifest_payload=manifest,
-        assume_existing_artifact_keys=(
-            "artifact_inventory",
-            "conditional_readiness",
-        ),
-    )
-    write_us_conditional_readiness_report(
-        output_dir,
-        conditional_readiness_path,
-        manifest_payload=manifest,
-        artifact_inventory=readiness_inventory,
-    )
-    write_us_stage_artifact_inventory(
-        output_dir,
-        artifact_inventory_path,
-        manifest_payload=manifest,
-        assume_existing_artifact_keys=("artifact_inventory",),
+        manifest,
+        allow_stage_input_overrides=allow_stage_input_overrides,
+        stage_input_overrides=stage_input_overrides,
     )
     assert_valid_benchmark_artifact_manifest(
         manifest,
@@ -1364,6 +1318,8 @@ def save_versioned_us_microplex_artifacts(
     run_registry_metadata: dict[str, Any] | None = None,
     enable_child_tax_unit_agi_drift: bool = False,
     child_tax_unit_agi_drift_variables: tuple[str, ...] | None = None,
+    allow_stage_input_overrides: bool = False,
+    stage_input_overrides: tuple[USStageInputOverride, ...] = (),
 ) -> USMicroplexArtifactPaths:
     """Persist a build under a stable versioned directory beneath one output root."""
     output_root = Path(output_root)
@@ -1392,27 +1348,10 @@ def save_versioned_us_microplex_artifacts(
         run_registry_metadata=run_registry_metadata,
         enable_child_tax_unit_agi_drift=enable_child_tax_unit_agi_drift,
         child_tax_unit_agi_drift_variables=child_tax_unit_agi_drift_variables,
+        allow_stage_input_overrides=allow_stage_input_overrides,
+        stage_input_overrides=stage_input_overrides,
     )
-    return USMicroplexArtifactPaths(
-        output_dir=paths.output_dir,
-        version_id=resolved_version_id,
-        seed_data=paths.seed_data,
-        synthetic_data=paths.synthetic_data,
-        calibrated_data=paths.calibrated_data,
-        targets=paths.targets,
-        manifest=paths.manifest,
-        scaffold_seed_data=paths.scaffold_seed_data,
-        synthesizer=paths.synthesizer,
-        policyengine_dataset=paths.policyengine_dataset,
-        data_flow_snapshot=paths.data_flow_snapshot,
-        policyengine_harness=paths.policyengine_harness,
-        policyengine_native_scores=paths.policyengine_native_scores,
-        policyengine_native_audit=paths.policyengine_native_audit,
-        child_tax_unit_agi_drift=paths.child_tax_unit_agi_drift,
-        capital_gains_lots=paths.capital_gains_lots,
-        run_registry=paths.run_registry,
-        run_index_db=paths.run_index_db,
-    )
+    return replace(paths, version_id=resolved_version_id)
 
 
 def build_and_save_versioned_us_microplex(
@@ -1441,6 +1380,8 @@ def build_and_save_versioned_us_microplex(
     run_registry_metadata: dict[str, Any] | None = None,
     enable_child_tax_unit_agi_drift: bool = False,
     child_tax_unit_agi_drift_variables: tuple[str, ...] | None = None,
+    allow_stage_input_overrides: bool = False,
+    stage_input_overrides: tuple[USStageInputOverride, ...] = (),
 ) -> USMicroplexVersionedBuildArtifacts:
     """Build a US microplex dataset, save a versioned bundle, and report frontier gap."""
     build_result = build_us_microplex(persons, households, config=config)
@@ -1465,6 +1406,8 @@ def build_and_save_versioned_us_microplex(
         run_registry_metadata=run_registry_metadata,
         enable_child_tax_unit_agi_drift=enable_child_tax_unit_agi_drift,
         child_tax_unit_agi_drift_variables=child_tax_unit_agi_drift_variables,
+        allow_stage_input_overrides=allow_stage_input_overrides,
+        stage_input_overrides=stage_input_overrides,
     )
 
 
@@ -1703,6 +1646,8 @@ def _finalize_versioned_build_artifacts(
     run_registry_metadata: dict[str, Any] | None,
     enable_child_tax_unit_agi_drift: bool = False,
     child_tax_unit_agi_drift_variables: tuple[str, ...] | None = None,
+    allow_stage_input_overrides: bool = False,
+    stage_input_overrides: tuple[USStageInputOverride, ...] = (),
 ) -> USMicroplexVersionedBuildArtifacts:
     artifact_paths = save_versioned_us_microplex_artifacts(
         build_result,
@@ -1724,6 +1669,8 @@ def _finalize_versioned_build_artifacts(
         run_registry_metadata=run_registry_metadata,
         enable_child_tax_unit_agi_drift=enable_child_tax_unit_agi_drift,
         child_tax_unit_agi_drift_variables=child_tax_unit_agi_drift_variables,
+        allow_stage_input_overrides=allow_stage_input_overrides,
+        stage_input_overrides=stage_input_overrides,
     )
     current_entry = None
     frontier_entry = None

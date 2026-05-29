@@ -194,6 +194,27 @@ def test_build_us_stage_manifest_keeps_empty_validation_index_deferred(tmp_path)
     assert statuses["09_validation_benchmarking"] == "deferred"
 
 
+def test_build_us_stage_manifest_requires_validation_evidence_for_stage9_ready(
+    tmp_path,
+):
+    (tmp_path / "policyengine_us.h5").write_text("dataset")
+    (tmp_path / "policyengine_native_scores.json").write_text("{}")
+    manifest = {
+        "config": {"calibration_backend": "entropy"},
+        "synthesis": {"source_names": ["source"], "scaffold_source": "source"},
+        "calibration": {},
+        "artifacts": {
+            "policyengine_dataset": "policyengine_us.h5",
+            "policyengine_native_scores": "policyengine_native_scores.json",
+        },
+    }
+
+    payload = build_us_stage_manifest(tmp_path, manifest_payload=manifest)
+
+    statuses = {stage["id"]: stage["status"] for stage in payload["stages"]}
+    assert statuses["09_validation_benchmarking"] == "incomplete"
+
+
 def test_stage_summary_omits_unreferenced_path_hints(tmp_path):
     manifest = {
         "config": {"calibration_backend": "entropy"},

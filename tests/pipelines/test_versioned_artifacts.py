@@ -358,6 +358,34 @@ def test_save_versioned_us_microplex_artifacts_uses_explicit_version(tmp_path):
     assert paths.output_dir == tmp_path / "builds" / "run-1"
     assert paths.run_registry == tmp_path / "builds" / "run_registry.jsonl"
     assert paths.run_index_db == tmp_path / "builds" / "run_index.duckdb"
+    assert paths.stage_manifest == paths.output_dir / "stage_manifest.json"
+    assert paths.artifact_inventory == (
+        paths.output_dir / "stage_artifacts" / "artifact_inventory.json"
+    )
+    assert paths.conditional_readiness == (
+        paths.output_dir / "stage_artifacts" / "conditional_readiness.json"
+    )
+    assert paths.source_plan == (
+        paths.output_dir / "stage_artifacts" / "03_source_planning" / "source_plan.json"
+    )
+    assert paths.policyengine_entity_tables == (
+        paths.output_dir / "stage_artifacts" / "06_policyengine_entities" / "metadata.json"
+    )
+    assert paths.calibration_summary == (
+        paths.output_dir
+        / "stage_artifacts"
+        / "07_calibration"
+        / "calibration_summary.json"
+    )
+    assert paths.validation_evidence == (
+        paths.output_dir
+        / "stage_artifacts"
+        / "09_validation_benchmarking"
+        / "evidence_manifest.json"
+    )
+    assert paths.source_weight_diagnostics == (
+        paths.output_dir / "source_weight_diagnostics.json"
+    )
     manifest = json.loads(paths.manifest.read_text())
     assert manifest["run_registry"]["artifact_id"] == "run-1"
     assert manifest["run_index"]["artifact_id"] == "run-1"

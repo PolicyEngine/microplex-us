@@ -135,3 +135,25 @@ def test_source_planning_seam_exposes_descriptors_for_stage3():
 
     assert "source_descriptors" in stage2_outputs
     assert "source_descriptors" in stage3_inputs
+
+
+def test_stage_config_scopes_use_real_build_config_keys():
+    stage5_keys = set(config_keys_for_us_pipeline_stage("05_donor_integration_synthesis"))
+    stage7_keys = set(config_keys_for_us_pipeline_stage("07_calibration"))
+
+    assert {
+        "n_synthetic",
+        "random_seed",
+        "synthesis_backend",
+        "donor_imputer_backend",
+        "donor_imputer_condition_selection",
+    } <= stage5_keys
+    assert "calibration_epochs" not in stage7_keys
+    assert "calibration_l0_lambda" not in stage7_keys
+    assert {
+        "calibration_backend",
+        "calibration_tol",
+        "calibration_max_iter",
+        "target_sparsity",
+        "policyengine_targets_db",
+    } <= stage7_keys

@@ -59,6 +59,49 @@ def _write_artifact_manifest(
     (artifact_dir / "manifest.json").write_text(json.dumps(manifest))
 
 
+def _sound_ecps_comparison_payload(
+    *,
+    candidate_loss: float = 0.12,
+    baseline_loss: float = 0.20,
+) -> dict[str, object]:
+    fit_config = {
+        "lambda_l0": 0.0,
+        "lambda_l2": 0.0,
+        "use_gates": False,
+        "epochs": 2000,
+    }
+    protected_family_losses = {
+        family: {"candidate_loss": 0.01, "baseline_loss": 0.01}
+        for family in (
+            "ssi",
+            "snap",
+            "wages",
+            "self_employment_income",
+            "capital_gains",
+            "interest",
+            "dividends",
+            "retirement_income",
+            "disability",
+            "household_net_income",
+        )
+    }
+    return {
+        "summary": {
+            "candidate_enhanced_cps_native_loss": candidate_loss,
+            "baseline_enhanced_cps_native_loss": baseline_loss,
+            "enhanced_cps_native_loss_delta": candidate_loss - baseline_loss,
+            "candidate_beats_baseline": candidate_loss < baseline_loss,
+            "n_targets_kept": 150,
+            "candidate_household_count": 41_314,
+            "baseline_household_count": 41_314,
+            "candidate_refit_config": fit_config,
+            "baseline_refit_config": fit_config,
+            "holdout_target_fraction": 0.2,
+            "protected_family_losses": protected_family_losses,
+        }
+    }
+
+
 def test_write_mp300k_artifact_gate_report_passes_with_all_evidence(tmp_path):
     artifact_dir = tmp_path / "artifact"
     artifact_dir.mkdir()
@@ -72,16 +115,7 @@ def test_write_mp300k_artifact_gate_report_passes_with_all_evidence(tmp_path):
 
     report_path = write_mp300k_artifact_gate_report(
         artifact_dir,
-        ecps_comparison_payload={
-            "metric": "enhanced_cps_native_loss",
-            "summary": {
-                "candidate_enhanced_cps_native_loss": 0.12,
-                "baseline_enhanced_cps_native_loss": 0.20,
-                "enhanced_cps_native_loss_delta": -0.08,
-                "candidate_beats_baseline": True,
-                "n_targets_kept": 150,
-            },
-        },
+        ecps_comparison_payload=_sound_ecps_comparison_payload(),
         runtime_smoke_payload={
             "candidate_seconds": 11.0,
             "baseline_seconds": 10.0,
@@ -230,15 +264,7 @@ def test_main_writes_artifact_gate_report_from_payload_files(tmp_path, capsys):
     _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
     ecps_comparison_path = tmp_path / "ecps_comparison.json"
     ecps_comparison_path.write_text(
-        json.dumps(
-            {
-                "summary": {
-                    "candidate_enhanced_cps_native_loss": 0.10,
-                    "baseline_enhanced_cps_native_loss": 0.20,
-                    "enhanced_cps_native_loss_delta": -0.10,
-                }
-            }
-        )
+        json.dumps(_sound_ecps_comparison_payload(candidate_loss=0.10))
     )
     runtime_path = tmp_path / "runtime.json"
     runtime_path.write_text(
@@ -308,12 +334,7 @@ def test_runtime_gate_accepts_repeated_loader_smoke_payload(tmp_path):
 
     report_path = write_mp300k_artifact_gate_report(
         artifact_dir,
-        ecps_comparison_payload={
-            "summary": {
-                "candidate_enhanced_cps_native_loss": 0.10,
-                "baseline_enhanced_cps_native_loss": 0.20,
-            }
-        },
+        ecps_comparison_payload=_sound_ecps_comparison_payload(candidate_loss=0.10),
         runtime_smoke_payload={
             "median_runtime_ratio": 1.19,
             "candidate": {"median_elapsed_seconds": 0.137},
@@ -370,6 +391,83 @@ def test_ecps_comparison_accepts_existing_broad_loss_array_payload(tmp_path):
         ]
         == 0.25
     )
+
+
+def test_ecps_comparison_rejects_one_sided_unmatched_refit_win(tmp_path):
+    artifact_dir = tmp_path / "artifact"
+    artifact_dir.mkdir()
+    _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
+    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    benchmark_manifest = tmp_path / "benchmark_manifest.json"
+    benchmark_manifest.write_text(json.dumps({"schema_version": 1}))
+    _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
+
+    report_path = write_mp300k_artifact_gate_report(
+        artifact_dir,
+        ecps_comparison_payload={
+            "summary": {
+                "candidate_enhanced_cps_native_loss": 0.09,
+                "baseline_enhanced_cps_native_loss": 0.16,
+                "enhanced_cps_native_loss_delta": -0.07,
+                "candidate_beats_baseline": True,
+                "candidate_household_count": 120_000,
+                "baseline_household_count": 41_314,
+                "score_candidate_only": True,
+            }
+        },
+        runtime_smoke_payload={"runtime_ratio": 1.0},
+        benchmark_manifest_path=benchmark_manifest,
+        compute_native_scores=False,
+        update_manifest=False,
+    )
+
+    record = json.loads(report_path.read_text())
+    ecps_gate = record["gates"]["ecps_comparison"]
+
+    assert record["summary"]["status"] == "failed"
+    assert ecps_gate["status"] == "fail"
+    assert "matched_household_count" in ecps_gate["summary"]
+    assert ecps_gate["details"]["score_candidate_only"] is True
+
+
+def test_ecps_comparison_rejects_protected_family_regression(tmp_path):
+    artifact_dir = tmp_path / "artifact"
+    artifact_dir.mkdir()
+    _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
+    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    benchmark_manifest = tmp_path / "benchmark_manifest.json"
+    benchmark_manifest.write_text(json.dumps({"schema_version": 1}))
+    _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
+    payload = _sound_ecps_comparison_payload(candidate_loss=0.10)
+    payload["summary"]["protected_family_losses"]["ssi"] = {
+        "candidate_loss": 0.0301,
+        "baseline_loss": 0.02,
+    }
+
+    report_path = write_mp300k_artifact_gate_report(
+        artifact_dir,
+        ecps_comparison_payload=payload,
+        runtime_smoke_payload={"runtime_ratio": 1.0},
+        benchmark_manifest_path=benchmark_manifest,
+        compute_native_scores=False,
+        update_manifest=False,
+    )
+
+    record = json.loads(report_path.read_text())
+    ecps_gate = record["gates"]["ecps_comparison"]
+
+    assert record["summary"]["status"] == "failed"
+    assert ecps_gate["status"] == "fail"
+    assert "protected_family_floors" in ecps_gate["summary"]
+    assert ecps_gate["details"]["protected_family_floor"]["regressions"] == [
+        {
+            "family": "ssi",
+            "candidate_loss": 0.0301,
+            "baseline_loss": 0.02,
+            "loss_delta": pytest.approx(0.0101),
+            "allowed_delta": 0.005,
+        }
+    ]
 
 
 def test_runtime_gate_ignores_contradictory_producer_verdict(tmp_path):

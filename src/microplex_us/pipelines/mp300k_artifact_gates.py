@@ -51,6 +51,20 @@ _DEFAULT_REQUIRED_GATES = (
     "ecps_comparison",
     "benchmark_manifest",
 )
+_PROTECTED_ECPS_TARGET_FAMILIES = (
+    "ssi",
+    "snap",
+    "wages",
+    "self_employment_income",
+    "capital_gains",
+    "interest",
+    "dividends",
+    "retirement_income",
+    "disability",
+    "household_net_income",
+)
+_PROTECTED_FAMILY_RELATIVE_LOSS_TOLERANCE = 0.05
+_PROTECTED_FAMILY_ABSOLUTE_LOSS_TOLERANCE = 0.005
 _FORBIDDEN_SOURCE_DIAGNOSTIC_VARIABLES = frozenset(
     {
         "ssi_reported",
@@ -696,18 +710,31 @@ def _ecps_comparison_gate(
     ):
         details["reported_candidate_beats_baseline"] = reported_candidate_beats
         details["computed_candidate_beats_baseline"] = candidate_beats
+    contract = _ecps_comparison_contract_summary(
+        ecps_comparison_payload,
+        summary,
+    )
+    details.update(contract["details"])
+    missing_requirements = list(contract["missing_requirements"])
     status: GateStatus
     if candidate_beats is None:
         status = "unmeasured"
+    elif missing_requirements:
+        status = "fail"
     else:
         status = "pass" if bool(candidate_beats) else "fail"
     return _gate(
         status,
         (
-            "candidate beats pinned eCPS on PE-native broad loss"
+            "candidate beats pinned eCPS under the release comparison contract"
             if status == "pass"
             else (
-                "candidate does not beat pinned eCPS on PE-native broad loss"
+                (
+                    "eCPS comparison is missing release-contract evidence: "
+                    + ", ".join(missing_requirements)
+                )
+                if missing_requirements
+                else "candidate does not beat pinned eCPS on PE-native broad loss"
                 if status == "fail"
                 else "PE-native eCPS comparison payload is incomplete"
             )
@@ -717,6 +744,8 @@ def _ecps_comparison_gate(
             "baseline_enhanced_cps_native_loss": baseline_loss,
             "enhanced_cps_native_loss_delta": loss_delta,
             "n_targets_kept": summary.get("n_targets_kept"),
+            "matched_household_count": contract["matched_household_count"],
+            "holdout_target_fraction": contract["holdout_target_fraction"],
         },
         details=details,
     )
@@ -755,6 +784,274 @@ def _ecps_comparison_summary(payload: Any) -> dict[str, Any]:
             "candidate_beats_baseline": candidate_beats,
             "best_variant_label": payload.get("best_variant_label"),
         }
+    return {}
+
+
+def _ecps_comparison_contract_summary(
+    payload: Any,
+    summary: dict[str, Any],
+) -> dict[str, Any]:
+    candidate_households = _first_nested_present(
+        payload,
+        summary,
+        "candidate_household_count",
+        "candidate_households",
+        "candidate_n_households",
+        "candidate_record_count",
+    )
+    baseline_households = _first_nested_present(
+        payload,
+        summary,
+        "baseline_household_count",
+        "baseline_households",
+        "baseline_n_households",
+        "baseline_record_count",
+    )
+    matched_household_count = None
+    if candidate_households is not None and baseline_households is not None:
+        matched_household_count = int(candidate_households) == int(baseline_households)
+    else:
+        matched_household_count = _first_nested_present(
+            payload,
+            summary,
+            "matched_household_count",
+            "matched_n",
+            "matched_record_count",
+        )
+        if matched_household_count is not None:
+            matched_household_count = bool(matched_household_count)
+
+    symmetric_refit = _first_nested_present(
+        payload,
+        summary,
+        "symmetric_refit",
+        "symmetric_reweight",
+        "refit_both",
+    )
+    candidate_refit_config = _first_nested_present(
+        payload,
+        summary,
+        "candidate_refit_config",
+        "candidate_fit_config",
+    )
+    baseline_refit_config = _first_nested_present(
+        payload,
+        summary,
+        "baseline_refit_config",
+        "baseline_fit_config",
+    )
+    if symmetric_refit is None and (
+        isinstance(candidate_refit_config, dict)
+        and isinstance(baseline_refit_config, dict)
+    ):
+        symmetric_refit = candidate_refit_config == baseline_refit_config
+    if symmetric_refit is not None:
+        symmetric_refit = bool(symmetric_refit)
+
+    score_candidate_only = _first_nested_present(
+        payload,
+        summary,
+        "score_candidate_only",
+    )
+    if score_candidate_only is not None and bool(score_candidate_only):
+        symmetric_refit = False
+
+    objective_identity = _first_nested_present(
+        payload,
+        summary,
+        "refit_objective_matches_scoring",
+        "objective_identity_recovery_passed",
+        "ecps_refit_recovery_passed",
+    )
+    if objective_identity is None:
+        objective_identity = _refit_configs_are_dense_score_objective(
+            candidate_refit_config,
+            baseline_refit_config,
+        )
+    if objective_identity is not None:
+        objective_identity = bool(objective_identity)
+
+    holdout_target_fraction = _first_nested_present(
+        payload,
+        summary,
+        "holdout_target_fraction",
+    )
+    holdout_targets = _first_nested_present(
+        payload,
+        summary,
+        "holdout_targets",
+        "n_holdout_targets",
+    )
+    has_holdout_targets = False
+    if holdout_target_fraction is not None:
+        has_holdout_targets = float(holdout_target_fraction) > 0.0
+    elif holdout_targets is not None:
+        has_holdout_targets = int(holdout_targets) > 0
+
+    protected_summary = _protected_family_floor_summary(payload, summary)
+
+    requirements = {
+        "matched_household_count": matched_household_count is True,
+        "symmetric_refit": symmetric_refit is True,
+        "refit_objective_matches_scoring": objective_identity is True,
+        "holdout_target_split": has_holdout_targets,
+        "protected_family_floors": protected_summary["passed"] is True,
+    }
+    return {
+        "matched_household_count": matched_household_count,
+        "holdout_target_fraction": holdout_target_fraction,
+        "missing_requirements": [
+            key for key, passed in requirements.items() if not passed
+        ],
+        "details": {
+            "candidate_household_count": candidate_households,
+            "baseline_household_count": baseline_households,
+            "symmetric_refit": symmetric_refit,
+            "score_candidate_only": score_candidate_only,
+            "refit_objective_matches_scoring": objective_identity,
+            "holdout_targets": holdout_targets,
+            "protected_family_floor": protected_summary,
+        },
+    }
+
+
+def _first_nested_present(
+    payload: Any,
+    summary: dict[str, Any],
+    *keys: str,
+) -> Any:
+    candidates: list[dict[str, Any]] = [summary]
+    if isinstance(payload, dict):
+        candidates.append(payload)
+        for nested_key in (
+            "comparison_contract",
+            "ecps_comparison_contract",
+            "release_contract",
+            "validation",
+            "metadata",
+        ):
+            nested = payload.get(nested_key)
+            if isinstance(nested, dict):
+                candidates.append(nested)
+    for candidate in candidates:
+        value = _first_present(candidate, *keys)
+        if value is not None:
+            return value
+    return None
+
+
+def _refit_configs_are_dense_score_objective(
+    candidate_refit_config: Any,
+    baseline_refit_config: Any,
+) -> bool | None:
+    if not isinstance(candidate_refit_config, dict) or not isinstance(
+        baseline_refit_config,
+        dict,
+    ):
+        return None
+    if candidate_refit_config != baseline_refit_config:
+        return False
+    config = candidate_refit_config
+    lambda_l0 = float(config.get("lambda_l0", config.get("l0_lambda", 0.0)) or 0.0)
+    lambda_l2 = float(config.get("lambda_l2", config.get("l2_penalty", 0.0)) or 0.0)
+    use_gates = bool(config.get("use_gates", False))
+    return lambda_l0 == 0.0 and lambda_l2 == 0.0 and not use_gates
+
+
+def _protected_family_floor_summary(
+    payload: Any,
+    summary: dict[str, Any],
+) -> dict[str, Any]:
+    explicit = _first_nested_present(
+        payload,
+        summary,
+        "protected_family_floors_passed",
+        "protected_family_floor_passed",
+    )
+    family_rows = _first_nested_present(
+        payload,
+        summary,
+        "protected_family_losses",
+        "protected_family_floor_results",
+        "family_loss_comparison",
+        "family_breakdown",
+    )
+    if family_rows is None:
+        return {
+            "passed": None,
+            "reported_passed": explicit,
+            "missing_families": list(_PROTECTED_ECPS_TARGET_FAMILIES),
+            "regressions": [],
+        }
+
+    rows_by_family = _family_loss_rows_by_name(family_rows)
+    missing = [
+        family
+        for family in _PROTECTED_ECPS_TARGET_FAMILIES
+        if family not in rows_by_family
+    ]
+    regressions: list[dict[str, Any]] = []
+    for family, row in rows_by_family.items():
+        if family not in _PROTECTED_ECPS_TARGET_FAMILIES:
+            continue
+        candidate_loss = _first_present(
+            row,
+            "candidate_loss",
+            "candidate_family_loss",
+            "candidate_loss_contribution",
+        )
+        baseline_loss = _first_present(
+            row,
+            "baseline_loss",
+            "baseline_family_loss",
+            "baseline_loss_contribution",
+        )
+        if candidate_loss is None or baseline_loss is None:
+            missing.append(family)
+            continue
+        delta = float(candidate_loss) - float(baseline_loss)
+        tolerance = max(
+            _PROTECTED_FAMILY_ABSOLUTE_LOSS_TOLERANCE,
+            _PROTECTED_FAMILY_RELATIVE_LOSS_TOLERANCE * abs(float(baseline_loss)),
+        )
+        if delta > tolerance:
+            regressions.append(
+                {
+                    "family": family,
+                    "candidate_loss": float(candidate_loss),
+                    "baseline_loss": float(baseline_loss),
+                    "loss_delta": delta,
+                    "allowed_delta": tolerance,
+                }
+            )
+    passed = not missing and not regressions
+    if explicit is not None:
+        passed = passed and bool(explicit)
+    return {
+        "passed": passed,
+        "missing_families": sorted(set(missing)),
+        "regressions": regressions,
+        "relative_tolerance": _PROTECTED_FAMILY_RELATIVE_LOSS_TOLERANCE,
+        "absolute_tolerance": _PROTECTED_FAMILY_ABSOLUTE_LOSS_TOLERANCE,
+    }
+
+
+def _family_loss_rows_by_name(family_rows: Any) -> dict[str, dict[str, Any]]:
+    if isinstance(family_rows, dict):
+        return {
+            str(family): dict(row)
+            for family, row in family_rows.items()
+            if isinstance(row, dict)
+        }
+    if isinstance(family_rows, list):
+        rows: dict[str, dict[str, Any]] = {}
+        for row in family_rows:
+            if not isinstance(row, dict):
+                continue
+            family = _first_present(row, "family", "target_family", "name")
+            if family is not None:
+                rows[str(family)] = dict(row)
+        return rows
     return {}
 
 

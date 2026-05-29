@@ -1733,6 +1733,10 @@ class USMicroplexPipeline:
         fusion_plan = FusionPlan.from_sources([frame.source for frame in frames])
         scaffold_input = self._select_scaffold_source(source_inputs)
         seed_data = self.prepare_seed_data_from_source(scaffold_input)
+        seed_data = self._strip_generated_entity_ids(
+            seed_data,
+            scaffold_input=scaffold_input,
+        )
         scaffold_seed_data = seed_data.copy()
         donor_integration = self._integrate_donor_sources(
             seed_data,
@@ -1742,10 +1746,6 @@ class USMicroplexPipeline:
             ],
         )
         seed_data = donor_integration["seed_data"]
-        seed_data = self._strip_generated_entity_ids(
-            seed_data,
-            scaffold_input=scaffold_input,
-        )
         seed_data = self._apply_dependent_tax_leaf_soft_caps(seed_data)
         _emit_us_pipeline_progress(
             "US microplex build: seed ready",

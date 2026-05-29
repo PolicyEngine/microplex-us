@@ -9,6 +9,7 @@ from typing import Any, Literal, TypedDict, cast
 
 from microplex_us.pipelines.stage_contracts import (
     US_STAGE_CONTRACT_VERSION,
+    StageResumeMode,
     USPipelineStageContract,
     USStageArtifactContract,
     default_us_pipeline_stage_contracts,
@@ -25,6 +26,8 @@ US_POLICYENGINE_ENTITY_STAGE_ID = "06_policyengine_entities"
 US_VALIDATION_STAGE_ID = "09_validation_benchmarking"
 
 
+USStageMetricValue = str | int | float | bool | None
+
 USStageStatus = Literal[
     "ready",
     "metadata_only",
@@ -33,12 +36,14 @@ USStageStatus = Literal[
     "missing",
 ]
 
+USStageValidationStatus = Literal["planned", "manual", "implemented"]
+
 
 class USStageMetric(TypedDict):
     """One compact metric shown for a saved stage."""
 
     label: str
-    value: Any
+    value: USStageMetricValue
 
 
 class USStageArtifactRecord(TypedDict):
@@ -49,7 +54,7 @@ class USStageArtifactRecord(TypedDict):
     path_hint: str | None
     required: bool
     resume_role: str | None
-    path: Any
+    path: str | None
     exists: bool
     referenced: bool
 
@@ -57,8 +62,16 @@ class USStageArtifactRecord(TypedDict):
 class USStageResumeRecord(TypedDict):
     """Saved-run resume metadata for one stage."""
 
-    mode: str
+    mode: StageResumeMode
     notes: str
+
+
+class USStageValidationRecord(TypedDict):
+    """Saved-run view of one planned or implemented validation."""
+
+    key: str
+    description: str
+    status: USStageValidationStatus
 
 
 class USStageRecord(TypedDict):
@@ -73,7 +86,7 @@ class USStageRecord(TypedDict):
     produces: list[str]
     artifacts: list[USStageArtifactRecord]
     diagnostics: list[str]
-    validations: list[dict[str, object]]
+    validations: list[USStageValidationRecord]
     resume: USStageResumeRecord
     metrics: list[USStageMetric]
 
@@ -83,31 +96,31 @@ class USStageManifest(TypedDict):
 
     schemaVersion: int
     contractVersion: str
-    generatedAt: Any
+    generatedAt: str | None
     pipeline: str
     artifactRoot: str
-    manifest: Any
+    manifest: str
     stages: list[USStageRecord]
 
 
 class USDataFlowStageSummary(TypedDict):
     """Stage summary embedded in the site-facing data-flow snapshot."""
 
-    id: Any
-    step: Any
-    title: Any
-    summary: Any
-    status: Any
-    metrics: list[Any]
-    outputs: list[Any]
-    resumeMode: Any
+    id: str
+    step: str
+    title: str
+    summary: str
+    status: USStageStatus
+    metrics: list[USStageMetric]
+    outputs: list[str]
+    resumeMode: StageResumeMode
 
 
 class USValidationEvidenceRecord(TypedDict):
     """One validation or benchmarking evidence sidecar."""
 
     key: str
-    path: Any
+    path: str
     exists: bool
 
 
@@ -182,10 +195,10 @@ def build_us_stage_manifest(
     return {
         "schemaVersion": US_STAGE_MANIFEST_SCHEMA_VERSION,
         "contractVersion": US_STAGE_CONTRACT_VERSION,
-        "generatedAt": manifest.get("created_at"),
+        "generatedAt": _optional_str(manifest.get("created_at")),
         "pipeline": "us_microplex",
         "artifactRoot": ".",
-        "manifest": artifact_map.get("manifest", "manifest.json"),
+        "manifest": str(artifact_map.get("manifest", "manifest.json")),
         "stages": stages,
     }
 
@@ -199,23 +212,38 @@ def stage_summary_for_data_flow_snapshot(
     for stage in stage_manifest.get("stages", ()):
         if not isinstance(stage, dict):
             continue
+        resume = stage.get("resume", {})
         summaries.append(
             {
-                "id": stage.get("id"),
-                "step": stage.get("step"),
-                "title": stage.get("title"),
-                "summary": stage.get("purpose"),
-                "status": stage.get("status"),
-                "metrics": list(stage.get("metrics", ())),
-                "outputs": [
-                    artifact.get("path")
-                    for artifact in stage.get("artifacts", ())
-                    if isinstance(artifact, dict) and artifact.get("path")
-                ],
-                "resumeMode": stage.get("resume", {}).get("mode"),
+                "id": str(stage.get("id", "")),
+                "step": str(stage.get("step", "")),
+                "title": str(stage.get("title", "")),
+                "summary": str(stage.get("purpose", "")),
+                "status": cast(USStageStatus, stage.get("status", "missing")),
+                "metrics": cast(list[USStageMetric], list(stage.get("metrics", ()))),
+                "outputs": _stage_output_paths_for_data_flow(stage),
+                "resumeMode": cast(
+                    StageResumeMode,
+                    resume.get("mode", "none") if isinstance(resume, dict) else "none",
+                ),
             }
         )
     return summaries
+
+
+def _stage_output_paths_for_data_flow(stage: dict[str, Any]) -> list[str]:
+    """Return artifact paths that a saved run actually referenced or produced."""
+
+    outputs: list[str] = []
+    for artifact in stage.get("artifacts", ()):
+        if not isinstance(artifact, dict):
+            continue
+        path = artifact.get("path")
+        if not path:
+            continue
+        if bool(artifact.get("exists")) or bool(artifact.get("referenced")):
+            outputs.append(str(path))
+    return outputs
 
 
 def write_us_policyengine_entity_stage_artifact(
@@ -266,18 +294,19 @@ def build_us_validation_evidence_manifest(
         "imputation_ablation",
         "child_tax_unit_agi_drift",
     )
-    evidence = []
+    evidence: list[USValidationEvidenceRecord] = []
     for key in evidence_keys:
         filename = artifacts.get(key)
         if not filename:
             continue
-        path = Path(filename)
+        path_text = str(filename)
+        path = Path(path_text)
         if not path.is_absolute():
             path = artifact_root / path
         evidence.append(
             {
                 "key": key,
-                "path": filename,
+                "path": path_text,
                 "exists": path.exists(),
             }
         )
@@ -374,7 +403,10 @@ def _stage_record(
         "produces": list(contract.produces),
         "artifacts": artifacts,
         "diagnostics": list(contract.diagnostics),
-        "validations": [validation.to_dict() for validation in contract.validations],
+        "validations": cast(
+            list[USStageValidationRecord],
+            [validation.to_dict() for validation in contract.validations],
+        ),
         "resume": {
             "mode": contract.resume_mode,
             "notes": contract.resume_notes,
@@ -392,7 +424,7 @@ def _artifact_record(
 ) -> USStageArtifactRecord:
     artifacts = dict(manifest.get("artifacts", {}))
     manifest_path = artifacts.get(artifact.key)
-    path = manifest_path or artifact.path_hint
+    path = str(manifest_path) if manifest_path else artifact.path_hint
     exists = False
     if path:
         resolved = Path(str(path))
@@ -492,12 +524,12 @@ def _stage_status(
             "policyengine_native_scores",
             "policyengine_native_audit",
             "imputation_ablation",
-            "validation_evidence",
         )
+        evidence_index_keys = ("validation_evidence",)
         if _manifest_artifact_missing(
             manifest,
             artifact_root,
-            evidence_keys,
+            (*evidence_keys, *evidence_index_keys),
             assume_existing_artifact_keys=assume_existing_artifact_keys,
         ):
             return "incomplete"
@@ -510,6 +542,12 @@ def _stage_status(
             )
             for key in evidence_keys
         )
+        if not has_evidence:
+            has_evidence = _validation_evidence_index_has_existing_evidence(
+                manifest,
+                artifact_root,
+                assume_existing_artifact_keys=assume_existing_artifact_keys,
+            )
         if has_evidence:
             return "ready"
         if _manifest_artifact_exists(
@@ -557,15 +595,11 @@ def _manifest_artifact_exists(
     *,
     assume_existing_artifact_keys: set[str],
 ) -> bool:
-    artifacts = dict(manifest.get("artifacts", {}))
-    filename = artifacts.get(artifact_key)
-    if not filename:
+    path = _manifest_artifact_path(manifest, artifact_root, artifact_key)
+    if path is None:
         return False
     if artifact_key in assume_existing_artifact_keys:
         return True
-    path = Path(str(filename))
-    if not path.is_absolute():
-        path = artifact_root / path
     return path.exists()
 
 
@@ -587,6 +621,58 @@ def _manifest_artifact_missing(
         )
         for key in artifact_keys
     )
+
+
+def _validation_evidence_index_has_existing_evidence(
+    manifest: dict[str, Any],
+    artifact_root: Path,
+    *,
+    assume_existing_artifact_keys: set[str],
+) -> bool:
+    path = _manifest_artifact_path(manifest, artifact_root, "validation_evidence")
+    if path is None:
+        return False
+    if "validation_evidence" in assume_existing_artifact_keys and not path.exists():
+        return False
+    if not path.exists():
+        return False
+    try:
+        payload = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return False
+    evidence = payload.get("evidence")
+    if not isinstance(evidence, list):
+        return False
+    for record in evidence:
+        if not isinstance(record, dict) or not record.get("path"):
+            continue
+        evidence_path = Path(str(record["path"]))
+        if not evidence_path.is_absolute():
+            evidence_path = artifact_root / evidence_path
+        if evidence_path.exists():
+            return True
+    return False
+
+
+def _manifest_artifact_path(
+    manifest: dict[str, Any],
+    artifact_root: Path,
+    artifact_key: str,
+) -> Path | None:
+    artifacts = dict(manifest.get("artifacts", {}))
+    filename = artifacts.get(artifact_key)
+    if not filename:
+        return None
+    path = Path(str(filename))
+    if not path.is_absolute():
+        path = artifact_root / path
+    return path
+
+
+def _optional_str(value: Any) -> str | None:
+    if value is None:
+        return None
+    return str(value)
 
 
 def _stage_metrics(stage_id: str, *, manifest: dict[str, Any]) -> list[USStageMetric]:
@@ -656,8 +742,12 @@ __all__ = [
     "USStageArtifactRecord",
     "USStageManifest",
     "USStageMetric",
+    "USStageMetricValue",
     "USStageRecord",
+    "USStageResumeRecord",
     "USStageStatus",
+    "USStageValidationRecord",
+    "USStageValidationStatus",
     "US_VALIDATION_STAGE_ID",
     "USValidationEvidenceManifest",
     "USValidationEvidenceRecord",

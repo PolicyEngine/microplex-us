@@ -1157,6 +1157,7 @@ dev = [
 ]
 docs = [
     { name = "jupyter-book" },
+    { name = "standard-imghdr" },
 ]
 policyengine = [
     { name = "microimpute", marker = "python_full_version < '3.15'" },
@@ -1180,6 +1181,7 @@ requires-dist = [
     { name = "requests", specifier = ">=2.31" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1" },
     { name = "spm-calculator", marker = "extra == 'policyengine'", specifier = ">=0.3.1" },
+    { name = "standard-imghdr", marker = "python_full_version >= '3.13' and extra == 'docs'", specifier = ">=3.13" },
 ]
 provides-extras = ["dev", "docs", "r2", "policyengine"]
 

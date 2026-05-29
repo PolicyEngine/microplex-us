@@ -8517,7 +8517,7 @@ class TestUSMicroplexPipeline:
         assert "spm_unit_id" not in stripped.columns
         assert "marital_unit_id" not in stripped.columns
 
-    def test_build_from_frames_drops_generated_entity_ids_before_synthesis(
+    def test_build_from_frames_drops_generated_entity_ids_before_stage5(
         self,
         monkeypatch,
     ):
@@ -8589,16 +8589,23 @@ class TestUSMicroplexPipeline:
                 calibration_backend="entropy",
             )
         )
+        original_prepare_seed_data_from_source = pipeline.prepare_seed_data_from_source
+        captured_integrate_seed_columns: list[str] = []
         captured_seed_columns: list[str] = []
+
+        def fake_prepare_seed_data_from_source(source_input):
+            seed_data = original_prepare_seed_data_from_source(source_input)
+            return seed_data.assign(
+                tax_unit_id=[100, 100],
+                spm_unit_id=[200, 200],
+                marital_unit_id=[300, 301],
+            )
 
         def fake_integrate(seed_data, *, scaffold_input, donor_inputs):
             _ = scaffold_input, donor_inputs
+            captured_integrate_seed_columns[:] = seed_data.columns.tolist()
             return {
-                "seed_data": seed_data.assign(
-                    tax_unit_id=[100, 100],
-                    spm_unit_id=[200, 200],
-                    marital_unit_id=[300, 301],
-                ),
+                "seed_data": seed_data,
                 "integrated_variables": [],
                 "conditioning_diagnostics": [
                     {
@@ -8620,17 +8627,30 @@ class TestUSMicroplexPipeline:
             _ = targets
             return synthetic_data, {}
 
+        monkeypatch.setattr(
+            pipeline,
+            "prepare_seed_data_from_source",
+            fake_prepare_seed_data_from_source,
+        )
         monkeypatch.setattr(pipeline, "_integrate_donor_sources", fake_integrate)
         monkeypatch.setattr(pipeline, "synthesize", fake_synthesize)
         monkeypatch.setattr(pipeline, "calibrate", fake_calibrate)
 
         result = pipeline.build_from_frames([cps_frame])
 
+        assert "tax_unit_id" not in captured_integrate_seed_columns
+        assert "spm_unit_id" not in captured_integrate_seed_columns
+        assert "marital_unit_id" not in captured_integrate_seed_columns
+        assert result.scaffold_seed_data is not None
+        assert "tax_unit_id" not in result.scaffold_seed_data.columns
+        assert "spm_unit_id" not in result.scaffold_seed_data.columns
+        assert "marital_unit_id" not in result.scaffold_seed_data.columns
         assert "tax_unit_id" not in captured_seed_columns
         assert "spm_unit_id" not in captured_seed_columns
         assert "marital_unit_id" not in captured_seed_columns
         assert "tax_unit_id" not in result.seed_data.columns
         assert "spm_unit_id" not in result.seed_data.columns
+        assert "marital_unit_id" not in result.seed_data.columns
         assert result.synthesis_metadata["donor_conditioning_diagnostics"] == [
             {
                 "donor_source": "test_donor",

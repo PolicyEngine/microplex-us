@@ -6669,7 +6669,7 @@ class USMicroplexPipeline:
         )
         if hinted_status is not None:
             return hinted_status
-        return "HEAD_OF_HOUSEHOLD" if dependent_ids else "SINGLE"
+        return "SINGLE"
 
     def _aggregate_policyengine_tax_unit_input_columns(
         self,

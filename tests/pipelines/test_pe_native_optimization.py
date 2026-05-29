@@ -80,6 +80,17 @@ def test_optimize_pe_native_loss_weights_reduces_objective_and_respects_budget()
     assert summary["optimized_loss"] < summary["initial_loss"]
     assert summary["positive_household_count"] == 1
     assert np.isclose(summary["optimized_weight_sum"], initial_weights.sum())
+    assert summary["loss_history"][0]["iteration"] == 0
+    assert summary["loss_history"][0]["objective_loss"] == summary["initial_loss"]
+    assert summary["loss_history"][-1]["objective_loss"] == summary["optimized_loss"]
+    assert all(
+        next_row["objective_loss"] <= row["objective_loss"] + 1e-12
+        for row, next_row in zip(
+            summary["loss_history"],
+            summary["loss_history"][1:],
+            strict=False,
+        )
+    )
 
 
 def test_optimize_pe_native_loss_weights_respects_target_total_weight():

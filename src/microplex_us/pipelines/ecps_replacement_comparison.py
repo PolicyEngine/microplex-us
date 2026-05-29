@@ -440,6 +440,33 @@ def _fit_dense_refit(
     target = np.asarray(loss_inputs["scaled_target"], dtype=np.float64)
     initial_weights = np.asarray(loss_inputs["initial_weights"], dtype=np.float64)
     train_mask = ~holdout_mask
+    loss_curve: list[dict[str, float | int]] = []
+
+    def record_loss_curve(
+        iteration: int,
+        weights: np.ndarray,
+        objective_loss: float,
+    ) -> None:
+        loss_curve.append(
+            {
+                "iteration": int(iteration),
+                "objective_train_loss": float(objective_loss),
+                "full_loss": _objective(matrix, target, weights),
+                "train_loss": _objective(
+                    matrix[:, train_mask],
+                    target[train_mask],
+                    weights,
+                ),
+                "holdout_loss": _objective(
+                    matrix[:, holdout_mask],
+                    target[holdout_mask],
+                    weights,
+                ),
+                "weight_sum": float(weights.sum()),
+                "positive_household_count": int((weights > 1e-9).sum()),
+            }
+        )
+
     optimized_weights, optimizer_summary = optimize_pe_native_loss_weights(
         scaled_matrix=matrix[:, train_mask],
         scaled_target=target[train_mask],
@@ -448,6 +475,7 @@ def _fit_dense_refit(
         max_iter=max_iter,
         l2_penalty=0.0,
         tol=tol,
+        history_callback=record_loss_curve,
     )
     rewrite_policyengine_us_dataset_weights(
         input_dataset_path=input_dataset_path,
@@ -485,6 +513,7 @@ def _fit_dense_refit(
         "household_count": int(len(optimized_weights)),
         "positive_household_count": int((optimized_weights > 1e-9).sum()),
         "optimizer_summary": optimizer_summary,
+        "loss_curve": loss_curve,
         "optimized_weights": optimized_weights,
     }
 

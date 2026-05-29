@@ -162,6 +162,19 @@ def test_sound_ecps_replacement_comparison_satisfies_gate_contract(
         "household_net_income",
     }
     assert summary["protected_family_losses"]["wages"]["n_targets"] == 1
+    candidate_curve = payload["candidate_refit"]["loss_curve"]
+    baseline_curve = payload["baseline_refit"]["loss_curve"]
+    assert candidate_curve[0]["iteration"] == 0
+    assert baseline_curve[0]["iteration"] == 0
+    assert candidate_curve[0]["full_loss"] == pytest.approx(
+        payload["candidate_refit"]["initial_full_loss"]
+    )
+    assert candidate_curve[-1]["full_loss"] == pytest.approx(
+        payload["candidate_refit"]["optimized_full_loss"]
+    )
+    assert baseline_curve[-1]["holdout_loss"] == pytest.approx(
+        payload["baseline_refit"]["optimized_holdout_loss"]
+    )
 
     artifact_dir = tmp_path / "artifact"
     artifact_dir.mkdir()

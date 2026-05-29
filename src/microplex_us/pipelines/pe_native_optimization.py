@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -222,6 +223,7 @@ def optimize_pe_native_loss_weights(
     l2_penalty: float = 0.0,
     tol: float = 1e-8,
     target_total_weight: float | None = None,
+    history_callback: Callable[[int, np.ndarray, float], None] | None = None,
 ) -> tuple[np.ndarray, dict[str, Any]]:
     """Optimize nonnegative household weights directly on the PE-native loss matrix.
 
@@ -258,6 +260,16 @@ def optimize_pe_native_loss_weights(
         return base
 
     current_loss = objective(weights)
+    loss_history: list[dict[str, float | int]] = [
+        {
+            "iteration": 0,
+            "objective_loss": float(current_loss),
+            "weight_sum": float(weights.sum()),
+            "positive_household_count": int((weights > 1e-9).sum()),
+        }
+    ]
+    if history_callback is not None:
+        history_callback(0, weights, current_loss)
     converged = False
     completed_iter = 0
     total_backtracking_steps = 0
@@ -293,6 +305,16 @@ def optimize_pe_native_loss_weights(
         improvement = current_loss - candidate_loss
         weights = candidate
         current_loss = candidate_loss
+        loss_history.append(
+            {
+                "iteration": int(iteration),
+                "objective_loss": float(current_loss),
+                "weight_sum": float(weights.sum()),
+                "positive_household_count": int((weights > 1e-9).sum()),
+            }
+        )
+        if history_callback is not None:
+            history_callback(iteration, weights, current_loss)
         if improvement < tol * max(1.0, current_loss):
             converged = True
             break
@@ -311,6 +333,7 @@ def optimize_pe_native_loss_weights(
         "converged": bool(converged),
         "step_size": float(step_size),
         "line_search_backtracking_steps": int(total_backtracking_steps),
+        "loss_history": loss_history,
     }
     return weights, summary
 

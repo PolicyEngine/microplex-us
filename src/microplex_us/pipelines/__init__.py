@@ -264,6 +264,24 @@ _EXPORT_MODULES: dict[str, str] = {
         ),
     ),
     **_exports(
+        "microplex_us.pipelines.stage_artifacts",
+        (
+            "USCalibratedStageArtifacts",
+            "USCandidateStageArtifacts",
+            "USDatasetAssemblyArtifacts",
+            "USPolicyEngineEntityStageArtifacts",
+            "USStageArtifactInventory",
+            "build_us_stage_artifact_inventory",
+            "load_us_calibrated_stage_artifacts",
+            "load_us_candidate_stage_artifacts",
+            "load_us_dataset_assembly_artifacts",
+            "load_us_policyengine_entity_stage_artifacts",
+            "load_us_stage_artifact_inventory",
+            "resolve_us_stage_artifact_path_checked",
+            "write_us_stage_artifact_inventory",
+        ),
+    ),
+    **_exports(
         "microplex_us.pipelines.stage_manifest",
         (
             "USDataFlowStageSummary",
@@ -283,6 +301,17 @@ _EXPORT_MODULES: dict[str, str] = {
             "write_us_policyengine_entity_stage_artifact",
             "write_us_stage_manifest",
             "write_us_validation_evidence_manifest",
+        ),
+    ),
+    **_exports(
+        "microplex_us.pipelines.stage_readiness",
+        (
+            "USConditionalReadinessReport",
+            "USConditionalReadinessStageRecord",
+            "build_us_conditional_readiness_report",
+            "build_us_stage_reuse_key",
+            "load_us_conditional_readiness_report",
+            "write_us_conditional_readiness_report",
         ),
     ),
     **_exports(

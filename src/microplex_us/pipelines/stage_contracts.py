@@ -474,7 +474,7 @@ def default_us_pipeline_stage_contracts() -> tuple[USPipelineStageContract, ...]
                     path_hint="stage_artifacts/artifact_inventory.json",
                     resume_role="diagnostic",
                     format="json",
-                    hash_mode="file_sha256",
+                    hash_mode="none",
                 ),
                 USStageArtifactContract(
                     key="conditional_readiness",
@@ -482,7 +482,7 @@ def default_us_pipeline_stage_contracts() -> tuple[USPipelineStageContract, ...]
                     path_hint="stage_artifacts/conditional_readiness.json",
                     resume_role="diagnostic",
                     format="json",
-                    hash_mode="file_sha256",
+                    hash_mode="none",
                 ),
             ),
             diagnostics=(

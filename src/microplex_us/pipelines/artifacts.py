@@ -40,11 +40,18 @@ from microplex_us.pipelines.registry import (
     load_us_microplex_run_registry,
     select_us_microplex_frontier_entry,
 )
+from microplex_us.pipelines.stage_artifacts import (
+    build_us_stage_artifact_inventory,
+    write_us_stage_artifact_inventory,
+)
 from microplex_us.pipelines.stage_manifest import (
     US_STAGE_ARTIFACT_ROOT,
     write_us_policyengine_entity_stage_artifact,
     write_us_stage_manifest,
     write_us_validation_evidence_manifest,
+)
+from microplex_us.pipelines.stage_readiness import (
+    write_us_conditional_readiness_report,
 )
 from microplex_us.pipelines.summarize_child_tax_unit_agi_drift import (
     DEFAULT_VARIABLES as DEFAULT_CHILD_TAX_UNIT_AGI_DRIFT_VARIABLES,
@@ -88,6 +95,8 @@ class USMicroplexArtifactPaths:
     policyengine_dataset: Path | None = None
     data_flow_snapshot: Path | None = None
     stage_manifest: Path | None = None
+    artifact_inventory: Path | None = None
+    conditional_readiness: Path | None = None
     source_plan: Path | None = None
     policyengine_entity_tables: Path | None = None
     calibration_summary: Path | None = None
@@ -826,6 +835,8 @@ def save_us_microplex_artifacts(
     data_flow_snapshot_path = output_dir / "data_flow_snapshot.json"
     stage_manifest_path = output_dir / "stage_manifest.json"
     stage_artifact_root = output_dir / US_STAGE_ARTIFACT_ROOT
+    artifact_inventory_path = stage_artifact_root / "artifact_inventory.json"
+    conditional_readiness_path = stage_artifact_root / "conditional_readiness.json"
     source_plan_path = stage_artifact_root / "03_source_planning" / "source_plan.json"
     scaffold_seed_data_path = (
         stage_artifact_root / "04_seed_scaffold" / "scaffold_seed_data.parquet"
@@ -1045,6 +1056,12 @@ def save_us_microplex_artifacts(
             ),
             "data_flow_snapshot": data_flow_snapshot_path.name,
             "stage_manifest": stage_manifest_path.name,
+            "artifact_inventory": str(
+                artifact_inventory_path.relative_to(output_dir)
+            ),
+            "conditional_readiness": str(
+                conditional_readiness_path.relative_to(output_dir)
+            ),
             "validation_evidence": (
                 str(validation_evidence_path.relative_to(output_dir))
                 if validation_evidence_path is not None
@@ -1132,12 +1149,40 @@ def save_us_microplex_artifacts(
         output_dir,
         data_flow_snapshot_path,
         manifest_payload=manifest,
-        assume_existing_stage_artifact_keys=("stage_manifest",),
+        assume_existing_stage_artifact_keys=(
+            "stage_manifest",
+            "artifact_inventory",
+            "conditional_readiness",
+        ),
     )
     write_us_stage_manifest(
         output_dir,
         stage_manifest_path,
         manifest_payload=manifest,
+        assume_existing_artifact_keys=(
+            "artifact_inventory",
+            "conditional_readiness",
+        ),
+    )
+    readiness_inventory = build_us_stage_artifact_inventory(
+        output_dir,
+        manifest_payload=manifest,
+        assume_existing_artifact_keys=(
+            "artifact_inventory",
+            "conditional_readiness",
+        ),
+    )
+    write_us_conditional_readiness_report(
+        output_dir,
+        conditional_readiness_path,
+        manifest_payload=manifest,
+        artifact_inventory=readiness_inventory,
+    )
+    write_us_stage_artifact_inventory(
+        output_dir,
+        artifact_inventory_path,
+        manifest_payload=manifest,
+        assume_existing_artifact_keys=("artifact_inventory",),
     )
     assert_valid_benchmark_artifact_manifest(
         manifest,
@@ -1184,6 +1229,8 @@ def save_us_microplex_artifacts(
         policyengine_dataset=policyengine_dataset_path,
         data_flow_snapshot=data_flow_snapshot_path,
         stage_manifest=stage_manifest_path,
+        artifact_inventory=artifact_inventory_path,
+        conditional_readiness=conditional_readiness_path,
         source_plan=source_plan_path,
         policyengine_entity_tables=policyengine_entity_tables_path,
         calibration_summary=calibration_summary_path,

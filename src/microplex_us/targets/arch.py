@@ -674,6 +674,8 @@ ARCH_FACT_CONCEPT_TO_TARGET = {
         "medicaid_benefits",
         "AMOUNT",
     ),
+    "ssa.ssi_recipient_count": ("ssi_recipients", "COUNT"),
+    "ssa.ssi_payment_amount": ("ssi_total_payments", "AMOUNT"),
     "federal_reserve.z1.households_nonprofits_net_worth": (
         "net_worth_amount",
         "AMOUNT",
@@ -869,6 +871,7 @@ ARCH_FACT_DOMAIN_CONSTRAINTS = {
 ARCH_FACT_CONSTRAINT_VARIABLE_ALIASES = {
     "age": "age",
     "snap_receipt_status": "snap",
+    "ssi_category": "ssi_category",
     "us.tax.earned_income_credit_qualifying_children": "eitc_child_count",
     "us_social_security_and_ssi.program_payment_type": "program_payment_type",
     "us:statutes/26/62#adjusted_gross_income": "adjusted_gross_income",

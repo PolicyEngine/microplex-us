@@ -2837,6 +2837,117 @@ def test_arch_consumer_fact_jsonl_provider_maps_medicare_part_b_premiums(
     assert target.filters == ()
 
 
+def test_arch_consumer_fact_jsonl_provider_maps_ssi_detail_targets(
+    tmp_path: Path,
+) -> None:
+    consumer_jsonl = tmp_path / "consumer_facts.jsonl"
+    rows = [
+        _consumer_fact(
+            "ssa-ssi-aged-recipients",
+            concept="ssa.ssi_recipient_count",
+            domain="social_security_and_ssi_payments",
+            source_name="ssa",
+            source_table="SSI Annual Statistical Report 2024",
+            period={"type": "calendar_year", "value": 2024},
+            value=1_160_608,
+            unit="count",
+            constraints=(
+                {"variable": "ssi_category", "operator": "==", "value": "aged"},
+            ),
+        ),
+        _consumer_fact(
+            "ssa-ca-ssi-payments",
+            concept="ssa.ssi_payment_amount",
+            domain="social_security_and_ssi_payments",
+            source_name="ssa",
+            source_table="SSI Annual Statistical Report 2024",
+            geography={"level": "state", "id": "0400000US06", "name": "California"},
+            period={"type": "calendar_year", "value": 2024},
+            value=12_800_000_000,
+            unit="usd",
+        ),
+        _consumer_fact(
+            "ssa-ca-ssi-disabled-recipients",
+            concept="ssa.ssi_recipient_count",
+            domain="social_security_and_ssi_payments",
+            source_name="ssa",
+            source_table="SSI Annual Statistical Report 2024",
+            geography={"level": "state", "id": "0400000US06", "name": "California"},
+            period={"type": "calendar_year", "value": 2024},
+            value=877_000,
+            unit="count",
+            constraints=(
+                {"variable": "ssi_category", "operator": "==", "value": "disabled"},
+            ),
+        ),
+    ]
+    consumer_jsonl.write_text(
+        "\n".join(json.dumps(row, sort_keys=True) for row in rows) + "\n"
+    )
+
+    target_set = ArchConsumerFactJSONLTargetProvider(consumer_jsonl).load_target_set(
+        TargetQuery(period=2024)
+    )
+
+    def find_target(
+        arch_variable: str,
+        required_filters: set[tuple[str, str, object]],
+    ):
+        for target in target_set.targets:
+            if target.metadata["arch_variable"] != arch_variable:
+                continue
+            filters = {
+                (target_filter.feature, target_filter.operator.value, target_filter.value)
+                for target_filter in target.filters
+            }
+            if required_filters.issubset(filters):
+                return target
+        raise AssertionError(
+            f"Missing {arch_variable} target with filters {required_filters}"
+        )
+
+    aged_count = find_target(
+        "ssi_recipients",
+        {("is_ssi_aged", "==", 1), ("ssi", ">", 0)},
+    )
+    assert aged_count.measure is None
+    assert aged_count.entity.value == "person"
+    assert aged_count.value == pytest.approx(1_160_608)
+    assert aged_count.metadata["arch_variable"] == "ssi_recipients"
+    assert {
+        (target_filter.feature, target_filter.operator.value, target_filter.value)
+        for target_filter in aged_count.filters
+    } == {("is_ssi_aged", "==", 1), ("ssi", ">", 0)}
+
+    ca_payments = find_target(
+        "ssi_total_payments",
+        {("state_fips", "==", "06")},
+    )
+    assert ca_payments.measure == "ssi"
+    assert ca_payments.entity.value == "person"
+    assert ca_payments.value == pytest.approx(12_800_000_000)
+    assert ca_payments.metadata["arch_variable"] == "ssi_total_payments"
+    assert {
+        (target_filter.feature, target_filter.operator.value, target_filter.value)
+        for target_filter in ca_payments.filters
+    } == {("state_fips", "==", "06")}
+
+    ca_disabled_count = find_target(
+        "ssi_recipients",
+        {("is_ssi_disabled", "==", 1), ("ssi", ">", 0), ("state_fips", "==", "06")},
+    )
+    assert ca_disabled_count.measure is None
+    assert ca_disabled_count.value == pytest.approx(877_000)
+    assert {
+        (target_filter.feature, target_filter.operator.value, target_filter.value)
+        for target_filter in ca_disabled_count.filters
+    } == {
+        ("is_ssi_disabled", "==", 1),
+        ("ssi", ">", 0),
+        ("state_fips", "==", "06"),
+    }
+
+
 def test_arch_consumer_fact_jsonl_provider_maps_fed_household_net_worth(
     tmp_path: Path,
 ) -> None:

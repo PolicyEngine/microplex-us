@@ -47,6 +47,7 @@ _REQUIRED_PERIOD_ARRAYS = (
 _DEFAULT_REQUIRED_GATES = (
     "candidate_artifact",
     "compatibility",
+    "column_contract",
     "artifact_size",
     "runtime",
     "source_weight_diagnostics",
@@ -77,6 +78,44 @@ _CORE_BENCHMARK_ECPS_TARGET_FAMILIES = (
 _PROTECTED_FAMILY_RELATIVE_LOSS_TOLERANCE = 0.05
 _PROTECTED_FAMILY_ABSOLUTE_LOSS_TOLERANCE = 0.005
 _DEFAULT_MAX_SUPPORT_WEIGHT_SHARE = 0.25
+_ECPS_TRANSIENT_INPUT_COLUMNS = frozenset(
+    {
+        "free_school_meals_reported",
+        "reduced_price_school_meals_reported",
+        "reported_has_champva_health_coverage_at_interview",
+        "reported_has_chip_health_coverage_at_interview",
+        "reported_has_direct_purchase_health_coverage_at_interview",
+        "reported_has_employer_sponsored_health_coverage_at_interview",
+        "reported_has_indian_health_service_coverage_at_interview",
+        "reported_has_marketplace_health_coverage_at_interview",
+        "reported_has_means_tested_health_coverage_at_interview",
+        "reported_has_medicaid_health_coverage_at_interview",
+        "reported_has_medicare_health_coverage_at_interview",
+        "reported_has_multiple_health_coverage_at_interview",
+        "reported_has_non_marketplace_direct_purchase_health_coverage_at_interview",
+        "reported_has_other_means_tested_health_coverage_at_interview",
+        "reported_has_private_health_coverage_at_interview",
+        "reported_has_public_health_coverage_at_interview",
+        "reported_has_subsidized_marketplace_health_coverage_at_interview",
+        "reported_has_tricare_health_coverage_at_interview",
+        "reported_has_unsubsidized_marketplace_health_coverage_at_interview",
+        "reported_has_va_health_coverage_at_interview",
+        "reported_is_insured_at_interview",
+        "reported_is_uninsured_at_interview",
+        "snap_reported",
+        "spm_unit_broadband_subsidy_reported",
+        "spm_unit_capped_housing_subsidy_reported",
+        "spm_unit_energy_subsidy_reported",
+        "spm_unit_federal_tax_reported",
+        "spm_unit_net_income_reported",
+        "spm_unit_payroll_tax_reported",
+        "spm_unit_state_tax_reported",
+        "spm_unit_total_income_reported",
+        "spm_unit_wic_reported",
+        "ssi_reported",
+        "tanf_reported",
+    }
+)
 _FORBIDDEN_SOURCE_DIAGNOSTIC_VARIABLES = frozenset(
     {
         "ssi_reported",
@@ -193,6 +232,11 @@ def build_mp300k_artifact_gate_report(
         candidate_dataset=candidate_dataset,
     )
     compatibility_gate = _compatibility_gate(candidate_dataset, period=period)
+    column_contract_gate = _column_contract_gate(
+        candidate_dataset,
+        baseline_dataset=baseline_dataset,
+        period=period,
+    )
     artifact_size_gate = _artifact_size_gate(
         candidate_dataset,
         baseline_dataset=baseline_dataset,
@@ -233,6 +277,7 @@ def build_mp300k_artifact_gate_report(
     gates = {
         "candidate_artifact": candidate_gate,
         "compatibility": compatibility_gate,
+        "column_contract": column_contract_gate,
         "artifact_size": artifact_size_gate,
         "runtime": runtime_gate,
         "source_weight_diagnostics": source_weight_diagnostics_gate,
@@ -421,6 +466,86 @@ def _artifact_size_gate(
             "artifact_size_ratio_threshold": threshold,
         },
     )
+
+
+def _column_contract_gate(
+    candidate_dataset: Path,
+    *,
+    baseline_dataset: Path | None,
+    period: int,
+) -> dict[str, Any]:
+    if baseline_dataset is None:
+        return _gate(
+            "unmeasured",
+            "pinned eCPS baseline H5 has not been attached for column-contract comparison",
+        )
+    if not candidate_dataset.exists() or not baseline_dataset.exists():
+        missing = [
+            str(path)
+            for path in (candidate_dataset, baseline_dataset)
+            if not path.exists()
+        ]
+        return _gate(
+            "fail",
+            "column-contract comparison files are missing",
+            details={"missing": missing},
+        )
+
+    period_key = str(int(period))
+    candidate_columns = _h5_period_columns(candidate_dataset, period_key=period_key)
+    baseline_columns = _h5_period_columns(baseline_dataset, period_key=period_key)
+    excluded_transient = sorted(
+        column for column in baseline_columns if column in _ECPS_TRANSIENT_INPUT_COLUMNS
+    )
+    contract_columns = sorted(
+        column
+        for column in baseline_columns
+        if column not in _ECPS_TRANSIENT_INPUT_COLUMNS
+    )
+    missing_contract_columns = sorted(set(contract_columns) - set(candidate_columns))
+    extra_candidate_columns = sorted(set(candidate_columns) - set(contract_columns))
+    matched_count = len(contract_columns) - len(missing_contract_columns)
+    contract_share = (
+        float(matched_count / len(contract_columns)) if contract_columns else None
+    )
+    metrics = {
+        "period": int(period),
+        "baseline_column_count": len(baseline_columns),
+        "candidate_column_count": len(candidate_columns),
+        "excluded_transient_column_count": len(excluded_transient),
+        "contract_column_count": len(contract_columns),
+        "candidate_contract_column_count": matched_count,
+        "missing_contract_column_count": len(missing_contract_columns),
+        "extra_candidate_column_count": len(extra_candidate_columns),
+        "column_contract_share": contract_share,
+    }
+    details = {
+        "missing_contract_columns": missing_contract_columns,
+        "extra_candidate_columns": extra_candidate_columns,
+        "excluded_transient_columns": excluded_transient,
+    }
+    if missing_contract_columns:
+        return _gate(
+            "fail",
+            "candidate H5 is missing pinned eCPS contract columns",
+            metrics=metrics,
+            details=details,
+        )
+    return _gate(
+        "pass",
+        "candidate H5 contains every pinned eCPS contract column",
+        metrics=metrics,
+        details=details,
+    )
+
+
+def _h5_period_columns(path: Path, *, period_key: str) -> list[str]:
+    with h5py.File(path, "r") as handle:
+        return sorted(
+            name
+            for name, value in handle.items()
+            if isinstance(value, h5py.Group) and period_key in value
+        )
 
 
 def _compatibility_gate(candidate_dataset: Path, *, period: int) -> dict[str, Any]:

@@ -41,6 +41,20 @@ def _write_incomplete_policyengine_dataset(path: Path, *, period: int = 2024) ->
     return path
 
 
+def _add_period_dataset(
+    path: Path,
+    variable: str,
+    values: list[object] | np.ndarray,
+    *,
+    period: int = 2024,
+) -> None:
+    with h5py.File(path, "a") as handle:
+        if variable in handle:
+            del handle[variable]
+        group = handle.create_group(variable)
+        group.create_dataset(str(period), data=np.asarray(values))
+
+
 def _write_artifact_manifest(
     artifact_dir: Path,
     *,
@@ -231,6 +245,7 @@ def test_write_mp300k_artifact_gate_report_passes_with_all_evidence(tmp_path):
     assert record["gates"]["candidate_artifact"]["status"] == "pass"
     assert record["gates"]["compatibility"]["metrics"]["household_count"] == 2
     assert record["gates"]["compatibility"]["metrics"]["person_count"] == 3
+    assert record["gates"]["column_contract"]["status"] == "pass"
     assert record["gates"]["artifact_size"]["status"] == "pass"
     assert record["gates"]["ecps_comparison"]["status"] == "pass"
     assert record["gates"]["arch_target_coverage"]["status"] == "pass"
@@ -283,6 +298,64 @@ def test_benchmark_manifest_gate_requires_pinned_release_evidence(tmp_path):
         "target_db.path",
         "target_db.sha256",
     ]
+
+
+def test_column_contract_gate_rejects_missing_ecps_contract_column(tmp_path):
+    artifact_dir = tmp_path / "artifact"
+    artifact_dir.mkdir()
+    _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
+    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    _add_period_dataset(baseline_dataset, "filing_status", [1, 2])
+    benchmark_manifest = tmp_path / "benchmark_manifest.json"
+    _write_benchmark_manifest(benchmark_manifest)
+    _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
+
+    report_path = write_mp300k_artifact_gate_report(
+        artifact_dir,
+        ecps_comparison_payload=_sound_ecps_comparison_payload(),
+        arch_coverage_payload=_arch_coverage_payload(),
+        runtime_smoke_payload={"runtime_ratio": 1.0},
+        benchmark_manifest_path=benchmark_manifest,
+        compute_native_scores=False,
+        update_manifest=False,
+    )
+
+    record = json.loads(report_path.read_text())
+    column_gate = record["gates"]["column_contract"]
+
+    assert record["summary"]["status"] == "failed"
+    assert column_gate["status"] == "fail"
+    assert column_gate["metrics"]["missing_contract_column_count"] == 1
+    assert column_gate["details"]["missing_contract_columns"] == ["filing_status"]
+
+
+def test_column_contract_gate_excludes_ecps_transient_inputs(tmp_path):
+    artifact_dir = tmp_path / "artifact"
+    artifact_dir.mkdir()
+    _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
+    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    _add_period_dataset(baseline_dataset, "ssi_reported", [1.0, 0.0, 0.0])
+    benchmark_manifest = tmp_path / "benchmark_manifest.json"
+    _write_benchmark_manifest(benchmark_manifest)
+    _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
+
+    report_path = write_mp300k_artifact_gate_report(
+        artifact_dir,
+        ecps_comparison_payload=_sound_ecps_comparison_payload(),
+        arch_coverage_payload=_arch_coverage_payload(),
+        runtime_smoke_payload={"runtime_ratio": 1.0},
+        benchmark_manifest_path=benchmark_manifest,
+        compute_native_scores=False,
+        update_manifest=False,
+    )
+
+    record = json.loads(report_path.read_text())
+    column_gate = record["gates"]["column_contract"]
+
+    assert record["summary"]["status"] == "passed"
+    assert column_gate["status"] == "pass"
+    assert column_gate["metrics"]["excluded_transient_column_count"] == 1
+    assert column_gate["details"]["excluded_transient_columns"] == ["ssi_reported"]
 
 
 def test_source_weight_diagnostics_gate_rejects_missing_sidecar(tmp_path):

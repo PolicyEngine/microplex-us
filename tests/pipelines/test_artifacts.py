@@ -310,6 +310,8 @@ class TestSaveUSMicroplexArtifacts:
         assert paths.calibration_summary.exists()
         assert paths.validation_evidence is not None
         assert paths.validation_evidence.exists()
+        assert paths.source_weight_diagnostics is not None
+        assert paths.source_weight_diagnostics.exists()
 
         manifest = json.loads(paths.manifest.read_text())
         assert manifest["rows"]["synthetic"] == 2
@@ -325,6 +327,24 @@ class TestSaveUSMicroplexArtifacts:
             manifest["artifacts"]["policyengine_entity_tables"]
             == "stage_artifacts/06_policyengine_entities/metadata.json"
         )
+        assert (
+            manifest["artifacts"]["source_weight_diagnostics"]
+            == "source_weight_diagnostics.json"
+        )
+        source_diagnostics = json.loads(paths.source_weight_diagnostics.read_text())
+        assert (
+            source_diagnostics["summary"]["diagnostic_scope"]
+            == "saved_artifact_household_weight_by_source_rows"
+        )
+        assert source_diagnostics["summary"]["support_household_weight_share"] == 0.0
+        assert (
+            source_diagnostics["summary"]["puf_support_household_weight_share"]
+            == 0.0
+        )
+        assert source_diagnostics["summary"]["total_household_weight"] == 2.0
+        assert source_diagnostics["sources"][0]["source_class"] == (
+            "synthetic_population"
+        )
 
         with h5py.File(paths.policyengine_dataset, "r") as handle:
             assert "household_id" in handle
@@ -332,6 +352,7 @@ class TestSaveUSMicroplexArtifacts:
             assert "tax_unit_id" in handle
             assert "taxable_interest_income" in handle
             assert "filing_status" in handle
+            assert "source_weight_diagnostics" not in handle
 
     def test_writes_model_when_present(self, tmp_path):
         class FakeSynthesizer:

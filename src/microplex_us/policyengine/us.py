@@ -372,6 +372,17 @@ POLICYENGINE_US_EXPORT_COLUMN_ALIASES: dict[str, str] = {
 
 POLICYENGINE_US_EXPORT_DEFAULTS: dict[str, Any] = {
     "ssn_card_type": "CITIZEN",
+    "takes_up_aca_if_eligible": True,
+    "takes_up_early_head_start_if_eligible": True,
+    "takes_up_eitc": True,
+    "takes_up_head_start_if_eligible": True,
+    "takes_up_medicaid_if_eligible": True,
+    "takes_up_snap_if_eligible": True,
+    "takes_up_ssi_if_eligible": True,
+    "takes_up_tanf_if_eligible": True,
+    "would_claim_wic": True,
+    "would_file_if_eligible_for_refundable_credit": True,
+    "would_file_taxes_voluntarily": False,
 }
 
 

@@ -7062,30 +7062,27 @@ class USMicroplexPipeline:
         next_spm_unit_id = 0
 
         for _, household_persons in result.groupby("household_id", sort=False):
+            household_spm_id = next_spm_unit_id
+            next_spm_unit_id += 1
             primary_mask = household_persons["relationship_to_head"].isin({0, 1, 2})
             if primary_mask.any():
                 primary_family_id = next_family_id
-                primary_spm_id = next_spm_unit_id
                 next_family_id += 1
-                next_spm_unit_id += 1
             else:
                 primary_family_id = None
-                primary_spm_id = None
 
             for _, row in household_persons.iterrows():
+                spm_unit_ids[int(row.name)] = household_spm_id
                 if primary_family_id is not None and row["relationship_to_head"] in {
                     0,
                     1,
                     2,
                 }:
                     family_ids[int(row.name)] = primary_family_id
-                    spm_unit_ids[int(row.name)] = primary_spm_id
                     continue
 
                 family_ids[int(row.name)] = next_family_id
-                spm_unit_ids[int(row.name)] = next_spm_unit_id
                 next_family_id += 1
-                next_spm_unit_id += 1
 
         result["family_id"] = result.index.map(family_ids).astype(np.int64)
         result["spm_unit_id"] = result.index.map(spm_unit_ids).astype(np.int64)

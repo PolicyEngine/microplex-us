@@ -53,6 +53,10 @@ from microplex_us.pipelines.registry import (
     load_us_microplex_run_registry,
     select_us_microplex_frontier_entry,
 )
+from microplex_us.pipelines.stage_manifest import (
+    write_us_stage_manifest,
+    write_us_validation_evidence_manifest,
+)
 from microplex_us.variables import prune_redundant_variables
 
 if TYPE_CHECKING:
@@ -988,9 +992,10 @@ def _build_checkpoint_benchmark_stage(
         if value
     ]
     return {
-        "id": "benchmark",
-        "step": "06",
-        "title": "PolicyEngine benchmark",
+        "id": "09_validation_benchmarking",
+        "legacyId": "benchmark",
+        "step": "09",
+        "title": "Validation and benchmarking",
         "summary": (
             "Harness, native-loss, and donor-imputation diagnostics stay attached "
             "to the same artifact bundle."
@@ -1045,6 +1050,30 @@ def _refresh_checkpoint_data_flow_snapshot(
     extra_outputs: tuple[str, ...] = (),
 ) -> Path | None:
     snapshot_path = artifact_root / "data_flow_snapshot.json"
+    stage_manifest_path = artifact_root / "stage_manifest.json"
+    validation_evidence_path = (
+        artifact_root
+        / "stage_artifacts"
+        / "09_validation_benchmarking"
+        / "evidence_manifest.json"
+    )
+    artifacts = dict(manifest.get("artifacts", {}))
+    artifacts.setdefault("stage_manifest", stage_manifest_path.name)
+    artifacts.setdefault(
+        "validation_evidence",
+        str(validation_evidence_path.relative_to(artifact_root)),
+    )
+    manifest["artifacts"] = artifacts
+    write_us_validation_evidence_manifest(
+        artifact_root,
+        validation_evidence_path,
+        manifest_payload=manifest,
+    )
+    write_us_stage_manifest(
+        artifact_root,
+        stage_manifest_path,
+        manifest_payload=manifest,
+    )
     if not snapshot_path.exists():
         return None
     snapshot = json.loads(snapshot_path.read_text())
@@ -1057,7 +1086,10 @@ def _refresh_checkpoint_data_flow_snapshot(
     )
     replaced = False
     for index, stage in enumerate(stages):
-        if isinstance(stage, dict) and stage.get("id") == "benchmark":
+        if isinstance(stage, dict) and stage.get("id") in {
+            "benchmark",
+            "09_validation_benchmarking",
+        }:
             stages[index] = benchmark_stage
             replaced = True
             break
@@ -1579,6 +1611,29 @@ def attach_policyengine_us_data_rebuild_checkpoint_evidence(
         manifest["policyengine_native_audit"] = dict(
             native_audit_payload.get("verdictHints", {})
         )
+    stage_manifest_path = artifact_root / "stage_manifest.json"
+    validation_evidence_path = (
+        artifact_root
+        / "stage_artifacts"
+        / "09_validation_benchmarking"
+        / "evidence_manifest.json"
+    )
+    artifacts.setdefault("stage_manifest", stage_manifest_path.name)
+    artifacts.setdefault(
+        "validation_evidence",
+        str(validation_evidence_path.relative_to(artifact_root)),
+    )
+    manifest["artifacts"] = artifacts
+    write_us_validation_evidence_manifest(
+        artifact_root,
+        validation_evidence_path,
+        manifest_payload=manifest,
+    )
+    write_us_stage_manifest(
+        artifact_root,
+        stage_manifest_path,
+        manifest_payload=manifest,
+    )
     _refresh_checkpoint_data_flow_snapshot(
         artifact_root,
         manifest,

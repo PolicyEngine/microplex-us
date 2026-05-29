@@ -24,6 +24,9 @@ dev = [
     "pytest>=7.0",
     "ruff>=0.1",
 ]
+docs = [
+    "jupyter-book>=0.15,<0.16",
+]
 r2 = [
     "boto3>=1.34",
 ]

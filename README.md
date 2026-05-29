@@ -7,6 +7,9 @@ built on top of the generic `microplex` engine.
 
 - [Docs index](./docs/README.md)
 - [Architecture](./docs/architecture.md)
+- [Canonical pipeline stages](./docs/pipeline-stages.md)
+- [Stage contracts and manifests](./docs/stage-contracts.md)
+- [API reference](./docs/api.md)
 - [Source semantics](./docs/source-semantics.md)
 - [Imputation conditioning contract](./docs/imputation-conditioning-contract.md)
 - [Benchmarking](./docs/benchmarking.md)

@@ -244,6 +244,11 @@ class USMicroplexExperimentResult:
                 "targets": str(self.artifact_paths.targets),
                 "manifest": str(self.artifact_paths.manifest),
                 "version_id": self.artifact_paths.version_id,
+                "scaffold_seed_data": (
+                    str(self.artifact_paths.scaffold_seed_data)
+                    if self.artifact_paths.scaffold_seed_data is not None
+                    else None
+                ),
                 "synthesizer": (
                     str(self.artifact_paths.synthesizer)
                     if self.artifact_paths.synthesizer is not None
@@ -317,6 +322,11 @@ class USMicroplexExperimentResult:
                 targets=Path(artifact_paths["targets"]),
                 manifest=Path(artifact_paths["manifest"]),
                 version_id=artifact_paths.get("version_id"),
+                scaffold_seed_data=(
+                    Path(artifact_paths["scaffold_seed_data"])
+                    if artifact_paths.get("scaffold_seed_data") is not None
+                    else None
+                ),
                 synthesizer=(
                     Path(artifact_paths["synthesizer"])
                     if artifact_paths.get("synthesizer") is not None
@@ -751,6 +761,10 @@ def _refresh_experiment_artifact_paths(
     artifact_root = artifact_paths.output_dir
     return replace(
         artifact_paths,
+        scaffold_seed_data=_resolve_optional_result_artifact_path(
+            artifact_root,
+            artifacts.get("scaffold_seed_data"),
+        ),
         data_flow_snapshot=_resolve_optional_result_artifact_path(
             artifact_root,
             artifacts.get("data_flow_snapshot"),

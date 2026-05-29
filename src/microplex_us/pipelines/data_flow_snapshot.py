@@ -8,6 +8,11 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+from microplex_us.pipelines.stage_manifest import (
+    build_us_stage_manifest,
+    load_us_stage_manifest,
+    stage_summary_for_data_flow_snapshot,
+)
 from microplex_us.variables import (
     donor_imputation_block_specs,
     variable_semantic_spec_for,
@@ -59,11 +64,17 @@ def write_us_microplex_data_flow_snapshot(
     output_path: str | Path,
     *,
     manifest_payload: dict[str, Any] | None = None,
+    assume_existing_stage_artifact_keys: Iterable[str] = (),
 ) -> Path:
     """Write the canonical US data-flow snapshot JSON for one saved artifact bundle."""
     snapshot = _materialize_us_microplex_data_flow_snapshot(
         artifact_dir,
         manifest_payload=manifest_payload,
+        prefer_saved_stage_manifest=False,
+        assume_existing_stage_artifact_keys=(
+            *tuple(assume_existing_stage_artifact_keys),
+            "data_flow_snapshot",
+        ),
     )
     destination = Path(output_path)
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -75,6 +86,8 @@ def _materialize_us_microplex_data_flow_snapshot(
     artifact_dir: str | Path,
     *,
     manifest_payload: dict[str, Any] | None = None,
+    prefer_saved_stage_manifest: bool = True,
+    assume_existing_stage_artifact_keys: Iterable[str] = (),
 ) -> dict[str, Any]:
     artifact_root = Path(artifact_dir)
     manifest = (
@@ -83,9 +96,13 @@ def _materialize_us_microplex_data_flow_snapshot(
         else json.loads((artifact_root / "manifest.json").read_text())
     )
     synthesis = dict(manifest.get("synthesis", {}))
-    calibration = dict(manifest.get("calibration", {}))
-    artifacts = dict(manifest.get("artifacts", {}))
     config = dict(manifest.get("config", {}))
+    stage_manifest = _resolve_data_flow_stage_manifest(
+        artifact_root,
+        manifest_payload=manifest,
+        prefer_saved=prefer_saved_stage_manifest,
+        assume_existing_artifact_keys=assume_existing_stage_artifact_keys,
+    )
 
     source_names = tuple(
         dict.fromkeys(
@@ -179,15 +196,7 @@ def _materialize_us_microplex_data_flow_snapshot(
         "sharedCoverage": _build_shared_coverage_summary(fusion_plan, source_entries),
         "donorBlocks": _build_donor_block_summary(donor_integrated_variables),
         "semanticHighlights": _build_semantic_highlights(semantic_variables),
-        "stages": _build_pipeline_stage_summary(
-            synthesis=synthesis,
-            calibration=calibration,
-            artifacts=artifacts,
-            config=config,
-            donor_integrated_variables=donor_integrated_variables,
-            source_names=source_names,
-            manifest=manifest,
-        ),
+        "stages": stage_summary_for_data_flow_snapshot(stage_manifest),
     }
     return data_flow_snapshot
 
@@ -200,6 +209,28 @@ def _load_saved_data_flow_snapshot(artifact_root: Path) -> dict[str, Any] | None
     if snapshot.get("schemaVersion") != DATA_FLOW_SNAPSHOT_SCHEMA_VERSION:
         return None
     return snapshot
+
+
+def _resolve_data_flow_stage_manifest(
+    artifact_root: Path,
+    *,
+    manifest_payload: dict[str, Any],
+    prefer_saved: bool,
+    assume_existing_artifact_keys: Iterable[str],
+) -> dict[str, Any]:
+    artifacts = dict(manifest_payload.get("artifacts", {}))
+    stage_manifest_name = artifacts.get("stage_manifest")
+    if prefer_saved and stage_manifest_name:
+        stage_manifest_path = Path(stage_manifest_name)
+        if not stage_manifest_path.is_absolute():
+            stage_manifest_path = artifact_root / stage_manifest_path
+        if stage_manifest_path.exists():
+            return load_us_stage_manifest(stage_manifest_path)
+    return build_us_stage_manifest(
+        artifact_root,
+        manifest_payload=manifest_payload,
+        assume_existing_artifact_keys=assume_existing_artifact_keys,
+    )
 
 
 def _source_snapshot_entry(source_name: str) -> dict[str, Any]:

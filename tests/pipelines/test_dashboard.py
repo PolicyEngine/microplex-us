@@ -412,10 +412,15 @@ def test_dashboard_payload_reads_run_contract_summaries(tmp_path):
                 "run_id": "contracted-run",
                 "attempt_id": "attempt-1",
                 "status": "running",
-                "active": None,
+                "active": {"stage_id": "policyengine_materialization"},
                 "started_at": "2026-05-28T00:00:00+00:00",
                 "updated_at": "2026-05-28T00:00:01+00:00",
-                "completed_stages": ["preflight"],
+                "completed_stages": ["preflight", "target_build", "calibration"],
+                "failure": {"stage_id": "donor_integration"},
+                "restart": {
+                    "stage_id": "policyengine_materialization",
+                    "checkpoint_ref": "checkpoint:post_microsim",
+                },
             }
         )
     )
@@ -431,7 +436,19 @@ def test_dashboard_payload_reads_run_contract_summaries(tmp_path):
     assert contracts[0]["status_source"] == "contract"
     assert contracts[0]["run_id"] == "contracted-run"
     assert contracts[0]["status"] == "running"
-    assert contracts[0]["completed_stages"] == ["preflight"]
+    assert contracts[0]["active"]["stage_id"] == "06_policyengine_entities"
+    assert contracts[0]["active"]["legacy_stage_id"] == "policyengine_materialization"
+    assert contracts[0]["failure"]["stage_id"] == "05_donor_integration_synthesis"
+    assert contracts[0]["restart"]["stage_id"] == "06_policyengine_entities"
+    assert contracts[0]["completed_stages"] == [
+        "01_run_profile",
+        "07_calibration",
+    ]
+    assert contracts[0]["legacy_completed_stages"] == [
+        "preflight",
+        "target_build",
+        "calibration",
+    ]
 
 
 def test_dashboard_payload_reads_mp300k_artifact_gate_reports(tmp_path):

@@ -1,0 +1,18 @@
+title: microplex-us
+author: PolicyEngine
+
+execute:
+  execute_notebooks: "off"
+
+repository:
+  url: https://github.com/PolicyEngine/microplex-us
+  path_to_book: docs
+  branch: main
+
+sphinx:
+  config:
+    html_theme: sphinx_book_theme
+    autodoc_member_order: bysource
+  extra_extensions:
+    - sphinx.ext.autodoc
+    - sphinx.ext.napoleon

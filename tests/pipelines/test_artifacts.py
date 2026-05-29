@@ -45,6 +45,13 @@ def test_replay_policyengine_stage_from_artifact_uses_saved_synthetic(
             "weight": [10.0],
         }
     )
+    scaffold_seed_data = pd.DataFrame(
+        {
+            "person_id": [1],
+            "household_id": [10],
+            "weight": [5.0],
+        }
+    )
     synthetic_data = pd.DataFrame(
         {
             "person_id": [2],
@@ -59,6 +66,14 @@ def test_replay_policyengine_stage_from_artifact_uses_saved_synthetic(
             "weight": [999.0],
         }
     )
+    scaffold_seed_path = (
+        artifact_dir
+        / "stage_artifacts"
+        / "04_seed_scaffold"
+        / "scaffold_seed_data.parquet"
+    )
+    scaffold_seed_path.parent.mkdir(parents=True)
+    scaffold_seed_data.to_parquet(scaffold_seed_path, index=False)
     seed_data.to_parquet(artifact_dir / "seed_data.parquet", index=False)
     synthetic_data.to_parquet(artifact_dir / "synthetic_data.parquet", index=False)
     stale_calibrated_data.to_parquet(
@@ -73,6 +88,9 @@ def test_replay_policyengine_stage_from_artifact_uses_saved_synthetic(
             {
                 "config": config.to_dict(),
                 "artifacts": {
+                    "scaffold_seed_data": (
+                        "stage_artifacts/04_seed_scaffold/scaffold_seed_data.parquet"
+                    ),
                     "seed_data": "seed_data.parquet",
                     "synthetic_data": "synthetic_data.parquet",
                     "calibrated_data": "calibrated_data.parquet",
@@ -117,6 +135,7 @@ def test_replay_policyengine_stage_from_artifact_uses_saved_synthetic(
     assert result.calibrated_data["person_id"].tolist() == [2]
     assert result.calibrated_data["weight"].tolist() == [40.0]
     assert result.policyengine_tables == "policyengine_tables"
+    pd.testing.assert_frame_equal(result.scaffold_seed_data, scaffold_seed_data)
     assert result.calibration_summary == {"backend": "policyengine_db_none"}
     assert result.synthesis_metadata["policyengine_stage_replay"][
         "config_override_keys"
@@ -223,6 +242,7 @@ class TestSaveUSMicroplexArtifacts:
                 calibration_backend="entropy",
             ),
             seed_data=pd.DataFrame({"income": [10.0], "hh_weight": [1.0]}),
+            scaffold_seed_data=pd.DataFrame({"income": [10.0], "hh_weight": [1.0]}),
             synthetic_data=pd.DataFrame({"income": [10.0, 20.0], "weight": [1.0, 1.0]}),
             calibrated_data=pd.DataFrame({"income": [10.0, 20.0], "weight": [0.5, 1.5]}),
             targets=USMicroplexTargets(
@@ -270,6 +290,8 @@ class TestSaveUSMicroplexArtifacts:
         paths = save_us_microplex_artifacts(result, tmp_path)
 
         assert paths.output_dir == tmp_path
+        assert paths.scaffold_seed_data is not None
+        assert paths.scaffold_seed_data.exists()
         assert paths.seed_data.exists()
         assert paths.synthetic_data.exists()
         assert paths.calibrated_data.exists()
@@ -278,12 +300,31 @@ class TestSaveUSMicroplexArtifacts:
         assert paths.synthesizer is None
         assert paths.policyengine_dataset is not None
         assert paths.policyengine_dataset.exists()
+        assert paths.stage_manifest is not None
+        assert paths.stage_manifest.exists()
+        assert paths.source_plan is not None
+        assert paths.source_plan.exists()
+        assert paths.policyengine_entity_tables is not None
+        assert paths.policyengine_entity_tables.exists()
+        assert paths.calibration_summary is not None
+        assert paths.calibration_summary.exists()
+        assert paths.validation_evidence is not None
+        assert paths.validation_evidence.exists()
 
         manifest = json.loads(paths.manifest.read_text())
         assert manifest["rows"]["synthetic"] == 2
         assert manifest["weights"]["nonzero"] == 2
         assert manifest["config"]["synthesis_backend"] == "bootstrap"
+        assert (
+            manifest["artifacts"]["scaffold_seed_data"]
+            == "stage_artifacts/04_seed_scaffold/scaffold_seed_data.parquet"
+        )
         assert manifest["artifacts"]["policyengine_dataset"] == "policyengine_us.h5"
+        assert manifest["artifacts"]["stage_manifest"] == "stage_manifest.json"
+        assert (
+            manifest["artifacts"]["policyengine_entity_tables"]
+            == "stage_artifacts/06_policyengine_entities/metadata.json"
+        )
 
         with h5py.File(paths.policyengine_dataset, "r") as handle:
             assert "household_id" in handle
@@ -356,10 +397,14 @@ class TestSaveUSMicroplexArtifacts:
 
         assert paths.data_flow_snapshot is not None
         assert paths.data_flow_snapshot.exists()
+        assert paths.stage_manifest is not None
+        assert paths.stage_manifest.exists()
         manifest = json.loads(paths.manifest.read_text())
         assert manifest["artifacts"]["data_flow_snapshot"] == "data_flow_snapshot.json"
+        assert manifest["artifacts"]["stage_manifest"] == "stage_manifest.json"
         snapshot = json.loads(paths.data_flow_snapshot.read_text())
         assert snapshot["runtime"]["scaffoldSource"] == "cps_asec_parquet"
+        assert len(snapshot["stages"]) == 9
 
     def test_writes_child_tax_unit_agi_drift_summary(self, tmp_path):
         result = USMicroplexBuildResult(

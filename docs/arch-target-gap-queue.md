@@ -65,10 +65,13 @@ It excludes only cells with explicit reasons in
 
 Snapshot date: 2026-05-22.
 
+Set `$POLICYENGINE_ROOT` to the local checkout directory that contains the
+`arch` repository.
+
 Inputs:
 
-- `/Users/maxghenis/CosilicoAI/arch/arch/fixtures/consumer_facts.jsonl`
-- `/Users/maxghenis/CosilicoAI/arch/macro/targets.db`
+- `$POLICYENGINE_ROOT/arch/arch/fixtures/consumer_facts.jsonl`
+- `$POLICYENGINE_ROOT/arch/macro/targets.db`
 - `/tmp/arch-suite-hhs-acf-tanf-caseload-2024/consumer_facts.jsonl`
 - `/tmp/arch-suite-soi-historic-table-2-2022/consumer_facts.jsonl`
 - `/tmp/arch-suite-hhs-acf-liheap-fy2024-national-profile/consumer_facts.jsonl`
@@ -82,8 +85,8 @@ Command:
 
 ```bash
 uv run --extra policyengine microplex-us-arch-target-refresh \
-  --arch-targets-db /Users/maxghenis/CosilicoAI/arch/arch/fixtures/consumer_facts.jsonl \
-  --arch-targets-db /Users/maxghenis/CosilicoAI/arch/macro/targets.db \
+  --arch-targets-db "$POLICYENGINE_ROOT/arch/arch/fixtures/consumer_facts.jsonl" \
+  --arch-targets-db "$POLICYENGINE_ROOT/arch/macro/targets.db" \
   --arch-targets-db /tmp/arch-suite-hhs-acf-tanf-caseload-2024/consumer_facts.jsonl \
   --arch-targets-db /tmp/arch-suite-soi-historic-table-2-2022/consumer_facts.jsonl \
   --arch-targets-db /tmp/arch-suite-hhs-acf-liheap-fy2024-national-profile/consumer_facts.jsonl \

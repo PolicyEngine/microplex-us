@@ -1476,6 +1476,10 @@ class USMicroplexBuildConfig:
     checkpoint skips microsim too, leaving only the ~30 min calibration
     fit — useful for tuning calibration targets or backends.
     """
+    capital_gains_lots_enabled: bool = False
+    """Write an anchor-preserving synthetic capital-gains lot sidecar artifact."""
+    capital_gains_lots_max_lots_per_person: int = 4
+    capital_gains_lots_random_seed: int | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -1515,6 +1519,8 @@ class USMicroplexBuildConfig:
             raise ValueError(
                 "policyengine_calibration_deferred_stage_min_active_households must contain only positive values"
             )
+        if int(self.capital_gains_lots_max_lots_per_person) <= 0:
+            raise ValueError("capital_gains_lots_max_lots_per_person must be positive")
         if (
             self.policyengine_calibration_deferred_stage_max_constraints is not None
             and int(self.policyengine_calibration_deferred_stage_max_constraints) <= 0

@@ -16,6 +16,13 @@ from microplex.targets import (
     assert_valid_benchmark_artifact_manifest,
 )
 
+from microplex_us.capital_gains_lots import (
+    SyntheticCapitalGainsLotConfig,
+    generate_synthetic_capital_gains_lots,
+    synthetic_capital_gains_lot_metadata,
+    validate_capital_gains_lot_anchors,
+    write_capital_gains_lots_sqlite,
+)
 from microplex_us.pipelines.data_flow_snapshot import (
     write_us_microplex_data_flow_snapshot,
 )
@@ -25,16 +32,18 @@ from microplex_us.pipelines.index_db import (
 from microplex_us.pipelines.pe_native_scores import (
     compute_us_pe_native_scores,
 )
-from microplex_us.pipelines.summarize_child_tax_unit_agi_drift import (
-    DEFAULT_VARIABLES as DEFAULT_CHILD_TAX_UNIT_AGI_DRIFT_VARIABLES,
-    summarize_child_tax_unit_agi_drift,
-)
 from microplex_us.pipelines.registry import (
     FrontierMetric,
     append_us_microplex_run_registry_entry,
     build_us_microplex_run_registry_entry,
     load_us_microplex_run_registry,
     select_us_microplex_frontier_entry,
+)
+from microplex_us.pipelines.summarize_child_tax_unit_agi_drift import (
+    DEFAULT_VARIABLES as DEFAULT_CHILD_TAX_UNIT_AGI_DRIFT_VARIABLES,
+)
+from microplex_us.pipelines.summarize_child_tax_unit_agi_drift import (
+    summarize_child_tax_unit_agi_drift,
 )
 from microplex_us.pipelines.us import (
     USMicroplexBuildConfig,
@@ -74,6 +83,7 @@ class USMicroplexArtifactPaths:
     policyengine_native_scores: Path | None = None
     policyengine_native_audit: Path | None = None
     child_tax_unit_agi_drift: Path | None = None
+    capital_gains_lots: Path | None = None
     run_registry: Path | None = None
     run_index_db: Path | None = None
 
@@ -265,6 +275,69 @@ def _summarize_child_tax_unit_agi_drift_ratios(
     }
 
 
+def _maybe_write_capital_gains_lot_artifact(
+    result: USMicroplexBuildResult,
+    output_dir: Path,
+) -> tuple[Path | None, dict[str, Any] | None]:
+    if (
+        not result.config.capital_gains_lots_enabled
+        or result.policyengine_tables is None
+    ):
+        return None, None
+    persons = result.policyengine_tables.persons
+    gain_column = "long_term_capital_gains_before_response"
+    if gain_column not in persons.columns:
+        return None, {
+            "enabled": True,
+            "written": False,
+            "reason": f"missing {gain_column}",
+        }
+
+    period = result.config.policyengine_dataset_year or 2024
+    lot_config = SyntheticCapitalGainsLotConfig(
+        random_seed=(
+            result.config.capital_gains_lots_random_seed
+            if result.config.capital_gains_lots_random_seed is not None
+            else result.config.random_seed
+        ),
+        max_lots_per_person=int(result.config.capital_gains_lots_max_lots_per_person),
+    )
+    lots = generate_synthetic_capital_gains_lots(
+        persons,
+        period=period,
+        config=lot_config,
+        gain_column=gain_column,
+    )
+    validate_capital_gains_lot_anchors(persons, lots, gain_column=gain_column)
+    metadata = synthetic_capital_gains_lot_metadata(
+        lot_config,
+        period=period,
+        source_gain_column=gain_column,
+    )
+    nonzero_people = int(
+        pd.to_numeric(persons[gain_column], errors="coerce").fillna(0.0).ne(0.0).sum()
+    )
+    metadata.update(
+        {
+            "person_rows": int(len(persons)),
+            "nonzero_person_rows": nonzero_people,
+            "lot_rows": int(len(lots)),
+        }
+    )
+    path = output_dir / "capital_gains_lots.sqlite"
+    write_capital_gains_lots_sqlite(lots, path, metadata=metadata)
+    return path, {
+        "enabled": True,
+        "written": True,
+        "path": path.name,
+        "person_rows": int(len(persons)),
+        "nonzero_person_rows": nonzero_people,
+        "lot_rows": int(len(lots)),
+        "source_gain_column": gain_column,
+        "max_lots_per_person": int(lot_config.max_lots_per_person),
+    }
+
+
 def save_us_microplex_artifacts(
     result: USMicroplexBuildResult,
     output_dir: str | Path,
@@ -332,6 +405,9 @@ def save_us_microplex_artifacts(
             policyengine_dataset_path,
             period=period,
         )
+    capital_gains_lots_path, capital_gains_lots_summary = (
+        _maybe_write_capital_gains_lot_artifact(result, output_dir)
+    )
 
     (
         resolved_target_provider,
@@ -475,6 +551,11 @@ def save_us_microplex_artifacts(
                 if policyengine_native_scores_path is not None
                 else None
             ),
+            "capital_gains_lots": (
+                capital_gains_lots_path.name
+                if capital_gains_lots_path is not None
+                else None
+            ),
         },
     }
     if harness_summary is not None:
@@ -491,6 +572,10 @@ def save_us_microplex_artifacts(
         manifest.setdefault("diagnostics", {})[
             "child_tax_unit_agi_drift"
         ] = child_tax_unit_agi_drift_summary
+    if capital_gains_lots_summary is not None:
+        manifest.setdefault("diagnostics", {})[
+            "capital_gains_lots"
+        ] = capital_gains_lots_summary
     if harness_summary is not None or native_scores_payload is not None:
         resolved_run_registry_path = Path(run_registry_path or output_dir.parent / "run_registry.jsonl")
         run_entry = build_us_microplex_run_registry_entry(
@@ -577,6 +662,7 @@ def save_us_microplex_artifacts(
         policyengine_native_scores=policyengine_native_scores_path,
         policyengine_native_audit=None,
         child_tax_unit_agi_drift=child_tax_unit_agi_drift_path,
+        capital_gains_lots=capital_gains_lots_path,
         run_registry=resolved_run_registry_path,
         run_index_db=resolved_run_index_path,
     )
@@ -649,6 +735,7 @@ def save_versioned_us_microplex_artifacts(
         policyengine_native_scores=paths.policyengine_native_scores,
         policyengine_native_audit=paths.policyengine_native_audit,
         child_tax_unit_agi_drift=paths.child_tax_unit_agi_drift,
+        capital_gains_lots=paths.capital_gains_lots,
         run_registry=paths.run_registry,
         run_index_db=paths.run_index_db,
     )

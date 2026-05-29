@@ -274,6 +274,11 @@ class USMicroplexExperimentResult:
                     if self.artifact_paths.policyengine_native_audit is not None
                     else None
                 ),
+                "capital_gains_lots": (
+                    str(self.artifact_paths.capital_gains_lots)
+                    if self.artifact_paths.capital_gains_lots is not None
+                    else None
+                ),
                 "run_registry": (
                     str(self.artifact_paths.run_registry)
                     if self.artifact_paths.run_registry is not None
@@ -340,6 +345,11 @@ class USMicroplexExperimentResult:
                 policyengine_native_audit=(
                     Path(artifact_paths["policyengine_native_audit"])
                     if artifact_paths.get("policyengine_native_audit") is not None
+                    else None
+                ),
+                capital_gains_lots=(
+                    Path(artifact_paths["capital_gains_lots"])
+                    if artifact_paths.get("capital_gains_lots") is not None
                     else None
                 ),
                 run_registry=(

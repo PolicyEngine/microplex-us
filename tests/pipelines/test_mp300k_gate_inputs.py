@@ -121,6 +121,20 @@ def _sound_ecps_comparison_payload() -> dict[str, object]:
             "household_net_income",
         )
     }
+    family_breakdown = [
+        {
+            "family": family,
+            "candidate_loss_contribution": 0.01,
+            "baseline_loss_contribution": 0.01,
+        }
+        for family in (
+            "state_agi_distribution",
+            "state_age_distribution",
+            "national_ssa",
+            "national_irs_other",
+            "state_aca_spending",
+        )
+    ]
     return {
         "summary": {
             "candidate_enhanced_cps_native_loss": 0.1,
@@ -133,7 +147,8 @@ def _sound_ecps_comparison_payload() -> dict[str, object]:
             "ecps_refit_recovery_passed": True,
             "holdout_target_fraction": 0.2,
             "protected_family_losses": protected_family_losses,
-        }
+        },
+        "score": {"family_breakdown": family_breakdown},
     }
 
 

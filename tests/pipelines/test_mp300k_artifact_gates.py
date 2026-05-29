@@ -130,6 +130,20 @@ def _sound_ecps_comparison_payload(
             "household_net_income",
         )
     }
+    family_breakdown = [
+        {
+            "family": family,
+            "candidate_loss_contribution": 0.01,
+            "baseline_loss_contribution": 0.01,
+        }
+        for family in (
+            "state_agi_distribution",
+            "state_age_distribution",
+            "national_ssa",
+            "national_irs_other",
+            "state_aca_spending",
+        )
+    ]
     return {
         "summary": {
             "candidate_enhanced_cps_native_loss": candidate_loss,
@@ -145,7 +159,8 @@ def _sound_ecps_comparison_payload(
             "ecps_refit_recovery_passed": True,
             "holdout_target_fraction": 0.2,
             "protected_family_losses": protected_family_losses,
-        }
+        },
+        "score": {"family_breakdown": family_breakdown},
     }
 
 
@@ -619,6 +634,48 @@ def test_ecps_comparison_rejects_protected_family_regression(tmp_path):
             "family": "ssi",
             "candidate_loss": 0.0301,
             "baseline_loss": 0.02,
+            "loss_delta": pytest.approx(0.0101),
+            "allowed_delta": 0.005,
+        }
+    ]
+
+
+def test_ecps_comparison_rejects_core_benchmark_family_regression(tmp_path):
+    artifact_dir = tmp_path / "artifact"
+    artifact_dir.mkdir()
+    _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
+    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    benchmark_manifest = tmp_path / "benchmark_manifest.json"
+    _write_benchmark_manifest(benchmark_manifest)
+    _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
+    payload = _sound_ecps_comparison_payload(candidate_loss=0.10)
+    payload["score"]["family_breakdown"][0] = {
+        "family": "state_agi_distribution",
+        "candidate_loss_contribution": 0.0601,
+        "baseline_loss_contribution": 0.05,
+    }
+
+    report_path = write_mp300k_artifact_gate_report(
+        artifact_dir,
+        ecps_comparison_payload=payload,
+        arch_coverage_payload=_arch_coverage_payload(),
+        runtime_smoke_payload={"runtime_ratio": 1.0},
+        benchmark_manifest_path=benchmark_manifest,
+        compute_native_scores=False,
+        update_manifest=False,
+    )
+
+    record = json.loads(report_path.read_text())
+    ecps_gate = record["gates"]["ecps_comparison"]
+
+    assert record["summary"]["status"] == "failed"
+    assert ecps_gate["status"] == "fail"
+    assert "core_benchmark_family_floors" in ecps_gate["summary"]
+    assert ecps_gate["details"]["core_benchmark_family_floor"]["regressions"] == [
+        {
+            "family": "state_agi_distribution",
+            "candidate_loss": 0.0601,
+            "baseline_loss": 0.05,
             "loss_delta": pytest.approx(0.0101),
             "allowed_delta": 0.005,
         }

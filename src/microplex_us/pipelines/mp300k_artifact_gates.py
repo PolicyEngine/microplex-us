@@ -66,6 +66,13 @@ _PROTECTED_ECPS_TARGET_FAMILIES = (
     "disability",
     "household_net_income",
 )
+_CORE_BENCHMARK_ECPS_TARGET_FAMILIES = (
+    "state_agi_distribution",
+    "state_age_distribution",
+    "national_ssa",
+    "national_irs_other",
+    "state_aca_spending",
+)
 _PROTECTED_FAMILY_RELATIVE_LOSS_TOLERANCE = 0.05
 _PROTECTED_FAMILY_ABSOLUTE_LOSS_TOLERANCE = 0.005
 _FORBIDDEN_SOURCE_DIAGNOSTIC_VARIABLES = frozenset(
@@ -947,6 +954,7 @@ def _ecps_comparison_contract_summary(
         has_holdout_targets = int(holdout_targets) > 0
 
     protected_summary = _protected_family_floor_summary(payload, summary)
+    core_benchmark_summary = _core_benchmark_family_floor_summary(payload, summary)
 
     requirements = {
         "matched_household_count": matched_household_count is True,
@@ -955,6 +963,7 @@ def _ecps_comparison_contract_summary(
         "ecps_refit_recovery": ecps_refit_recovery is True,
         "holdout_target_split": has_holdout_targets,
         "protected_family_floors": protected_summary["passed"] is True,
+        "core_benchmark_family_floors": core_benchmark_summary["passed"] is True,
     }
     return {
         "matched_household_count": matched_household_count,
@@ -971,6 +980,7 @@ def _ecps_comparison_contract_summary(
             "ecps_refit_recovery_passed": ecps_refit_recovery,
             "holdout_targets": holdout_targets,
             "protected_family_floor": protected_summary,
+            "core_benchmark_family_floor": core_benchmark_summary,
         },
     }
 
@@ -1022,37 +1032,81 @@ def _protected_family_floor_summary(
     payload: Any,
     summary: dict[str, Any],
 ) -> dict[str, Any]:
+    return _family_floor_summary(
+        payload,
+        summary,
+        families=_PROTECTED_ECPS_TARGET_FAMILIES,
+        explicit_pass_keys=(
+            "protected_family_floors_passed",
+            "protected_family_floor_passed",
+        ),
+        row_keys=(
+            "protected_family_losses",
+            "protected_family_floor_results",
+            "family_loss_comparison",
+            "family_breakdown",
+        ),
+    )
+
+
+def _core_benchmark_family_floor_summary(
+    payload: Any,
+    summary: dict[str, Any],
+) -> dict[str, Any]:
+    return _family_floor_summary(
+        payload,
+        summary,
+        families=_CORE_BENCHMARK_ECPS_TARGET_FAMILIES,
+        explicit_pass_keys=(
+            "core_benchmark_family_floors_passed",
+            "core_benchmark_family_floor_passed",
+        ),
+        row_keys=(
+            "core_benchmark_family_losses",
+            "core_benchmark_family_floor_results",
+            "family_loss_comparison",
+            "family_breakdown",
+        ),
+    )
+
+
+def _family_floor_summary(
+    payload: Any,
+    summary: dict[str, Any],
+    *,
+    families: tuple[str, ...],
+    explicit_pass_keys: tuple[str, ...],
+    row_keys: tuple[str, ...],
+) -> dict[str, Any]:
     explicit = _first_nested_present(
         payload,
         summary,
-        "protected_family_floors_passed",
-        "protected_family_floor_passed",
+        *explicit_pass_keys,
     )
-    family_rows = _first_nested_present(
-        payload,
-        summary,
-        "protected_family_losses",
-        "protected_family_floor_results",
-        "family_loss_comparison",
-        "family_breakdown",
-    )
+    family_rows = _first_nested_present(payload, summary, *row_keys)
+    if family_rows is None and isinstance(payload, dict):
+        score_payload = payload.get("score")
+        if isinstance(score_payload, dict):
+            family_rows = _first_present(score_payload, *row_keys)
+            if family_rows is None:
+                score_summary = score_payload.get("summary")
+                if isinstance(score_summary, dict):
+                    family_rows = _first_present(score_summary, *row_keys)
     if family_rows is None:
         return {
             "passed": None,
             "reported_passed": explicit,
-            "missing_families": list(_PROTECTED_ECPS_TARGET_FAMILIES),
+            "missing_families": list(families),
             "regressions": [],
         }
 
     rows_by_family = _family_loss_rows_by_name(family_rows)
-    missing = [
-        family
-        for family in _PROTECTED_ECPS_TARGET_FAMILIES
-        if family not in rows_by_family
-    ]
+    missing: list[str] = []
     regressions: list[dict[str, Any]] = []
-    for family, row in rows_by_family.items():
-        if family not in _PROTECTED_ECPS_TARGET_FAMILIES:
+    for family in families:
+        row = rows_by_family.get(family)
+        if row is None:
+            missing.append(family)
             continue
         candidate_loss = _first_present(
             row,

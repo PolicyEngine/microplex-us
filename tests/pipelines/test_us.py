@@ -3497,6 +3497,29 @@ class TestUSMicroplexPipeline:
 
         assert augmented["non_sch_d_capital_gains"].tolist() == [250.0]
 
+    def test_augment_policyengine_person_inputs_zeros_part_b_without_medicare(
+        self,
+    ):
+        pipeline = USMicroplexPipeline(USMicroplexBuildConfig())
+        persons = pd.DataFrame(
+            {
+                "medicare_part_b_premiums": [100.0, 200.0, -30.0, 400.0],
+                "has_medicare": [0, 1, 0, 1],
+                "age": [12, 70, 45, 58],
+                "sex": [1, 2, 1, 2],
+            }
+        )
+
+        augmented = pipeline._augment_policyengine_person_inputs(persons)
+
+        assert augmented["has_medicare"].tolist() == [False, True, False, True]
+        assert augmented["medicare_part_b_premiums"].tolist() == [
+            0.0,
+            200.0,
+            0.0,
+            400.0,
+        ]
+
     def test_augment_policyengine_person_inputs_materializes_agi_parity_inputs(self):
         pipeline = USMicroplexPipeline(USMicroplexBuildConfig())
         persons = pd.DataFrame(

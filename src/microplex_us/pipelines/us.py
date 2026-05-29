@@ -7450,6 +7450,29 @@ class USMicroplexPipeline:
             result["medicaid_enrolled"] = (
                 result["medicaid_enrolled"].fillna(False).astype(bool)
             )
+        if "has_medicare" in result.columns:
+            result["has_medicare"] = (
+                pd.to_numeric(result["has_medicare"], errors="coerce")
+                .fillna(0.0)
+                .astype(float)
+                .ne(0.0)
+            )
+        if "medicare_part_b_premiums" in result.columns:
+            medicare_part_b_premiums = (
+                pd.to_numeric(
+                    result["medicare_part_b_premiums"],
+                    errors="coerce",
+                )
+                .fillna(0.0)
+                .clip(lower=0.0)
+                .astype(float)
+            )
+            if "has_medicare" in result.columns:
+                medicare_part_b_premiums = medicare_part_b_premiums.where(
+                    result["has_medicare"],
+                    0.0,
+                )
+            result["medicare_part_b_premiums"] = medicare_part_b_premiums
 
         known_nonemployment = (
             first_present("self_employment_income")

@@ -1016,12 +1016,6 @@ _PENDING_IRS_DETAIL_SOURCE_REASON = (
     "and domain."
 )
 
-_PENDING_BEA_STATE_WAGE_SOURCE_REASON = (
-    "Current Arch BEA state packages do not yet include the full component "
-    "panel needed to derive state residence-adjusted employment income before "
-    "legal-social-responsibility adjustments."
-)
-
 _PENDING_ARCH_SOURCE_BACKED_CELL_REASONS: dict[
     PolicyEngineUSTargetCellKey,
     str,
@@ -1064,12 +1058,6 @@ _PENDING_ARCH_SOURCE_BACKED_CELL_REASONS: dict[
         None,
         None,
     ): _PENDING_IRS_DETAIL_SOURCE_REASON,
-    (
-        "employment_income_before_lsr",
-        "state",
-        None,
-        None,
-    ): _PENDING_BEA_STATE_WAGE_SOURCE_REASON,
     **{
         ("tax_unit_count", geo_level, domain_variable, None): (
             _PENDING_IRS_DETAIL_SOURCE_REASON

@@ -861,7 +861,6 @@ def _ecps_comparison_contract_summary(
         summary,
         "refit_objective_matches_scoring",
         "objective_identity_recovery_passed",
-        "ecps_refit_recovery_passed",
     )
     if objective_identity is None:
         objective_identity = _refit_configs_are_dense_score_objective(
@@ -870,6 +869,15 @@ def _ecps_comparison_contract_summary(
         )
     if objective_identity is not None:
         objective_identity = bool(objective_identity)
+
+    ecps_refit_recovery = _first_nested_present(
+        payload,
+        summary,
+        "ecps_refit_recovery_passed",
+        "baseline_refit_recovery_passed",
+    )
+    if ecps_refit_recovery is not None:
+        ecps_refit_recovery = bool(ecps_refit_recovery)
 
     holdout_target_fraction = _first_nested_present(
         payload,
@@ -894,6 +902,7 @@ def _ecps_comparison_contract_summary(
         "matched_household_count": matched_household_count is True,
         "symmetric_refit": symmetric_refit is True,
         "refit_objective_matches_scoring": objective_identity is True,
+        "ecps_refit_recovery": ecps_refit_recovery is True,
         "holdout_target_split": has_holdout_targets,
         "protected_family_floors": protected_summary["passed"] is True,
     }
@@ -909,6 +918,7 @@ def _ecps_comparison_contract_summary(
             "symmetric_refit": symmetric_refit,
             "score_candidate_only": score_candidate_only,
             "refit_objective_matches_scoring": objective_identity,
+            "ecps_refit_recovery_passed": ecps_refit_recovery,
             "holdout_targets": holdout_targets,
             "protected_family_floor": protected_summary,
         },

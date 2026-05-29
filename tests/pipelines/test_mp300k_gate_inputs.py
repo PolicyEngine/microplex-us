@@ -93,6 +93,8 @@ def _sound_ecps_comparison_payload() -> dict[str, object]:
             "baseline_household_count": 2,
             "candidate_refit_config": fit_config,
             "baseline_refit_config": fit_config,
+            "refit_objective_matches_scoring": True,
+            "ecps_refit_recovery_passed": True,
             "holdout_target_fraction": 0.2,
             "protected_family_losses": protected_family_losses,
         }

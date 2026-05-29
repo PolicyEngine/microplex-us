@@ -260,25 +260,42 @@ def optimize_pe_native_loss_weights(
     current_loss = objective(weights)
     converged = False
     completed_iter = 0
+    total_backtracking_steps = 0
     for iteration in range(1, max_iter + 1):
         residual = matrix.T @ weights - target
         gradient = 2.0 * (matrix @ residual)
         if l2_penalty > 0.0:
             gradient += 2.0 * l2_penalty * (weights - initial_reference)
-        candidate = _project_to_budget_simplex(
-            weights - step_size * gradient,
-            total_weight,
-            budget,
-        )
-        candidate_loss = objective(candidate)
         completed_iter = iteration
-        if current_loss - candidate_loss < tol * max(1.0, current_loss):
-            weights = candidate
-            current_loss = candidate_loss
+
+        candidate = weights
+        candidate_loss = current_loss
+        accepted_descent_step = False
+        iteration_step_size = step_size
+        for backtrack in range(30):
+            trial = _project_to_budget_simplex(
+                weights - iteration_step_size * gradient,
+                total_weight,
+                budget,
+            )
+            trial_loss = objective(trial)
+            if trial_loss <= current_loss:
+                candidate = trial
+                candidate_loss = trial_loss
+                accepted_descent_step = True
+                total_backtracking_steps += backtrack
+                break
+            iteration_step_size *= 0.5
+        if not accepted_descent_step:
             converged = True
             break
+
+        improvement = current_loss - candidate_loss
         weights = candidate
         current_loss = candidate_loss
+        if improvement < tol * max(1.0, current_loss):
+            converged = True
+            break
 
     summary = {
         "initial_loss": float(objective(initial_reference)),
@@ -293,6 +310,7 @@ def optimize_pe_native_loss_weights(
         "iterations": int(completed_iter),
         "converged": bool(converged),
         "step_size": float(step_size),
+        "line_search_backtracking_steps": int(total_backtracking_steps),
     }
     return weights, summary
 

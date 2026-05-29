@@ -109,7 +109,8 @@ calibration_diagnostics:
     n_in_loss: pending
     mean_abs_relative_error: pending
   targets:
-    - name: nation/irs_soi/employment_income
+    - target_name: nation/irs_soi/employment_income
+      split: all
       variable: employment_income
       geography: nation
       pipeline: national
@@ -119,7 +120,8 @@ calibration_diagnostics:
       estimate: pending
       relative_error: pending
       in_loss_function: true
-    - name: state/agi_distribution
+    - target_name: state/agi_distribution
+      split: all
       variable: adjusted_gross_income
       geography: state
       pipeline: national

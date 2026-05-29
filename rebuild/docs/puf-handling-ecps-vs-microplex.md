@@ -33,6 +33,33 @@ read of both repos (2026-05-29). Citations are `file:line`.
 
 ---
 
+## Two ways eCPS uses PUF (confirmed in `puf_impute.py`)
+
+1. **Imputed onto the ORIGINAL CPS rows** — the `OVERRIDDEN_IMPUTED_VARIABLES`
+   list (47 vars) is QRF-predicted and *overwrites* the CPS value on every record.
+   The PUF-authoritative / not-reliably-on-CPS set: **partnership_s_corp_income**,
+   QBI inputs (w2_wages, UBIA, sstb), deductible_mortgage_interest, charitable,
+   foreign_tax_credit, savers_credit, student_loan_interest, many credits/ALDs.
+2. **Stripped PUF-trained clone** — the doubled half has *all 68* `IMPUTED_VARIABLES`
+   replaced by PUF-QRF, keeping only demographics + IDs.
+
+The ~21 vars imputed-but-NOT-overridden (employment_income, social_security,
+pensions, interest, dividends, capital gains, rental, IRA distributions) are the
+items CPS reports well → original CPS keeps them; only the clone gets the PUF version.
+
+## Sources vs population rows (don't conflate)
+
+eCPS is **not** CPS+PUF only. `policyengine_us_data/datasets/` = `acs, cps, forbes,
+org, puf, scf, sipp`. It imputes from many sources as **donors**: ACS (residence
+value/property), SCF (net worth), SIPP (assets), CPS-ORG (wages), Forbes (top tail),
+PUF (tax). But its household **rows** are all CPS-derived (CPS + CPS clones).
+Microplex has the **same donor families** (`ACSSourceProvider`, `SIPPSourceProvider`
++ Tips/Assets, `SCFSourceProvider`). So the two don't differ on *which sources* —
+they differ on **donor** (impute onto CPS rows; eCPS's approach for everything but
+CPS) vs **spine** (own rows in the population). The tested mp build's problem was
+making **ACS a spine** (+200k ACS rows), not a missing source. (Earlier note that
+"eCPS is CPS+PUF / mp should add SCF-SIPP" was wrong — both already have them.)
+
 ## Enhanced CPS (policyengine-us-data)
 
 ### Clone mechanics — "PUF clones" are doubled CPS rows

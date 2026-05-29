@@ -264,6 +264,20 @@ def test_sound_ecps_replacement_comparison_satisfies_gate_contract(
         "household_net_income",
     }
     assert summary["protected_family_losses"]["wages"]["n_targets"] == 1
+    structure = payload["entity_structure"]["candidate_matched"]
+    assert structure["household_count"] == 2
+    assert structure["person_count"] == 3
+    assert structure["tax_unit_count"] == 2
+    assert structure["tax_unit"]["singleton_unit_count"] == 1
+    assert structure["tax_unit"]["singleton_unit_share"] == pytest.approx(0.5)
+    assert structure["tax_unit"]["duplicate_unit_id_count"] == 0
+    assert structure["tax_unit"]["missing_referenced_unit_count"] == 0
+    assert structure["tax_unit"]["cross_household_unit_count"] == 0
+    assert structure["spm_unit_count"] == 2
+    assert structure["family_count"] == 2
+    assert structure["marital_unit_count"] == 3
+    assert structure["marital_unit"]["singleton_unit_share"] == pytest.approx(1.0)
+    assert payload["entity_structure"]["baseline_refit"]["household_count"] == 2
     candidate_curve = payload["candidate_refit"]["loss_curve"]
     baseline_curve = payload["baseline_refit"]["loss_curve"]
     assert candidate_curve[0]["iteration"] == 0

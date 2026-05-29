@@ -489,6 +489,101 @@ def _policyengine_target_loss_geography_key(entry: dict[str, Any]) -> str:
     return f"{geo_level}:{geographic_key}"
 
 
+def _select_ssi_takeup_by_age_amount(
+    *,
+    person_ids: pd.Series,
+    ages: pd.Series,
+    weights: pd.Series,
+    reported_ssi: pd.Series,
+    full_takeup_ssi: pd.Series,
+) -> tuple[np.ndarray, dict[str, Any]]:
+    """Select SSI takeup records to match reported SSI dollars by age group."""
+    index = person_ids.index
+    person_ids = person_ids.reindex(index)
+    age_values = pd.to_numeric(ages.reindex(index), errors="coerce").fillna(0.0)
+    weight_values = (
+        pd.to_numeric(weights.reindex(index), errors="coerce").fillna(0.0).clip(lower=0.0)
+    )
+    reported_values = (
+        pd.to_numeric(reported_ssi.reindex(index), errors="coerce")
+        .fillna(0.0)
+        .clip(lower=0.0)
+    )
+    full_values = (
+        pd.to_numeric(full_takeup_ssi.reindex(index), errors="coerce")
+        .fillna(0.0)
+        .clip(lower=0.0)
+    )
+
+    reported_amount = (reported_values * weight_values).to_numpy(dtype=float)
+    full_amount = (full_values * weight_values).to_numpy(dtype=float)
+    reported_positive = reported_values.to_numpy(dtype=float) > 0.0
+    formula_positive = full_values.to_numpy(dtype=float) > 0.0
+    age_array = age_values.to_numpy(dtype=float)
+    selected = np.zeros(len(index), dtype=bool)
+    stable_rank = pd.util.hash_pandas_object(
+        person_ids.astype("string"),
+        index=False,
+    ).to_numpy(dtype=np.uint64)
+
+    def _select_until_amount(candidate_mask: np.ndarray, amount: float) -> None:
+        if amount <= 0.0:
+            return
+        candidate_index = np.flatnonzero(candidate_mask & ~selected)
+        if candidate_index.size == 0:
+            return
+        ordered = candidate_index[
+            np.argsort(stable_rank[candidate_index], kind="stable")
+        ]
+        cumulative = np.cumsum(full_amount[ordered])
+        cutoff = int(np.searchsorted(cumulative, amount, side="left"))
+        selected[ordered[: min(cutoff + 1, len(ordered))]] = True
+
+    groups = {
+        "aged": age_array >= 65,
+        "under65": age_array < 65,
+    }
+    group_summary: dict[str, Any] = {}
+    for group_name, group_mask in groups.items():
+        source_candidates = group_mask & reported_positive & formula_positive
+        other_candidates = group_mask & ~reported_positive & formula_positive
+        target_amount = float(reported_amount[group_mask].sum())
+        _select_until_amount(source_candidates, target_amount)
+        selected_amount = float(full_amount[selected & group_mask].sum())
+        _select_until_amount(other_candidates, target_amount - selected_amount)
+        selected_amount = float(full_amount[selected & group_mask].sum())
+        group_summary[group_name] = {
+            "reported_amount": target_amount,
+            "reported_recipients": float(
+                weight_values.to_numpy(dtype=float)[group_mask & reported_positive].sum()
+            ),
+            "formula_all_takeup_amount": float(full_amount[group_mask].sum()),
+            "formula_all_takeup_recipients": float(
+                weight_values.to_numpy(dtype=float)[group_mask & formula_positive].sum()
+            ),
+            "selected_amount": selected_amount,
+            "selected_recipients": float(
+                weight_values.to_numpy(dtype=float)[group_mask & selected].sum()
+            ),
+            "source_candidate_amount": float(full_amount[source_candidates].sum()),
+            "other_candidate_amount": float(full_amount[other_candidates].sum()),
+        }
+
+    weight_array = weight_values.to_numpy(dtype=float)
+    summary = {
+        "enabled": True,
+        "method": "reported_ssi_amount_by_age_group",
+        "reported_amount": float(reported_amount.sum()),
+        "reported_recipients": float(weight_array[reported_positive].sum()),
+        "formula_all_takeup_amount": float(full_amount.sum()),
+        "formula_all_takeup_recipients": float(weight_array[formula_positive].sum()),
+        "selected_amount": float(full_amount[selected].sum()),
+        "selected_recipients": float(weight_array[selected].sum()),
+        "groups": group_summary,
+    }
+    return selected, summary
+
+
 def _policyengine_target_ledger_entry(
     *,
     target: TargetSpec,
@@ -1435,6 +1530,7 @@ class USMicroplexBuildConfig:
     policyengine_calibration_target_domains: tuple[str, ...] = ()
     policyengine_calibration_target_geo_levels: tuple[str, ...] = ()
     policyengine_calibration_target_profile: str | None = None
+    policyengine_calibrate_ssi_takeup: bool = True
     policyengine_calibration_rescale_to_input_weight_sum: bool = False
     policyengine_calibration_rescale_to_target_total_weight: bool = False
     policyengine_calibration_target_total_weight: float | None = None
@@ -2873,6 +2969,12 @@ class USMicroplexPipeline:
             or 2024
         )
         forbes_fixed_spine = self._build_forbes_fixed_spine()
+        tables, ssi_takeup_summary = (
+            self._calibrate_policyengine_ssi_takeup_from_reported_amounts(
+                tables,
+                target_period=target_period,
+            )
+        )
         (
             tables,
             bindings,
@@ -3506,6 +3608,7 @@ class USMicroplexPipeline:
             ),
             "materialized_variables": sorted(materialized_variables),
             "materialization_failures": materialization_failures,
+            "ssi_takeup": ssi_takeup_summary,
             "max_error": float(validation["max_error"]),
             "mean_error": (
                 float(np.mean([error["relative_error"] for error in linear_errors]))
@@ -3836,6 +3939,121 @@ class USMicroplexPipeline:
         if profile_name is None:
             return ()
         return resolve_policyengine_us_target_profile(profile_name)
+
+    def _policyengine_calibration_scope_includes_ssi(self) -> bool:
+        variables, domain_variables, _geo_levels = self._policyengine_target_scope(
+            for_calibration=True
+        )
+        if "ssi" in variables:
+            return True
+        if any("ssi" in str(domain).split(",") for domain in domain_variables):
+            return True
+        for cell in self._policyengine_target_cells(for_calibration=True):
+            cell_domains = tuple(
+                item.strip()
+                for item in str(cell.domain_variable or "").split(",")
+                if item.strip()
+            )
+            if cell.variable == "ssi" or "ssi" in cell_domains:
+                return True
+        return False
+
+    def _calibrate_policyengine_ssi_takeup_from_reported_amounts(
+        self,
+        tables: PolicyEngineUSEntityTableBundle,
+        *,
+        target_period: int,
+    ) -> tuple[PolicyEngineUSEntityTableBundle, dict[str, Any]]:
+        if not self.config.policyengine_calibrate_ssi_takeup:
+            return tables, {"enabled": False, "reason": "disabled_by_config"}
+        if not self._policyengine_calibration_scope_includes_ssi():
+            return tables, {"enabled": False, "reason": "target_scope_excludes_ssi"}
+        if tables.persons is None or tables.persons.empty:
+            return tables, {"enabled": False, "reason": "missing_person_table"}
+        persons = tables.persons.copy()
+        required_columns = {"person_id", "age", "weight", "ssi"}
+        missing_columns = sorted(required_columns - set(persons.columns))
+        if missing_columns:
+            return tables, {
+                "enabled": False,
+                "reason": "missing_required_columns",
+                "missing_columns": missing_columns,
+            }
+        reported_ssi = (
+            pd.to_numeric(persons["ssi"], errors="coerce")
+            .fillna(0.0)
+            .clip(lower=0.0)
+        )
+        if not reported_ssi.gt(0.0).any():
+            persons["takes_up_ssi_if_eligible"] = False
+            return (
+                PolicyEngineUSEntityTableBundle(
+                    households=tables.households,
+                    persons=persons,
+                    tax_units=tables.tax_units,
+                    spm_units=tables.spm_units,
+                    families=tables.families,
+                    marital_units=tables.marital_units,
+                ),
+                {
+                    "enabled": True,
+                    "method": "reported_ssi_amount_by_age_group",
+                    "reason": "no_reported_positive_ssi",
+                    "selected_recipients": 0.0,
+                    "selected_amount": 0.0,
+                },
+            )
+
+        full_takeup_persons = persons.copy()
+        full_takeup_persons["takes_up_ssi_if_eligible"] = True
+        full_takeup_tables = PolicyEngineUSEntityTableBundle(
+            households=tables.households,
+            persons=full_takeup_persons,
+            tax_units=tables.tax_units,
+            spm_units=tables.spm_units,
+            families=tables.families,
+            marital_units=tables.marital_units,
+        )
+        materialization_result = materialize_policyengine_us_variables_safely(
+            full_takeup_tables,
+            variables=("ssi",),
+            period=target_period,
+            dataset_year=self.config.policyengine_dataset_year or target_period,
+            simulation_cls=self.config.policyengine_simulation_cls,
+            direct_override_variables=self.config.policyengine_direct_override_variables,
+            batch_size=self.config.policyengine_materialize_batch_size,
+        )
+        materialized_persons = materialization_result.tables.persons
+        if (
+            materialized_persons is None
+            or "ssi" not in materialized_persons.columns
+            or "ssi" not in materialization_result.bindings
+        ):
+            return tables, {
+                "enabled": False,
+                "reason": "full_takeup_ssi_materialization_failed",
+                "materialization_failures": dict(
+                    materialization_result.failed_variables
+                ),
+            }
+
+        selected, selection_summary = _select_ssi_takeup_by_age_amount(
+            person_ids=persons["person_id"],
+            ages=persons["age"],
+            weights=persons["weight"],
+            reported_ssi=reported_ssi,
+            full_takeup_ssi=materialized_persons["ssi"],
+        )
+        persons["takes_up_ssi_if_eligible"] = selected
+        updated_tables = PolicyEngineUSEntityTableBundle(
+            households=tables.households,
+            persons=persons,
+            tax_units=tables.tax_units,
+            spm_units=tables.spm_units,
+            families=tables.families,
+            marital_units=tables.marital_units,
+        )
+        return updated_tables, selection_summary
 
     def _build_policyengine_target_query(
         self,

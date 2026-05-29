@@ -16,6 +16,22 @@
    :undoc-members:
 ```
 
+## Stage artifacts
+
+```{eval-rst}
+.. automodule:: microplex_us.pipelines.stage_artifacts
+   :members:
+   :undoc-members:
+```
+
+## Conditional readiness
+
+```{eval-rst}
+.. automodule:: microplex_us.pipelines.stage_readiness
+   :members:
+   :undoc-members:
+```
+
 ## Artifact helpers
 
 ```{eval-rst}

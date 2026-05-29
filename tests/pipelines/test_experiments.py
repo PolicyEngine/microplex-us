@@ -39,6 +39,10 @@ def _artifact_paths(root: Path, name: str) -> USMicroplexArtifactPaths:
         synthesizer=None,
         policyengine_dataset=output_dir / "policyengine.h5",
         data_flow_snapshot=output_dir / "data_flow_snapshot.json",
+        artifact_inventory=output_dir / "stage_artifacts" / "artifact_inventory.json",
+        conditional_readiness=(
+            output_dir / "stage_artifacts" / "conditional_readiness.json"
+        ),
         policyengine_harness=output_dir / "policyengine_harness.json",
         policyengine_native_scores=output_dir / "policyengine_native_scores.json",
         policyengine_native_audit=output_dir / "pe_us_data_rebuild_native_audit.json",
@@ -153,6 +157,8 @@ def test_run_us_microplex_source_experiments_saves_report_and_sorts(monkeypatch,
     assert loaded.leaderboard[0].current_entry is not None
     assert loaded.leaderboard[0].current_entry.candidate_composite_parity_loss == 0.35
     assert loaded.leaderboard[0].artifact_paths.data_flow_snapshot is not None
+    assert loaded.leaderboard[0].artifact_paths.artifact_inventory is not None
+    assert loaded.leaderboard[0].artifact_paths.conditional_readiness is not None
     assert loaded.leaderboard[0].artifact_paths.policyengine_native_scores is not None
     assert loaded.leaderboard[0].artifact_paths.policyengine_native_audit is not None
     assert loaded.leaderboard[0].artifact_paths.run_index_db is not None
@@ -507,6 +513,10 @@ def test_refresh_experiment_results_from_registry_refreshes_backfilled_artifact_
             {
                 "artifacts": {
                     "data_flow_snapshot": "data_flow_snapshot.json",
+                    "artifact_inventory": "stage_artifacts/artifact_inventory.json",
+                    "conditional_readiness": (
+                        "stage_artifacts/conditional_readiness.json"
+                    ),
                     "policyengine_native_scores": "policyengine_native_scores.json",
                     "policyengine_native_audit": "pe_us_data_rebuild_native_audit.json",
                 }
@@ -519,6 +529,9 @@ def test_refresh_experiment_results_from_registry_refreshes_backfilled_artifact_
         "pe_us_data_rebuild_native_audit.json",
     ):
         (output_dir / name).write_text("{}")
+    (output_dir / "stage_artifacts").mkdir()
+    for name in ("artifact_inventory.json", "conditional_readiness.json"):
+        (output_dir / "stage_artifacts" / name).write_text("{}")
     registry_path = tmp_path / "run_registry.jsonl"
     result = USMicroplexExperimentResult(
         name="cps-only",
@@ -555,6 +568,12 @@ def test_refresh_experiment_results_from_registry_refreshes_backfilled_artifact_
     )
 
     assert loaded[0].artifact_paths.data_flow_snapshot == output_dir / "data_flow_snapshot.json"
+    assert loaded[0].artifact_paths.artifact_inventory == (
+        output_dir / "stage_artifacts" / "artifact_inventory.json"
+    )
+    assert loaded[0].artifact_paths.conditional_readiness == (
+        output_dir / "stage_artifacts" / "conditional_readiness.json"
+    )
     assert (
         loaded[0].artifact_paths.policyengine_native_scores
         == output_dir / "policyengine_native_scores.json"

@@ -53,9 +53,16 @@ from microplex_us.pipelines.registry import (
     load_us_microplex_run_registry,
     select_us_microplex_frontier_entry,
 )
+from microplex_us.pipelines.stage_artifacts import (
+    build_us_stage_artifact_inventory,
+    write_us_stage_artifact_inventory,
+)
 from microplex_us.pipelines.stage_manifest import (
     write_us_stage_manifest,
     write_us_validation_evidence_manifest,
+)
+from microplex_us.pipelines.stage_readiness import (
+    write_us_conditional_readiness_report,
 )
 from microplex_us.variables import prune_redundant_variables
 
@@ -1051,6 +1058,12 @@ def _refresh_checkpoint_data_flow_snapshot(
 ) -> Path | None:
     snapshot_path = artifact_root / "data_flow_snapshot.json"
     stage_manifest_path = artifact_root / "stage_manifest.json"
+    artifact_inventory_path = (
+        artifact_root / "stage_artifacts" / "artifact_inventory.json"
+    )
+    conditional_readiness_path = (
+        artifact_root / "stage_artifacts" / "conditional_readiness.json"
+    )
     validation_evidence_path = (
         artifact_root
         / "stage_artifacts"
@@ -1059,6 +1072,14 @@ def _refresh_checkpoint_data_flow_snapshot(
     )
     artifacts = dict(manifest.get("artifacts", {}))
     artifacts.setdefault("stage_manifest", stage_manifest_path.name)
+    artifacts.setdefault(
+        "artifact_inventory",
+        str(artifact_inventory_path.relative_to(artifact_root)),
+    )
+    artifacts.setdefault(
+        "conditional_readiness",
+        str(conditional_readiness_path.relative_to(artifact_root)),
+    )
     artifacts.setdefault(
         "validation_evidence",
         str(validation_evidence_path.relative_to(artifact_root)),
@@ -1073,6 +1094,30 @@ def _refresh_checkpoint_data_flow_snapshot(
         artifact_root,
         stage_manifest_path,
         manifest_payload=manifest,
+        assume_existing_artifact_keys=(
+            "artifact_inventory",
+            "conditional_readiness",
+        ),
+    )
+    readiness_inventory = build_us_stage_artifact_inventory(
+        artifact_root,
+        manifest_payload=manifest,
+        assume_existing_artifact_keys=(
+            "artifact_inventory",
+            "conditional_readiness",
+        ),
+    )
+    write_us_conditional_readiness_report(
+        artifact_root,
+        conditional_readiness_path,
+        manifest_payload=manifest,
+        artifact_inventory=readiness_inventory,
+    )
+    write_us_stage_artifact_inventory(
+        artifact_root,
+        artifact_inventory_path,
+        manifest_payload=manifest,
+        assume_existing_artifact_keys=("artifact_inventory",),
     )
     if not snapshot_path.exists():
         return None

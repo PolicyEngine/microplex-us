@@ -44,6 +44,21 @@ Conditional execution is intentionally not implemented yet. The stage manifest
 and artifacts are designed to make that possible later without changing the
 saved-run contract again.
 
+## Artifact inventory and readiness
+
+Saved bundles also expose two Stage 8 diagnostic sidecars:
+
+- `stage_artifacts/artifact_inventory.json` lists canonical stage artifacts,
+  whether each path exists, whether it was referenced by the run manifest, its
+  resume role, size/file counts, and content hashes where hashing is practical.
+- `stage_artifacts/conditional_readiness.json` summarizes which stage outputs
+  are available for manual replay, manual resume, post-artifact evidence, or
+  diagnostics only.
+
+These reports are advisory. They do not skip or rerun stages, and they do not
+silently accept stale artifacts. If a requested config is supplied to the
+readiness builder, config mismatches are reported as `must_rerun`.
+
 ## Validation hooks
 
 Each stage contract includes concise validation descriptors. These describe the

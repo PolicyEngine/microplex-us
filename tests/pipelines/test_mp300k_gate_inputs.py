@@ -56,6 +56,31 @@ def _write_manifest(
     )
 
 
+def _write_benchmark_manifest(path: Path) -> None:
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "period": 2024,
+                "target_profile": "pe_native_broad",
+                "baseline_dataset": {
+                    "path": "/tmp/enhanced_cps_2024.h5",
+                    "sha256": "a" * 64,
+                },
+                "policyengine_us_data": {
+                    "repo": "PolicyEngine/policyengine-us-data",
+                    "commit": "b" * 40,
+                },
+                "policyengine_us": {"version": "1.587.0"},
+                "target_db": {
+                    "path": "/tmp/policyengine_targets.db",
+                    "sha256": "c" * 64,
+                },
+            }
+        )
+    )
+
+
 def _archive_manifest(archive_path: Path) -> dict:
     with tarfile.open(archive_path) as archive:
         manifest = archive.extractfile("artifact/manifest.json")
@@ -116,7 +141,7 @@ def test_package_mp300k_gate_inputs_rewrites_external_candidate(tmp_path):
     runtime_smoke = tmp_path / "runtime.json"
     runtime_smoke.write_text(json.dumps({"runtime_ratio": 1.0}))
     benchmark_manifest = tmp_path / "benchmark.json"
-    benchmark_manifest.write_text(json.dumps({"schema_version": 1}))
+    _write_benchmark_manifest(benchmark_manifest)
 
     metadata = package_mp300k_gate_inputs(
         artifact_dir,
@@ -188,7 +213,7 @@ def test_packaged_inputs_run_gates_from_clean_extract(tmp_path):
     _write_minimal_policyengine_dataset(tmp_path / "candidate.h5")
     _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
     benchmark_manifest = tmp_path / "benchmark.json"
-    benchmark_manifest.write_text(json.dumps({"schema_version": 1}))
+    _write_benchmark_manifest(benchmark_manifest)
     output_dir = tmp_path / "gate-inputs"
 
     package_mp300k_gate_inputs(

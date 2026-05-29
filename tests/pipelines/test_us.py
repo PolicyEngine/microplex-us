@@ -899,6 +899,7 @@ class TestUSMicroplexPipeline:
         ]
         assert person_rows["social_security_retirement"].tolist() == [0.0, 800.0]
         assert person_rows["ssi"].tolist() == [0.0, 600.0]
+        assert person_rows["takes_up_ssi_if_eligible"].tolist() == [False, True]
         assert person_rows["taxable_private_pension_income"].tolist() == [0.0, 300.0]
         assert person_rows["unemployment_compensation"].tolist() == [0.0, 150.0]
         assert person_rows["is_female"].tolist() == [False, True]
@@ -3518,6 +3519,51 @@ class TestUSMicroplexPipeline:
             200.0,
             0.0,
             400.0,
+        ]
+
+    def test_augment_policyengine_person_inputs_uses_reported_ssi_for_takeup_only(
+        self,
+    ):
+        pipeline = USMicroplexPipeline(USMicroplexBuildConfig())
+        persons = pd.DataFrame(
+            {
+                "ssi": [500.0, 0.0, 200.0],
+                "ssi_reported": [0.0, 100.0, 0.0],
+                "age": [70, 45, 34],
+                "sex": [1, 2, 1],
+            }
+        )
+
+        augmented = pipeline._augment_policyengine_person_inputs(persons)
+
+        assert augmented["ssi"].tolist() == [500.0, 0.0, 200.0]
+        assert augmented["ssi_reported"].tolist() == [0.0, 100.0, 0.0]
+        assert augmented["takes_up_ssi_if_eligible"].tolist() == [
+            False,
+            True,
+            False,
+        ]
+
+    def test_augment_policyengine_person_inputs_normalizes_explicit_ssi_takeup(
+        self,
+    ):
+        pipeline = USMicroplexPipeline(USMicroplexBuildConfig())
+        persons = pd.DataFrame(
+            {
+                "takes_up_ssi_if_eligible": [1, 0, None, 2],
+                "ssi_reported": [0.0, 100.0, 100.0, 0.0],
+                "age": [70, 45, 34, 60],
+                "sex": [1, 2, 1, 2],
+            }
+        )
+
+        augmented = pipeline._augment_policyengine_person_inputs(persons)
+
+        assert augmented["takes_up_ssi_if_eligible"].tolist() == [
+            True,
+            False,
+            False,
+            True,
         ]
 
     def test_augment_policyengine_person_inputs_materializes_agi_parity_inputs(self):

@@ -1865,6 +1865,8 @@ class TestPolicyEngineUSProjection:
                 "medicaid": FakeVariable("person"),
                 "medicaid_enrolled": FakeVariable("person"),
                 "ssi": FakeVariable("person"),
+                "ssi_reported": FakeVariable("person"),
+                "takes_up_ssi_if_eligible": FakeVariable("person"),
                 "self_employment_income_before_lsr": FakeVariable("person"),
                 "taxable_interest_income": FakeVariable("person"),
                 "qualified_dividend_income": FakeVariable("person"),
@@ -1904,6 +1906,8 @@ class TestPolicyEngineUSProjection:
                     "medicaid": [1_200.0],
                     "medicaid_enrolled": [True],
                     "ssi": [400.0],
+                    "ssi_reported": [400.0],
+                    "takes_up_ssi_if_eligible": [True],
                     "self_employment_income_before_lsr": [2_000.0],
                     "taxable_interest_income": [100.0],
                     "qualified_dividend_income": [40.0],
@@ -1952,6 +1956,7 @@ class TestPolicyEngineUSProjection:
             "rent": "rent",
             "real_estate_taxes": "real_estate_taxes",
             "self_employment_income_before_lsr": "self_employment_income_before_lsr",
+            "takes_up_ssi_if_eligible": "takes_up_ssi_if_eligible",
             "taxable_interest_income": "taxable_interest_income",
             "qualified_dividend_income": "qualified_dividend_income",
             "non_qualified_dividend_income": "non_qualified_dividend_income",
@@ -2116,6 +2121,9 @@ class TestPolicyEngineUSProjection:
         assert "ssn_card_type" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         assert "is_separated" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         assert "is_surviving_spouse" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
+        assert "takes_up_ssi_if_eligible" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
+        assert "ssi" not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
+        assert "ssi_reported" not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         assert "self_employed_health_insurance_ald" not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         assert "self_employed_pension_contribution_ald" not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
 

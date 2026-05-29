@@ -359,6 +359,7 @@ SAFE_POLICYENGINE_US_EXPORT_VARIABLES: set[str] = {
     "tax_exempt_public_pension_income",
     "state_income_tax_reported",
     "student_loan_interest",
+    "tenure_type",
     "state_fips",
     "county_fips",
 } | set(POLICYENGINE_US_TAKEUP_INPUT_VARIABLES)
@@ -2759,6 +2760,13 @@ def _infer_policyengine_us_table_variable_map(
             continue
         variable_map[source_column] = target_variable
         exported_targets.add(target_variable)
+    for target_variable in sorted(
+        set(POLICYENGINE_US_EXPORT_DEFAULTS) & allowed_variables
+    ):
+        if target_variable in exported_targets:
+            continue
+        variable_map[target_variable] = target_variable
+        exported_targets.add(target_variable)
     return variable_map
 
 
@@ -3155,10 +3163,17 @@ def _project_table_to_time_period_arrays(
     for source_column, target_variable in column_map.items():
         if source_column in excluded_columns:
             continue
-        if source_column not in table.columns:
-            raise ValueError(f"Projection source column not found: {source_column}")
-        values = pd.Series(table[source_column])
         has_default = target_variable in POLICYENGINE_US_EXPORT_DEFAULTS
+        if source_column not in table.columns and not has_default:
+            raise ValueError(f"Projection source column not found: {source_column}")
+        values = (
+            pd.Series(table[source_column])
+            if source_column in table.columns
+            else pd.Series(
+                POLICYENGINE_US_EXPORT_DEFAULTS[target_variable],
+                index=table.index,
+            )
+        )
         if has_default:
             default_value = POLICYENGINE_US_EXPORT_DEFAULTS[target_variable]
             values = values.where(values.notna(), other=default_value)

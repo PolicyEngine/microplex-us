@@ -936,11 +936,6 @@ def _ecps_comparison_contract_summary(
         "refit_objective_matches_scoring",
         "objective_identity_recovery_passed",
     )
-    if objective_identity is None:
-        objective_identity = _refit_configs_are_dense_score_objective(
-            candidate_refit_config,
-            baseline_refit_config,
-        )
     if objective_identity is not None:
         objective_identity = bool(objective_identity)
 
@@ -1025,24 +1020,6 @@ def _first_nested_present(
         if value is not None:
             return value
     return None
-
-
-def _refit_configs_are_dense_score_objective(
-    candidate_refit_config: Any,
-    baseline_refit_config: Any,
-) -> bool | None:
-    if not isinstance(candidate_refit_config, dict) or not isinstance(
-        baseline_refit_config,
-        dict,
-    ):
-        return None
-    if candidate_refit_config != baseline_refit_config:
-        return False
-    config = candidate_refit_config
-    lambda_l0 = float(config.get("lambda_l0", config.get("l0_lambda", 0.0)) or 0.0)
-    lambda_l2 = float(config.get("lambda_l2", config.get("l2_penalty", 0.0)) or 0.0)
-    use_gates = bool(config.get("use_gates", False))
-    return lambda_l0 == 0.0 and lambda_l2 == 0.0 and not use_gates
 
 
 def _protected_family_floor_summary(

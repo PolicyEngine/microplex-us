@@ -88,3 +88,44 @@ measured:
 validation:
   spec_matches_output: pending
   reproduced_clean: pending
+
+# Data-weekly (2026-05-29): save every run (even local) under a unique id;
+# default auto-upload to a central store (Supabase, PolicyEngine org), opt-out "incognito".
+run:
+  run_id: pending             # unique, non-trampled, assigned at build time
+  local_build: pending
+  emitted_at_stage: pending   # supports live/incremental emission -> live dashboard
+  upload:
+    mode: auto                # auto | incognito | off
+    destination: pending      # e.g. supabase://policyengine/<ledger>/runs/<run_id>
+
+# Per-target aggregate outputs — closes the "Microplex stores no per-variable
+# aggregates" gap (Pavel). Columns mirror the calibration dashboard; consumed by
+# the query API/CLI. Emitted incrementally so a live dashboard renders progress.
+calibration_diagnostics:
+  emitted_incrementally: true
+  summary:
+    n_targets: 2818
+    n_in_loss: pending
+    mean_abs_relative_error: pending
+  targets:
+    - name: nation/irs_soi/employment_income
+      variable: employment_income
+      geography: nation
+      pipeline: national
+      family: income
+      source: "IRS SOI"        # target provenance (Arch/Ledger)
+      target_value: pending
+      estimate: pending
+      relative_error: pending
+      in_loss_function: true
+    - name: state/agi_distribution
+      variable: adjusted_gross_income
+      geography: state
+      pipeline: national
+      family: income
+      source: "IRS SOI state"
+      target_value: pending
+      estimate: pending
+      relative_error: pending
+      in_loss_function: true

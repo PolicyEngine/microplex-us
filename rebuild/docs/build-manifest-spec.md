@@ -140,6 +140,29 @@ self-describing: "candidate `mp-national-canonical-2024` (manifest sha …,
 …) at matched N, held-out." We would never again benchmark a build we can't
 describe — which is exactly the mistake that produced the 0.094 headline.
 
+## Data-weekly alignment (2026-05-29): the live-dashboard contract
+
+The team agreed the manifest *is* the architecture — a **live** record emitted as
+stages run, written to a central store, that the calibration dashboard + a query
+API/CLI read. So the schema gained two blocks:
+
+- **`calibration_diagnostics.targets[]`** — per-target aggregate outputs
+  (`target_value` / `estimate` / `relative_error` / `source` / `in_loss_function` /
+  `geography` / `pipeline`). This closes the **"Microplex stores no per-variable
+  aggregate outputs anywhere"** gap Pavel flagged, and the columns *are* the
+  calibration dashboard's columns. Emitted incrementally so a live dashboard
+  renders build progress.
+- **`run`** — a unique, non-trampled `run_id`; `emitted_at_stage` for live
+  emission; and an `upload` policy: **default auto-upload** to a central store
+  (Supabase, PolicyEngine org), **opt-out via `incognito`** for purely-experimental
+  local runs — so results stop getting lost (the lesson from the messy
+  early-Microplex experiments).
+
+Ownership: this contract is what **Pavel's calibration dashboard** and the
+**Pavel+Anthony query API/CLI** build against; **Anthony's stage-emit** writes the
+incremental snapshots. Rename to "ledger" is deferred (keep `arch` for now); the
+central store moves to PolicyEngine Supabase.
+
 ## Adoption path (cheapest first)
 
 1. Land the schema + validator (this dir).

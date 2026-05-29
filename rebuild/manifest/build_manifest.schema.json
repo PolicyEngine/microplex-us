@@ -147,6 +147,52 @@
         "spec_matches_output": { "type": ["boolean", "string"] },
         "reproduced_clean": { "type": ["boolean", "string"] }
       }
+    },
+    "run": {
+      "type": "object",
+      "description": "Run identity + upload policy. Data-weekly 2026-05-29: save every run (even local) under a unique non-trampled id; default auto-upload to a central store, opt-out via 'incognito'.",
+      "additionalProperties": false,
+      "properties": {
+        "run_id": { "type": "string", "description": "Unique, non-trampled id for this build run." },
+        "local_build": { "type": ["boolean", "string"] },
+        "emitted_at_stage": { "type": ["string", "null"], "description": "Stage at which this manifest snapshot was emitted (supports live/incremental emission -> live dashboard)." },
+        "upload": {
+          "type": "object",
+          "properties": {
+            "mode": { "enum": ["auto", "incognito", "off"] },
+            "destination": { "type": ["string", "null"], "description": "central store, e.g. supabase://policyengine/<ledger>/runs/<run_id>" }
+          }
+        }
+      }
+    },
+    "calibration_diagnostics": {
+      "type": "object",
+      "description": "Per-target aggregate outputs. Closes the 'Microplex doesn't store aggregate outputs per variable' gap (Pavel, Data-weekly 2026-05-29); the contract the calibration dashboard + query API/CLI consume.",
+      "additionalProperties": false,
+      "properties": {
+        "emitted_incrementally": { "type": "boolean", "description": "Written as stages run, so a live dashboard can render progress." },
+        "summary": { "type": "object", "additionalProperties": true },
+        "targets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name"],
+            "additionalProperties": true,
+            "properties": {
+              "name": { "type": "string" },
+              "variable": { "type": ["string", "null"] },
+              "geography": { "type": ["string", "null"], "description": "nation | state | district" },
+              "pipeline": { "type": ["string", "null"], "description": "national | local (state datasets are a separate pipeline)" },
+              "family": { "type": ["string", "null"] },
+              "source": { "type": ["string", "null"], "description": "where the target comes from (Arch/Ledger)" },
+              "target_value": { "type": ["number", "string", "null"] },
+              "estimate": { "type": ["number", "string", "null"] },
+              "relative_error": { "type": ["number", "string", "null"] },
+              "in_loss_function": { "type": ["boolean", "string"], "description": "included in calibration loss, or audit-only" }
+            }
+          }
+        }
+      }
     }
   }
 }

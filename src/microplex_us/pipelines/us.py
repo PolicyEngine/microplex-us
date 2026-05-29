@@ -6033,17 +6033,27 @@ class USMicroplexPipeline:
             return None
 
         person_rows = persons.copy()
-        person_rows["_is_tax_unit_head_flag"] = self._role_flag_series(
+        raw_head_flag = self._role_flag_series(
             person_rows,
             "is_tax_unit_head",
         )
-        person_rows["_is_tax_unit_spouse_flag"] = self._role_flag_series(
+        raw_spouse_flag = self._role_flag_series(
             person_rows,
             "is_tax_unit_spouse",
         )
-        person_rows["_is_tax_unit_dependent_flag"] = self._role_flag_series(
+        raw_dependent_flag = self._role_flag_series(
             person_rows,
             "is_tax_unit_dependent",
+        )
+        (
+            person_rows["_is_tax_unit_head_flag"],
+            person_rows["_is_tax_unit_spouse_flag"],
+            person_rows["_is_tax_unit_dependent_flag"],
+        ) = self._resolve_tax_unit_role_flags(
+            person_rows,
+            head_flag=raw_head_flag,
+            spouse_flag=raw_spouse_flag,
+            dependent_flag=raw_dependent_flag,
         )
 
         tax_unit_rows: list[dict[str, Any]] = []
@@ -6071,7 +6081,9 @@ class USMicroplexPipeline:
             for head_id in head_ids:
                 spouse_ids = head_to_spouses.get(head_id, [])
                 dependent_ids = head_to_dependents.get(head_id, [])
-                unit_person_ids = [head_id, *spouse_ids, *dependent_ids]
+                unit_person_ids = list(
+                    dict.fromkeys([head_id, *spouse_ids, *dependent_ids])
+                )
                 unit_persons = ordered.loc[
                     ordered["person_id"].astype(int).isin(unit_person_ids)
                 ].copy()
@@ -6275,6 +6287,45 @@ class USMicroplexPipeline:
         if column not in frame.columns:
             return pd.Series(False, index=frame.index, dtype=bool)
         return pd.to_numeric(frame[column], errors="coerce").fillna(0.0).gt(0.5)
+
+    def _resolve_tax_unit_role_flags(
+        self,
+        frame: pd.DataFrame,
+        *,
+        head_flag: pd.Series,
+        spouse_flag: pd.Series,
+        dependent_flag: pd.Series,
+    ) -> tuple[pd.Series, pd.Series, pd.Series]:
+        relationship = (
+            pd.to_numeric(frame["relationship_to_head"], errors="coerce")
+            .fillna(-1)
+            .astype(int)
+            if "relationship_to_head" in frame.columns
+            else pd.Series(-1, index=frame.index, dtype=int)
+        )
+        family_relationship = (
+            pd.to_numeric(frame["family_relationship"], errors="coerce")
+            .fillna(-1)
+            .astype(int)
+            if "family_relationship" in frame.columns
+            else pd.Series(-1, index=frame.index, dtype=int)
+        )
+        head_hint = relationship.eq(0) | family_relationship.isin([0, 1])
+        spouse_hint = relationship.eq(1) | family_relationship.eq(2)
+        dependent_hint = relationship.isin([2, 3]) | family_relationship.isin([3, 4])
+
+        resolved_dependent = (
+            dependent_flag
+            & (~spouse_flag | dependent_hint | ~spouse_hint)
+            & (~head_flag | dependent_hint | ~head_hint)
+        )
+        resolved_spouse = (
+            spouse_flag
+            & ~resolved_dependent
+            & (~head_flag | spouse_hint | ~head_hint)
+        )
+        resolved_head = head_flag & ~resolved_spouse & ~resolved_dependent
+        return resolved_head, resolved_spouse, resolved_dependent
 
     def _assign_role_flag_spouses(
         self,

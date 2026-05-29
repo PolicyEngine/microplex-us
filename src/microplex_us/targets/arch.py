@@ -5428,15 +5428,15 @@ def _ssi_category_filters_for_arch_constraint(
     operator: str,
     value: str,
 ) -> tuple[TargetFilter, ...]:
-    if operator != "==":
-        return (TargetFilter(feature="ssi_category", operator=operator, value=value),)
     category = str(value).strip().lower()
-    if category == "aged":
-        return (TargetFilter(feature="is_ssi_aged", operator="==", value=1),)
-    if category == "blind":
-        return (TargetFilter(feature="is_blind", operator="==", value=1),)
-    if category == "disabled":
-        return (TargetFilter(feature="is_ssi_disabled", operator="==", value=1),)
+    if operator == "==" and category in {"aged", "blind", "disabled"}:
+        return (
+            TargetFilter(
+                feature="ssi_category",
+                operator=operator,
+                value=category.upper(),
+            ),
+        )
     return (TargetFilter(feature="ssi_category", operator=operator, value=value),)
 
 

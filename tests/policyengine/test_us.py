@@ -2006,6 +2006,7 @@ class TestPolicyEngineUSProjection:
         household_contract_inputs = (
             "auto_loan_balance",
             "auto_loan_interest",
+            "tenure_type",
         )
         tax_unit_contract_inputs = (
             "domestic_production_ald",
@@ -2220,6 +2221,7 @@ class TestPolicyEngineUSProjection:
         assert "non_sch_d_capital_gains" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         assert "receives_wic" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         assert "ssn_card_type" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
+        assert "tenure_type" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         assert "is_separated" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         assert "is_surviving_spouse" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         assert "is_blind" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
@@ -2341,6 +2343,46 @@ class TestPolicyEngineUSProjection:
             "is_hispanic": "is_hispanic",
         }
 
+    def test_build_policyengine_us_export_variable_maps_includes_absent_export_defaults(
+        self,
+    ):
+        class FakeEntity:
+            def __init__(self, key):
+                self.key = key
+
+        class FakeVariable:
+            def __init__(self, entity):
+                self.entity = FakeEntity(entity)
+
+        class FakeSystem:
+            variables = {
+                "ssn_card_type": FakeVariable("person"),
+            }
+
+        tables = PolicyEngineUSEntityTableBundle(
+            households=pd.DataFrame(
+                {
+                    "household_id": [10],
+                    "household_weight": [1.0],
+                }
+            ),
+            persons=pd.DataFrame(
+                {
+                    "person_id": [1],
+                    "household_id": [10],
+                }
+            ),
+        )
+
+        export_maps = build_policyengine_us_export_variable_maps(
+            tables,
+            tax_benefit_system=FakeSystem(),
+        )
+
+        assert export_maps["person"] == {
+            "ssn_card_type": "ssn_card_type",
+        }
+
     def test_projects_frame_and_writes_time_period_dataset(self, tmp_path):
         frame = pd.DataFrame(
             {
@@ -2399,6 +2441,30 @@ class TestPolicyEngineUSProjection:
         )
 
         assert arrays["ssn_card_type"]["2024"].tolist() == [b"NONE", b"CITIZEN"]
+
+    def test_build_time_period_arrays_defaults_absent_ssn_card_type_to_citizen(self):
+        tables = PolicyEngineUSEntityTableBundle(
+            households=pd.DataFrame(
+                {
+                    "household_id": [10],
+                    "household_weight": [1.0],
+                }
+            ),
+            persons=pd.DataFrame(
+                {
+                    "person_id": [1],
+                    "household_id": [10],
+                }
+            ),
+        )
+
+        arrays = build_policyengine_us_time_period_arrays(
+            tables,
+            period=2024,
+            person_variable_map={"ssn_card_type": "ssn_card_type"},
+        )
+
+        assert arrays["ssn_card_type"]["2024"].tolist() == [b"CITIZEN"]
 
 
 class TestUSPipelinePolicyEngineTargets:

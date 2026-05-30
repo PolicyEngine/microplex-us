@@ -56,7 +56,7 @@ def test_policyengine_us_variable_roles_separate_inputs_from_outputs():
         policyengine_us_variable_role(
             "would_file_if_eligible_for_refundable_credit"
         )
-        is PolicyEngineUSVariableRole.TAKEUP_INPUT
+        is PolicyEngineUSVariableRole.PRESERVED_INPUT
     )
     assert (
         policyengine_us_variable_role("would_file_taxes_voluntarily")

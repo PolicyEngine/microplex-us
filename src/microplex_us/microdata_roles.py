@@ -51,7 +51,6 @@ PUF_CALCULATED_TAX_OUTPUT_VARIABLES: frozenset[str] = frozenset(
 POLICYENGINE_US_TAKEUP_INPUT_VARIABLES: frozenset[str] = frozenset(
     {
         "takes_up_aca_if_eligible",
-        "takes_up_chip_if_eligible",
         "takes_up_early_head_start_if_eligible",
         "takes_up_eitc",
         "takes_up_head_start_if_eligible",
@@ -60,7 +59,6 @@ POLICYENGINE_US_TAKEUP_INPUT_VARIABLES: frozenset[str] = frozenset(
         "takes_up_ssi_if_eligible",
         "takes_up_tanf_if_eligible",
         "would_claim_wic",
-        "would_file_if_eligible_for_refundable_credit",
         "would_file_taxes_voluntarily",
     }
 )

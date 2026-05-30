@@ -166,6 +166,24 @@ def test_default_policyengine_us_data_rebuild_source_providers_can_include_donor
     assert isinstance(providers[5], SCFSourceProvider)
 
 
+def test_default_policyengine_us_data_rebuild_source_providers_can_disable_only_acs() -> None:
+    providers = default_policyengine_us_data_rebuild_source_providers(
+        include_donor_surveys=True,
+        include_acs=False,
+        cps_download=False,
+    )
+
+    assert len(providers) == 5
+    assert isinstance(providers[0], CPSASECSourceProvider)
+    assert isinstance(providers[1], PUFSourceProvider)
+    assert isinstance(providers[2], SIPPSourceProvider)
+    assert providers[2].block == "tips"
+    assert isinstance(providers[3], SIPPSourceProvider)
+    assert providers[3].block == "assets"
+    assert isinstance(providers[4], SCFSourceProvider)
+    assert not any(isinstance(provider, ACSSourceProvider) for provider in providers)
+
+
 def test_build_policyengine_us_data_rebuild_pipeline_returns_configured_pipeline() -> None:
     pipeline = build_policyengine_us_data_rebuild_pipeline(
         random_seed=321,

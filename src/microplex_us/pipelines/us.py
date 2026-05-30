@@ -6915,7 +6915,7 @@ class USMicroplexPipeline:
     def _aggregate_policyengine_tax_unit_input_columns(
         self,
         unit_persons: pd.DataFrame,
-    ) -> dict[str, float]:
+    ) -> dict[str, Any]:
         columns = (
             "domestic_production_ald",
             "health_savings_account_ald",
@@ -6925,7 +6925,7 @@ class USMicroplexPipeline:
             "unrecaptured_section_1250_gain",
             "unreported_payroll_tax",
         )
-        aggregated: dict[str, float] = {}
+        aggregated: dict[str, Any] = {}
         for column in columns:
             if column not in unit_persons.columns:
                 continue
@@ -6935,7 +6935,45 @@ class USMicroplexPipeline:
                 aggregated[column] = float(nonzero_values.iloc[0])
                 continue
             aggregated[column] = float(values.sum())
+        aca_takeup = self._infer_policyengine_aca_takeup_for_tax_unit(unit_persons)
+        if aca_takeup is not None:
+            aggregated["takes_up_aca_if_eligible"] = aca_takeup
         return aggregated
+
+    def _infer_policyengine_aca_takeup_for_tax_unit(
+        self,
+        unit_persons: pd.DataFrame,
+    ) -> bool | None:
+        if "takes_up_aca_if_eligible" in unit_persons.columns:
+            return bool(
+                pd.to_numeric(
+                    unit_persons["takes_up_aca_if_eligible"],
+                    errors="coerce",
+                )
+                .fillna(0.0)
+                .ne(0.0)
+                .any()
+            )
+        marketplace_columns = (
+            "has_marketplace_health_coverage",
+            "has_marketplace_health_coverage_at_interview",
+            "reported_has_marketplace_health_coverage_at_interview",
+            "reported_has_subsidized_marketplace_health_coverage_at_interview",
+            "reported_has_unsubsidized_marketplace_health_coverage_at_interview",
+        )
+        observed = [
+            column for column in marketplace_columns if column in unit_persons.columns
+        ]
+        if not observed:
+            return None
+        marketplace = pd.Series(False, index=unit_persons.index, dtype=bool)
+        for column in observed:
+            marketplace |= (
+                pd.to_numeric(unit_persons[column], errors="coerce")
+                .fillna(0.0)
+                .ne(0.0)
+            )
+        return bool(marketplace.any())
 
     def _split_preserved_tax_unit_members(
         self,

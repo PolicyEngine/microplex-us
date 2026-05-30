@@ -1005,10 +1005,40 @@ class TestUSMicroplexPipeline:
                 "relationship_to_head": [0, 0, 0],
                 "state_fips": [6, 12, 48],
                 "tenure": [1, 1, 1],
+                "has_marketplace_health_coverage": [True, False, True],
             }
         )
 
-        pipeline.build_policyengine_entity_tables(population)
+        tables = pipeline.build_policyengine_entity_tables(population)
+
+        tax_units = tables.tax_units.sort_values("household_id").reset_index(drop=True)
+        assert tax_units["takes_up_aca_if_eligible"].tolist() == [True, False, True]
+
+    def test_build_policyengine_entity_tables_preserves_explicit_aca_takeup(self):
+        pipeline = USMicroplexPipeline(
+            USMicroplexBuildConfig(policyengine_dataset_year=2024)
+        )
+        population = pd.DataFrame(
+            {
+                "person_id": [1, 2],
+                "household_id": [10, 20],
+                "weight": [1.0, 1.0],
+                "age": [34, 42],
+                "sex": [2, 1],
+                "income": [40_000.0, 65_000.0],
+                "filing_status": ["SINGLE", "SINGLE"],
+                "relationship_to_head": [0, 0],
+                "state_fips": [6, 12],
+                "tenure": [1, 1],
+                "has_marketplace_health_coverage": [False, True],
+                "takes_up_aca_if_eligible": [True, False],
+            }
+        )
+
+        tables = pipeline.build_policyengine_entity_tables(population)
+
+        tax_units = tables.tax_units.sort_values("household_id").reset_index(drop=True)
+        assert tax_units["takes_up_aca_if_eligible"].tolist() == [True, False]
 
     def test_build_policyengine_entity_tables_fallback_employment_excludes_transfer_income(
         self,

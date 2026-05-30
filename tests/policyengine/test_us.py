@@ -156,7 +156,18 @@ def _create_policyengine_targets_db(path: Path) -> None:
         """,
         [
             (10, "snap", 2024, 1, 0, 114_100_000_000.0, 1, 5.0, "CBO", "National SNAP"),
-            (11, "snap", 2024, 2, 0, 9_500_000_000.0, 1, 10.0, "CBO", "California senior SNAP"),
+            (
+                11,
+                "snap",
+                2024,
+                2,
+                0,
+                9_500_000_000.0,
+                1,
+                10.0,
+                "CBO",
+                "California senior SNAP",
+            ),
         ],
     )
     conn.commit()
@@ -176,7 +187,9 @@ class TestPolicyEngineUSDBTargetProvider:
         assert unconstrained.target_id == 10
         assert unconstrained.constraints == ()
         assert constrained.target_id == 11
-        assert {(c.variable, c.operation, c.value) for c in constrained.constraints} == {
+        assert {
+            (c.variable, c.operation, c.value) for c in constrained.constraints
+        } == {
             ("age", ">=", "65"),
             ("state_fips", "==", "06"),
         }
@@ -797,9 +810,7 @@ class TestPolicyEngineUSConstraintCompilation:
                 reform_id=0,
                 value=200.0,
                 active=True,
-                constraints=(
-                    PolicyEngineUSConstraint("state_fips", "==", "06"),
-                ),
+                constraints=(PolicyEngineUSConstraint("state_fips", "==", "06"),),
             ),
             PolicyEngineUSDBTarget(
                 target_id=21,
@@ -887,9 +898,7 @@ class TestPolicyEngineUSConstraintCompilation:
                     reform_id=0,
                     value=1_500.0,
                     active=True,
-                    constraints=(
-                        PolicyEngineUSConstraint("age", ">=", "65"),
-                    ),
+                    constraints=(PolicyEngineUSConstraint("age", ">=", "65"),),
                 ),
             ),
             tables=tables,
@@ -905,9 +914,13 @@ class TestPolicyEngineUSConstraintCompilation:
             },
         )
 
-        np.testing.assert_allclose(constraints[0].coefficients, np.array([1_000.0, 0.0]))
+        np.testing.assert_allclose(
+            constraints[0].coefficients, np.array([1_000.0, 0.0])
+        )
 
-    def test_amount_targets_exclude_negative_rows_under_positive_same_entity_filter(self):
+    def test_amount_targets_exclude_negative_rows_under_positive_same_entity_filter(
+        self,
+    ):
         households = pd.DataFrame(
             {
                 "household_id": [1, 2],
@@ -986,9 +999,7 @@ class TestPolicyEngineUSConstraintCompilation:
                     reform_id=0,
                     value=200.0,
                     active=True,
-                    constraints=(
-                        PolicyEngineUSConstraint("state_fips", "==", "06"),
-                    ),
+                    constraints=(PolicyEngineUSConstraint("state_fips", "==", "06"),),
                 ),
                 PolicyEngineUSDBTarget(
                     target_id=31,
@@ -998,9 +1009,7 @@ class TestPolicyEngineUSConstraintCompilation:
                     reform_id=0,
                     value=2.0,
                     active=True,
-                    constraints=(
-                        PolicyEngineUSConstraint("snap", ">", "0"),
-                    ),
+                    constraints=(PolicyEngineUSConstraint("snap", ">", "0"),),
                 ),
             ),
             tables=tables,
@@ -1078,9 +1087,7 @@ class TestPolicyEngineUSConstraintCompilation:
                     value=1.0,
                     period=2024,
                     aggregation=TargetAggregation.COUNT,
-                    filters=(
-                        TargetFilter(feature="age", operator=">=", value=65),
-                    ),
+                    filters=(TargetFilter(feature="age", operator=">=", value=65),),
                 ),
             ),
             tables=tables,
@@ -1107,7 +1114,9 @@ class TestPolicyEngineUSConstraintCompilation:
         np.testing.assert_allclose(constraints[0].coefficients, np.array([100.0, 0.0]))
         np.testing.assert_allclose(constraints[1].coefficients, np.array([1.0, 0.0]))
 
-    def test_amount_targets_align_tax_unit_constraints_before_household_aggregation(self):
+    def test_amount_targets_align_tax_unit_constraints_before_household_aggregation(
+        self,
+    ):
         tables = PolicyEngineUSEntityTableBundle(
             households=pd.DataFrame(
                 {
@@ -1233,7 +1242,9 @@ class TestPolicyEngineUSConstraintCompilation:
             np.array([1.0, 1.0]),
         )
 
-    def test_materializes_formula_variables_before_compiling_constraints(self, tmp_path):
+    def test_materializes_formula_variables_before_compiling_constraints(
+        self, tmp_path
+    ):
         households = pd.DataFrame(
             {
                 "household_id": [1, 2],
@@ -1321,13 +1332,15 @@ class TestPolicyEngineUSConstraintCompilation:
                     return np.array([120.0, 0.0])
                 raise KeyError(variable)
 
-        materialized_tables, materialized_bindings = materialize_policyengine_us_variables(
-            tables,
-            variables=("snap",),
-            period=2024,
-            dataset_year=2024,
-            simulation_cls=FakeSimulation,
-            temp_dir=tmp_path,
+        materialized_tables, materialized_bindings = (
+            materialize_policyengine_us_variables(
+                tables,
+                variables=("snap",),
+                period=2024,
+                dataset_year=2024,
+                simulation_cls=FakeSimulation,
+                temp_dir=tmp_path,
+            )
         )
 
         assert materialized_bindings["snap"] == PolicyEngineUSVariableBinding(
@@ -1359,9 +1372,7 @@ class TestPolicyEngineUSConstraintCompilation:
                     reform_id=0,
                     value=2.0,
                     active=True,
-                    constraints=(
-                        PolicyEngineUSConstraint("snap", ">", "0"),
-                    ),
+                    constraints=(PolicyEngineUSConstraint("snap", ">", "0"),),
                 ),
             ),
             tables=materialized_tables,
@@ -1471,13 +1482,15 @@ class TestPolicyEngineUSConstraintCompilation:
                     return np.array([75.0])
                 raise KeyError(variable)
 
-        materialized_tables, materialized_bindings = materialize_policyengine_us_variables(
-            tables,
-            variables=("snap",),
-            period=2024,
-            dataset_year=2024,
-            simulation_cls=FakeSimulation,
-            temp_dir=tmp_path,
+        materialized_tables, materialized_bindings = (
+            materialize_policyengine_us_variables(
+                tables,
+                variables=("snap",),
+                period=2024,
+                dataset_year=2024,
+                simulation_cls=FakeSimulation,
+                temp_dir=tmp_path,
+            )
         )
 
         assert materialized_bindings["snap"] == PolicyEngineUSVariableBinding(
@@ -1758,13 +1771,27 @@ class TestPolicyEngineUSProjection:
         }
         assert expected_keys.issubset(arrays)
         assert set(arrays["household_id"]) == {"2024"}
-        np.testing.assert_array_equal(arrays["household_id"]["2024"], np.array([10, 20]))
-        np.testing.assert_array_equal(arrays["person_household_id"]["2024"], np.array([10, 10, 20]))
-        np.testing.assert_array_equal(arrays["person_tax_unit_id"]["2024"], np.array([100, 100, 200]))
-        np.testing.assert_array_equal(arrays["person_spm_unit_id"]["2024"], np.array([1000, 1000, 2000]))
-        np.testing.assert_array_equal(arrays["person_family_id"]["2024"], np.array([5000, 5000, 6000]))
-        np.testing.assert_array_equal(arrays["person_marital_unit_id"]["2024"], np.array([7000, 7000, 8000]))
-        np.testing.assert_allclose(arrays["household_weight"]["2024"], np.array([1.5, 2.5], dtype=np.float32))
+        np.testing.assert_array_equal(
+            arrays["household_id"]["2024"], np.array([10, 20])
+        )
+        np.testing.assert_array_equal(
+            arrays["person_household_id"]["2024"], np.array([10, 10, 20])
+        )
+        np.testing.assert_array_equal(
+            arrays["person_tax_unit_id"]["2024"], np.array([100, 100, 200])
+        )
+        np.testing.assert_array_equal(
+            arrays["person_spm_unit_id"]["2024"], np.array([1000, 1000, 2000])
+        )
+        np.testing.assert_array_equal(
+            arrays["person_family_id"]["2024"], np.array([5000, 5000, 6000])
+        )
+        np.testing.assert_array_equal(
+            arrays["person_marital_unit_id"]["2024"], np.array([7000, 7000, 8000])
+        )
+        np.testing.assert_allclose(
+            arrays["household_weight"]["2024"], np.array([1.5, 2.5], dtype=np.float32)
+        )
         assert "person_weight" not in arrays
         assert "tax_unit_weight" not in arrays
         assert "spm_unit_weight" not in arrays
@@ -1772,6 +1799,71 @@ class TestPolicyEngineUSProjection:
         assert "marital_unit_weight" not in arrays
         np.testing.assert_array_equal(arrays["age"]["2024"], np.array([34, 12, 45]))
         np.testing.assert_allclose(arrays["snap"]["2024"], np.array([1200.0, 300.0]))
+
+    def test_derives_household_head_export_from_relationship_to_head(self):
+        tables = PolicyEngineUSEntityTableBundle(
+            households=pd.DataFrame(
+                {
+                    "household_id": [10, 20],
+                    "household_weight": [1.0, 1.0],
+                }
+            ),
+            persons=pd.DataFrame(
+                {
+                    "person_id": [1, 2, 3],
+                    "household_id": [10, 10, 20],
+                    "relationship_to_head": [0, 2, 0],
+                }
+            ),
+        )
+
+        arrays = build_policyengine_us_time_period_arrays(
+            tables,
+            period=2024,
+            person_variable_map={"is_household_head": "is_household_head"},
+        )
+
+        np.testing.assert_array_equal(
+            arrays["is_household_head"]["2024"],
+            np.array([True, False, True]),
+        )
+
+    def test_export_variable_maps_include_derived_household_head(self):
+        class FakeEntity:
+            def __init__(self, key):
+                self.key = key
+
+        class FakeVariable:
+            def __init__(self, entity):
+                self.entity = FakeEntity(entity)
+
+        class FakeSystem:
+            variables = {
+                "is_household_head": FakeVariable("person"),
+            }
+
+        tables = PolicyEngineUSEntityTableBundle(
+            households=pd.DataFrame(
+                {
+                    "household_id": [10],
+                    "household_weight": [1.0],
+                }
+            ),
+            persons=pd.DataFrame(
+                {
+                    "person_id": [1],
+                    "household_id": [10],
+                    "relationship_to_head": [0],
+                }
+            ),
+        )
+
+        export_maps = build_policyengine_us_export_variable_maps(
+            tables,
+            tax_benefit_system=FakeSystem(),
+        )
+
+        assert export_maps["person"]["is_household_head"] == "is_household_head"
 
     def test_derives_missing_group_tables_from_person_memberships(self):
         tables = PolicyEngineUSEntityTableBundle(
@@ -1798,10 +1890,18 @@ class TestPolicyEngineUSProjection:
             period=2024,
         )
 
-        np.testing.assert_array_equal(arrays["tax_unit_id"]["2024"], np.array([100, 200]))
-        np.testing.assert_array_equal(arrays["spm_unit_id"]["2024"], np.array([1000, 2000]))
-        np.testing.assert_array_equal(arrays["family_id"]["2024"], np.array([5000, 6000]))
-        np.testing.assert_array_equal(arrays["marital_unit_id"]["2024"], np.array([7000, 8000]))
+        np.testing.assert_array_equal(
+            arrays["tax_unit_id"]["2024"], np.array([100, 200])
+        )
+        np.testing.assert_array_equal(
+            arrays["spm_unit_id"]["2024"], np.array([1000, 2000])
+        )
+        np.testing.assert_array_equal(
+            arrays["family_id"]["2024"], np.array([5000, 6000])
+        )
+        np.testing.assert_array_equal(
+            arrays["marital_unit_id"]["2024"], np.array([7000, 8000])
+        )
         assert "family_weight" not in arrays
         assert "marital_unit_weight" not in arrays
 
@@ -1855,7 +1955,9 @@ class TestPolicyEngineUSProjection:
                 "child_support_received": FakeVariable("person"),
                 "disability_benefits": FakeVariable("person"),
                 "employment_income_before_lsr": FakeVariable("person"),
-                "health_insurance_premiums_without_medicare_part_b": FakeVariable("person"),
+                "health_insurance_premiums_without_medicare_part_b": FakeVariable(
+                    "person"
+                ),
                 "is_female": FakeVariable("person"),
                 "medicare_part_b_premiums": FakeVariable("person"),
                 "other_medical_expenses": FakeVariable("person"),
@@ -2024,10 +2126,7 @@ class TestPolicyEngineUSProjection:
                     for name in household_contract_inputs
                 },
                 **{name: FakeVariable("tax_unit") for name in tax_unit_contract_inputs},
-                **{
-                    name: FakeVariable("spm_unit")
-                    for name in spm_unit_contract_inputs
-                },
+                **{name: FakeVariable("spm_unit") for name in spm_unit_contract_inputs},
                 "self_employed_health_insurance_ald": FakeVariable("tax_unit"),
                 "self_employed_pension_contribution_ald": FakeVariable("tax_unit"),
             }
@@ -2081,11 +2180,13 @@ class TestPolicyEngineUSProjection:
         assert export_maps["tax_unit"] == {
             name: name for name in tax_unit_contract_inputs
         }
-        assert {
-            name: name for name in spm_unit_contract_inputs
-        }.items() <= export_maps["spm_unit"].items()
+        assert {name: name for name in spm_unit_contract_inputs}.items() <= export_maps[
+            "spm_unit"
+        ].items()
 
-    def test_build_policyengine_us_export_variable_maps_blocks_computed_direct_overrides(self):
+    def test_build_policyengine_us_export_variable_maps_blocks_computed_direct_overrides(
+        self,
+    ):
         class FakeEntity:
             def __init__(self, key):
                 self.key = key
@@ -2167,7 +2268,9 @@ class TestPolicyEngineUSProjection:
         assert export_maps["tax_unit"] == {}
         assert "snap" not in export_maps["spm_unit"].values()
 
-    def test_build_policyengine_us_export_variable_maps_drops_reported_social_security_retirement_alias(self):
+    def test_build_policyengine_us_export_variable_maps_drops_reported_social_security_retirement_alias(
+        self,
+    ):
         class FakeEntity:
             def __init__(self, key):
                 self.key = key
@@ -2202,7 +2305,9 @@ class TestPolicyEngineUSProjection:
             tax_benefit_system=FakeSystem(),
         )
 
-        assert "social_security_retirement_reported" not in export_maps["person"].values()
+        assert (
+            "social_security_retirement_reported" not in export_maps["person"].values()
+        )
 
     def test_build_policyengine_us_export_variable_maps_drops_computed_alias_inputs(
         self,
@@ -2291,7 +2396,9 @@ class TestPolicyEngineUSProjection:
             "medicare_part_b_premiums_reported"
             not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         )
-        assert "traditional_ira_contributions" not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
+        assert (
+            "traditional_ira_contributions" not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
+        )
         assert (
             "traditional_ira_contributions_desired"
             not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
@@ -2301,7 +2408,10 @@ class TestPolicyEngineUSProjection:
             "roth_ira_contributions_desired"
             not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         )
-        assert "self_employed_pension_contributions" not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
+        assert (
+            "self_employed_pension_contributions"
+            not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
+        )
         assert (
             "self_employed_pension_contributions_desired"
             not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
@@ -2317,10 +2427,18 @@ class TestPolicyEngineUSProjection:
         assert "takes_up_ssi_if_eligible" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         assert "ssi" not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         assert "ssi_reported" not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
-        assert "self_employed_health_insurance_ald" not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
-        assert "self_employed_pension_contribution_ald" not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
+        assert (
+            "self_employed_health_insurance_ald"
+            not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
+        )
+        assert (
+            "self_employed_pension_contribution_ald"
+            not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
+        )
 
-    def test_resolve_policyengine_excluded_export_variables_preserves_explicit_overrides(self):
+    def test_resolve_policyengine_excluded_export_variables_preserves_explicit_overrides(
+        self,
+    ):
         class FakeVariable:
             def __init__(self, adds=None, subtracts=None, formulas=None):
                 self.adds = adds or []
@@ -2346,7 +2464,9 @@ class TestPolicyEngineUSProjection:
 
         assert excluded == {"self_employed_pension_contribution_ald"}
 
-    def test_build_policyengine_us_export_variable_maps_supports_exact_pre_sim_names(self):
+    def test_build_policyengine_us_export_variable_maps_supports_exact_pre_sim_names(
+        self,
+    ):
         class FakeEntity:
             def __init__(self, key):
                 self.key = key
@@ -2389,7 +2509,9 @@ class TestPolicyEngineUSProjection:
             "non_sch_d_capital_gains": "non_sch_d_capital_gains",
         }.items() <= export_maps["person"].items()
 
-    def test_build_policyengine_us_export_variable_maps_prefers_exact_pre_sim_names(self):
+    def test_build_policyengine_us_export_variable_maps_prefers_exact_pre_sim_names(
+        self,
+    ):
         class FakeEntity:
             def __init__(self, key):
                 self.key = key
@@ -2670,9 +2792,7 @@ class TestPolicyEngineUSProjection:
         assert arrays["takes_up_aca_if_eligible"]["2024"].tolist() == [True]
         assert arrays["takes_up_eitc"]["2024"].tolist() == [True]
         assert arrays["would_file_taxes_voluntarily"]["2024"].tolist() == [False]
-        assert arrays["spm_unit_pre_subsidy_childcare_expenses"]["2024"].tolist() == [
-            0
-        ]
+        assert arrays["spm_unit_pre_subsidy_childcare_expenses"]["2024"].tolist() == [0]
         assert arrays["spm_unit_tenure_type"]["2024"].tolist() == [b"RENTER"]
         assert arrays["takes_up_snap_if_eligible"]["2024"].tolist() == [True]
 
@@ -2705,9 +2825,7 @@ class TestPolicyEngineUSProjection:
             tables,
             period=2024,
             household_variable_map={"tenure_type": "tenure_type"},
-            spm_unit_variable_map={
-                "spm_unit_tenure_type": "spm_unit_tenure_type"
-            },
+            spm_unit_variable_map={"spm_unit_tenure_type": "spm_unit_tenure_type"},
         )
 
         assert arrays["tenure_type"]["2024"].tolist() == [

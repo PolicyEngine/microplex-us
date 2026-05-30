@@ -222,3 +222,36 @@ def test_role_flags_entry_falls_back_without_cps_columns(pipeline):
     assert households == {10}
     assert person_rows["tax_unit_id"].nunique() == 1
     assert tax_units["filing_status"].iloc[0] == "JOINT"
+
+
+def test_microunit_path_preserves_alignment_under_unsorted_input(pipeline):
+    """microunit groups internally by PH_SEQ but returns per-person results in
+    input row order; the delegation maps TAX_ID/role back positionally, so the
+    mapping must stay correct even when input rows are not pre-sorted by
+    PH_SEQ/A_LINENO.
+
+    Regression guard: if a future microunit change stopped preserving input row
+    order, the positional mapping would misassign people to units/roles and this
+    test would fail while the pre-sorted fixture test still passed.
+    """
+    persons = _cps_person_frame()
+    # Input order != PH_SEQ order: single adult (HH 20) first, then the HH 10
+    # members out of A_LINENO order (2, 1, 3).
+    shuffled = persons.iloc[[3, 1, 0, 2]].reset_index(drop=True)
+
+    result = pipeline._build_policyengine_tax_units_via_microunit(shuffled)
+    assert result is not None
+    tax_units, person_rows, _ = result
+
+    unit_by_person = dict(
+        zip(person_rows["person_id"], person_rows["tax_unit_id"], strict=True)
+    )
+    # Couple + child still share one unit; the single adult stays separate.
+    assert unit_by_person[1] == unit_by_person[2] == unit_by_person[3]
+    assert unit_by_person[4] != unit_by_person[1]
+
+    # Roles/filing must stay correctly aligned, not just the grouping.
+    family_id = int(unit_by_person[1])
+    assert _unit_field(tax_units, family_id, "filing_status") == "JOINT"
+    assert sorted(_unit_field(tax_units, family_id, "filer_ids")) == [1, 2]
+    assert list(_unit_field(tax_units, family_id, "dependent_ids")) == [3]

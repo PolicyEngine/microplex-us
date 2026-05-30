@@ -6347,9 +6347,14 @@ class USMicroplexPipeline:
             for role in person_assignments["tax_unit_role_input"].tolist()
         ]
 
+        # microunit emits the canonical filing-status vocabulary already, but
+        # normalize defensively so this path can never diverge from the legacy
+        # paths if microunit ever changes its spelling/casing.
         filing_status_by_unit = {
-            int(row_tax_id) + int(start_tax_unit_id): self._decode_microunit_bytes(
-                filing_value
+            int(row_tax_id) + int(start_tax_unit_id): (
+                self._normalize_policyengine_filing_status(
+                    self._decode_microunit_bytes(filing_value)
+                )
             )
             for row_tax_id, filing_value in zip(
                 tax_unit["TAX_ID"].tolist(),

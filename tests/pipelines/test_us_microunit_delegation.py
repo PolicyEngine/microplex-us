@@ -255,3 +255,106 @@ def test_microunit_path_preserves_alignment_under_unsorted_input(pipeline):
     assert _unit_field(tax_units, family_id, "filing_status") == "JOINT"
     assert sorted(_unit_field(tax_units, family_id, "filer_ids")) == [1, 2]
     assert list(_unit_field(tax_units, family_id, "dependent_ids")) == [3]
+
+
+def _normalized_person_frame() -> pd.DataFrame:
+    """A purely NORMALIZED microplex frame (no raw CPS columns).
+
+    The same population as ``_cps_person_frame`` expressed only in microplex's
+    materialization columns: a married couple with one child (HH 10) and a
+    single adult (HH 20). Used to exercise the prototype adapter (#115) that
+    synthesizes microunit's CPS contract from these columns.
+    """
+    return pd.DataFrame(
+        [
+            {
+                "person_id": 1,
+                "household_id": 10,
+                "relationship_to_head": 0,
+                "age": 40,
+                "income": 50000.0,
+            },
+            {
+                "person_id": 2,
+                "household_id": 10,
+                "relationship_to_head": 1,
+                "age": 38,
+                "income": 30000.0,
+            },
+            {
+                "person_id": 3,
+                "household_id": 10,
+                "relationship_to_head": 2,
+                "age": 10,
+                "income": 0.0,
+            },
+            {
+                "person_id": 4,
+                "household_id": 20,
+                "relationship_to_head": 0,
+                "age": 25,
+                "income": 45000.0,
+            },
+        ]
+    )
+
+
+def test_normalized_adapter_is_off_by_default(pipeline):
+    persons = _normalized_person_frame()
+    # No raw CPS columns and the adapter is not enabled -> declines (the default
+    # behavior is unchanged; the legacy role-flag path handles such frames).
+    assert pipeline._build_policyengine_tax_units_via_microunit(persons) is None
+
+
+def test_normalized_adapter_activates_delegation_when_enabled(pipeline):
+    persons = _normalized_person_frame()
+
+    result = pipeline._build_policyengine_tax_units_via_microunit(
+        persons, allow_normalized_adapter=True
+    )
+
+    assert result is not None, (
+        "adapter must let the delegation fire from a normalized frame"
+    )
+    tax_units, person_rows, households = result
+    assert households == {10, 20}
+
+    unit_by_person = dict(
+        zip(person_rows["person_id"], person_rows["tax_unit_id"], strict=True)
+    )
+    # Couple + child collapse into one unit; the single adult stays separate.
+    assert unit_by_person[1] == unit_by_person[2] == unit_by_person[3]
+    assert unit_by_person[4] != unit_by_person[1]
+
+    family_id = int(unit_by_person[1])
+    assert _unit_field(tax_units, family_id, "filing_status") == "JOINT"
+    assert int(_unit_field(tax_units, family_id, "n_dependents")) == 1
+
+
+def test_normalized_adapter_builds_microunit_cps_contract(pipeline):
+    persons = _normalized_person_frame()
+    frame = pipeline._microunit_cps_frame_from_normalized(persons)
+    assert frame is not None
+    # All eight microunit-required CPS columns are present.
+    for col in (
+        "PH_SEQ",
+        "A_LINENO",
+        "A_AGE",
+        "A_MARITL",
+        "A_SPOUSE",
+        "PEPAR1",
+        "PEPAR2",
+        "A_EXPRRP",
+    ):
+        assert col in frame.columns, f"missing {col}"
+    by_pid = frame.set_index("person_id")
+    # Couple are married (A_MARITL == 1) and point at each other's line numbers.
+    assert int(by_pid.loc[1, "A_MARITL"]) == 1
+    assert int(by_pid.loc[1, "A_SPOUSE"]) == int(by_pid.loc[2, "A_LINENO"])
+    assert int(by_pid.loc[2, "A_SPOUSE"]) == int(by_pid.loc[1, "A_LINENO"])
+    # The child's parent pointers reference the head and spouse line numbers.
+    assert int(by_pid.loc[3, "PEPAR1"]) == int(by_pid.loc[1, "A_LINENO"])
+    assert int(by_pid.loc[3, "PEPAR2"]) == int(by_pid.loc[2, "A_LINENO"])
+    # The single adult is never-married with no spouse/parent pointers.
+    assert int(by_pid.loc[4, "A_MARITL"]) == 7
+    assert int(by_pid.loc[4, "A_SPOUSE"]) == 0

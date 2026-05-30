@@ -402,3 +402,84 @@ def test_normalized_adapter_promotes_a_head_when_none_marked(pipeline):
     pipeline._build_policyengine_tax_units_via_microunit(
         persons, allow_normalized_adapter=True
     )
+
+
+def _cps_fields_frame() -> pd.DataFrame:
+    """A frame in microplex's real CPS-derived fields (no relationship_to_head):
+    person_number = within-household line, spouse_person_number = spouse line,
+    family_relationship = CPS A_FAMREL. Couple+child (HH 10), single (HH 20)."""
+    return pd.DataFrame(
+        [
+            {
+                "person_id": 1,
+                "household_id": 10,
+                "age": 40,
+                "income": 50000.0,
+                "person_number": 1,
+                "spouse_person_number": 2,
+                "family_relationship": 1,
+            },
+            {
+                "person_id": 2,
+                "household_id": 10,
+                "age": 38,
+                "income": 30000.0,
+                "person_number": 2,
+                "spouse_person_number": 1,
+                "family_relationship": 2,
+            },
+            {
+                "person_id": 3,
+                "household_id": 10,
+                "age": 10,
+                "income": 0.0,
+                "person_number": 3,
+                "spouse_person_number": 0,
+                "family_relationship": 3,
+            },
+            {
+                "person_id": 4,
+                "household_id": 20,
+                "age": 25,
+                "income": 45000.0,
+                "person_number": 1,
+                "spouse_person_number": 0,
+                "family_relationship": 0,
+            },
+        ]
+    )
+
+
+def test_high_fidelity_adapter_uses_real_pointers(pipeline):
+    persons = _cps_fields_frame()
+    # The normalized adapter must dispatch to the high-fidelity path when the real
+    # CPS-derived fields are present (no relationship_to_head needed).
+    frame = pipeline._microunit_cps_frame_from_normalized(persons)
+    assert frame is not None
+    by = frame.set_index("person_id")
+    # Real line/spouse pointers, not heuristics.
+    assert int(by.loc[1, "A_LINENO"]) == 1 and int(by.loc[2, "A_LINENO"]) == 2
+    assert int(by.loc[1, "A_SPOUSE"]) == 2 and int(by.loc[2, "A_SPOUSE"]) == 1
+    # A_EXPRRP from family relationship: ref=1, spouse=3, own child=5.
+    assert int(by.loc[1, "A_EXPRRP"]) == 1
+    assert int(by.loc[2, "A_EXPRRP"]) == 3
+    assert int(by.loc[3, "A_EXPRRP"]) == 5
+    # Child's parent pointers reference the head (line 1) and spouse (line 2).
+    assert int(by.loc[3, "PEPAR1"]) == 1 and int(by.loc[3, "PEPAR2"]) == 2
+
+
+def test_high_fidelity_adapter_activates_delegation(pipeline):
+    persons = _cps_fields_frame()
+    result = pipeline._build_policyengine_tax_units_via_microunit(
+        persons, allow_normalized_adapter=True
+    )
+    assert result is not None
+    tax_units, person_rows, households = result
+    unit_by_person = dict(
+        zip(person_rows["person_id"], person_rows["tax_unit_id"], strict=True)
+    )
+    # Couple + child form one unit; single adult separate.
+    assert unit_by_person[1] == unit_by_person[2] == unit_by_person[3]
+    assert unit_by_person[4] != unit_by_person[1]
+    family_id = int(unit_by_person[1])
+    assert _unit_field(tax_units, family_id, "filing_status") == "JOINT"

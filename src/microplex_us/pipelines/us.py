@@ -6435,6 +6435,76 @@ class USMicroplexPipeline:
         person_rows = person_rows.drop(columns=["_microunit_role"], errors="ignore")
         return pd.DataFrame(tax_unit_rows), person_rows, households
 
+    def _microunit_cps_frame_from_cps_fields(
+        self,
+        persons: pd.DataFrame,
+    ) -> pd.DataFrame:
+        """High-fidelity (#115) build of microunit's CPS contract from the real
+        CPS-derived fields microplex carries at materialization: ``person_number``
+        (a 1-based within-household line number), ``spouse_person_number`` (a real
+        spouse line pointer), ``family_relationship`` (CPS A_FAMREL) and
+        ``marital_status``. The household reference person (``person_number == 1``)
+        always anchors a valid head, so microunit never lacks one.
+
+        Only ``PEPAR1``/``PEPAR2`` remain heuristic: a child's parents are taken to
+        be the household reference person (line 1) and that person's spouse (#115).
+        """
+        frame = persons.reset_index(drop=True).copy()
+        hh = pd.to_numeric(frame["household_id"], errors="coerce")
+        pernum = (
+            pd.to_numeric(frame["person_number"], errors="coerce").fillna(0).astype(int)
+        )
+        famrel = (
+            pd.to_numeric(frame["family_relationship"], errors="coerce")
+            .fillna(0)
+            .astype(int)
+        )
+        spouse_num = (
+            pd.to_numeric(frame.get("spouse_person_number", 0), errors="coerce")
+            .fillna(0)
+            .astype(int)
+        )
+
+        frame["PH_SEQ"] = hh.astype(np.int64)
+        frame["A_LINENO"] = pernum
+        frame["A_AGE"] = (
+            pd.to_numeric(frame["age"], errors="coerce").fillna(0).astype(int)
+        )
+        frame["A_SPOUSE"] = spouse_num
+
+        is_ref = pernum == 1
+        # A_EXPRRP (microunit.CPSRelationshipCode): reference person 1, spouse 3,
+        # own child 5, everyone else other-relative 10.
+        exprrp = pd.Series(10, index=frame.index, dtype=int)
+        exprrp[famrel == 2] = 3
+        exprrp[famrel == 3] = 5
+        exprrp[is_ref] = 1
+        frame["A_EXPRRP"] = exprrp
+
+        # A_MARITL: 1 married spouse present; 4 widowed; else 7 never-married.
+        marital = pd.Series(7, index=frame.index, dtype=int)
+        marital[spouse_num > 0] = 1
+        if "is_surviving_spouse" in frame.columns:
+            surviving = (
+                pd.to_numeric(frame["is_surviving_spouse"], errors="coerce").fillna(0)
+                > 0
+            )
+            marital[surviving & (spouse_num == 0)] = 4
+        frame["A_MARITL"] = marital
+
+        # PEPAR1/PEPAR2: a child's parents are heuristically the household
+        # reference person (line 1) and that reference person's spouse.
+        ref_spouse_line = frame.loc[is_ref].groupby(hh[is_ref])["A_SPOUSE"].first()
+        frame["PEPAR1"] = 0
+        frame["PEPAR2"] = 0
+        is_child = famrel == 3
+        frame.loc[is_child, "PEPAR1"] = 1
+        frame.loc[is_child, "PEPAR2"] = (
+            hh[is_child].map(ref_spouse_line).fillna(0).astype(int)
+        )
+
+        return frame
+
     def _microunit_cps_frame_from_normalized(
         self,
         persons: pd.DataFrame,
@@ -6459,6 +6529,19 @@ class USMicroplexPipeline:
         Returns ``persons`` with the eight microunit CPS columns added, or ``None``
         if the prerequisite normalized columns are absent.
         """
+        # Prefer the high-fidelity path when microplex carries the real CPS-derived
+        # pointer fields (person_number is a 1-based within-household line number;
+        # spouse_person_number a real spouse line pointer). Otherwise fall back to
+        # the coarse relationship_to_head heuristic below.
+        if {
+            "person_id",
+            "person_number",
+            "family_relationship",
+            "household_id",
+            "age",
+        }.issubset(persons.columns):
+            return self._microunit_cps_frame_from_cps_fields(persons)
+
         required = {"person_id", "household_id", "age", "relationship_to_head"}
         if not required.issubset(persons.columns):
             return None

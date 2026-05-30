@@ -306,6 +306,11 @@ def default_us_pipeline_stage_contracts() -> tuple[USPipelineStageContract, ...]
                     stage_id="01_run_profile",
                 ),
                 _stage_output_resource(
+                    "resolved_config",
+                    "Resolved build configuration recorded for downstream stages.",
+                    stage_id="01_run_profile",
+                ),
+                _stage_output_resource(
                     "provider_query_plan",
                     "Resolved provider and source-query plan for source loading.",
                     stage_id="01_run_profile",
@@ -363,17 +368,20 @@ def default_us_pipeline_stage_contracts() -> tuple[USPipelineStageContract, ...]
                 ),
             ),
             outputs=(
-                _runtime_resource(
-                    "observation_frames",
-                    "Loaded Microplex observation frames with source metadata.",
+                _stage_output_resource(
+                    "observation_frame_summary",
+                    "Saved summary of loaded Microplex observation frames with source metadata.",
+                    stage_id="02_source_loading",
                 ),
-                _runtime_resource(
+                _stage_output_resource(
                     "source_descriptors",
                     "Source descriptors attached to the loaded observation frames.",
+                    stage_id="02_source_loading",
                 ),
-                _runtime_resource(
+                _stage_output_resource(
                     "source_relationships",
                     "Validated entity relationships in loaded source frames.",
+                    stage_id="02_source_loading",
                 ),
             ),
             artifacts=(),
@@ -745,7 +753,11 @@ def default_us_pipeline_stage_contracts() -> tuple[USPipelineStageContract, ...]
             step="07",
             title="Target resolution, selection, and calibration",
             purpose="Resolve target constraints, solve weights, and summarize fit quality.",
-            consumes=("PE entity table bundle", "target provider/query", "calibration config"),
+            consumes=(
+                "PE entity table bundle",
+                "target provider/query",
+                "calibration config",
+            ),
             produces=("calibrated tables", "calibration summary", "target ledger"),
             inputs=(
                 _artifact_resource(
@@ -870,8 +882,16 @@ def default_us_pipeline_stage_contracts() -> tuple[USPipelineStageContract, ...]
             step="08",
             title="Dataset assembly and publication",
             purpose="Assemble the calibrated output into the distributable PE dataset artifact.",
-            consumes=("calibrated entity tables", "export variable maps", "period config"),
-            produces=("PolicyEngine H5 dataset", "artifact manifest", "data-flow snapshot"),
+            consumes=(
+                "calibrated entity tables",
+                "export variable maps",
+                "period config",
+            ),
+            produces=(
+                "PolicyEngine H5 dataset",
+                "artifact manifest",
+                "data-flow snapshot",
+            ),
             inputs=(
                 _artifact_resource(
                     "calibrated_data",
@@ -989,8 +1009,17 @@ def default_us_pipeline_stage_contracts() -> tuple[USPipelineStageContract, ...]
             step="09",
             title="Validation and benchmarking",
             purpose="Evaluate the assembled dataset and attach benchmark evidence.",
-            consumes=("PolicyEngine H5 dataset", "baseline dataset", "target provider/query"),
-            produces=("harness evidence", "native scores", "audits", "run registry/index evidence"),
+            consumes=(
+                "PolicyEngine H5 dataset",
+                "baseline dataset",
+                "target provider/query",
+            ),
+            produces=(
+                "harness evidence",
+                "native scores",
+                "audits",
+                "run registry/index evidence",
+            ),
             inputs=(
                 _artifact_resource(
                     "policyengine_dataset",
@@ -1017,6 +1046,11 @@ def default_us_pipeline_stage_contracts() -> tuple[USPipelineStageContract, ...]
                 _artifact_resource(
                     "validation_evidence",
                     "Stage-local evidence manifest for validation sidecars.",
+                    stage_id="09_validation_benchmarking",
+                ),
+                _stage_output_resource(
+                    "benchmark_summary",
+                    "Saved summary of validation and benchmark evidence attached to the run.",
                     stage_id="09_validation_benchmarking",
                 ),
                 _artifact_resource(

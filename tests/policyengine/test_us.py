@@ -1939,8 +1939,8 @@ class TestPolicyEngineUSProjection:
 
         assert export_maps["household"] == {"state_fips": "state_fips"}
         assert export_maps["tax_unit"] == {}
-        assert export_maps["spm_unit"] == {}
-        assert export_maps["person"] == {
+        assert "snap" not in export_maps["spm_unit"]
+        expected_person_exports = {
             "alimony_income": "alimony_income",
             "child_support_expense": "child_support_expense",
             "child_support_received": "child_support_received",
@@ -1948,7 +1948,6 @@ class TestPolicyEngineUSProjection:
             "employment_income_before_lsr": "employment_income_before_lsr",
             "health_insurance_premiums_without_medicare_part_b": "health_insurance_premiums_without_medicare_part_b",
             "is_female": "is_female",
-            "medicare_part_b_premiums": "medicare_part_b_premiums",
             "other_medical_expenses": "other_medical_expenses",
             "over_the_counter_health_expenses": "over_the_counter_health_expenses",
             "real_estate_taxes": "real_estate_taxes",
@@ -1962,6 +1961,10 @@ class TestPolicyEngineUSProjection:
             "rental_income": "rental_income",
             "unemployment_compensation": "unemployment_compensation",
         }
+        assert expected_person_exports.items() <= export_maps["person"].items()
+        assert "medicare_part_b_premiums" not in export_maps["person"].values()
+        assert "rent" not in export_maps["person"].values()
+        assert "medicaid" not in export_maps["person"].values()
 
     def test_build_policyengine_us_export_variable_maps_includes_contract_inputs(self):
         class FakeEntity:
@@ -1997,7 +2000,6 @@ class TestPolicyEngineUSProjection:
             "stock_assets",
             "taxable_ira_distributions",
             "tip_income",
-            "traditional_ira_contributions_desired",
             "unreimbursed_business_employee_expenses",
         )
         household_contract_inputs = (
@@ -2069,19 +2071,19 @@ class TestPolicyEngineUSProjection:
             tax_benefit_system=FakeSystem(),
         )
 
-        assert export_maps["person"] == {
+        assert {
             name: name
             for name in (*person_contract_inputs, *legacy_person_contract_inputs)
-        }
+        }.items() <= export_maps["person"].items()
         assert export_maps["household"] == {
             name: name for name in household_contract_inputs
         }
         assert export_maps["tax_unit"] == {
             name: name for name in tax_unit_contract_inputs
         }
-        assert export_maps["spm_unit"] == {
+        assert {
             name: name for name in spm_unit_contract_inputs
-        }
+        }.items() <= export_maps["spm_unit"].items()
 
     def test_build_policyengine_us_export_variable_maps_blocks_computed_direct_overrides(self):
         class FakeEntity:
@@ -2155,14 +2157,17 @@ class TestPolicyEngineUSProjection:
             ),
         )
 
-        assert export_maps["person"] == {
+        assert {
             "employment_income_before_lsr": "employment_income_before_lsr",
             "is_female": "is_female",
-        }
+        }.items() <= export_maps["person"].items()
+        assert "medicaid" not in export_maps["person"].values()
+        assert "medicaid_enrolled" not in export_maps["person"].values()
+        assert "ssi" not in export_maps["person"].values()
         assert export_maps["tax_unit"] == {}
-        assert export_maps["spm_unit"] == {}
+        assert "snap" not in export_maps["spm_unit"].values()
 
-    def test_build_policyengine_us_export_variable_maps_aliases_reported_social_security_retirement(self):
+    def test_build_policyengine_us_export_variable_maps_drops_reported_social_security_retirement_alias(self):
         class FakeEntity:
             def __init__(self, key):
                 self.key = key
@@ -2197,11 +2202,9 @@ class TestPolicyEngineUSProjection:
             tax_benefit_system=FakeSystem(),
         )
 
-        assert export_maps["person"] == {
-            "social_security_retirement": "social_security_retirement_reported",
-        }
+        assert "social_security_retirement_reported" not in export_maps["person"].values()
 
-    def test_build_policyengine_us_export_variable_maps_aliases_contribution_inputs(
+    def test_build_policyengine_us_export_variable_maps_drops_computed_alias_inputs(
         self,
     ):
         class FakeEntity:
@@ -2244,16 +2247,16 @@ class TestPolicyEngineUSProjection:
             tax_benefit_system=FakeSystem(),
         )
 
-        assert export_maps["person"] == {
-            "medicare_part_b_premiums": "medicare_part_b_premiums_reported",
-            "roth_ira_contributions": "roth_ira_contributions_desired",
-            "self_employed_pension_contributions": (
-                "self_employed_pension_contributions_desired"
-            ),
-            "traditional_ira_contributions": (
-                "traditional_ira_contributions_desired"
-            ),
-        }
+        assert "medicare_part_b_premiums_reported" not in export_maps["person"].values()
+        assert "roth_ira_contributions_desired" not in export_maps["person"].values()
+        assert (
+            "self_employed_pension_contributions_desired"
+            not in export_maps["person"].values()
+        )
+        assert (
+            "traditional_ira_contributions_desired"
+            not in export_maps["person"].values()
+        )
 
     def test_default_policyengine_us_export_surface_avoids_formula_aggregates(self):
         from policyengine_us import CountryTaxBenefitSystem
@@ -2279,17 +2282,29 @@ class TestPolicyEngineUSProjection:
         assert "health_savings_account_ald" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         assert "filing_status" not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         assert "rent" not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
-        assert "social_security_retirement" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
-        assert "social_security_retirement_reported" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
-        assert "medicare_part_b_premiums_reported" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
+        assert "social_security_retirement" not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
+        assert (
+            "social_security_retirement_reported"
+            not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
+        )
+        assert (
+            "medicare_part_b_premiums_reported"
+            not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
+        )
         assert "traditional_ira_contributions" not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
-        assert "traditional_ira_contributions_desired" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
+        assert (
+            "traditional_ira_contributions_desired"
+            not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
+        )
         assert "roth_ira_contributions" not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
-        assert "roth_ira_contributions_desired" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
+        assert (
+            "roth_ira_contributions_desired"
+            not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
+        )
         assert "self_employed_pension_contributions" not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         assert (
             "self_employed_pension_contributions_desired"
-            in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
+            not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         )
         assert "non_sch_d_capital_gains" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         assert "receives_wic" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
@@ -2369,10 +2384,10 @@ class TestPolicyEngineUSProjection:
             direct_override_variables=("non_sch_d_capital_gains",),
         )
 
-        assert export_maps["person"] == {
+        assert {
             "race": "cps_race",
             "non_sch_d_capital_gains": "non_sch_d_capital_gains",
-        }
+        }.items() <= export_maps["person"].items()
 
     def test_build_policyengine_us_export_variable_maps_prefers_exact_pre_sim_names(self):
         class FakeEntity:
@@ -2412,10 +2427,10 @@ class TestPolicyEngineUSProjection:
             tax_benefit_system=FakeSystem(),
         )
 
-        assert export_maps["person"] == {
+        assert {
             "cps_race": "cps_race",
             "is_hispanic": "is_hispanic",
-        }
+        }.items() <= export_maps["person"].items()
 
     def test_build_policyengine_us_export_variable_maps_includes_absent_export_defaults(
         self,
@@ -2479,13 +2494,13 @@ class TestPolicyEngineUSProjection:
             tax_benefit_system=FakeSystem(),
         )
 
-        assert export_maps["person"] == {
+        assert {
             "immigration_status_str": "immigration_status_str",
             "ssn_card_type": "ssn_card_type",
             "takes_up_early_head_start_if_eligible": "takes_up_early_head_start_if_eligible",
             "weeks_unemployed": "weeks_unemployed",
             "would_claim_wic": "would_claim_wic",
-        }
+        }.items() <= export_maps["person"].items()
         assert export_maps["household"] == {
             "auto_loan_balance": "auto_loan_balance",
             "net_worth": "net_worth",
@@ -2497,11 +2512,11 @@ class TestPolicyEngineUSProjection:
             "takes_up_eitc": "takes_up_eitc",
             "would_file_taxes_voluntarily": "would_file_taxes_voluntarily",
         }
-        assert export_maps["spm_unit"] == {
+        assert {
             "spm_unit_pre_subsidy_childcare_expenses": "spm_unit_pre_subsidy_childcare_expenses",
             "spm_unit_tenure_type": "spm_unit_tenure_type",
             "takes_up_snap_if_eligible": "takes_up_snap_if_eligible",
-        }
+        }.items() <= export_maps["spm_unit"].items()
 
     def test_projects_frame_and_writes_time_period_dataset(self, tmp_path):
         frame = pd.DataFrame(

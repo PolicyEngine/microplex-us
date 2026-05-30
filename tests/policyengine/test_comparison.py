@@ -214,6 +214,31 @@ def test_load_policyengine_us_entity_tables_round_trips_written_dataset(tmp_path
     assert loaded.tax_units["filing_status"].tolist() == ["JOINT", "SINGLE"]
 
 
+def test_load_policyengine_us_entity_tables_uses_legacy_contract_entities(tmp_path):
+    tables = _sample_tables()
+    assert len(tables.households) == len(tables.spm_units)
+    tables.spm_units["free_school_meals_reported"] = [1.0, 0.0]
+    arrays = build_policyengine_us_time_period_arrays(
+        tables,
+        period=2024,
+        spm_unit_variable_map={
+            "free_school_meals_reported": "free_school_meals_reported"
+        },
+    )
+    dataset_path = tmp_path / "baseline_with_equal_household_spm_counts.h5"
+    write_policyengine_us_time_period_dataset(arrays, dataset_path)
+
+    loaded = load_policyengine_us_entity_tables(
+        dataset_path,
+        period=2024,
+        variables=("free_school_meals_reported",),
+    )
+
+    assert "free_school_meals_reported" not in loaded.households.columns
+    assert loaded.spm_units is not None
+    assert loaded.spm_units["free_school_meals_reported"].tolist() == [1.0, 0.0]
+
+
 def test_load_policyengine_us_entity_tables_skips_unsupported_arrays_when_loading_all(
     tmp_path,
 ):

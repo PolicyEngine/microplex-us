@@ -124,6 +124,24 @@ def _fake_pe_native_scores(**kwargs) -> dict[str, object]:
     }
 
 
+def test_target_value_diagnostics_falls_back_for_zero_scaling():
+    loss_inputs = {
+        "scaled_matrix": np.asarray([[2.0, 3.0], [0.0, 0.0]]),
+        "scaled_target": np.asarray([1.0, 2.0]),
+        "unscaled_target": np.asarray([10.0, 20.0]),
+        "scaling": np.asarray([0.0, 0.5]),
+    }
+
+    diagnostics = ecps._target_value_diagnostics(
+        loss_inputs,
+        np.asarray([1.0, 0.0]),
+    )
+
+    assert diagnostics["value_scale"].tolist() == ["scaled", "native"]
+    assert diagnostics["target"].tolist() == [1.0, 20.0]
+    assert diagnostics["estimate"].tolist() == [2.0, 6.0]
+
+
 def _fake_support_audit(**_kwargs) -> dict[str, object]:
     return {
         "metric": "enhanced_cps_support_audit",

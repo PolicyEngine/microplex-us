@@ -2264,6 +2264,11 @@ def _infer_policyengine_array_entity(
     entity_lengths: dict[EntityType, int],
     tax_benefit_system: Any | None,
 ) -> EntityType:
+    legacy_entity_key = POLICYENGINE_US_LEGACY_CONTRACT_VARIABLE_ENTITIES.get(
+        variable_name
+    )
+    if legacy_entity_key in POLICYENGINE_US_ENTITY_KEY_TO_ENTITY_TYPE:
+        return POLICYENGINE_US_ENTITY_KEY_TO_ENTITY_TYPE[legacy_entity_key]
     if tax_benefit_system is not None:
         try:
             return _resolve_policyengine_variable_entity(

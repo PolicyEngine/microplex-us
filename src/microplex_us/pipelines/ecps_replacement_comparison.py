@@ -812,7 +812,10 @@ def _target_loss_diagnostics(
         baseline_inputs,
         baseline_weights,
     )
-    if candidate_values["value_scale"] != baseline_values["value_scale"]:
+    if not np.array_equal(
+        candidate_values["value_scale"],
+        baseline_values["value_scale"],
+    ):
         raise ValueError("candidate and baseline target diagnostic scales differ")
     if not np.allclose(candidate_values["target"], baseline_values["target"]):
         raise ValueError("candidate and baseline target diagnostic values differ")
@@ -846,7 +849,7 @@ def _target_loss_diagnostics(
                 "target_name": str(target_name),
                 "family": classify_pe_native_target_family(target_name),
                 "split": "holdout" if bool(holdout_mask[index]) else "train",
-                "value_scale": candidate_values["value_scale"],
+                "value_scale": str(candidate_values["value_scale"][index]),
                 "target_value": float(candidate_values["target"][index]),
                 "candidate_estimate": float(candidate_values["estimate"][index]),
                 "baseline_estimate": float(baseline_values["estimate"][index]),
@@ -900,23 +903,28 @@ def _target_loss_diagnostics(
 def _target_value_diagnostics(
     loss_inputs: dict[str, Any],
     weights: np.ndarray,
-) -> dict[str, np.ndarray | str]:
+) -> dict[str, np.ndarray]:
     matrix = np.asarray(loss_inputs["scaled_matrix"], dtype=np.float64)
     scaled_target = np.asarray(loss_inputs["scaled_target"], dtype=np.float64)
     scaled_estimate = matrix.T @ weights
     unscaled_target = loss_inputs.get("unscaled_target")
     scaling = loss_inputs.get("scaling")
+    target = scaled_target.astype(np.float64, copy=True)
+    estimate = scaled_estimate.astype(np.float64, copy=True)
+    value_scale = np.full(target.shape, "scaled", dtype=object)
     if unscaled_target is not None and scaling is not None:
         scaling_array = np.asarray(scaling, dtype=np.float64)
-        if np.any(np.isclose(scaling_array, 0.0)):
-            raise ValueError("PE-native target scaling contains zero values")
-        target = np.asarray(unscaled_target, dtype=np.float64)
-        estimate = scaled_estimate / scaling_array
-        value_scale = "native"
-    else:
-        target = scaled_target
-        estimate = scaled_estimate
-        value_scale = "scaled"
+        if scaling_array.shape != target.shape:
+            raise ValueError("PE-native target scaling shape differs from target shape")
+        native_mask = np.isfinite(scaling_array) & ~np.isclose(scaling_array, 0.0)
+        if native_mask.any():
+            target[native_mask] = np.asarray(unscaled_target, dtype=np.float64)[
+                native_mask
+            ]
+            estimate[native_mask] = scaled_estimate[native_mask] / scaling_array[
+                native_mask
+            ]
+            value_scale[native_mask] = "native"
     if target.shape != estimate.shape:
         raise ValueError("target and estimate shapes differ")
     error = estimate - target

@@ -6286,6 +6286,7 @@ class USMicroplexPipeline:
         persons: pd.DataFrame,
         *,
         start_tax_unit_id: int = 0,
+        allow_normalized_adapter: bool | None = None,
     ) -> tuple[pd.DataFrame, pd.DataFrame, set[Any]] | None:
         """Reconstruct tax units by delegating to ``microunit`` (issue #113).
 
@@ -6317,8 +6318,20 @@ class USMicroplexPipeline:
         """
         if "person_id" not in persons.columns or "household_id" not in persons.columns:
             return None
+        cps_frame = persons
         if not set(self._MICROUNIT_REQUIRED_CPS_COLUMNS).issubset(persons.columns):
-            return None
+            # PROTOTYPE (#115): when the raw CPS columns are absent, optionally
+            # synthesize microunit's CPS contract from microplex's normalized
+            # columns. Default OFF — the maps are heuristic and unvalidated.
+            if allow_normalized_adapter is None:
+                allow_normalized_adapter = bool(
+                    getattr(self.config, "microunit_construct_from_normalized", False)
+                )
+            if not allow_normalized_adapter:
+                return None
+            cps_frame = self._microunit_cps_frame_from_normalized(persons)
+            if cps_frame is None:
+                return None
 
         # Imported lazily to match this module's optional-dependency convention:
         # ``microunit`` ships in the ``policyengine`` extra, and the base test
@@ -6328,7 +6341,7 @@ class USMicroplexPipeline:
         # microunit keys its CPS-style frame on (PH_SEQ, A_LINENO); resetting the
         # index keeps row order so the returned per-person TAX_ID and role align
         # positionally back onto person_rows.
-        person_rows = persons.reset_index(drop=True).copy()
+        person_rows = cps_frame.reset_index(drop=True).copy()
         person_assignments, tax_unit = construct_tax_units(
             person_rows.copy(),
             year=self._microunit_reference_year(person_rows),
@@ -6410,6 +6423,98 @@ class USMicroplexPipeline:
         households = set(person_rows["household_id"].drop_duplicates().tolist())
         person_rows = person_rows.drop(columns=["_microunit_role"], errors="ignore")
         return pd.DataFrame(tax_unit_rows), person_rows, households
+
+    def _microunit_cps_frame_from_normalized(
+        self,
+        persons: pd.DataFrame,
+    ) -> pd.DataFrame | None:
+        """PROTOTYPE (issue #115): synthesize microunit's CPS-like input contract
+        from microplex's normalized person columns.
+
+        ``microunit.construct_tax_units`` needs raw CPS columns (PH_SEQ/A_LINENO/
+        A_AGE/A_MARITL/A_SPOUSE/PEPAR1/PEPAR2/A_EXPRRP); at PolicyEngine
+        materialization microplex instead carries ``household_id``/``age``/
+        ``relationship_to_head``. This builds the former from the latter, mirroring
+        the ACS->CPS mapping microunit documents as the consumer's responsibility.
+
+        .. warning::
+            HEURISTIC AND UNVALIDATED. The ``relationship_to_head`` -> ``A_EXPRRP``
+            and married -> ``A_MARITL`` maps are approximate, and ``PEPAR1``/
+            ``PEPAR2`` are inferred by assuming a child's parents are the household
+            head and spouse. The fidelity of these maps must be validated against
+            the legacy reconstruction before this is trusted (see #115); it is
+            gated OFF by default.
+
+        Returns ``persons`` with the eight microunit CPS columns added, or ``None``
+        if the prerequisite normalized columns are absent.
+        """
+        required = {"person_id", "household_id", "age", "relationship_to_head"}
+        if not required.issubset(persons.columns):
+            return None
+
+        # CPS A_EXPRRP recode (microunit.CPSRelationshipCode): 1 reference person,
+        # 3 husband, 5 own child, 10 other relative.
+        exprrp_by_rel = {0: 1, 1: 3, 2: 5, 3: 10}
+
+        frame = persons.reset_index(drop=True).copy()
+        rel = (
+            pd.to_numeric(frame["relationship_to_head"], errors="coerce")
+            .fillna(3)
+            .astype(int)
+        )
+        age = pd.to_numeric(frame["age"], errors="coerce").fillna(0).astype(int)
+
+        # Per-household line numbers (1-based, unique within household): head
+        # first, then spouse, then everyone else oldest-first.
+        frame = frame.assign(_rel=rel.to_numpy(), _age=age.to_numpy())
+        frame = frame.sort_values(
+            ["household_id", "_rel", "_age", "person_id"],
+            ascending=[True, True, False, True],
+        ).reset_index(drop=True)
+        frame["A_LINENO"] = frame.groupby("household_id", sort=False).cumcount() + 1
+        frame["PH_SEQ"] = pd.to_numeric(frame["household_id"], errors="coerce").astype(
+            np.int64
+        )
+        frame["A_AGE"] = frame["_age"]
+        frame["A_EXPRRP"] = frame["_rel"].map(exprrp_by_rel).fillna(10).astype(int)
+
+        # Head/spouse line numbers per household, for spouse pointers + marital.
+        head_line = (
+            frame.loc[frame["_rel"] == 0].groupby("household_id")["A_LINENO"].first()
+        )
+        spouse_line = (
+            frame.loc[frame["_rel"] == 1].groupby("household_id")["A_LINENO"].first()
+        )
+        hh = frame["household_id"]
+        is_head = frame["_rel"] == 0
+        is_spouse = frame["_rel"] == 1
+        is_child = frame["_rel"] == 2
+        has_spouse = hh.map(spouse_line).notna()
+
+        frame["A_SPOUSE"] = 0
+        frame.loc[is_head, "A_SPOUSE"] = (
+            hh[is_head].map(spouse_line).fillna(0).astype(int)
+        )
+        frame.loc[is_spouse, "A_SPOUSE"] = (
+            hh[is_spouse].map(head_line).fillna(0).astype(int)
+        )
+
+        # A_MARITL: 1 = married, spouse present (head/spouse of a couple); else
+        # 7 = never married. microunit only needs the married-vs-not distinction.
+        frame["A_MARITL"] = 7
+        frame.loc[(is_head | is_spouse) & has_spouse, "A_MARITL"] = 1
+
+        # PEPAR1/PEPAR2: assume a child's parents are the household head + spouse.
+        frame["PEPAR1"] = 0
+        frame["PEPAR2"] = 0
+        frame.loc[is_child, "PEPAR1"] = (
+            hh[is_child].map(head_line).fillna(0).astype(int)
+        )
+        frame.loc[is_child, "PEPAR2"] = (
+            hh[is_child].map(spouse_line).fillna(0).astype(int)
+        )
+
+        return frame.drop(columns=["_rel", "_age"])
 
     @staticmethod
     def _decode_microunit_bytes(value: Any) -> str:

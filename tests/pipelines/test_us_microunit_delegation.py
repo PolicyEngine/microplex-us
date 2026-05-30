@@ -358,3 +358,47 @@ def test_normalized_adapter_builds_microunit_cps_contract(pipeline):
     # The single adult is never-married with no spouse/parent pointers.
     assert int(by_pid.loc[4, "A_MARITL"]) == 7
     assert int(by_pid.loc[4, "A_SPOUSE"]) == 0
+
+
+def test_microunit_path_fails_safe_to_none(pipeline, monkeypatch):
+    # If microunit raises on a household it cannot resolve, the delegation must
+    # fall back (return None) rather than crash materialization.
+    import microunit
+
+    def _boom(*args, **kwargs):
+        raise ValueError("synthetic microunit failure")
+
+    monkeypatch.setattr(microunit, "construct_tax_units", _boom)
+    persons = _cps_person_frame()  # raw CPS columns present -> reaches microunit
+    assert pipeline._build_policyengine_tax_units_via_microunit(persons) is None
+
+
+def test_normalized_adapter_promotes_a_head_when_none_marked(pipeline):
+    # A household where nobody is marked head (all "other") must still get a
+    # single reference person so microunit can construct it.
+    persons = pd.DataFrame(
+        [
+            {
+                "person_id": 1,
+                "household_id": 30,
+                "relationship_to_head": 3,
+                "age": 70,
+                "income": 20000.0,
+            },
+            {
+                "person_id": 2,
+                "household_id": 30,
+                "relationship_to_head": 3,
+                "age": 35,
+                "income": 15000.0,
+            },
+        ]
+    )
+    frame = pipeline._microunit_cps_frame_from_normalized(persons)
+    assert frame is not None
+    # Exactly one reference person (A_EXPRRP == 1) in the household.
+    assert int((frame["A_EXPRRP"] == 1).sum()) == 1
+    # And the delegation must not raise (fail-safe covers microunit edge cases).
+    pipeline._build_policyengine_tax_units_via_microunit(
+        persons, allow_normalized_adapter=True
+    )

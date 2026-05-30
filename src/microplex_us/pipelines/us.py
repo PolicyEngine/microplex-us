@@ -6342,11 +6342,22 @@ class USMicroplexPipeline:
         # index keeps row order so the returned per-person TAX_ID and role align
         # positionally back onto person_rows.
         person_rows = cps_frame.reset_index(drop=True).copy()
-        person_assignments, tax_unit = construct_tax_units(
-            person_rows.copy(),
-            year=self._microunit_reference_year(person_rows),
-            mode=POLICYENGINE_MODE,
-        )
+        try:
+            person_assignments, tax_unit = construct_tax_units(
+                person_rows.copy(),
+                year=self._microunit_reference_year(person_rows),
+                mode=POLICYENGINE_MODE,
+            )
+        except Exception:
+            # microunit raises on households it cannot resolve (e.g. no valid
+            # reference person). Never let that crash materialization — fall back
+            # to the caller's legacy reconstruction for the whole frame.
+            LOGGER.warning(
+                "microunit tax-unit construction failed; falling back to "
+                "legacy reconstruction",
+                exc_info=True,
+            )
+            return None
 
         tax_id = pd.to_numeric(person_assignments["TAX_ID"], errors="coerce")
         person_rows["tax_unit_id"] = (
@@ -6472,6 +6483,13 @@ class USMicroplexPipeline:
             ascending=[True, True, False, True],
         ).reset_index(drop=True)
         frame["A_LINENO"] = frame.groupby("household_id", sort=False).cumcount() + 1
+        # Guarantee exactly one household head (microunit requires a single
+        # reference person per PH_SEQ, else it raises). After the head-first sort
+        # the line-1 member is the most head-like; make it the head and demote
+        # any other rows that mapped to head (multi-family / headless households).
+        is_line1 = frame["A_LINENO"] == 1
+        frame.loc[is_line1, "_rel"] = 0
+        frame.loc[~is_line1 & (frame["_rel"] == 0), "_rel"] = 3
         frame["PH_SEQ"] = pd.to_numeric(frame["household_id"], errors="coerce").astype(
             np.int64
         )

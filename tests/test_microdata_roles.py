@@ -72,7 +72,7 @@ def test_policyengine_us_variable_roles_separate_inputs_from_outputs():
     )
     assert (
         policyengine_us_variable_role("filing_status")
-        is PolicyEngineUSVariableRole.PRESERVED_INPUT
+        is PolicyEngineUSVariableRole.CALCULATED_OUTPUT
     )
     assert (
         policyengine_us_variable_role("snap_reported")
@@ -104,6 +104,7 @@ def test_policyengine_direct_export_guard_blocks_calculated_and_reported_outputs
             "net_capital_gains",
             "non_sch_d_capital_gains",
             "filing_status",
+            "rent",
             "snap",
             "snap_reported",
             "state_income_tax",
@@ -112,12 +113,15 @@ def test_policyengine_direct_export_guard_blocks_calculated_and_reported_outputs
     )
 
     assert blocked == (
+        "filing_status",
         "net_capital_gains",
+        "rent",
         "snap",
         "snap_reported",
         "state_income_tax",
     )
-    assert not is_policyengine_us_direct_export_blocked("filing_status")
+    assert is_policyengine_us_direct_export_blocked("filing_status")
+    assert is_policyengine_us_direct_export_blocked("rent")
     assert is_policyengine_us_direct_export_blocked("snap")
     assert not is_policyengine_us_direct_export_blocked("takes_up_snap_if_eligible")
     assert not is_policyengine_us_direct_export_blocked(

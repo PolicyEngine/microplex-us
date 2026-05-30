@@ -333,9 +333,6 @@ SAFE_POLICYENGINE_US_EXPORT_VARIABLES: set[str] = {
     "tax_exempt_interest_income",
     "qualified_dividend_income",
     "non_qualified_dividend_income",
-    # `rent` is treated as a preserved stored input in PE-US-data even though
-    # the runtime can recalculate it on some paths.
-    "rent",
     "real_estate_taxes",
     "rental_income",
     "short_term_capital_gains",
@@ -349,10 +346,6 @@ SAFE_POLICYENGINE_US_EXPORT_VARIABLES: set[str] = {
     "has_esi",
     "has_marketplace_health_coverage",
     "health_savings_account_ald",
-    # Although PE-US defines a fallback formula for filing_status, Microplex
-    # constructs tax units explicitly and should preserve that status as an
-    # input for SOI filing-status cells.
-    "filing_status",
     "is_separated",
     "is_surviving_spouse",
     "net_worth",
@@ -491,6 +484,33 @@ POLICYENGINE_US_LEGACY_CONTRACT_VARIABLE_ENTITIES: dict[str, str] = {
     "count_under_18": "person",
     "count_under_6": "person",
 }
+
+POLICYENGINE_US_STRUCTURAL_COMPUTED_EXPORT_VARIABLES: frozenset[str] = frozenset(
+    {
+        # Aligned with policyengine-us-data's final-H5 validation contract.
+        # These are structural/cache fields, not model outputs.
+        "person_id",
+        "has_tin",
+        "has_itin",
+        "in_nyc",
+    }
+)
+
+POLICYENGINE_US_DATA_OVERRIDABLE_COMPUTED_EXPORT_VARIABLES: frozenset[str] = (
+    frozenset(
+        {
+            # policyengine-us-data intentionally persists stronger source-data
+            # inputs for these fallback formulas.
+            "fsla_overtime_premium",
+            "meets_ssi_disability_criteria",
+        }
+    )
+)
+
+POLICYENGINE_US_ALLOWED_COMPUTED_EXPORT_VARIABLES: frozenset[str] = (
+    POLICYENGINE_US_STRUCTURAL_COMPUTED_EXPORT_VARIABLES
+    | POLICYENGINE_US_DATA_OVERRIDABLE_COMPUTED_EXPORT_VARIABLES
+)
 
 
 def compute_policyengine_us_definition_hash(
@@ -1400,28 +1420,44 @@ class PolicyEngineUSMicrosimulationAdapter:
         raise ValueError(f"Unsupported aggregation: {aggregation}")
 
 
+def _policyengine_us_variable_is_computed_export(metadata: Any) -> bool:
+    """Return whether PE-US should compute this variable in final datasets."""
+    return (
+        bool(getattr(metadata, "formulas", {}) or {})
+        or bool(getattr(metadata, "adds", None))
+        or bool(getattr(metadata, "subtracts", None))
+    )
+
+
+def detect_policyengine_computed_export_variables(
+    tax_benefit_system: Any,
+    input_variables: list[str] | tuple[str, ...],
+) -> set[str]:
+    """Detect exported variables computed by PolicyEngine-US."""
+    computed_exports: set[str] = set()
+    variables = getattr(tax_benefit_system, "variables", {})
+
+    for variable_name in input_variables:
+        if variable_name in POLICYENGINE_US_ALLOWED_COMPUTED_EXPORT_VARIABLES:
+            continue
+        variable = variables.get(variable_name)
+        if variable is None:
+            continue
+        if _policyengine_us_variable_is_computed_export(variable):
+            computed_exports.add(variable_name)
+
+    return computed_exports
+
+
 def detect_policyengine_pseudo_inputs(
     tax_benefit_system: Any,
     input_variables: list[str] | tuple[str, ...],
 ) -> set[str]:
-    """Detect pseudo-input variables that aggregate formula-based components."""
-    pseudo_inputs: set[str] = set()
-    variables = getattr(tax_benefit_system, "variables", {})
-
-    for variable_name in input_variables:
-        variable = variables.get(variable_name)
-        if variable is None:
-            continue
-        components = list(getattr(variable, "adds", []) or []) + list(
-            getattr(variable, "subtracts", []) or []
-        )
-        for component_name in components:
-            component = variables.get(component_name)
-            if component is not None and getattr(component, "formulas", {}):
-                pseudo_inputs.add(variable_name)
-                break
-
-    return pseudo_inputs
+    """Detect PE-computed variables that must not be persisted as inputs."""
+    return detect_policyengine_computed_export_variables(
+        tax_benefit_system,
+        input_variables,
+    )
 
 
 def resolve_policyengine_excluded_export_variables(
@@ -1430,14 +1466,11 @@ def resolve_policyengine_excluded_export_variables(
     *,
     direct_override_variables: tuple[str, ...] = (),
 ) -> set[str]:
-    """Resolve pseudo-input exports to exclude, preserving explicit overrides."""
-    excluded_variables = detect_policyengine_pseudo_inputs(
+    """Resolve PE-computed exports to exclude from final H5 datasets."""
+    return detect_policyengine_computed_export_variables(
         tax_benefit_system,
         exported_inputs,
     )
-    if direct_override_variables:
-        excluded_variables -= set(direct_override_variables)
-    return excluded_variables
 
 
 def subset_policyengine_tables_by_households(
@@ -1594,6 +1627,7 @@ def materialize_policyengine_us_variables(
             arrays,
             dataset_path,
             excluded_variables=excluded_variables,
+            tax_benefit_system=tax_benefit_system,
         )
         adapter = PolicyEngineUSMicrosimulationAdapter.from_dataset(
             dataset_path,
@@ -2723,7 +2757,6 @@ def build_policyengine_us_time_period_arrays(
         household_ids=pd.Index(households[household_id_column]),
     )
 
-    household_weights = households.set_index(household_id_column)[household_weight_column]
     arrays: dict[str, dict[str, np.ndarray]] = {
         "household_id": {
             period_key: _normalize_id_value(households[household_id_column]),
@@ -2736,11 +2769,6 @@ def build_policyengine_us_time_period_arrays(
         },
         "household_weight": {
             period_key: _normalize_weight_value(households[household_weight_column]),
-        },
-        "person_weight": {
-            period_key: _normalize_weight_value(
-                persons[household_id_column].map(household_weights)
-            ),
         },
     }
 
@@ -2796,11 +2824,6 @@ def build_policyengine_us_time_period_arrays(
         }
         arrays[f"person_{group_name}_id"] = {
             period_key: _normalize_id_value(person_group_ids),
-        }
-        arrays[f"{group_name}_weight"] = {
-            period_key: _normalize_weight_value(
-                group_table[household_id_column].map(household_weights)
-            ),
         }
         arrays.update(
             _project_table_to_time_period_arrays(
@@ -2904,6 +2927,11 @@ def _group_policyengine_us_export_variables_by_entity(
     }
     for variable_name, metadata in variable_metadata.items():
         if variable_name not in allowed_variable_names:
+            continue
+        if (
+            variable_name not in POLICYENGINE_US_ALLOWED_COMPUTED_EXPORT_VARIABLES
+            and _policyengine_us_variable_is_computed_export(metadata)
+        ):
             continue
         entity_key = getattr(getattr(metadata, "entity", None), "key", None)
         if entity_key not in allowed_variables_by_entity:
@@ -3022,11 +3050,26 @@ def write_policyengine_us_time_period_dataset(
     path: str | Path,
     *,
     excluded_variables: set[str] | None = None,
+    tax_benefit_system: Any | None = None,
 ) -> Path:
     """Write PolicyEngine-readable time-period arrays to HDF5."""
     output_path = Path(path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     excluded = excluded_variables or set()
+    written_variables = [variable for variable in data if variable not in excluded]
+    if tax_benefit_system is not None:
+        computed_exports = detect_policyengine_computed_export_variables(
+            tax_benefit_system,
+            written_variables,
+        )
+        if computed_exports:
+            formatted = ", ".join(sorted(computed_exports)[:10])
+            suffix = "" if len(computed_exports) <= 10 else ", ..."
+            raise ValueError(
+                "PolicyEngine US export contains computed variables: "
+                f"{formatted}{suffix}. Drop construction-only intermediates "
+                "or export the underlying leaf input instead."
+            )
 
     with h5py.File(output_path, "w") as handle:
         for variable, periods in data.items():

@@ -96,6 +96,7 @@ POLICYENGINE_US_CALCULATED_OUTPUT_VARIABLES: frozenset[str] = frozenset(
         "ctc",
         "early_head_start",
         "eitc",
+        "filing_status",
         "head_start",
         "income_tax",
         "income_tax_positive",
@@ -106,6 +107,7 @@ POLICYENGINE_US_CALCULATED_OUTPUT_VARIABLES: frozenset[str] = frozenset(
         "non_refundable_ctc",
         "premium_tax_credit",
         "refundable_ctc",
+        "rent",
         "snap",
         "ssi",
         "state_income_tax",
@@ -115,14 +117,7 @@ POLICYENGINE_US_CALCULATED_OUTPUT_VARIABLES: frozenset[str] = frozenset(
     }
 )
 
-POLICYENGINE_US_CONSTRUCTION_INPUT_VARIABLES: frozenset[str] = frozenset(
-    {
-        # PolicyEngine can calculate filing status, but Microplex builds tax
-        # units explicitly and should preserve that construction-stage input
-        # for IRS filing-status targets.
-        "filing_status",
-    }
-)
+POLICYENGINE_US_CONSTRUCTION_INPUT_VARIABLES: frozenset[str] = frozenset()
 
 POLICYENGINE_US_DIRECT_EXPORT_BLOCKED_VARIABLES: frozenset[str] = frozenset(
     POLICYENGINE_US_CALCULATED_OUTPUT_VARIABLES

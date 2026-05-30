@@ -329,12 +329,14 @@ def test_column_contract_gate_rejects_missing_ecps_contract_column(tmp_path):
     assert column_gate["details"]["missing_contract_columns"] == ["filing_status"]
 
 
-def test_column_contract_gate_excludes_ecps_transient_inputs(tmp_path):
+def test_column_contract_gate_rejects_extra_candidate_columns(tmp_path):
     artifact_dir = tmp_path / "artifact"
     artifact_dir.mkdir()
-    _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
+    candidate_dataset = _write_minimal_policyengine_dataset(
+        artifact_dir / "candidate.h5"
+    )
+    _add_period_dataset(candidate_dataset, "filing_status", [1, 2])
     baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
-    _add_period_dataset(baseline_dataset, "ssi_reported", [1.0, 0.0, 0.0])
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
     _write_benchmark_manifest(benchmark_manifest)
     _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
@@ -352,13 +354,13 @@ def test_column_contract_gate_excludes_ecps_transient_inputs(tmp_path):
     record = json.loads(report_path.read_text())
     column_gate = record["gates"]["column_contract"]
 
-    assert record["summary"]["status"] == "passed"
-    assert column_gate["status"] == "pass"
-    assert column_gate["metrics"]["excluded_transient_column_count"] == 1
-    assert column_gate["details"]["excluded_transient_columns"] == ["ssi_reported"]
+    assert record["summary"]["status"] == "failed"
+    assert column_gate["status"] == "fail"
+    assert column_gate["metrics"]["extra_candidate_column_count"] == 1
+    assert column_gate["details"]["extra_candidate_columns"] == ["filing_status"]
 
 
-def test_column_contract_gate_accepts_current_policyengine_renames(tmp_path):
+def test_column_contract_gate_rejects_renamed_candidate_columns(tmp_path):
     artifact_dir = tmp_path / "artifact"
     artifact_dir.mkdir()
     candidate_dataset = _write_minimal_policyengine_dataset(
@@ -388,15 +390,17 @@ def test_column_contract_gate_accepts_current_policyengine_renames(tmp_path):
     record = json.loads(report_path.read_text())
     column_gate = record["gates"]["column_contract"]
 
-    assert record["summary"]["status"] == "passed"
-    assert column_gate["status"] == "pass"
-    assert column_gate["metrics"]["replacement_contract_column_count"] == 1
-    assert column_gate["details"]["replacement_contract_columns"] == {
-        "medicare_part_b_premiums": "medicare_part_b_premiums_reported"
-    }
+    assert record["summary"]["status"] == "failed"
+    assert column_gate["status"] == "fail"
+    assert column_gate["details"]["missing_contract_columns"] == [
+        "medicare_part_b_premiums"
+    ]
+    assert column_gate["details"]["extra_candidate_columns"] == [
+        "medicare_part_b_premiums_reported"
+    ]
 
 
-def test_column_contract_gate_accepts_current_policyengine_calculated_outputs(
+def test_column_contract_gate_rejects_missing_calculated_outputs_from_baseline(
     tmp_path,
 ):
     artifact_dir = tmp_path / "artifact"
@@ -432,10 +436,10 @@ def test_column_contract_gate_accepts_current_policyengine_calculated_outputs(
     record = json.loads(report_path.read_text())
     column_gate = record["gates"]["column_contract"]
 
-    assert record["summary"]["status"] == "passed"
-    assert column_gate["status"] == "pass"
-    assert column_gate["metrics"]["calculated_or_legacy_contract_column_count"] == 4
-    assert column_gate["details"]["calculated_or_legacy_contract_columns"] == [
+    assert record["summary"]["status"] == "failed"
+    assert column_gate["status"] == "fail"
+    assert column_gate["metrics"]["missing_contract_column_count"] == 4
+    assert column_gate["details"]["missing_contract_columns"] == [
         "self_employed_pension_contribution_ald",
         "spm_unit_capped_work_childcare_expenses",
         "taxpayer_id_type",

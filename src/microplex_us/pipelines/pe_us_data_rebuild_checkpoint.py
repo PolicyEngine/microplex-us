@@ -1806,6 +1806,9 @@ def run_policyengine_us_data_rebuild_checkpoint(
     puf_demographics_path: str | Path | None = None,
     puf_expand_persons: bool = True,
     include_donor_surveys: bool = True,
+    include_acs: bool | None = None,
+    include_sipp: bool | None = None,
+    include_scf: bool | None = None,
     acs_year: int = 2022,
     sipp_year: int = 2023,
     scf_year: int = 2022,
@@ -1888,6 +1891,9 @@ def run_policyengine_us_data_rebuild_checkpoint(
                 puf_demographics_path=puf_demographics_path,
                 puf_expand_persons=puf_expand_persons,
                 include_donor_surveys=include_donor_surveys,
+                include_acs=include_acs,
+                include_sipp=include_sipp,
+                include_scf=include_scf,
                 acs_year=acs_year,
                 sipp_year=sipp_year,
                 scf_year=scf_year,
@@ -2091,6 +2097,27 @@ def main(argv: list[str] | None = None) -> None:
         action=argparse.BooleanOptionalAction,
         default=True,
     )
+    parser.add_argument(
+        "--include-acs",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "Include the ACS donor provider. Defaults to --include-donor-surveys; "
+            "use --no-include-acs for an eCPS-shaped run that keeps SIPP/SCF."
+        ),
+    )
+    parser.add_argument(
+        "--include-sipp",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Include SIPP donor providers. Defaults to --include-donor-surveys.",
+    )
+    parser.add_argument(
+        "--include-scf",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Include the SCF donor provider. Defaults to --include-donor-surveys.",
+    )
     parser.add_argument("--no-cps-download", action="store_true")
     parser.add_argument("--no-puf-expand-persons", action="store_true")
     parser.add_argument("--defer-policyengine-harness", action="store_true")
@@ -2235,6 +2262,9 @@ def main(argv: list[str] | None = None) -> None:
         puf_demographics_path=args.puf_demographics_path,
         puf_expand_persons=not args.no_puf_expand_persons,
         include_donor_surveys=args.include_donor_surveys,
+        include_acs=args.include_acs,
+        include_sipp=args.include_sipp,
+        include_scf=args.include_scf,
         acs_year=args.acs_year,
         sipp_year=args.sipp_year,
         scf_year=args.scf_year,

@@ -1193,6 +1193,7 @@ docs = [
 ]
 policyengine = [
     { name = "microimpute", marker = "python_full_version < '3.15'" },
+    { name = "microunit" },
     { name = "policyengine-us", marker = "python_full_version < '3.15'" },
     { name = "spm-calculator" },
 ]
@@ -1208,6 +1209,7 @@ requires-dist = [
     { name = "jupyter-book", marker = "extra == 'docs'", specifier = ">=0.15,<0.16" },
     { name = "microimpute", marker = "python_full_version >= '3.12' and python_full_version < '3.15' and extra == 'policyengine'", specifier = "==1.15.1" },
     { name = "microplex", extras = ["calibrate"], git = "https://github.com/PolicyEngine/microplex.git?rev=1e0627182f9df40aacd7043c96956c2895bf9d30" },
+    { name = "microunit", marker = "extra == 'policyengine'", git = "https://github.com/PolicyEngine/microunit?rev=d3eccbbd33aa51f1c310bd6c2f37c9c3735beeb1" },
     { name = "policyengine-us", marker = "python_full_version >= '3.11' and python_full_version < '3.15' and extra == 'policyengine'", specifier = "==1.715.2" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0" },
     { name = "requests", specifier = ">=2.31" },
@@ -1216,6 +1218,16 @@ requires-dist = [
     { name = "standard-imghdr", marker = "python_full_version >= '3.13' and extra == 'docs'", specifier = ">=3.13" },
 ]
 provides-extras = ["dev", "docs", "r2", "policyengine"]
+
+[[package]]
+name = "microunit"
+version = "0.1.0"
+source = { git = "https://github.com/PolicyEngine/microunit?rev=d3eccbbd33aa51f1c310bd6c2f37c9c3735beeb1#d3eccbbd33aa51f1c310bd6c2f37c9c3735beeb1" }
+dependencies = [
+    { name = "numpy" },
+    { name = "pandas" },
+    { name = "pyyaml" },
+]
 
 [[package]]
 name = "mpmath"

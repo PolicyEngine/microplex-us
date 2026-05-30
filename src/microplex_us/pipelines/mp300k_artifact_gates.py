@@ -78,6 +78,19 @@ _CORE_BENCHMARK_ECPS_TARGET_FAMILIES = (
 _PROTECTED_FAMILY_RELATIVE_LOSS_TOLERANCE = 0.05
 _PROTECTED_FAMILY_ABSOLUTE_LOSS_TOLERANCE = 0.005
 _DEFAULT_MAX_SUPPORT_WEIGHT_SHARE = 0.25
+_KNOWN_PEUS_COMPUTED_ECPS_CONTRACT_COLUMNS = frozenset(
+    {
+        "medicare_enrolled",
+        "roth_401k_contributions",
+        "roth_ira_contributions",
+        "self_employed_health_insurance_ald",
+        "self_employed_pension_contribution_ald",
+        "self_employed_pension_contributions",
+        "spm_unit_capped_work_childcare_expenses",
+        "traditional_401k_contributions",
+        "traditional_ira_contributions",
+    }
+)
 _FORBIDDEN_SOURCE_DIAGNOSTIC_VARIABLES = frozenset(
     {
         "ssi_reported",
@@ -456,7 +469,12 @@ def _column_contract_gate(
     period_key = str(int(period))
     candidate_columns = _h5_period_columns(candidate_dataset, period_key=period_key)
     baseline_columns = _h5_period_columns(baseline_dataset, period_key=period_key)
-    contract_columns = sorted(baseline_columns)
+    excluded_baseline_computed_columns = sorted(
+        _computed_policyengine_us_export_columns(baseline_columns)
+    )
+    contract_columns = sorted(
+        set(baseline_columns) - set(excluded_baseline_computed_columns)
+    )
     candidate_column_set = set(candidate_columns)
     contract_column_set = set(contract_columns)
     missing_contract_columns = sorted(contract_column_set - candidate_column_set)
@@ -469,6 +487,9 @@ def _column_contract_gate(
         "period": int(period),
         "baseline_column_count": len(baseline_columns),
         "candidate_column_count": len(candidate_columns),
+        "excluded_baseline_computed_column_count": len(
+            excluded_baseline_computed_columns
+        ),
         "contract_column_count": len(contract_columns),
         "candidate_contract_column_count": satisfied_count,
         "missing_contract_column_count": len(missing_contract_columns),
@@ -478,19 +499,41 @@ def _column_contract_gate(
     details = {
         "missing_contract_columns": missing_contract_columns,
         "extra_candidate_columns": extra_candidate_columns,
+        "excluded_baseline_computed_columns": excluded_baseline_computed_columns,
     }
     if missing_contract_columns or extra_candidate_columns:
         return _gate(
             "fail",
-            "candidate H5 column set differs from the pinned eCPS contract",
+            "candidate H5 leaf-input column set differs from the pinned eCPS contract",
             metrics=metrics,
             details=details,
         )
     return _gate(
         "pass",
-        "candidate H5 column set matches the pinned eCPS contract",
+        "candidate H5 leaf-input column set matches the pinned eCPS contract",
         metrics=metrics,
         details=details,
+    )
+
+
+def _computed_policyengine_us_export_columns(columns: list[str]) -> set[str]:
+    try:
+        import policyengine_us
+
+        from microplex_us.policyengine.us import (
+            detect_policyengine_computed_export_variables,
+        )
+    except ImportError:
+        return set(columns) & _KNOWN_PEUS_COMPUTED_ECPS_CONTRACT_COLUMNS
+
+    tax_benefit_system = getattr(
+        policyengine_us.system,
+        "system",
+        policyengine_us.system,
+    )
+    return detect_policyengine_computed_export_variables(
+        tax_benefit_system,
+        tuple(columns),
     )
 
 

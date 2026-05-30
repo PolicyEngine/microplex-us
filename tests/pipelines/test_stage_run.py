@@ -1,10 +1,14 @@
 """Tests for typed US stage-run output manifests."""
 
 import json
+from dataclasses import fields
 
 import pytest
 
-from microplex_us.pipelines.stage_contracts import US_CANONICAL_STAGE_IDS
+from microplex_us.pipelines.stage_contracts import (
+    US_CANONICAL_STAGE_IDS,
+    get_us_pipeline_stage_contract,
+)
 from microplex_us.pipelines.stage_run import (
     US_STAGE_OUTPUT_MANIFEST_TYPES,
     USArtifactRef,
@@ -24,6 +28,18 @@ def test_every_canonical_stage_has_typed_output_manifest():
     assert tuple(US_STAGE_OUTPUT_MANIFEST_TYPES) == US_CANONICAL_STAGE_IDS
 
 
+def test_stage_output_manifests_use_contract_outputs_as_required_source():
+    for stage_id, manifest_type in US_STAGE_OUTPUT_MANIFEST_TYPES.items():
+        contract = get_us_pipeline_stage_contract(stage_id)
+        expected = tuple(
+            resource.key for resource in contract.outputs if resource.required
+        )
+        output = manifest_type()
+
+        assert output.required_output_keys() == expected
+        assert set(expected) <= {item.name for item in fields(manifest_type)}
+
+
 def test_stage_run_writer_records_typed_stage_manifests(tmp_path):
     _write_artifact_bundle_files(tmp_path)
     manifest = _artifact_manifest()
@@ -35,27 +51,30 @@ def test_stage_run_writer_records_typed_stage_manifests(tmp_path):
 
     assert (tmp_path / "manifest.json").exists()
     assert (
-        tmp_path / "stage_artifacts" / "05_donor_integration_synthesis" / "manifest.json"
+        tmp_path
+        / "stage_artifacts"
+        / "manifests"
+        / "05_donor_integration_synthesis.json"
     ).exists()
     assert (
-        tmp_path / "stage_artifacts" / "09_validation_benchmarking" / "manifest.json"
+        tmp_path / "stage_artifacts" / "manifests" / "09_validation_benchmarking.json"
     ).exists()
     assert (
         updated_manifest["stage_output_manifests"]["07_calibration"]
-        == "stage_artifacts/07_calibration/manifest.json"
+        == "stage_artifacts/manifests/07_calibration.json"
     )
     stage5_manifest = json.loads(
         (
             tmp_path
             / "stage_artifacts"
-            / "05_donor_integration_synthesis"
-            / "manifest.json"
+            / "manifests"
+            / "05_donor_integration_synthesis.json"
         ).read_text()
     )
     assert stage5_manifest["stageId"] == "05_donor_integration_synthesis"
     assert stage5_manifest["diagnostics"]
     assert stage5_manifest["inputStageManifest"] == (
-        "stage_artifacts/04_seed_scaffold/manifest.json"
+        "stage_artifacts/manifests/04_seed_scaffold.json"
     )
 
 
@@ -92,6 +111,18 @@ def test_stage_run_writer_requires_prior_stage_or_override(tmp_path):
 
     with pytest.raises(ValueError, match="requires 01_run_profile"):
         USStageRunWriter(tmp_path).record_stage(output)
+
+    with pytest.raises(ValueError, match="require allow_stage_input_overrides"):
+        USStageRunWriter(
+            tmp_path,
+            stage_input_overrides=(
+                USStageInputOverride(
+                    stage_id="02_source_loading",
+                    key="provider_query_plan",
+                    path="overrides/provider_query_plan.json",
+                ),
+            ),
+        )
 
     writer = USStageRunWriter(
         tmp_path,
@@ -200,6 +231,9 @@ def test_parse_us_stage_input_override():
     with pytest.raises(ValueError, match="Unknown US pipeline stage"):
         parse_us_stage_input_override("unknown_stage.provider_query_plan=override.json")
 
+    with pytest.raises(ValueError, match="Unknown input override key"):
+        parse_us_stage_input_override("02_source_loading.not_an_input=override.json")
+
 
 def test_build_stage_outputs_from_manifest_exposes_diagnostics(tmp_path):
     _write_artifact_bundle_files(tmp_path)
@@ -210,6 +244,9 @@ def test_build_stage_outputs_from_manifest_exposes_diagnostics(tmp_path):
 
     assert len(outputs) == 9
     assert all(output.diagnostics for output in outputs)
+    stage6 = outputs[5]
+    assert "policyengine_dataset" not in stage6.materialized_policyengine_inputs
+    assert stage6.materialized_policyengine_inputs["tables"]["households"]["rows"] == 1
 
 
 def _write_artifact_bundle_files(root):
@@ -229,6 +266,18 @@ def _write_artifact_bundle_files(root):
         path = root / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("{}")
+    (
+        root / "stage_artifacts" / "06_policyengine_entities" / "metadata.json"
+    ).write_text(
+        json.dumps(
+            {
+                "format_version": 1,
+                "stage": "post_microsim",
+                "households": {"rows": 1, "columns": ["household_id"]},
+                "persons": {"rows": 1, "columns": ["person_id"]},
+            }
+        )
+    )
 
 
 def _artifact_manifest():

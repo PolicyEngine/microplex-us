@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     from microplex_us.policyengine import PolicyEngineUSEntityTableBundle
 
 US_STAGE_ARTIFACT_INVENTORY_SCHEMA_VERSION = 1
-DEFAULT_US_STAGE_ARTIFACT_HASH_MAX_BYTES = 25_000_000
+DEFAULT_US_STAGE_ARTIFACT_HASH_MAX_BYTES: int | None = None
 
 USStageArtifactClassification = Literal[
     "contract_only",

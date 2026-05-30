@@ -6,7 +6,7 @@ import json
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field, fields, is_dataclass
 from pathlib import Path
-from typing import Any, ClassVar, Literal
+from typing import Any, Literal
 
 from microplex_us.pipelines.data_flow_snapshot import (
     write_us_microplex_data_flow_snapshot,
@@ -172,7 +172,11 @@ class USStageOutputManifest:
     complete: bool = True
     stage_id: str = field(default="", init=False)
 
-    required_output_keys: ClassVar[tuple[str, ...]] = ()
+    def required_output_keys(self) -> tuple[str, ...]:
+        """Return required output keys from the canonical stage contract."""
+
+        contract = get_us_pipeline_stage_contract(self.stage_id)
+        return tuple(resource.key for resource in contract.outputs if resource.required)
 
     def artifact_refs(self) -> dict[str, USArtifactRef]:
         """Return artifact references carried by this stage output manifest."""
@@ -190,7 +194,7 @@ class USStageOutputManifest:
         """Return required output keys not provided or not present on disk."""
 
         missing: list[str] = []
-        for key in self.required_output_keys:
+        for key in self.required_output_keys():
             value = getattr(self, key, None)
             if _required_output_is_missing(value, artifact_root):
                 missing.append(key)
@@ -238,7 +242,7 @@ class USStageOutputManifest:
             "inputOverrides": [
                 override.to_dict(artifact_root) for override in input_overrides
             ],
-            "requiredOutputs": list(self.required_output_keys),
+            "requiredOutputs": list(self.required_output_keys()),
             "missingRequiredOutputs": (
                 list(self.missing_required_outputs(artifact_root))
                 if artifact_root is not None
@@ -258,12 +262,6 @@ class USRunProfileOutputs(USStageOutputManifest):
     resolved_config: Mapping[str, Any] = field(default_factory=dict)
     provider_query_plan: Mapping[str, Any] = field(default_factory=dict)
 
-    required_output_keys: ClassVar[tuple[str, ...]] = (
-        "manifest",
-        "resolved_config",
-        "provider_query_plan",
-    )
-
 
 @dataclass(frozen=True)
 class USSourceLoadingOutputs(USStageOutputManifest):
@@ -272,12 +270,6 @@ class USSourceLoadingOutputs(USStageOutputManifest):
     source_descriptors: tuple[str, ...] = ()
     source_relationships: Mapping[str, Any] = field(default_factory=dict)
 
-    required_output_keys: ClassVar[tuple[str, ...]] = (
-        "observation_frame_summary",
-        "source_descriptors",
-        "source_relationships",
-    )
-
 
 @dataclass(frozen=True)
 class USSourcePlanningOutputs(USStageOutputManifest):
@@ -285,22 +277,12 @@ class USSourcePlanningOutputs(USStageOutputManifest):
     source_plan: USArtifactRef | None = None
     scaffold_selection: Mapping[str, Any] = field(default_factory=dict)
 
-    required_output_keys: ClassVar[tuple[str, ...]] = (
-        "source_plan",
-        "scaffold_selection",
-    )
-
 
 @dataclass(frozen=True)
 class USSeedScaffoldOutputs(USStageOutputManifest):
     stage_id: str = field(default="04_seed_scaffold", init=False)
     scaffold_seed_data: USArtifactRef | None = None
     seed_schema_metadata: Mapping[str, Any] = field(default_factory=dict)
-
-    required_output_keys: ClassVar[tuple[str, ...]] = (
-        "scaffold_seed_data",
-        "seed_schema_metadata",
-    )
 
 
 @dataclass(frozen=True)
@@ -311,23 +293,12 @@ class USDonorSynthesisOutputs(USStageOutputManifest):
     synthesis_metadata: Mapping[str, Any] = field(default_factory=dict)
     source_weight_diagnostics: USArtifactRef | None = None
 
-    required_output_keys: ClassVar[tuple[str, ...]] = (
-        "seed_data",
-        "synthetic_data",
-        "synthesis_metadata",
-    )
-
 
 @dataclass(frozen=True)
 class USPolicyEngineEntityOutputs(USStageOutputManifest):
     stage_id: str = field(default="06_policyengine_entities", init=False)
     policyengine_entity_tables: USArtifactRef | None = None
     materialized_policyengine_inputs: Mapping[str, Any] = field(default_factory=dict)
-
-    required_output_keys: ClassVar[tuple[str, ...]] = (
-        "policyengine_entity_tables",
-        "materialized_policyengine_inputs",
-    )
 
 
 @dataclass(frozen=True)
@@ -338,12 +309,6 @@ class USCalibrationOutputs(USStageOutputManifest):
     calibration_summary: USArtifactRef | None = None
     target_ledger: Mapping[str, Any] = field(default_factory=dict)
 
-    required_output_keys: ClassVar[tuple[str, ...]] = (
-        "calibrated_data",
-        "targets",
-        "calibration_summary",
-    )
-
 
 @dataclass(frozen=True)
 class USDatasetAssemblyOutputs(USStageOutputManifest):
@@ -353,14 +318,6 @@ class USDatasetAssemblyOutputs(USStageOutputManifest):
     data_flow_snapshot: USArtifactRef | None = None
     artifact_inventory: USArtifactRef | None = None
     conditional_readiness: USArtifactRef | None = None
-
-    required_output_keys: ClassVar[tuple[str, ...]] = (
-        "policyengine_dataset",
-        "stage_manifest",
-        "data_flow_snapshot",
-        "artifact_inventory",
-        "conditional_readiness",
-    )
 
 
 @dataclass(frozen=True)
@@ -373,11 +330,6 @@ class USValidationBenchmarkingOutputs(USStageOutputManifest):
     policyengine_native_audit: USArtifactRef | None = None
     imputation_ablation: USArtifactRef | None = None
     child_tax_unit_agi_drift: USArtifactRef | None = None
-
-    required_output_keys: ClassVar[tuple[str, ...]] = (
-        "validation_evidence",
-        "benchmark_summary",
-    )
 
 
 US_STAGE_OUTPUT_MANIFEST_TYPES: dict[str, type[USStageOutputManifest]] = {
@@ -408,6 +360,12 @@ class USStageRunWriter:
         self.manifest_payload: dict[str, Any] = dict(manifest_payload or {})
         self.allow_stage_input_overrides = allow_stage_input_overrides
         self.stage_input_overrides = tuple(stage_input_overrides)
+        if self.stage_input_overrides and not self.allow_stage_input_overrides:
+            raise ValueError(
+                "Stage input overrides require allow_stage_input_overrides=True"
+            )
+        for override in self.stage_input_overrides:
+            _validate_us_stage_input_override(override)
         self._recorded: dict[str, USStageOutputManifest] = {}
 
     @property
@@ -660,7 +618,7 @@ class USStageRunWriter:
         )
 
     def _stage_output_manifest_path(self, stage_id: str) -> Path:
-        return self.artifact_root / "stage_artifacts" / stage_id / "manifest.json"
+        return self.artifact_root / "stage_artifacts" / "manifests" / f"{stage_id}.json"
 
     def _previous_stage_manifest_ref(self, stage_id: str) -> str | None:
         stage_index = US_CANONICAL_STAGE_IDS.index(stage_id)
@@ -708,7 +666,10 @@ def build_us_stage_output_manifests_from_artifact_manifest(
     )
     benchmark_summary = _benchmark_summary(manifest)
     has_benchmark = bool(benchmark_summary)
-    has_dataset = _artifact_ref(root, artifacts, "policyengine_dataset", "08_dataset_assembly") is not None
+    has_dataset = (
+        _artifact_ref(root, artifacts, "policyengine_dataset", "08_dataset_assembly")
+        is not None
+    )
     return (
         USRunProfileOutputs(
             manifest=_artifact_ref(
@@ -731,7 +692,9 @@ def build_us_stage_output_manifests_from_artifact_manifest(
             complete=bool(source_names),
         ),
         USSourcePlanningOutputs(
-            source_plan=_artifact_ref(root, artifacts, "source_plan", "03_source_planning"),
+            source_plan=_artifact_ref(
+                root, artifacts, "source_plan", "03_source_planning"
+            ),
             scaffold_selection={"scaffold_source": synthesis.get("scaffold_source")},
             diagnostics=_diagnostics("03_source_planning", manifest),
             complete=_artifact_exists(root, artifacts, "source_plan"),
@@ -781,14 +744,17 @@ def build_us_stage_output_manifests_from_artifact_manifest(
                 "policyengine_entity_tables",
                 "06_policyengine_entities",
             ),
-            materialized_policyengine_inputs={
-                "policyengine_dataset": artifacts.get("policyengine_dataset")
-            },
+            materialized_policyengine_inputs=_policyengine_entity_metadata_summary(
+                root,
+                artifacts,
+            ),
             diagnostics=_diagnostics("06_policyengine_entities", manifest),
             complete=_artifact_exists(root, artifacts, "policyengine_entity_tables"),
         ),
         USCalibrationOutputs(
-            calibrated_data=_artifact_ref(root, artifacts, "calibrated_data", "07_calibration"),
+            calibrated_data=_artifact_ref(
+                root, artifacts, "calibrated_data", "07_calibration"
+            ),
             targets=_artifact_ref(root, artifacts, "targets", "07_calibration"),
             calibration_summary=_artifact_ref(
                 root,
@@ -811,7 +777,9 @@ def build_us_stage_output_manifests_from_artifact_manifest(
                 "policyengine_dataset",
                 "08_dataset_assembly",
             ),
-            stage_manifest=_derived_artifact_ref(root, "stage_manifest", "08_dataset_assembly"),
+            stage_manifest=_derived_artifact_ref(
+                root, "stage_manifest", "08_dataset_assembly"
+            ),
             data_flow_snapshot=_derived_artifact_ref(
                 root,
                 "data_flow_snapshot",
@@ -921,29 +889,40 @@ def resolve_us_manifest_or_contract_artifact_path(
         if not path.is_absolute():
             path = Path(artifact_root) / path
         return path
-    return resolve_us_stage_artifact_contract_path(artifact_root, stage_id, artifact_key)
+    return resolve_us_stage_artifact_contract_path(
+        artifact_root, stage_id, artifact_key
+    )
 
 
 def parse_us_stage_input_override(value: str) -> USStageInputOverride:
     """Parse STAGE_ID.KEY=PATH into a stage input override."""
 
     if "=" not in value:
-        raise ValueError(
-            "Stage input overrides must use STAGE_ID.KEY=PATH syntax"
-        )
+        raise ValueError("Stage input overrides must use STAGE_ID.KEY=PATH syntax")
     left, path = value.split("=", 1)
     if "." not in left:
-        raise ValueError(
-            "Stage input overrides must use STAGE_ID.KEY=PATH syntax"
-        )
+        raise ValueError("Stage input overrides must use STAGE_ID.KEY=PATH syntax")
     stage_id, key = left.split(".", 1)
     if not stage_id or not key or not path:
-        raise ValueError(
-            "Stage input overrides must use STAGE_ID.KEY=PATH syntax"
-        )
+        raise ValueError("Stage input overrides must use STAGE_ID.KEY=PATH syntax")
     if stage_id not in US_CANONICAL_STAGE_IDS:
         raise ValueError(f"Unknown US pipeline stage: {stage_id}")
-    return USStageInputOverride(stage_id=stage_id, key=key, path=path)
+    override = USStageInputOverride(stage_id=stage_id, key=key, path=path)
+    _validate_us_stage_input_override(override)
+    return override
+
+
+def _validate_us_stage_input_override(override: USStageInputOverride) -> None:
+    if override.stage_id not in US_CANONICAL_STAGE_IDS:
+        raise ValueError(f"Unknown US pipeline stage: {override.stage_id}")
+    contract = get_us_pipeline_stage_contract(override.stage_id)
+    input_keys = {resource.key for resource in contract.inputs}
+    if override.key not in input_keys:
+        valid_keys = ", ".join(sorted(input_keys)) or "none"
+        raise ValueError(
+            f"Unknown input override key {override.stage_id}.{override.key}; "
+            f"valid keys: {valid_keys}"
+        )
 
 
 def _artifact_ref(
@@ -977,7 +956,9 @@ def _derived_artifact_ref(
     stage_id: str,
 ) -> USArtifactRef:
     contract = get_us_stage_artifact_contract(stage_id, artifact_key)
-    path = resolve_us_stage_artifact_contract_path(artifact_root, stage_id, artifact_key)
+    path = resolve_us_stage_artifact_contract_path(
+        artifact_root, stage_id, artifact_key
+    )
     return USArtifactRef(
         key=artifact_key,
         path=str(path.relative_to(artifact_root)),
@@ -1003,6 +984,64 @@ def _artifact_path_exists(artifact_root: Path, value: Any) -> bool:
     if not path.is_absolute():
         path = artifact_root / path
     return path.exists()
+
+
+def _path_for_manifest(path: Path, artifact_root: Path) -> str:
+    try:
+        return str(path.relative_to(artifact_root))
+    except ValueError:
+        return str(path)
+
+
+def _policyengine_entity_metadata_summary(
+    artifact_root: Path,
+    artifacts: Mapping[str, Any],
+) -> dict[str, Any]:
+    declared = artifacts.get("policyengine_entity_tables")
+    if declared is None:
+        return {}
+    path = Path(str(declared))
+    if not path.is_absolute():
+        path = artifact_root / path
+    summary: dict[str, Any] = {
+        "metadata_path": _path_for_manifest(path, artifact_root),
+    }
+    if not path.exists() or not path.is_file():
+        return summary
+    try:
+        metadata = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return summary
+    if not isinstance(metadata, Mapping):
+        return summary
+    stage = metadata.get("stage")
+    if stage is not None:
+        summary["stage"] = stage
+    tables: dict[str, dict[str, Any]] = {}
+    for key in (
+        "households",
+        "persons",
+        "tax_units",
+        "spm_units",
+        "families",
+        "marital_units",
+    ):
+        table_metadata = metadata.get(key)
+        if not isinstance(table_metadata, Mapping):
+            continue
+        columns = table_metadata.get("columns", ())
+        column_names = (
+            [str(column) for column in columns]
+            if isinstance(columns, (list, tuple))
+            else []
+        )
+        tables[key] = {
+            "rows": table_metadata.get("rows"),
+            "columns": column_names,
+        }
+    if tables:
+        summary["tables"] = tables
+    return summary
 
 
 def _diagnostics(
@@ -1086,7 +1125,10 @@ def _serialize_value(value: Any, artifact_root: str | Path | None) -> Any:
     if isinstance(value, Path):
         return str(value)
     if isinstance(value, Mapping):
-        return {str(key): _serialize_value(item, artifact_root) for key, item in value.items()}
+        return {
+            str(key): _serialize_value(item, artifact_root)
+            for key, item in value.items()
+        }
     if isinstance(value, tuple):
         return [_serialize_value(item, artifact_root) for item in value]
     if isinstance(value, list):

@@ -11,9 +11,11 @@ canonical stages, status for the current run, artifact paths, diagnostics owned
 by each stage, and the current resume posture.
 
 Each saved bundle also includes typed per-stage output manifests at
-`stage_artifacts/<stage_id>/manifest.json`. These manifests are written through
+`stage_artifacts/manifests/<stage_id>.json`. These manifests are written through
 `USStageRunWriter`, which validates each stage as a whole instead of updating
-individual manifest keys directly.
+individual manifest keys directly. The manifest files live outside each stage's
+payload directory so they do not change the content hash of reloadable stage
+artifacts.
 
 The registry exposes two seam layers:
 
@@ -68,7 +70,7 @@ Saved bundles also expose two Stage 8 diagnostic artifacts:
 
 - `stage_artifacts/artifact_inventory.json` lists canonical stage artifacts,
   whether each path exists, whether it was referenced by the run manifest, its
-  resume role, size/file counts, and content hashes where hashing is practical.
+  resume role, size/file counts, and content hashes.
 - `stage_artifacts/conditional_readiness.json` summarizes which stage outputs
   are available for manual replay, manual resume, post-artifact evidence, or
   diagnostics only.

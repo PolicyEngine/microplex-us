@@ -829,7 +829,9 @@ class TestUSMicroplexPipeline:
         )
 
         tables = pipeline.build_policyengine_entity_tables(population)
-        households = tables.households.sort_values("household_id").reset_index(drop=True)
+        households = tables.households.sort_values("household_id").reset_index(
+            drop=True
+        )
 
         assert households["tenure_type"].tolist() == [
             "OWNER_WITH_MORTGAGE",
@@ -922,6 +924,54 @@ class TestUSMicroplexPipeline:
         assert len(tables.families) == 2
         assert person_rows.loc[:3, "family_id"].nunique() == 1
         assert person_rows.loc[4, "family_id"] != person_rows.loc[0, "family_id"]
+
+    def test_build_policyengine_entity_tables_preserves_complete_existing_group_ids(
+        self,
+    ):
+        pipeline = USMicroplexPipeline(USMicroplexBuildConfig())
+        population = pd.DataFrame(
+            {
+                "person_id": [1, 2, 3, 4],
+                "household_id": [10, 10, 10, 20],
+                "weight": [1.0, 1.0, 1.0, 2.0],
+                "age": [45, 12, 30, 70],
+                "income": [60_000.0, 0.0, 20_000.0, 25_000.0],
+                "relationship_to_head": [0, 2, 3, 0],
+                "family_id": [1, 1, 2, 1],
+                "spm_unit_id": [1, 2, 2, 1],
+                "marital_unit_id": [1, 2, 3, 1],
+            }
+        )
+
+        tables = pipeline.build_policyengine_entity_tables(population)
+        person_rows = tables.persons.sort_values("person_id").reset_index(drop=True)
+
+        assert len(tables.families) == 3
+        assert len(tables.spm_units) == 3
+        assert len(tables.marital_units) == 4
+        assert person_rows.loc[0, "family_id"] == person_rows.loc[1, "family_id"]
+        assert person_rows.loc[0, "family_id"] != person_rows.loc[3, "family_id"]
+        assert person_rows.loc[1, "spm_unit_id"] == person_rows.loc[2, "spm_unit_id"]
+        assert person_rows.loc[0, "spm_unit_id"] != person_rows.loc[3, "spm_unit_id"]
+        assert person_rows["marital_unit_id"].nunique() == 4
+
+    def test_build_policyengine_entity_tables_derives_is_household_head(self):
+        pipeline = USMicroplexPipeline(USMicroplexBuildConfig())
+        population = pd.DataFrame(
+            {
+                "person_id": [1, 2, 3],
+                "household_id": [10, 10, 20],
+                "weight": [1.0, 1.0, 2.0],
+                "age": [45, 12, 70],
+                "income": [60_000.0, 0.0, 25_000.0],
+                "relationship_to_head": [0, 2, 0],
+            }
+        )
+
+        tables = pipeline.build_policyengine_entity_tables(population)
+        persons = tables.persons.sort_values("person_id").reset_index(drop=True)
+
+        assert persons["is_household_head"].tolist() == [True, False, True]
 
     def test_build_policyengine_entity_tables_derives_tax_input_columns(self):
         pipeline = USMicroplexPipeline(USMicroplexBuildConfig())

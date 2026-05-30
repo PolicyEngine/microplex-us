@@ -149,7 +149,9 @@ _PIPELINE_CHECKPOINT_TABLES: tuple[str, ...] = (
     "marital_units",
 )
 
-_ALLOWED_CHECKPOINT_STAGES: frozenset[str] = frozenset({"post_imputation", "post_microsim"})
+_ALLOWED_CHECKPOINT_STAGES: frozenset[str] = frozenset(
+    {"post_imputation", "post_microsim"}
+)
 
 
 def save_us_pipeline_checkpoint(
@@ -217,9 +219,7 @@ def load_us_pipeline_checkpoint(
     checkpoint_dir = Path(path)
     metadata_path = checkpoint_dir / "metadata.json"
     if not metadata_path.exists():
-        raise FileNotFoundError(
-            f"US pipeline checkpoint not found at {checkpoint_dir}"
-        )
+        raise FileNotFoundError(f"US pipeline checkpoint not found at {checkpoint_dir}")
     metadata = json.loads(metadata_path.read_text())
 
     saved_stage = metadata.get("stage")
@@ -234,9 +234,7 @@ def load_us_pipeline_checkpoint(
         if metadata.get(table_name) is None:
             tables[table_name] = None
             continue
-        tables[table_name] = pd.read_parquet(
-            checkpoint_dir / f"{table_name}.parquet"
-        )
+        tables[table_name] = pd.read_parquet(checkpoint_dir / f"{table_name}.parquet")
     return PolicyEngineUSEntityTableBundle(**tables), metadata
 
 
@@ -557,15 +555,13 @@ POLICYENGINE_US_STRUCTURAL_COMPUTED_EXPORT_VARIABLES: frozenset[str] = frozenset
     }
 )
 
-POLICYENGINE_US_DATA_OVERRIDABLE_COMPUTED_EXPORT_VARIABLES: frozenset[str] = (
-    frozenset(
-        {
-            # policyengine-us-data intentionally persists stronger source-data
-            # inputs for these fallback formulas.
-            "fsla_overtime_premium",
-            "meets_ssi_disability_criteria",
-        }
-    )
+POLICYENGINE_US_DATA_OVERRIDABLE_COMPUTED_EXPORT_VARIABLES: frozenset[str] = frozenset(
+    {
+        # policyengine-us-data intentionally persists stronger source-data
+        # inputs for these fallback formulas.
+        "fsla_overtime_premium",
+        "meets_ssi_disability_criteria",
+    }
 )
 
 POLICYENGINE_US_ALLOWED_COMPUTED_EXPORT_VARIABLES: frozenset[str] = (
@@ -612,7 +608,9 @@ class PolicyEngineUSDBTargetProvider:
     ) -> dict[int, PolicyEngineUSStratum]:
         """Load strata with constraints and optional ancestor chain."""
         if not self.db_path.exists():
-            raise FileNotFoundError(f"PolicyEngine targets DB not found: {self.db_path}")
+            raise FileNotFoundError(
+                f"PolicyEngine targets DB not found: {self.db_path}"
+            )
 
         available_columns = self._table_columns("strata")
         has_definition_hash = "definition_hash" in available_columns
@@ -677,7 +675,9 @@ class PolicyEngineUSDBTargetProvider:
     ) -> list[PolicyEngineUSDBTarget]:
         """Load target rows with attached stratum constraints."""
         if not self.db_path.exists():
-            raise FileNotFoundError(f"PolicyEngine targets DB not found: {self.db_path}")
+            raise FileNotFoundError(
+                f"PolicyEngine targets DB not found: {self.db_path}"
+            )
 
         if self._has_target_overview_view() and best_period:
             return self._load_targets_via_target_overview(
@@ -700,9 +700,7 @@ class PolicyEngineUSDBTargetProvider:
             or domain_variable_is_null is not None
             or target_cells
         ):
-            raise ValueError(
-                "domain/geography filters require a target_overview view"
-            )
+            raise ValueError("domain/geography filters require a target_overview view")
 
         strata_columns = self._table_columns("strata")
         definition_hash_select = (
@@ -1032,7 +1030,9 @@ class PolicyEngineUSDBTargetProvider:
                     "value": float(row["target_value"]),
                     "active": bool(row["active"]),
                     "tolerance": (
-                        float(row["tolerance"]) if row["tolerance"] is not None else None
+                        float(row["tolerance"])
+                        if row["tolerance"] is not None
+                        else None
                     ),
                     "source": row["source"],
                     "notes": row["notes"],
@@ -1299,7 +1299,9 @@ class PolicyEngineUSDBTargetProvider:
             and "congressional_district_geoid" in child_equalities
         ):
             parent_state = int(parent_equalities["state_fips"])
-            district_state = int(child_equalities["congressional_district_geoid"]) // 100
+            district_state = (
+                int(child_equalities["congressional_district_geoid"]) // 100
+            )
             if district_state != parent_state:
                 return (
                     f"Stratum {child.stratum_id} has congressional_district_geoid="
@@ -1632,7 +1634,9 @@ def materialize_policyengine_us_variables(
             for start in range(0, n_households, batch_size):
                 end = min(start + batch_size, n_households)
                 chunk_ids = household_ids[start:end]
-                chunk_tables = subset_policyengine_tables_by_households(tables, chunk_ids)
+                chunk_tables = subset_policyengine_tables_by_households(
+                    tables, chunk_ids
+                )
                 chunk_result, chunk_binding = materialize_policyengine_us_variables(
                     chunk_tables,
                     variables=variables,
@@ -1732,16 +1736,18 @@ def materialize_policyengine_us_variables_safely(
         )
 
     try:
-        materialized_tables, materialized_bindings = materialize_policyengine_us_variables(
-            tables,
-            variables=requested_variables,
-            period=period,
-            dataset_year=dataset_year,
-            simulation_cls=simulation_cls,
-            microsimulation_kwargs=microsimulation_kwargs,
-            temp_dir=temp_dir,
-            direct_override_variables=direct_override_variables,
-            batch_size=batch_size,
+        materialized_tables, materialized_bindings = (
+            materialize_policyengine_us_variables(
+                tables,
+                variables=requested_variables,
+                period=period,
+                dataset_year=dataset_year,
+                simulation_cls=simulation_cls,
+                microsimulation_kwargs=microsimulation_kwargs,
+                temp_dir=temp_dir,
+                direct_override_variables=direct_override_variables,
+                batch_size=batch_size,
+            )
         )
     except Exception:
         return _materialize_policyengine_us_variables_one_by_one(
@@ -1780,15 +1786,17 @@ def _materialize_policyengine_us_variables_one_by_one(
 
     for variable in requested_variables:
         try:
-            materialized_tables, materialized_bindings = materialize_policyengine_us_variables(
-                working_tables,
-                variables=(variable,),
-                period=period,
-                dataset_year=dataset_year,
-                simulation_cls=simulation_cls,
-                microsimulation_kwargs=microsimulation_kwargs,
-                temp_dir=temp_dir,
-                direct_override_variables=direct_override_variables,
+            materialized_tables, materialized_bindings = (
+                materialize_policyengine_us_variables(
+                    working_tables,
+                    variables=(variable,),
+                    period=period,
+                    dataset_year=dataset_year,
+                    simulation_cls=simulation_cls,
+                    microsimulation_kwargs=microsimulation_kwargs,
+                    temp_dir=temp_dir,
+                    direct_override_variables=direct_override_variables,
+                )
             )
         except Exception as exc:
             failed_variables[variable] = f"{type(exc).__name__}: {exc}"
@@ -1836,7 +1844,9 @@ def _merge_materialized_policyengine_bindings(
             continue
         source_table = source_tables.table_for(binding.entity)
         destination_table = merged_tables.table_for(binding.entity)
-        destination_table[binding.column] = source_table[binding.column].to_numpy(copy=True)
+        destination_table[binding.column] = source_table[binding.column].to_numpy(
+            copy=True
+        )
     return merged_tables
 
 
@@ -1849,9 +1859,7 @@ def load_policyengine_us_entity_tables(
     """Load a PE-US time-period dataset into a multientity table bundle."""
     period_key = str(period)
     requested_variables = (
-        None
-        if variables is None
-        else {str(variable) for variable in variables}
+        None if variables is None else {str(variable) for variable in variables}
     )
     try:
         tax_benefit_system = _resolve_policyengine_us_tax_benefit_system(
@@ -2121,11 +2129,7 @@ def compile_supported_policyengine_us_household_linear_constraints(
 
 
 def _policyengine_us_target_required_variables(targets: list[TargetSpec]) -> set[str]:
-    return {
-        feature
-        for target in targets
-        for feature in target.required_features
-    }
+    return {feature for target in targets for feature in target.required_features}
 
 
 def policyengine_us_formula_variables_for_targets(
@@ -2140,9 +2144,7 @@ def policyengine_us_formula_variables_for_targets(
     if not required_variables:
         return set()
     if tax_benefit_system is None:
-        tax_benefit_system = _resolve_policyengine_us_tax_benefit_system(
-            simulation_cls
-        )
+        tax_benefit_system = _resolve_policyengine_us_tax_benefit_system(simulation_cls)
     variables = getattr(tax_benefit_system, "variables", {})
     direct_overrides = set(direct_override_variables)
     formula_variables: set[str] = set()
@@ -2160,7 +2162,9 @@ def policyengine_us_formula_variables_for_targets(
 def _policyengine_us_variable_is_calculated(variable_metadata: Any) -> bool:
     if getattr(variable_metadata, "formulas", {}):
         return True
-    if getattr(variable_metadata, "adds", ()) or getattr(variable_metadata, "subtracts", ()):
+    if getattr(variable_metadata, "adds", ()) or getattr(
+        variable_metadata, "subtracts", ()
+    ):
         return True
     is_input_variable = getattr(variable_metadata, "is_input_variable", None)
     if callable(is_input_variable):
@@ -2278,9 +2282,7 @@ def _infer_policyengine_array_entity(
         except (KeyError, ValueError):
             pass
     matching_entities = [
-        entity
-        for entity, length in entity_lengths.items()
-        if len(values) == length
+        entity for entity, length in entity_lengths.items() if len(values) == length
     ]
     if len(matching_entities) == 1:
         return matching_entities[0]
@@ -2385,11 +2387,13 @@ def _compile_household_coefficients(
 
     target_measure = _target_measure(target)
     if target_binding.column is None or target_measure is None:
-        raise ValueError(f"Target '{_policyengine_target_name(target)}' has no source column")
+        raise ValueError(
+            f"Target '{_policyengine_target_name(target)}' has no source column"
+        )
 
-    target_values = pd.to_numeric(target_table[target_binding.column], errors="coerce").fillna(
-        0.0
-    )
+    target_values = pd.to_numeric(
+        target_table[target_binding.column], errors="coerce"
+    ).fillna(0.0)
     row_mask = pd.Series(True, index=target_table.index, dtype=bool)
     household_constraints: list[PolicyEngineUSConstraint | TargetFilter] = []
     for constraint in _target_constraints(target):
@@ -2398,12 +2402,12 @@ def _compile_household_coefficients(
             bindings,
             tables,
         )
-        if (
-            constraint_binding.entity in {target_binding.entity, EntityType.HOUSEHOLD}
-            or _can_align_constraint_to_target_rows(
-                target_rows=target_table,
-                constraint_binding=constraint_binding,
-            )
+        if constraint_binding.entity in {
+            target_binding.entity,
+            EntityType.HOUSEHOLD,
+        } or _can_align_constraint_to_target_rows(
+            target_rows=target_table,
+            constraint_binding=constraint_binding,
         ):
             row_mask &= _evaluate_constraint_mask(
                 target_rows=target_table,
@@ -2462,10 +2466,10 @@ def _resolve_binding(
     if variable in bindings:
         return bindings[variable]
     if variable in tables.households.columns:
-        return PolicyEngineUSVariableBinding(entity=EntityType.HOUSEHOLD, column=variable)
-    raise KeyError(
-        f"No PolicyEngine binding configured for variable '{variable}'"
-    )
+        return PolicyEngineUSVariableBinding(
+            entity=EntityType.HOUSEHOLD, column=variable
+        )
+    raise KeyError(f"No PolicyEngine binding configured for variable '{variable}'")
 
 
 def _resolve_target_binding(
@@ -2541,7 +2545,9 @@ def _evaluate_constraint_mask(
     bindings: dict[str, PolicyEngineUSVariableBinding],
     household_id_column: str,
 ) -> pd.Series:
-    constraint_binding = _resolve_binding(_constraint_feature(constraint), bindings, tables)
+    constraint_binding = _resolve_binding(
+        _constraint_feature(constraint), bindings, tables
+    )
     constraint_column = _require_binding_column(
         constraint_binding,
         feature=_constraint_feature(constraint),
@@ -2551,7 +2557,9 @@ def _evaluate_constraint_mask(
         return _apply_constraint_filter(target_rows[constraint_column], constraint)
 
     if constraint_binding.entity is EntityType.HOUSEHOLD:
-        household_values = tables.households.set_index(household_id_column)[constraint_column]
+        household_values = tables.households.set_index(household_id_column)[
+            constraint_column
+        ]
         aligned = target_household_ids.map(household_values)
         return _apply_constraint_filter(aligned, constraint)
 
@@ -2636,7 +2644,10 @@ def _align_related_entity_constraint_mask(
     if persons is None:
         return None
     related_id_column = _entity_primary_id_column(target_binding.entity)
-    if related_id_column not in target_rows.columns or related_id_column not in persons.columns:
+    if (
+        related_id_column not in target_rows.columns
+        or related_id_column not in persons.columns
+    ):
         return None
     constraint_column = _require_binding_column(
         constraint_binding,
@@ -2669,11 +2680,17 @@ def _evaluate_constraint_on_households(
         )
 
     table = tables.table_for(binding.entity)
-    related_household_ids = _household_ids_for_entity_table(table, binding, household_id_column)
+    related_household_ids = _household_ids_for_entity_table(
+        table, binding, household_id_column
+    )
     row_matches = _apply_constraint_filter(table[binding_column], constraint)
-    return row_matches.groupby(related_household_ids).any().reindex(
-        household_ids,
-        fill_value=False,
+    return (
+        row_matches.groupby(related_household_ids)
+        .any()
+        .reindex(
+            household_ids,
+            fill_value=False,
+        )
     )
 
 
@@ -2725,7 +2742,9 @@ def _target_value(target: PolicyEngineUSDBTarget | TargetSpec) -> float:
     return float(target.value)
 
 
-def _target_aggregation(target: PolicyEngineUSDBTarget | TargetSpec) -> TargetAggregation:
+def _target_aggregation(
+    target: PolicyEngineUSDBTarget | TargetSpec,
+) -> TargetAggregation:
     if isinstance(target, TargetSpec):
         return target.aggregation
     if target.variable in DEFAULT_POLICYENGINE_US_VARIABLE_BINDINGS:
@@ -2750,7 +2769,11 @@ def _target_constraints(
 
 
 def _constraint_feature(constraint: PolicyEngineUSConstraint | TargetFilter) -> str:
-    return constraint.feature if isinstance(constraint, TargetFilter) else constraint.variable
+    return (
+        constraint.feature
+        if isinstance(constraint, TargetFilter)
+        else constraint.variable
+    )
 
 
 def _constraint_operator(constraint: PolicyEngineUSConstraint | TargetFilter) -> str:
@@ -2775,9 +2798,14 @@ def build_policyengine_us_export_variable_maps(
         variable_metadata,
         direct_override_variables=direct_override_variables,
     )
+    person_table = _with_policyengine_person_export_derivatives(tables.persons)
     table_specs = (
-        ("household", tables.households, {"household_id", "household_weight", "weight"}),
-        ("person", tables.persons, {"person_id", "household_id"}),
+        (
+            "household",
+            tables.households,
+            {"household_id", "household_weight", "weight"},
+        ),
+        ("person", person_table, {"person_id", "household_id"}),
         ("tax_unit", tables.tax_units, {"tax_unit_id", "household_id"}),
         ("spm_unit", tables.spm_units, {"spm_unit_id", "household_id"}),
         ("family", tables.families, {"family_id", "household_id"}),
@@ -2816,8 +2844,9 @@ def build_policyengine_us_time_period_arrays(
         household_id_column=household_id_column,
         household_weight_column=household_weight_column,
     )
+    person_table = _with_policyengine_person_export_derivatives(tables.persons)
     persons = _prepare_person_export_table(
-        tables.persons,
+        person_table,
         person_id_column=person_id_column,
         household_id_column=household_id_column,
         household_ids=pd.Index(households[household_id_column]),
@@ -2856,8 +2885,20 @@ def build_policyengine_us_time_period_arrays(
     )
 
     group_specs = (
-        ("tax_unit", "tax_unit_id", tables.tax_units, tax_unit_variable_map, "household"),
-        ("spm_unit", "spm_unit_id", tables.spm_units, spm_unit_variable_map, "household"),
+        (
+            "tax_unit",
+            "tax_unit_id",
+            tables.tax_units,
+            tax_unit_variable_map,
+            "household",
+        ),
+        (
+            "spm_unit",
+            "spm_unit_id",
+            tables.spm_units,
+            spm_unit_variable_map,
+            "household",
+        ),
         ("family", "family_id", tables.families, family_variable_map, "household"),
         (
             "marital_unit",
@@ -2933,7 +2974,9 @@ def _resolve_policyengine_variable_entity(
     variables = getattr(tax_benefit_system, "variables", {})
     variable_metadata = variables.get(variable)
     if variable_metadata is None:
-        raise KeyError(f"PolicyEngine variable '{variable}' not found in tax-benefit system")
+        raise KeyError(
+            f"PolicyEngine variable '{variable}' not found in tax-benefit system"
+        )
     entity_key = getattr(getattr(variable_metadata, "entity", None), "key", None)
     if entity_key not in POLICYENGINE_US_ENTITY_KEY_TO_ENTITY_TYPE:
         raise ValueError(
@@ -3053,7 +3096,9 @@ def _attach_policyengine_variables_to_tables(
                 f"{entity.value}, expected {len(table)}"
             )
         table[variable] = values
-        bindings[variable] = PolicyEngineUSVariableBinding(entity=entity, column=variable)
+        bindings[variable] = PolicyEngineUSVariableBinding(
+            entity=entity, column=variable
+        )
 
     return (
         PolicyEngineUSEntityTableBundle(
@@ -3107,7 +3152,9 @@ def project_frame_to_time_period_arrays(
     for source_column, target_variable in column_map.items():
         if source_column not in frame.columns:
             raise ValueError(f"Projection source column not found: {source_column}")
-        arrays[target_variable] = {str(period): _normalize_h5_value(frame[source_column])}
+        arrays[target_variable] = {
+            str(period): _normalize_h5_value(frame[source_column])
+        }
     return arrays
 
 
@@ -3211,6 +3258,23 @@ def _prepare_person_export_table(
     return person_table
 
 
+def _with_policyengine_person_export_derivatives(
+    persons: pd.DataFrame | None,
+) -> pd.DataFrame | None:
+    if persons is None or "is_household_head" in persons.columns:
+        return persons
+    if "relationship_to_head" not in persons.columns:
+        return persons
+
+    person_table = persons.copy()
+    relationship = pd.to_numeric(
+        person_table["relationship_to_head"],
+        errors="coerce",
+    )
+    person_table["is_household_head"] = relationship.eq(0).fillna(False)
+    return person_table
+
+
 def _resolve_person_group_ids(
     *,
     group_name: str,
@@ -3292,9 +3356,10 @@ def _extract_membership_ids_from_group_table(
             name=id_column,
         )
 
-    if household_id_column in provided_table.columns and not provided_table[
-        household_id_column
-    ].duplicated().any():
+    if (
+        household_id_column in provided_table.columns
+        and not provided_table[household_id_column].duplicated().any()
+    ):
         household_map = (
             provided_table[[id_column, household_id_column]]
             .assign(
@@ -3347,10 +3412,9 @@ def _resolve_group_export_table(
         normalized_households = _normalize_id_value(group_table[household_id_column])
         group_table[household_id_column] = normalized_households
         expected = group_table[id_column].map(household_map)
-        mismatch = (
-            expected.notna()
-            & pd.Series(normalized_households, index=group_table.index).ne(expected)
-        )
+        mismatch = expected.notna() & pd.Series(
+            normalized_households, index=group_table.index
+        ).ne(expected)
         if mismatch.any():
             raise ValueError(
                 f"{group_name} export table household links are inconsistent with person memberships"
@@ -3359,7 +3423,9 @@ def _resolve_group_export_table(
         group_table[household_id_column] = group_table[id_column].map(household_map)
 
     if group_table[household_id_column].isna().any():
-        missing = group_table.loc[group_table[household_id_column].isna(), id_column].tolist()
+        missing = group_table.loc[
+            group_table[household_id_column].isna(), id_column
+        ].tolist()
         raise ValueError(
             f"Could not derive household links for {group_name} ids: {missing}"
         )
@@ -3419,9 +3485,7 @@ def _project_table_to_time_period_arrays(
                     string_values.notna() & string_values.ne(""),
                     other=default_value,
                 )
-        values = _normalize_policyengine_us_export_enum_values(
-            target_variable, values
-        )
+        values = _normalize_policyengine_us_export_enum_values(target_variable, values)
         arrays[target_variable] = {
             period_key: _normalize_h5_value(values),
         }
@@ -3463,6 +3527,9 @@ def _normalize_id_value(values: Any) -> np.ndarray:
 
 
 def _normalize_weight_value(values: Any) -> np.ndarray:
-    return pd.to_numeric(pd.Series(values), errors="coerce").fillna(0.0).astype(
-        np.float32
-    ).to_numpy()
+    return (
+        pd.to_numeric(pd.Series(values), errors="coerce")
+        .fillna(0.0)
+        .astype(np.float32)
+        .to_numpy()
+    )

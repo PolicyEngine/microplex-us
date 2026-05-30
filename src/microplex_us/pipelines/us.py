@@ -4208,6 +4208,7 @@ class USMicroplexPipeline:
             arrays,
             path,
             excluded_variables=excluded_variables,
+            tax_benefit_system=tax_benefit_system,
         )
 
     def _fit_synthesizer(

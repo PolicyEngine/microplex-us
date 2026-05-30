@@ -78,80 +78,6 @@ _CORE_BENCHMARK_ECPS_TARGET_FAMILIES = (
 _PROTECTED_FAMILY_RELATIVE_LOSS_TOLERANCE = 0.05
 _PROTECTED_FAMILY_ABSOLUTE_LOSS_TOLERANCE = 0.005
 _DEFAULT_MAX_SUPPORT_WEIGHT_SHARE = 0.25
-_ECPS_TRANSIENT_INPUT_COLUMNS = frozenset(
-    {
-        "free_school_meals_reported",
-        "reduced_price_school_meals_reported",
-        "reported_has_champva_health_coverage_at_interview",
-        "reported_has_chip_health_coverage_at_interview",
-        "reported_has_direct_purchase_health_coverage_at_interview",
-        "reported_has_employer_sponsored_health_coverage_at_interview",
-        "reported_has_indian_health_service_coverage_at_interview",
-        "reported_has_marketplace_health_coverage_at_interview",
-        "reported_has_means_tested_health_coverage_at_interview",
-        "reported_has_medicaid_health_coverage_at_interview",
-        "reported_has_medicare_health_coverage_at_interview",
-        "reported_has_multiple_health_coverage_at_interview",
-        "reported_has_non_marketplace_direct_purchase_health_coverage_at_interview",
-        "reported_has_other_means_tested_health_coverage_at_interview",
-        "reported_has_private_health_coverage_at_interview",
-        "reported_has_public_health_coverage_at_interview",
-        "reported_has_subsidized_marketplace_health_coverage_at_interview",
-        "reported_has_tricare_health_coverage_at_interview",
-        "reported_has_unsubsidized_marketplace_health_coverage_at_interview",
-        "reported_has_va_health_coverage_at_interview",
-        "reported_is_insured_at_interview",
-        "reported_is_uninsured_at_interview",
-        "snap_reported",
-        "spm_unit_broadband_subsidy_reported",
-        "spm_unit_capped_housing_subsidy_reported",
-        "spm_unit_energy_subsidy_reported",
-        "spm_unit_federal_tax_reported",
-        "spm_unit_net_income_reported",
-        "spm_unit_payroll_tax_reported",
-        "spm_unit_state_tax_reported",
-        "spm_unit_total_income_reported",
-        "spm_unit_wic_reported",
-        "ssi_reported",
-        "tanf_reported",
-    }
-)
-_ECPS_RENAMED_CONTRACT_COLUMNS = {
-    # PE-US now distinguishes reported/source premiums from formula-computed
-    # out-of-pocket premiums.
-    "medicare_part_b_premiums": ("medicare_part_b_premiums_reported",),
-    # PE-US now constrains retirement contributions through formula outputs
-    # backed by desired pre-limit input variables.
-    "roth_401k_contributions": ("roth_401k_contributions_desired",),
-    "roth_ira_contributions": ("roth_ira_contributions_desired",),
-    "self_employed_pension_contributions": (
-        "self_employed_pension_contributions_desired",
-    ),
-    "traditional_401k_contributions": ("traditional_401k_contributions_desired",),
-    "traditional_ira_contributions": ("traditional_ira_contributions_desired",),
-}
-_ECPS_CURRENT_PE_CALCULATED_OR_LEGACY_COLUMNS = frozenset(
-    {
-        # Current PE-US formula/aggregate outputs. Microplex should preserve
-        # their inputs and let PE-US calculate these, not write raw overrides.
-        "medicare_enrolled",
-        "roth_401k_contributions",
-        "roth_ira_contributions",
-        "self_employed_health_insurance_ald",
-        "self_employed_pension_contribution_ald",
-        "self_employed_pension_contributions",
-        "spm_unit_capped_work_childcare_expenses",
-        "traditional_401k_contributions",
-        "traditional_ira_contributions",
-        # eCPS-era columns that are not current PE-US variables.
-        "has_valid_ssn",
-        "is_tipped_occupation",
-        "other_type_retirement_account_distributions",
-        "regular_ira_distributions",
-        "roth_ira_distributions",
-        "taxpayer_id_type",
-    }
-)
 _FORBIDDEN_SOURCE_DIAGNOSTIC_VARIABLES = frozenset(
     {
         "ssi_reported",
@@ -530,84 +456,39 @@ def _column_contract_gate(
     period_key = str(int(period))
     candidate_columns = _h5_period_columns(candidate_dataset, period_key=period_key)
     baseline_columns = _h5_period_columns(baseline_dataset, period_key=period_key)
-    excluded_transient = sorted(
-        column for column in baseline_columns if column in _ECPS_TRANSIENT_INPUT_COLUMNS
-    )
-    contract_columns = sorted(
-        column
-        for column in baseline_columns
-        if column not in _ECPS_TRANSIENT_INPUT_COLUMNS
-    )
+    contract_columns = sorted(baseline_columns)
     candidate_column_set = set(candidate_columns)
-    replacement_matches: dict[str, str] = {}
-    calculated_or_legacy_contract_columns: list[str] = []
-    missing_contract_columns: list[str] = []
-    for column in contract_columns:
-        if column in candidate_column_set:
-            continue
-        replacement = next(
-            (
-                candidate
-                for candidate in _ECPS_RENAMED_CONTRACT_COLUMNS.get(column, ())
-                if candidate in candidate_column_set
-            ),
-            None,
-        )
-        if replacement is not None:
-            replacement_matches[column] = replacement
-            continue
-        if column in _ECPS_CURRENT_PE_CALCULATED_OR_LEGACY_COLUMNS:
-            calculated_or_legacy_contract_columns.append(column)
-            continue
-        missing_contract_columns.append(column)
-    missing_contract_columns = sorted(missing_contract_columns)
-    calculated_or_legacy_contract_columns = sorted(
-        calculated_or_legacy_contract_columns
-    )
+    contract_column_set = set(contract_columns)
+    missing_contract_columns = sorted(contract_column_set - candidate_column_set)
     extra_candidate_columns = sorted(set(candidate_columns) - set(contract_columns))
-    satisfied_count = (
-        len(contract_columns)
-        - len(missing_contract_columns)
-        - len(calculated_or_legacy_contract_columns)
-    )
-    accepted_count = len(contract_columns) - len(missing_contract_columns)
+    satisfied_count = len(contract_columns) - len(missing_contract_columns)
     contract_share = (
-        float(accepted_count / len(contract_columns)) if contract_columns else None
+        float(satisfied_count / len(contract_columns)) if contract_columns else None
     )
     metrics = {
         "period": int(period),
         "baseline_column_count": len(baseline_columns),
         "candidate_column_count": len(candidate_columns),
-        "excluded_transient_column_count": len(excluded_transient),
         "contract_column_count": len(contract_columns),
         "candidate_contract_column_count": satisfied_count,
-        "replacement_contract_column_count": len(replacement_matches),
-        "calculated_or_legacy_contract_column_count": len(
-            calculated_or_legacy_contract_columns
-        ),
         "missing_contract_column_count": len(missing_contract_columns),
         "extra_candidate_column_count": len(extra_candidate_columns),
         "column_contract_share": contract_share,
     }
     details = {
         "missing_contract_columns": missing_contract_columns,
-        "replacement_contract_columns": dict(sorted(replacement_matches.items())),
-        "calculated_or_legacy_contract_columns": (
-            calculated_or_legacy_contract_columns
-        ),
         "extra_candidate_columns": extra_candidate_columns,
-        "excluded_transient_columns": excluded_transient,
     }
-    if missing_contract_columns:
+    if missing_contract_columns or extra_candidate_columns:
         return _gate(
             "fail",
-            "candidate H5 is missing pinned eCPS contract columns",
+            "candidate H5 column set differs from the pinned eCPS contract",
             metrics=metrics,
             details=details,
         )
     return _gate(
         "pass",
-        "candidate H5 contains every pinned eCPS contract column",
+        "candidate H5 column set matches the pinned eCPS contract",
         metrics=metrics,
         details=details,
     )

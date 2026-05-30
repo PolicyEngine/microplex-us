@@ -305,7 +305,7 @@ def test_column_contract_gate_rejects_missing_ecps_contract_column(tmp_path):
     artifact_dir.mkdir()
     _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
     baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
-    _add_period_dataset(baseline_dataset, "filing_status", [1, 2])
+    _add_period_dataset(baseline_dataset, "age", [34, 12, 45])
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
     _write_benchmark_manifest(benchmark_manifest)
     _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
@@ -326,7 +326,7 @@ def test_column_contract_gate_rejects_missing_ecps_contract_column(tmp_path):
     assert record["summary"]["status"] == "failed"
     assert column_gate["status"] == "fail"
     assert column_gate["metrics"]["missing_contract_column_count"] == 1
-    assert column_gate["details"]["missing_contract_columns"] == ["filing_status"]
+    assert column_gate["details"]["missing_contract_columns"] == ["age"]
 
 
 def test_column_contract_gate_rejects_extra_candidate_columns(tmp_path):
@@ -400,7 +400,7 @@ def test_column_contract_gate_rejects_renamed_candidate_columns(tmp_path):
     ]
 
 
-def test_column_contract_gate_rejects_missing_calculated_outputs_from_baseline(
+def test_column_contract_gate_excludes_computed_baseline_outputs(
     tmp_path,
 ):
     artifact_dir = tmp_path / "artifact"
@@ -418,6 +418,38 @@ def test_column_contract_gate_rejects_missing_calculated_outputs_from_baseline(
         "spm_unit_capped_work_childcare_expenses",
         [0.0, 0.0],
     )
+    benchmark_manifest = tmp_path / "benchmark_manifest.json"
+    _write_benchmark_manifest(benchmark_manifest)
+    _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
+
+    report_path = write_mp300k_artifact_gate_report(
+        artifact_dir,
+        ecps_comparison_payload=_sound_ecps_comparison_payload(),
+        arch_coverage_payload=_arch_coverage_payload(),
+        runtime_smoke_payload={"runtime_ratio": 1.0},
+        benchmark_manifest_path=benchmark_manifest,
+        compute_native_scores=False,
+        update_manifest=False,
+    )
+
+    record = json.loads(report_path.read_text())
+    column_gate = record["gates"]["column_contract"]
+
+    assert record["summary"]["status"] == "passed"
+    assert column_gate["status"] == "pass"
+    assert column_gate["metrics"]["excluded_baseline_computed_column_count"] == 3
+    assert column_gate["details"]["excluded_baseline_computed_columns"] == [
+        "self_employed_pension_contribution_ald",
+        "spm_unit_capped_work_childcare_expenses",
+        "traditional_ira_contributions",
+    ]
+
+
+def test_column_contract_gate_rejects_missing_legacy_baseline_columns(tmp_path):
+    artifact_dir = tmp_path / "artifact"
+    artifact_dir.mkdir()
+    _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
+    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
     _add_period_dataset(baseline_dataset, "taxpayer_id_type", [1, 1, 1])
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
     _write_benchmark_manifest(benchmark_manifest)
@@ -438,13 +470,7 @@ def test_column_contract_gate_rejects_missing_calculated_outputs_from_baseline(
 
     assert record["summary"]["status"] == "failed"
     assert column_gate["status"] == "fail"
-    assert column_gate["metrics"]["missing_contract_column_count"] == 4
-    assert column_gate["details"]["missing_contract_columns"] == [
-        "self_employed_pension_contribution_ald",
-        "spm_unit_capped_work_childcare_expenses",
-        "taxpayer_id_type",
-        "traditional_ira_contributions",
-    ]
+    assert column_gate["details"]["missing_contract_columns"] == ["taxpayer_id_type"]
 
 
 def test_source_weight_diagnostics_gate_rejects_missing_sidecar(tmp_path):

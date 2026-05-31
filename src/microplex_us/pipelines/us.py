@@ -6320,11 +6320,19 @@ class USMicroplexPipeline:
             return None
         cps_frame = persons
         if not set(self._MICROUNIT_REQUIRED_CPS_COLUMNS).issubset(persons.columns):
-            # PROTOTYPE (#115): when the raw CPS columns are absent, optionally
-            # synthesize microunit's CPS contract from microplex's normalized
-            # columns. Default OFF — the maps are heuristic and unvalidated.
+            # microunit is microplex's required tax-unit engine (#113). When the
+            # raw CPS columns are absent, synthesize its CPS contract from the
+            # normalized frame. The high-fidelity path (real person_number /
+            # spouse_person_number / family_relationship, which the production
+            # candidate carries) is used by DEFAULT; the coarse
+            # relationship_to_head-only heuristic stays opt-in via the config flag
+            # so minimal frames don't silently get the lossy reconstruction.
+            has_high_fidelity_fields = {
+                "person_number",
+                "family_relationship",
+            }.issubset(persons.columns)
             if allow_normalized_adapter is None:
-                allow_normalized_adapter = bool(
+                allow_normalized_adapter = has_high_fidelity_fields or bool(
                     getattr(self.config, "microunit_construct_from_normalized", False)
                 )
             if not allow_normalized_adapter:

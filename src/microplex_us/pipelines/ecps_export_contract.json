@@ -3,7 +3,8 @@
   "_categories": {
     "required": "Columns MP MUST export to match eCPS. The gate FAILS if any are missing from the candidate export. Equals the 244 eCPS columns minus the eCPS clone-bookkeeping columns in ecps_internal_optional.",
     "ecps_internal_optional": "eCPS clone-bookkeeping columns (PUF-clone flags). eCPS emits these internally; MP is NOT required to export them, so they never count as missing. The gate neither requires nor forbids them.",
-    "forbidden": "Transient takeup-input columns (the *_reported / *_at_interview family) that eCPS deliberately drops from its export. The gate FAILS if MP exports any of these."
+    "forbidden": "Transient takeup-input columns (the *_reported / *_at_interview family) that eCPS deliberately drops from its export. The gate FAILS if MP exports any of these.",
+    "formula_owned_excluded": "pe-us FORMULA variables (def formula confirmed in policyengine-us 1.715.2 source). eCPS leaks them but MP should not export formulas; neither required nor forbidden."
   },
   "_source": "eCPS baseline H5 export column set (244 columns).",
   "required": [
@@ -54,14 +55,12 @@
     "has_esi",
     "has_felony_drug_conviction",
     "has_indian_health_service_coverage_at_interview",
-    "has_itin",
     "has_marketplace_health_coverage",
     "has_marketplace_health_coverage_at_interview",
     "has_medicaid_health_coverage_at_interview",
     "has_never_worked",
     "has_non_marketplace_direct_purchase_health_coverage_at_interview",
     "has_other_means_tested_health_coverage_at_interview",
-    "has_tin",
     "has_tricare_health_coverage_at_interview",
     "has_va_health_coverage_at_interview",
     "has_valid_ssn",
@@ -75,7 +74,6 @@
     "household_vehicles_value",
     "household_weight",
     "immigration_status_str",
-    "in_nyc",
     "investment_income_elected_form_4952",
     "investment_interest_expense",
     "is_blind",
@@ -153,8 +151,8 @@
     "reported_is_insured_at_interview",
     "reported_is_uninsured_at_interview",
     "reported_owns_employer_sponsored_health_insurance_at_interview",
-    "roth_401k_contributions",
-    "roth_ira_contributions",
+    "roth_401k_contributions_desired",
+    "roth_ira_contributions_desired",
     "roth_ira_distributions",
     "salt_refund_income",
     "scf_business_equity",
@@ -180,7 +178,7 @@
     "second_home_mortgage_interest",
     "second_home_mortgage_origination_year",
     "selected_marketplace_plan_benchmark_ratio",
-    "self_employed_pension_contributions",
+    "self_employed_pension_contributions_desired",
     "self_employment_income_before_lsr",
     "self_employment_income_last_year",
     "self_employment_income_would_be_qualified",
@@ -231,8 +229,8 @@
     "tenure_type",
     "tip_income",
     "tract_geoid",
-    "traditional_401k_contributions",
-    "traditional_ira_contributions",
+    "traditional_401k_contributions_desired",
+    "traditional_ira_contributions_desired",
     "treasury_tipped_occupation_code",
     "unadjusted_basis_qualified_property",
     "unemployment_compensation",
@@ -242,7 +240,6 @@
     "w2_wages_from_qualified_business",
     "weekly_hours_worked_before_lsr",
     "weeks_unemployed",
-    "weeks_worked",
     "workers_compensation",
     "would_claim_wic",
     "would_file_taxes_voluntarily"
@@ -255,7 +252,14 @@
     "tax_unit_is_puf_clone"
   ],
   "forbidden": [
+    "amt_foreign_tax_credit",
+    "early_withdrawal_penalty",
+    "excess_withheld_payroll_tax",
     "free_school_meals_reported",
+    "general_business_credit",
+    "other_credits",
+    "prior_year_minimum_tax_credit",
+    "recapture_of_investment_credit",
     "reduced_price_school_meals_reported",
     "snap_reported",
     "spm_unit_broadband_subsidy_reported",
@@ -270,5 +274,11 @@
     "ssi_reported",
     "tanf_reported",
     "unreported_payroll_tax"
+  ],
+  "formula_owned_excluded": [
+    "has_itin",
+    "has_tin",
+    "in_nyc",
+    "weeks_worked"
   ]
 }

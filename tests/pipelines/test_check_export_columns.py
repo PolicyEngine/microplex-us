@@ -192,20 +192,33 @@ def test_load_contract_rejects_missing_keys(tmp_path):
 
 def test_committed_contract_parses_with_expected_categories():
     contract = load_contract(DEFAULT_CONTRACT_PATH)
-    for key in ("required", "ecps_internal_optional", "forbidden"):
+    for key in (
+        "required",
+        "ecps_internal_optional",
+        "forbidden",
+        "formula_owned_excluded",
+    ):
         assert key in contract, f"contract missing '{key}'"
         assert isinstance(contract[key], list)
-    # Category sizes of the frozen eCPS contract (244 = 239 + 5).
-    assert len(contract["required"]) == 239
+    # Category sizes of the eCPS contract, aligned to the clone-correct baseline
+    # H5 (postfix_clonecorrect): required exports the 5 *_desired retirement
+    # INPUTS (not the bare formula-computed columns), excludes pe-us formula
+    # variables (in_nyc/has_tin/has_itin/weeks_worked), and forbids the
+    # PUF_REPORTED_CALCULATED_TAX_OUTPUT_VARIABLES tax-credit outputs.
+    assert len(contract["required"]) == 235
     assert len(contract["ecps_internal_optional"]) == 5
-    assert len(contract["forbidden"]) == 15
+    assert len(contract["forbidden"]) == 22
+    assert len(contract["formula_owned_excluded"]) == 4
     # Categories must be disjoint.
     req = set(contract["required"])
     opt = set(contract["ecps_internal_optional"])
     forb = set(contract["forbidden"])
+    excl = set(contract["formula_owned_excluded"])
     assert req.isdisjoint(opt)
     assert req.isdisjoint(forb)
     assert opt.isdisjoint(forb)
+    assert excl.isdisjoint(req)
+    assert excl.isdisjoint(forb)
     # The clone-bookkeeping flags are optional, not required.
     assert "person_is_puf_clone" in opt
     assert "person_is_puf_clone" not in req

@@ -71,3 +71,33 @@ def test_assign_family_and_spm_preserves_partial_spm():
     per_hh = out.groupby("household_id")["spm_unit_id"].nunique()
     assert int(per_hh.loc[1]) == 2  # two present units preserved
     assert int(per_hh.loc[2]) == 1  # fully-missing household -> one fallback
+
+
+def test_missing_row_folds_without_merging_distinct_present_units():
+    # The trickiest folding case: a household with TWO present SPM units AND a
+    # missing row. The missing row must fold into one existing unit WITHOUT
+    # merging the two genuinely-distinct present units or fabricating a third.
+    persons = pd.DataFrame(
+        {
+            "household_id": [1, 1, 1, 1, 1],
+            "spm_unit_id": [10.0, 10.0, 11.0, 11.0, np.nan],
+        }
+    )
+    out = _pipe()._preserve_present_group_ids(persons, "spm_unit_id")
+    assert out.nunique() == 2  # the two present units stay distinct
+    assert out.iloc[0] == out.iloc[1]  # unit 10
+    assert out.iloc[2] == out.iloc[3]  # unit 11
+    assert out.iloc[0] != out.iloc[2]
+    assert out.iloc[4] == out.iloc[0]  # missing row folded into the first unit
+
+
+def test_preserve_present_aligns_under_non_default_index():
+    # A non-default / shuffled index must not misalign the missing-row assignment.
+    persons = pd.DataFrame(
+        {"household_id": [1, 1, 2, 2], "spm_unit_id": [10.0, np.nan, np.nan, 20.0]},
+        index=[100, 5, 42, 7],
+    )
+    out = _pipe()._preserve_present_group_ids(persons, "spm_unit_id")
+    assert out.loc[100] == out.loc[5]  # hh1: present 10 + missing fold together
+    assert out.loc[42] == out.loc[7]  # hh2: missing + present 20 fold together
+    assert out.loc[100] != out.loc[42]  # distinct households stay distinct

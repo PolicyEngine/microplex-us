@@ -6290,20 +6290,29 @@ class USMicroplexPipeline:
     ) -> tuple[pd.DataFrame, pd.DataFrame, set[Any]] | None:
         """Reconstruct tax units by delegating to ``microunit`` (issue #113).
 
-        This is the *reconstruction-from-scratch* path. The authoritative-ID
-        path (#112, :meth:`_build_policyengine_tax_units_from_existing_ids`) is
-        handled separately and is never routed here.
+        This is microplex's **default** tax-unit constructor for CPS-derived
+        frames. ``microunit`` is the rules-based engine that *replaces* the
+        unreliable CPS-provided ``tax_unit_id`` (Census ``TAX_ID``): when the
+        frame carries the real CPS pointer fields, the high-fidelity adapter
+        (#115) builds microunit's CPS contract and microunit re-partitions each
+        household from scratch, intentionally overriding any incoming
+        ``tax_unit_id``. The ``policyengine_prefer_existing_tax_unit_ids`` /
+        :meth:`_build_policyengine_tax_units_from_existing_ids` path is a
+        **fallback** for the households this method does not construct -- it runs
+        *after* this one, on the remaining households -- not a parallel
+        authority. SPM/family/marital group IDs are preserved separately (#112)
+        and are not touched here, so "keep the source SPM units, replace the tax
+        units" holds.
 
-        Delegation only happens when ``persons`` carries the raw CPS columns in
-        :attr:`_MICROUNIT_REQUIRED_CPS_COLUMNS`. ``microunit``'s logic genuinely
-        depends on marital status (``A_MARITL``), spouse/parent line pointers
-        (``A_SPOUSE``/``PEPAR1``/``PEPAR2``) and the CPS relationship recode
-        (``A_EXPRRP``); microplex's reconstruction-stage frame collapses
-        relationship into a 0/1/2/3 coding and drops the pointer columns, so a
-        *faithful* mapping is not possible from that frame. Rather than fabricate
-        microunit inputs (which would silently change behavior), we return
-        ``None`` when the columns are absent and let the caller fall back to the
-        legacy role-flag reconstruction.
+        Delegation runs when ``persons`` carries the raw CPS columns in
+        :attr:`_MICROUNIT_REQUIRED_CPS_COLUMNS`, or can synthesize them: the
+        high-fidelity adapter (#115) is used by DEFAULT when the real
+        ``person_number``/``spouse_person_number``/``family_relationship`` fields
+        are present (the production candidate carries them); the coarse
+        ``relationship_to_head``-only heuristic stays opt-in. When neither the
+        raw columns nor the high-fidelity fields are available (and the coarse
+        heuristic is not enabled), we return ``None`` and let the caller fall
+        back to the legacy role-flag reconstruction.
 
         .. warning::
             ``microunit`` *is* eCPS's tax-unit construction. Routing microplex
@@ -6462,11 +6471,17 @@ class USMicroplexPipeline:
         pernum = (
             pd.to_numeric(frame["person_number"], errors="coerce").fillna(0).astype(int)
         )
-        famrel = (
-            pd.to_numeric(frame["family_relationship"], errors="coerce")
-            .fillna(0)
-            .astype(int)
-        )
+        # ``family_relationship`` arrives in either CPS A_FAMREL 1-based coding
+        # (1=reference person, 2=spouse, 3=child, ...) or the optimizer's 0-based
+        # coding (0=head, 1=spouse, 2=child); the rest of the pipeline detects
+        # this per household (see ``_normalize_relationship_to_head`` and
+        # ``data_sources.cps``). The A_EXPRRP / parent-pointer mapping below
+        # expects the 1-based scheme, so shift any 0-based household up by one --
+        # otherwise a 0-based frame silently mis-codes children as spouses and
+        # drops their parent pointers.
+        famrel_raw = pd.to_numeric(frame["family_relationship"], errors="coerce")
+        zero_based_hh = (famrel_raw == 0).groupby(hh).transform("any").fillna(False)
+        famrel = famrel_raw.add(zero_based_hh.astype(int)).fillna(0).astype(int)
         spouse_num = (
             pd.to_numeric(frame.get("spouse_person_number", 0), errors="coerce")
             .fillna(0)

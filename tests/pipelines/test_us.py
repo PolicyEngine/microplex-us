@@ -1620,6 +1620,50 @@ class TestUSMicroplexPipeline:
         assert tax_units.iloc[0]["filing_status"] == "JOINT"
         assert tax_units.iloc[0]["n_dependents"] == 1
 
+    def test_build_policyengine_entity_tables_microunit_overrides_bad_cps_tax_unit_ids(
+        self,
+    ):
+        # microunit is the DEFAULT tax-unit constructor: when the high-fidelity CPS
+        # fields (person_number + family_relationship) are present it re-partitions
+        # the household and intentionally REPLACES the unreliable CPS-provided
+        # tax_unit_id (Census TAX_ID) -- even though
+        # policyengine_prefer_existing_tax_unit_ids defaults to True (that path is a
+        # fallback for households microunit does not construct, not a competing
+        # authority). This locks in "replace the CPS tax units, keep the SPM units".
+        pipeline = USMicroplexPipeline(USMicroplexBuildConfig())
+        assert pipeline.config.policyengine_prefer_existing_tax_unit_ids is True
+        population = pd.DataFrame(
+            {
+                "person_id": [1, 2, 3],
+                "household_id": [10, 10, 10],
+                # CPS TAX_ID nonsensically splits the dependent child into its own unit.
+                "tax_unit_id": [100, 100, 200],
+                # SPM units, by contrast, must be preserved.
+                "spm_unit_id": [500, 500, 500],
+                "weight": [1.0, 1.0, 1.0],
+                "age": [45, 43, 12],
+                "income": [60_000.0, 15_000.0, 0.0],
+                "person_number": [1, 2, 3],
+                "spouse_person_number": [2, 1, 0],
+                "family_relationship": [1, 2, 3],  # CPS A_FAMREL: ref, spouse, child
+                "marital_status": [1, 1, 7],
+                "state_fips": [6, 6, 6],
+                "tenure": [1, 1, 1],
+            }
+        )
+
+        tables = pipeline.build_policyengine_entity_tables(population)
+        person_rows = tables.persons.sort_values("person_id").reset_index(drop=True)
+        tax_units = tables.tax_units
+
+        # microunit folds couple + child into ONE unit, discarding the [100,100,200]
+        # split (which preservation would have kept as two units).
+        assert len(tax_units) == 1
+        assert person_rows["tax_unit_id"].nunique() == 1
+        assert tax_units.iloc[0]["n_dependents"] == 1
+        # The SPM unit is untouched (replace tax, keep SPM).
+        assert person_rows["spm_unit_id"].nunique() == 1
+
     def test_build_policyengine_entity_tables_resolves_spouse_head_role_conflicts(
         self,
     ):

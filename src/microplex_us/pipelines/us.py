@@ -6262,12 +6262,427 @@ class USMicroplexPipeline:
         tax_units = pd.DataFrame(tax_unit_rows)
         return tax_units, person_rows
 
+    # Raw CPS ASEC columns that ``microunit.construct_tax_units`` consumes to
+    # reconstruct tax units. ``microunit`` is the standalone extraction of
+    # eCPS's tax-unit logic (issue #113); it is *source-agnostic* and expects
+    # this normalized CPS-like contract rather than microplex's collapsed
+    # ``relationship_to_head`` coding. We only delegate when the frame actually
+    # carries these columns, so the delegation is behavior-preserving on
+    # today's frames (which do not carry them) and only becomes active once an
+    # upstream change threads CPS columns through to entity construction.
+    _MICROUNIT_REQUIRED_CPS_COLUMNS = (
+        "PH_SEQ",
+        "A_LINENO",
+        "A_AGE",
+        "A_MARITL",
+        "A_SPOUSE",
+        "PEPAR1",
+        "PEPAR2",
+        "A_EXPRRP",
+    )
+
+    def _build_policyengine_tax_units_via_microunit(
+        self,
+        persons: pd.DataFrame,
+        *,
+        start_tax_unit_id: int = 0,
+        allow_normalized_adapter: bool | None = None,
+    ) -> tuple[pd.DataFrame, pd.DataFrame, set[Any]] | None:
+        """Reconstruct tax units by delegating to ``microunit`` (issue #113).
+
+        This is microplex's **default** tax-unit constructor for CPS-derived
+        frames. ``microunit`` is the rules-based engine that *replaces* the
+        unreliable CPS-provided ``tax_unit_id`` (Census ``TAX_ID``): when the
+        frame carries the real CPS pointer fields, the high-fidelity adapter
+        (#115) builds microunit's CPS contract and microunit re-partitions each
+        household from scratch, intentionally overriding any incoming
+        ``tax_unit_id``. The ``policyengine_prefer_existing_tax_unit_ids`` /
+        :meth:`_build_policyengine_tax_units_from_existing_ids` path is a
+        **fallback** for the households this method does not construct -- it runs
+        *after* this one, on the remaining households -- not a parallel
+        authority. SPM/family/marital group IDs are preserved separately (#112)
+        and are not touched here, so "keep the source SPM units, replace the tax
+        units" holds.
+
+        Delegation runs when ``persons`` carries the raw CPS columns in
+        :attr:`_MICROUNIT_REQUIRED_CPS_COLUMNS`, or can synthesize them: the
+        high-fidelity adapter (#115) is used by DEFAULT when the real
+        ``person_number``/``spouse_person_number``/``family_relationship`` fields
+        are present (the production candidate carries them); the coarse
+        ``relationship_to_head``-only heuristic stays opt-in. When neither the
+        raw columns nor the high-fidelity fields are available (and the coarse
+        heuristic is not enabled), we return ``None`` and let the caller fall
+        back to the legacy role-flag reconstruction.
+
+        .. warning::
+            ``microunit`` *is* eCPS's tax-unit construction. Routing microplex
+            through it makes microplex's constructed tax units **converge toward
+            eCPS's**. Any loss change from enabling this delegation is an
+            *entity-convergence* effect and must be interpreted as such, not as
+            a quality improvement. See issue #113.
+
+        Returns the same ``(tax_units, person_rows, households)`` triple shape as
+        :meth:`_build_policyengine_tax_units_from_role_flags`, or ``None`` to
+        defer to the caller's fallback.
+        """
+        if "person_id" not in persons.columns or "household_id" not in persons.columns:
+            return None
+        cps_frame = persons
+        if not set(self._MICROUNIT_REQUIRED_CPS_COLUMNS).issubset(persons.columns):
+            # microunit is microplex's required tax-unit engine (#113). When the
+            # raw CPS columns are absent, synthesize its CPS contract from the
+            # normalized frame. The high-fidelity path (real person_number /
+            # spouse_person_number / family_relationship, which the production
+            # candidate carries) is used by DEFAULT; the coarse
+            # relationship_to_head-only heuristic stays opt-in via the config flag
+            # so minimal frames don't silently get the lossy reconstruction.
+            has_high_fidelity_fields = {
+                "person_number",
+                "family_relationship",
+            }.issubset(persons.columns)
+            if allow_normalized_adapter is None:
+                allow_normalized_adapter = has_high_fidelity_fields or bool(
+                    getattr(self.config, "microunit_construct_from_normalized", False)
+                )
+            if not allow_normalized_adapter:
+                return None
+            cps_frame = self._microunit_cps_frame_from_normalized(persons)
+            if cps_frame is None:
+                return None
+
+        # Imported lazily to match this module's optional-dependency convention:
+        # ``microunit`` ships in the ``policyengine`` extra, and the base test
+        # suite must import this module without that extra installed.
+        from microunit import POLICYENGINE_MODE, construct_tax_units
+
+        # microunit keys its CPS-style frame on (PH_SEQ, A_LINENO); resetting the
+        # index keeps row order so the returned per-person TAX_ID and role align
+        # positionally back onto person_rows.
+        person_rows = cps_frame.reset_index(drop=True).copy()
+        try:
+            person_assignments, tax_unit = construct_tax_units(
+                person_rows.copy(),
+                year=self._microunit_reference_year(person_rows),
+                mode=POLICYENGINE_MODE,
+            )
+        except Exception:
+            # microunit raises on households it cannot resolve (e.g. no valid
+            # reference person). Never let that crash materialization — fall back
+            # to the caller's legacy reconstruction for the whole frame.
+            LOGGER.warning(
+                "microunit tax-unit construction failed; falling back to "
+                "legacy reconstruction",
+                exc_info=True,
+            )
+            return None
+
+        tax_id = pd.to_numeric(person_assignments["TAX_ID"], errors="coerce")
+        person_rows["tax_unit_id"] = (
+            tax_id.to_numpy() + int(start_tax_unit_id)
+        ).astype(np.int64)
+        # microunit emits an authoritative per-person HEAD/SPOUSE/DEPENDENT role;
+        # use it directly for the filer/dependent split rather than re-deriving
+        # from the (possibly absent) collapsed relationship_to_head coding.
+        person_rows["_microunit_role"] = [
+            self._decode_microunit_bytes(role)
+            for role in person_assignments["tax_unit_role_input"].tolist()
+        ]
+
+        # microunit emits the canonical filing-status vocabulary already, but
+        # normalize defensively so this path can never diverge from the legacy
+        # paths if microunit ever changes its spelling/casing.
+        filing_status_by_unit = {
+            int(row_tax_id) + int(start_tax_unit_id): (
+                self._normalize_policyengine_filing_status(
+                    self._decode_microunit_bytes(filing_value)
+                )
+            )
+            for row_tax_id, filing_value in zip(
+                tax_unit["TAX_ID"].tolist(),
+                tax_unit["filing_status_input"].tolist(),
+                strict=True,
+            )
+        }
+
+        tax_unit_rows: list[dict[str, Any]] = []
+        for unit_id, unit_persons in person_rows.groupby("tax_unit_id", sort=False):
+            ordered = unit_persons.sort_values(
+                ["_microunit_role", "age", "person_id"],
+                ascending=[True, False, True],
+            ).reset_index(drop=True)
+            is_filer = ordered["_microunit_role"].isin(["HEAD", "SPOUSE"])
+            filer_ids = [
+                int(person_id) for person_id in ordered.loc[is_filer, "person_id"]
+            ]
+            dependent_ids = [
+                int(person_id) for person_id in ordered.loc[~is_filer, "person_id"]
+            ]
+            if not filer_ids:
+                filer_ids = [int(ordered.iloc[0]["person_id"])]
+                dependent_ids = [
+                    int(person_id)
+                    for person_id in ordered["person_id"].tolist()
+                    if int(person_id) not in filer_ids
+                ]
+            tax_unit_rows.append(
+                {
+                    "tax_unit_id": int(unit_id),
+                    "household_id": int(ordered.iloc[0]["household_id"]),
+                    "filing_status": filing_status_by_unit.get(int(unit_id), "SINGLE"),
+                    "member_ids": [
+                        int(person_id) for person_id in ordered["person_id"]
+                    ],
+                    "filer_ids": filer_ids,
+                    "dependent_ids": dependent_ids,
+                    "n_dependents": len(dependent_ids),
+                    "total_income": float(
+                        pd.to_numeric(ordered.get("income", 0.0), errors="coerce")
+                        .fillna(0.0)
+                        .sum()
+                    ),
+                    "tax_liability": 0.0,
+                    **self._aggregate_policyengine_tax_unit_input_columns(ordered),
+                }
+            )
+
+        if not tax_unit_rows:
+            return None
+
+        households = set(person_rows["household_id"].drop_duplicates().tolist())
+        person_rows = person_rows.drop(columns=["_microunit_role"], errors="ignore")
+        return pd.DataFrame(tax_unit_rows), person_rows, households
+
+    def _microunit_cps_frame_from_cps_fields(
+        self,
+        persons: pd.DataFrame,
+    ) -> pd.DataFrame:
+        """High-fidelity (#115) build of microunit's CPS contract from the real
+        CPS-derived fields microplex carries at materialization: ``person_number``
+        (a 1-based within-household line number), ``spouse_person_number`` (a real
+        spouse line pointer), ``family_relationship`` (CPS A_FAMREL) and
+        ``marital_status``. The household reference person (``person_number == 1``)
+        always anchors a valid head, so microunit never lacks one.
+
+        Only ``PEPAR1``/``PEPAR2`` remain heuristic: a child's parents are taken to
+        be the household reference person (line 1) and that person's spouse (#115).
+        """
+        frame = persons.reset_index(drop=True).copy()
+        hh = pd.to_numeric(frame["household_id"], errors="coerce")
+        pernum = (
+            pd.to_numeric(frame["person_number"], errors="coerce").fillna(0).astype(int)
+        )
+        # ``family_relationship`` arrives in either CPS A_FAMREL 1-based coding
+        # (1=reference person, 2=spouse, 3=child, ...) or the optimizer's 0-based
+        # coding (0=head, 1=spouse, 2=child); the rest of the pipeline detects
+        # this per household (see ``_normalize_relationship_to_head`` and
+        # ``data_sources.cps``). The A_EXPRRP / parent-pointer mapping below
+        # expects the 1-based scheme, so shift any 0-based household up by one --
+        # otherwise a 0-based frame silently mis-codes children as spouses and
+        # drops their parent pointers.
+        famrel_raw = pd.to_numeric(frame["family_relationship"], errors="coerce")
+        zero_based_hh = (famrel_raw == 0).groupby(hh).transform("any").fillna(False)
+        famrel = famrel_raw.add(zero_based_hh.astype(int)).fillna(0).astype(int)
+        spouse_num = (
+            pd.to_numeric(frame.get("spouse_person_number", 0), errors="coerce")
+            .fillna(0)
+            .astype(int)
+        )
+
+        frame["PH_SEQ"] = hh.astype(np.int64)
+        frame["A_LINENO"] = pernum
+        frame["A_AGE"] = (
+            pd.to_numeric(frame["age"], errors="coerce").fillna(0).astype(int)
+        )
+        frame["A_SPOUSE"] = spouse_num
+
+        is_ref = pernum == 1
+        # A_EXPRRP (microunit.CPSRelationshipCode): reference person 1, spouse 3,
+        # own child 5, everyone else other-relative 10.
+        exprrp = pd.Series(10, index=frame.index, dtype=int)
+        exprrp[famrel == 2] = 3
+        exprrp[famrel == 3] = 5
+        exprrp[is_ref] = 1
+        frame["A_EXPRRP"] = exprrp
+
+        # A_MARITL: 1 married spouse present; 4 widowed; else 7 never-married.
+        marital = pd.Series(7, index=frame.index, dtype=int)
+        marital[spouse_num > 0] = 1
+        if "is_surviving_spouse" in frame.columns:
+            surviving = (
+                pd.to_numeric(frame["is_surviving_spouse"], errors="coerce").fillna(0)
+                > 0
+            )
+            marital[surviving & (spouse_num == 0)] = 4
+        frame["A_MARITL"] = marital
+
+        # PEPAR1/PEPAR2: a child's parents are heuristically the household
+        # reference person (line 1) and that reference person's spouse.
+        ref_spouse_line = frame.loc[is_ref].groupby(hh[is_ref])["A_SPOUSE"].first()
+        frame["PEPAR1"] = 0
+        frame["PEPAR2"] = 0
+        is_child = famrel == 3
+        frame.loc[is_child, "PEPAR1"] = 1
+        frame.loc[is_child, "PEPAR2"] = (
+            hh[is_child].map(ref_spouse_line).fillna(0).astype(int)
+        )
+
+        return frame
+
+    def _microunit_cps_frame_from_normalized(
+        self,
+        persons: pd.DataFrame,
+    ) -> pd.DataFrame | None:
+        """PROTOTYPE (issue #115): synthesize microunit's CPS-like input contract
+        from microplex's normalized person columns.
+
+        ``microunit.construct_tax_units`` needs raw CPS columns (PH_SEQ/A_LINENO/
+        A_AGE/A_MARITL/A_SPOUSE/PEPAR1/PEPAR2/A_EXPRRP); at PolicyEngine
+        materialization microplex instead carries ``household_id``/``age``/
+        ``relationship_to_head``. This builds the former from the latter, mirroring
+        the ACS->CPS mapping microunit documents as the consumer's responsibility.
+
+        .. warning::
+            HEURISTIC AND UNVALIDATED. The ``relationship_to_head`` -> ``A_EXPRRP``
+            and married -> ``A_MARITL`` maps are approximate, and ``PEPAR1``/
+            ``PEPAR2`` are inferred by assuming a child's parents are the household
+            head and spouse. The fidelity of these maps must be validated against
+            the legacy reconstruction before this is trusted (see #115); it is
+            gated OFF by default.
+
+        Returns ``persons`` with the eight microunit CPS columns added, or ``None``
+        if the prerequisite normalized columns are absent.
+        """
+        # Prefer the high-fidelity path when microplex carries the real CPS-derived
+        # pointer fields (person_number is a 1-based within-household line number;
+        # spouse_person_number a real spouse line pointer). Otherwise fall back to
+        # the coarse relationship_to_head heuristic below.
+        if {
+            "person_id",
+            "person_number",
+            "family_relationship",
+            "household_id",
+            "age",
+        }.issubset(persons.columns):
+            return self._microunit_cps_frame_from_cps_fields(persons)
+
+        required = {"person_id", "household_id", "age", "relationship_to_head"}
+        if not required.issubset(persons.columns):
+            return None
+
+        # CPS A_EXPRRP recode (microunit.CPSRelationshipCode): 1 reference person,
+        # 3 husband, 5 own child, 10 other relative.
+        exprrp_by_rel = {0: 1, 1: 3, 2: 5, 3: 10}
+
+        frame = persons.reset_index(drop=True).copy()
+        rel = (
+            pd.to_numeric(frame["relationship_to_head"], errors="coerce")
+            .fillna(3)
+            .astype(int)
+        )
+        age = pd.to_numeric(frame["age"], errors="coerce").fillna(0).astype(int)
+
+        # Per-household line numbers (1-based, unique within household): head
+        # first, then spouse, then everyone else oldest-first.
+        frame = frame.assign(_rel=rel.to_numpy(), _age=age.to_numpy())
+        frame = frame.sort_values(
+            ["household_id", "_rel", "_age", "person_id"],
+            ascending=[True, True, False, True],
+        ).reset_index(drop=True)
+        frame["A_LINENO"] = frame.groupby("household_id", sort=False).cumcount() + 1
+        # Guarantee exactly one household head (microunit requires a single
+        # reference person per PH_SEQ, else it raises). After the head-first sort
+        # the line-1 member is the most head-like; make it the head and demote
+        # any other rows that mapped to head (multi-family / headless households).
+        is_line1 = frame["A_LINENO"] == 1
+        frame.loc[is_line1, "_rel"] = 0
+        frame.loc[~is_line1 & (frame["_rel"] == 0), "_rel"] = 3
+        frame["PH_SEQ"] = pd.to_numeric(frame["household_id"], errors="coerce").astype(
+            np.int64
+        )
+        frame["A_AGE"] = frame["_age"]
+        frame["A_EXPRRP"] = frame["_rel"].map(exprrp_by_rel).fillna(10).astype(int)
+
+        # Head/spouse line numbers per household, for spouse pointers + marital.
+        head_line = (
+            frame.loc[frame["_rel"] == 0].groupby("household_id")["A_LINENO"].first()
+        )
+        spouse_line = (
+            frame.loc[frame["_rel"] == 1].groupby("household_id")["A_LINENO"].first()
+        )
+        hh = frame["household_id"]
+        is_head = frame["_rel"] == 0
+        is_spouse = frame["_rel"] == 1
+        is_child = frame["_rel"] == 2
+        has_spouse = hh.map(spouse_line).notna()
+
+        frame["A_SPOUSE"] = 0
+        frame.loc[is_head, "A_SPOUSE"] = (
+            hh[is_head].map(spouse_line).fillna(0).astype(int)
+        )
+        frame.loc[is_spouse, "A_SPOUSE"] = (
+            hh[is_spouse].map(head_line).fillna(0).astype(int)
+        )
+
+        # A_MARITL: 1 = married, spouse present (head/spouse of a couple); else
+        # 7 = never married. microunit only needs the married-vs-not distinction.
+        frame["A_MARITL"] = 7
+        frame.loc[(is_head | is_spouse) & has_spouse, "A_MARITL"] = 1
+
+        # PEPAR1/PEPAR2: assume a child's parents are the household head + spouse.
+        frame["PEPAR1"] = 0
+        frame["PEPAR2"] = 0
+        frame.loc[is_child, "PEPAR1"] = (
+            hh[is_child].map(head_line).fillna(0).astype(int)
+        )
+        frame.loc[is_child, "PEPAR2"] = (
+            hh[is_child].map(spouse_line).fillna(0).astype(int)
+        )
+
+        return frame.drop(columns=["_rel", "_age"])
+
+    @staticmethod
+    def _decode_microunit_bytes(value: Any) -> str:
+        """Decode a ``microunit`` bytes-typed status/role into an upper string."""
+        if isinstance(value, bytes):
+            return value.decode()
+        return str(value)
+
+    def _microunit_reference_year(self, persons: pd.DataFrame) -> int:
+        """Year passed to ``microunit`` for its dependency income thresholds.
+
+        Prefers an explicit ``year``/``tax_year`` column when the frame carries
+        one; otherwise falls back to the pipeline's configured reference year so
+        the only year-dependent behavior (the qualifying-relative gross income
+        limit) matches the rest of the pipeline. TODO(#113): thread the dataset
+        reference year through entity construction explicitly.
+        """
+        for column in ("year", "tax_year"):
+            if column in persons.columns:
+                values = pd.to_numeric(persons[column], errors="coerce").dropna()
+                if not values.empty:
+                    return int(values.iloc[0])
+        configured = getattr(self.config, "reference_year", None)
+        if configured is not None:
+            return int(configured)
+        return 2024
+
     def _build_policyengine_tax_units_from_role_flags(
         self,
         persons: pd.DataFrame,
         *,
         start_tax_unit_id: int = 0,
     ) -> tuple[pd.DataFrame, pd.DataFrame, set[Any]] | None:
+        # Issue #113: when the frame carries microunit's CPS-style input
+        # columns, delegate the reconstruction to microunit. Otherwise fall
+        # through to the legacy role-flag reconstruction below (the current
+        # production path, since these columns are not yet threaded through).
+        microunit_result = self._build_policyengine_tax_units_via_microunit(
+            persons,
+            start_tax_unit_id=start_tax_unit_id,
+        )
+        if microunit_result is not None:
+            return microunit_result
+
         role_columns = {
             "is_tax_unit_head",
             "is_tax_unit_spouse",
@@ -7326,6 +7741,16 @@ class USMicroplexPipeline:
         return int(numeric)
 
     def _assign_family_and_spm_units(self, persons: pd.DataFrame) -> pd.DataFrame:
+        """Assign family and SPM units, preserving authoritative IDs when present.
+
+        NOT delegated to ``microunit`` in this pass (issue #113). At the pinned
+        commit ``microunit.units.spm.assign_spm_partition`` is documented as "a
+        conservative adapter, not yet the full Census-parity constructor" and is
+        not exported from microunit's public API, and microunit has no
+        family-unit constructor. The authoritative-ID fast path is preserved
+        here. TODO(#113): delegate once microunit grows a Census-parity
+        SPM/family constructor.
+        """
         result = persons.copy()
         preserved_family_ids = self._normalized_complete_existing_group_ids(
             result,
@@ -7403,6 +7828,14 @@ class USMicroplexPipeline:
         self,
         persons: pd.DataFrame,
     ) -> pd.DataFrame:
+        """Assign marital units, preserving authoritative IDs when present.
+
+        NOT delegated to ``microunit`` in this pass (issue #113): microunit does
+        not construct marital units at the pinned commit (filing status is its
+        only marital-related output; there is no ``construct_marital_units``).
+        The authoritative-ID fast path is preserved here. TODO(#113): revisit if
+        microunit grows marital-unit support.
+        """
         result = persons.copy()
         preserved_marital_unit_ids = self._normalized_complete_existing_group_ids(
             result,

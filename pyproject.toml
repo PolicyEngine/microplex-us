@@ -35,6 +35,10 @@ policyengine = [
     "microimpute==1.15.1 ; python_full_version >= '3.12' and python_full_version < '3.15'",
     "policyengine-us==1.715.2; python_version >= '3.11' and python_version < '3.15'",
     "spm-calculator>=0.3.1",
+    # Standalone tax-unit construction engine (the extraction of eCPS's
+    # tax-unit logic), used by the PolicyEngine pipeline to reconstruct tax
+    # units from CPS-like person frames (issue #113).
+    "microunit>=0.1.0",
 ]
 
 [project.urls]

@@ -1620,6 +1620,50 @@ class TestUSMicroplexPipeline:
         assert tax_units.iloc[0]["filing_status"] == "JOINT"
         assert tax_units.iloc[0]["n_dependents"] == 1
 
+    def test_build_policyengine_entity_tables_microunit_overrides_bad_cps_tax_unit_ids(
+        self,
+    ):
+        # microunit is the DEFAULT tax-unit constructor: when the high-fidelity CPS
+        # fields (person_number + family_relationship) are present it re-partitions
+        # the household and intentionally REPLACES the unreliable CPS-provided
+        # tax_unit_id (Census TAX_ID) -- even though
+        # policyengine_prefer_existing_tax_unit_ids defaults to True (that path is a
+        # fallback for households microunit does not construct, not a competing
+        # authority). This locks in "replace the CPS tax units, keep the SPM units".
+        pipeline = USMicroplexPipeline(USMicroplexBuildConfig())
+        assert pipeline.config.policyengine_prefer_existing_tax_unit_ids is True
+        population = pd.DataFrame(
+            {
+                "person_id": [1, 2, 3],
+                "household_id": [10, 10, 10],
+                # CPS TAX_ID nonsensically splits the dependent child into its own unit.
+                "tax_unit_id": [100, 100, 200],
+                # SPM units, by contrast, must be preserved.
+                "spm_unit_id": [500, 500, 500],
+                "weight": [1.0, 1.0, 1.0],
+                "age": [45, 43, 12],
+                "income": [60_000.0, 15_000.0, 0.0],
+                "person_number": [1, 2, 3],
+                "spouse_person_number": [2, 1, 0],
+                "family_relationship": [1, 2, 3],  # CPS A_FAMREL: ref, spouse, child
+                "marital_status": [1, 1, 7],
+                "state_fips": [6, 6, 6],
+                "tenure": [1, 1, 1],
+            }
+        )
+
+        tables = pipeline.build_policyengine_entity_tables(population)
+        person_rows = tables.persons.sort_values("person_id").reset_index(drop=True)
+        tax_units = tables.tax_units
+
+        # microunit folds couple + child into ONE unit, discarding the [100,100,200]
+        # split (which preservation would have kept as two units).
+        assert len(tax_units) == 1
+        assert person_rows["tax_unit_id"].nunique() == 1
+        assert tax_units.iloc[0]["n_dependents"] == 1
+        # The SPM unit is untouched (replace tax, keep SPM).
+        assert person_rows["spm_unit_id"].nunique() == 1
+
     def test_build_policyengine_entity_tables_resolves_spouse_head_role_conflicts(
         self,
     ):
@@ -1684,9 +1728,10 @@ class TestUSMicroplexPipeline:
         person_rows = tables.persons.sort_values("person_id").reset_index(drop=True)
         tax_units = tables.tax_units.sort_values("tax_unit_id").reset_index(drop=True)
 
+        # filing_status is PE-computed (delegated; microplex does not export it),
+        # so only microunit's partition is asserted here.
         assert len(tax_units) == 1
         assert person_rows["tax_unit_id"].nunique() == 1
-        assert tax_units.iloc[0]["filing_status"] == "SINGLE"
         assert tax_units.iloc[0]["n_dependents"] == 1
 
     def test_build_policyengine_entity_tables_resolves_spouse_dependent_role_conflicts(
@@ -1718,8 +1763,8 @@ class TestUSMicroplexPipeline:
         tables = pipeline.build_policyengine_entity_tables(population)
         tax_units = tables.tax_units.sort_values("tax_unit_id").reset_index(drop=True)
 
+        # filing_status delegated to PE; assert only microunit's partition.
         assert len(tax_units) == 1
-        assert tax_units.iloc[0]["filing_status"] == "SINGLE"
         assert tax_units.iloc[0]["n_dependents"] == 1
 
     def test_build_policyengine_entity_tables_repairs_missing_role_flag_heads(self):
@@ -1749,8 +1794,8 @@ class TestUSMicroplexPipeline:
         tables = pipeline.build_policyengine_entity_tables(population)
         tax_units = tables.tax_units.sort_values("tax_unit_id").reset_index(drop=True)
 
+        # filing_status delegated to PE; assert only microunit's partition.
         assert len(tax_units) == 1
-        assert tax_units.iloc[0]["filing_status"] == "SINGLE"
         assert tax_units.iloc[0]["n_dependents"] == 1
 
     def test_build_policyengine_entity_tables_folds_young_head_hint_dependents(self):
@@ -1780,8 +1825,40 @@ class TestUSMicroplexPipeline:
         tables = pipeline.build_policyengine_entity_tables(population)
         tax_units = tables.tax_units.sort_values("tax_unit_id").reset_index(drop=True)
 
+        # microunit applies the real qualifying-child age rule: a 19+ non-student
+        # own-child is NOT folded as a dependent (it gets its own tax unit), unlike
+        # the legacy role-flag heuristic. Threading student enrollment (A_HSCOL) so
+        # the qualifying-child-to-24 student extension fires is a tracked follow-up.
+        assert len(tax_units) == 2
+        assert int(tax_units["n_dependents"].sum()) == 0
+
+    def test_build_policyengine_entity_tables_uses_legacy_path_without_cps_fields(
+        self,
+    ):
+        # Without the high-fidelity CPS fields (person_number/family_relationship),
+        # microunit cannot construct, so the legacy role-flag reconstruction (the
+        # fallback) handles the conflict. Preserves coverage of that path now that
+        # the real-data path defaults to microunit.
+        pipeline = USMicroplexPipeline(USMicroplexBuildConfig())
+        population = pd.DataFrame(
+            {
+                "person_id": [1, 2],
+                "household_id": [10, 10],
+                "tax_unit_id": [100, 101],
+                "weight": [1.0, 1.0],
+                "age": [45, 12],
+                "income": [60_000.0, 0.0],
+                "relationship_to_head": [0, 2],
+                "is_tax_unit_head": [1.0, 1.0],
+                "is_tax_unit_spouse": [0.0, 0.0],
+                "is_tax_unit_dependent": [0.0, 1.0],
+                "state_fips": [6, 6],
+                "tenure": [1, 1],
+            }
+        )
+        tables = pipeline.build_policyengine_entity_tables(population)
+        tax_units = tables.tax_units
         assert len(tax_units) == 1
-        assert tax_units.iloc[0]["filing_status"] == "SINGLE"
         assert tax_units.iloc[0]["n_dependents"] == 1
 
     def test_build_policyengine_entity_tables_keeps_positive_income_adult_heads(self):

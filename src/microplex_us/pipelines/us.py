@@ -7756,7 +7756,11 @@ class USMicroplexPipeline:
             result,
             "family_id",
         )
-        preserved_spm_unit_ids = self._normalized_complete_existing_group_ids(
+        # SPM unit ids from the source are trustworthy and must survive synthesis
+        # even when partially missing (a single missing id must not collapse the
+        # whole frame to one SPM unit per household). Tax-unit ids, by contrast,
+        # are reconstructed, not preserved (see _build_policyengine_tax_units).
+        preserved_spm_unit_ids = self._preserve_present_group_ids(
             result,
             "spm_unit_id",
         )
@@ -7922,6 +7926,50 @@ class USMicroplexPipeline:
                 name=id_column,
             )
         return raw_numeric.astype(np.int64).rename(id_column)
+
+    def _preserve_present_group_ids(
+        self,
+        persons: pd.DataFrame,
+        id_column: str,
+    ) -> pd.Series | None:
+        """Preserve existing per-person unit ids where present, regenerating only
+        the rows that are missing one.
+
+        Unlike :meth:`_normalized_complete_existing_group_ids` (which discards the
+        whole column if *any* id is missing), this keeps the authoritative
+        grouping for every row that carries an id and collapses rows with a
+        missing id into a single per-household fallback unit. Used for SPM units,
+        whose source ids are trustworthy and should survive synthesis even when
+        partially missing (otherwise a single missing id drops the whole frame to
+        one SPM unit per household). Returns ``None`` only when the column is
+        absent or entirely empty.
+        """
+        if id_column not in persons.columns:
+            return None
+        raw_ids = persons[id_column]
+        present = raw_ids.notna()
+        if not present.any():
+            return None
+        hh = persons["household_id"]
+        codes = pd.Series(-1, index=persons.index, dtype=np.int64)
+        # Present rows: stable unit code from factorizing (household_id, real id).
+        present_key = pd.MultiIndex.from_frame(
+            pd.DataFrame({"hh": hh[present], "id": raw_ids[present].astype("string")})
+        )
+        codes.loc[present] = pd.factorize(present_key, sort=False)[0]
+        if (~present).any():
+            # Missing rows fold into their household's first present unit so they
+            # never fabricate a spurious unit; households with no present id at
+            # all get one fresh fallback unit each.
+            first_present = codes[present].groupby(hh[present]).first()
+            miss_hh = hh[~present]
+            fallback = miss_hh.map(first_present)
+            no_present = fallback.isna()
+            if no_present.any():
+                fresh = pd.factorize(miss_hh[no_present], sort=False)[0]
+                fallback.loc[no_present] = fresh + (int(codes.max()) + 1)
+            codes.loc[~present] = fallback.astype(np.int64).to_numpy()
+        return codes.rename(id_column)
 
     def _collapse_group_table(
         self,

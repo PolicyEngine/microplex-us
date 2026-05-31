@@ -483,3 +483,67 @@ def test_high_fidelity_adapter_activates_delegation(pipeline):
     assert unit_by_person[4] != unit_by_person[1]
     family_id = int(unit_by_person[1])
     assert _unit_field(tax_units, family_id, "filing_status") == "JOINT"
+
+
+def _zero_based_cps_fields_frame() -> pd.DataFrame:
+    """Same couple+child household as ``_cps_fields_frame`` but with
+    family_relationship in the optimizer's 0-based coding (0=head, 1=spouse,
+    2=child) instead of CPS A_FAMREL 1-based (1=ref, 2=spouse, 3=child)."""
+    return pd.DataFrame(
+        [
+            {
+                "person_id": 1,
+                "household_id": 10,
+                "age": 40,
+                "income": 50000.0,
+                "person_number": 1,
+                "spouse_person_number": 2,
+                "family_relationship": 0,
+            },
+            {
+                "person_id": 2,
+                "household_id": 10,
+                "age": 38,
+                "income": 30000.0,
+                "person_number": 2,
+                "spouse_person_number": 1,
+                "family_relationship": 1,
+            },
+            {
+                "person_id": 3,
+                "household_id": 10,
+                "age": 10,
+                "income": 0.0,
+                "person_number": 3,
+                "spouse_person_number": 0,
+                "family_relationship": 2,
+            },
+        ]
+    )
+
+
+def test_high_fidelity_adapter_normalizes_zero_based_family_relationship(pipeline):
+    # A 0-based family_relationship frame must map to the SAME A_EXPRRP / parent
+    # pointers as the 1-based CPS A_FAMREL coding. Without per-household scheme
+    # normalization the child (code 2) is mis-read as a spouse and loses parent
+    # pointers, so microunit mis-partitions the household.
+    frame = pipeline._microunit_cps_frame_from_normalized(
+        _zero_based_cps_fields_frame()
+    )
+    assert frame is not None
+    by = frame.set_index("person_id")
+    assert int(by.loc[1, "A_EXPRRP"]) == 1  # head
+    assert int(by.loc[2, "A_EXPRRP"]) == 3  # spouse, not other-relative
+    assert int(by.loc[3, "A_EXPRRP"]) == 5  # own child, not spouse
+    assert int(by.loc[3, "PEPAR1"]) == 1 and int(by.loc[3, "PEPAR2"]) == 2
+
+    # And the partition matches the 1-based frame: couple + child = one unit.
+    result = pipeline._build_policyengine_tax_units_via_microunit(
+        _zero_based_cps_fields_frame(), allow_normalized_adapter=True
+    )
+    assert result is not None
+    _, person_rows, _ = result
+    unit_by_person = dict(
+        zip(person_rows["person_id"], person_rows["tax_unit_id"], strict=True)
+    )
+    assert unit_by_person[1] == unit_by_person[2] == unit_by_person[3]

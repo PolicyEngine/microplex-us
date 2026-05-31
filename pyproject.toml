@@ -49,6 +49,7 @@ microplex-us-arch-target-smoke = "microplex_us.targets.arch:main_smoke"
 microplex-us-build-aca-ptc-multipliers = "microplex_us.targets.aca_ptc:main"
 microplex-us-backfill-pe-native-audit = "microplex_us.pipelines.backfill_pe_native_audit:main"
 microplex-us-backfill-pe-native-scores = "microplex_us.pipelines.backfill_pe_native_scores:main"
+microplex-us-check-export-columns = "microplex_us.pipelines.check_export_columns:main"
 microplex-us-check-site-snapshot = "microplex_us.pipelines.check_site_snapshot:main"
 microplex-us-compact-policyengine-dataset = "microplex_us.pipelines.compact_policyengine_dataset:main"
 microplex-us-mp300k-artifact-gates = "microplex_us.pipelines.mp300k_artifact_gates:main"
@@ -72,6 +73,7 @@ allow-direct-references = true
 
 [tool.hatch.build.targets.wheel.force-include]
 "src/microplex_us/pipelines/pe_native_scores.py" = "microplex_us/pipelines/pe_native_scores.py"
+"src/microplex_us/pipelines/ecps_export_contract.json" = "microplex_us/pipelines/ecps_export_contract.json"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

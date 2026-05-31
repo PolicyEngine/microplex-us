@@ -537,6 +537,20 @@ def _computed_policyengine_us_export_columns(columns: list[str]) -> set[str]:
     )
 
 
+def _h5_top_level_columns(candidate_dataset: Path) -> set[str]:
+    """Return base column names at the top level of an exported H5.
+
+    Accepts both shapes a column can take: a group ``<column>/<period>``
+    (the eCPS export layout) or a flat dataset ``<column>``. Names are
+    collapsed to the base column via ``split("/")[0]`` so the two are
+    comparable. Shared by the fast column-parity CLI
+    (``check_export_columns``) so it reads columns the same way the
+    artifact path does.
+    """
+    with h5py.File(candidate_dataset, "r") as handle:
+        return {name.split("/")[0] for name in handle.keys()}
+
+
 def _h5_period_columns(path: Path, *, period_key: str) -> list[str]:
     with h5py.File(path, "r") as handle:
         return sorted(
@@ -1441,13 +1455,17 @@ def _source_weight_diagnostics_gate(
         "largest_source_household_weight_share",
     )
     if isinstance(summary, dict):
-        support_share = support_share if support_share is not None else _first_present(
-            summary,
-            "support_household_weight_share",
-            "support_weight_share",
-            "puf_support_household_weight_share",
-            "puf_clone_household_weight_share",
-            "clone_household_weight_share",
+        support_share = (
+            support_share
+            if support_share is not None
+            else _first_present(
+                summary,
+                "support_household_weight_share",
+                "support_weight_share",
+                "puf_support_household_weight_share",
+                "puf_clone_household_weight_share",
+                "clone_household_weight_share",
+            )
         )
         puf_support_share = (
             puf_support_share
@@ -1458,10 +1476,14 @@ def _source_weight_diagnostics_gate(
                 "puf_clone_household_weight_share",
             )
         )
-        max_source_share = max_source_share if max_source_share is not None else _first_present(
-            summary,
-            "max_source_household_weight_share",
-            "largest_source_household_weight_share",
+        max_source_share = (
+            max_source_share
+            if max_source_share is not None
+            else _first_present(
+                summary,
+                "max_source_household_weight_share",
+                "largest_source_household_weight_share",
+            )
         )
 
     if entries:
@@ -1706,9 +1728,7 @@ def _benchmark_manifest_gate(
             "pass",
             "frozen microsimulation benchmark manifest pins baseline, target, and package evidence",
             metrics={
-                "required_evidence_count": len(
-                    _REQUIRED_BENCHMARK_MANIFEST_EVIDENCE
-                ),
+                "required_evidence_count": len(_REQUIRED_BENCHMARK_MANIFEST_EVIDENCE),
                 "present_evidence_count": len(evidence["present"]),
             },
             details={**descriptor, "present_evidence": evidence["present"]},

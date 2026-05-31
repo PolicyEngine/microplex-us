@@ -311,6 +311,7 @@ SAFE_POLICYENGINE_US_EXPORT_VARIABLES: set[str] = {
     "salt_refund_income",
     "self_employment_income_before_lsr",
     "social_security_disability",
+    "social_security_retirement",
     "social_security_survivors",
     "social_security_dependents",
     "stock_assets",

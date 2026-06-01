@@ -836,8 +836,8 @@ def build_us_stage_output_manifests_from_artifact_manifest(
         for source in synthesis.get("source_names", ())
         if isinstance(source, str)
     )
-    benchmark_summary = _benchmark_summary(root, manifest)
-    has_benchmark = bool(benchmark_summary)
+    benchmark_summary, has_benchmark_evidence = _benchmark_summary(root, manifest)
+    has_benchmark = bool(benchmark_summary) and has_benchmark_evidence
     has_dataset = _artifact_exists(root, artifacts, "policyengine_dataset")
     return (
         USRunProfileOutputs(
@@ -1295,18 +1295,26 @@ def _default_stage_diagnostic_summary(
 def _benchmark_summary(
     artifact_root: Path,
     manifest: Mapping[str, Any],
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], bool]:
     try:
         evidence = build_us_validation_evidence_manifest(
             artifact_root,
             manifest_payload=dict(manifest),
         )
     except (OSError, ValueError, TypeError):
-        return _manifest_benchmark_summary(manifest)
-    summaries = evidence.get("summaries")
-    if isinstance(summaries, Mapping) and summaries:
-        return {str(key): item for key, item in summaries.items()}
-    return _manifest_benchmark_summary(manifest)
+        summary = _manifest_benchmark_summary_for_existing_artifacts(
+            artifact_root,
+            manifest,
+        )
+        return summary, bool(summary)
+    summary = _validation_evidence_summary_for_existing_evidence(evidence)
+    if summary:
+        return summary, True
+    summary = _manifest_benchmark_summary_for_existing_artifacts(
+        artifact_root,
+        manifest,
+    )
+    return summary, bool(summary)
 
 
 def _manifest_benchmark_summary(manifest: Mapping[str, Any]) -> dict[str, Any]:
@@ -1321,6 +1329,39 @@ def _manifest_benchmark_summary(manifest: Mapping[str, Any]) -> dict[str, Any]:
         if isinstance(value, Mapping):
             summary[key] = dict(value)
     return summary
+
+
+def _validation_evidence_summary_for_existing_evidence(
+    evidence: Mapping[str, Any],
+) -> dict[str, Any]:
+    records = evidence.get("evidence")
+    if not isinstance(records, list):
+        return {}
+    existing_keys = {
+        str(record["key"])
+        for record in records
+        if isinstance(record, Mapping)
+        and record.get("key")
+        and record.get("exists") is True
+    }
+    summaries = evidence.get("summaries")
+    if not isinstance(summaries, Mapping):
+        return {}
+    return {
+        str(key): item for key, item in summaries.items() if str(key) in existing_keys
+    }
+
+
+def _manifest_benchmark_summary_for_existing_artifacts(
+    artifact_root: Path,
+    manifest: Mapping[str, Any],
+) -> dict[str, Any]:
+    artifacts = dict(manifest.get("artifacts", {}))
+    return {
+        key: value
+        for key, value in _manifest_benchmark_summary(manifest).items()
+        if _artifact_exists(artifact_root, artifacts, key)
+    }
 
 
 def _serialize_value(value: Any, artifact_root: str | Path | None) -> Any:

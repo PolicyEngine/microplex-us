@@ -24,6 +24,17 @@ from microplex_us.pipelines.stage_run import (
     write_us_stage_run_manifests_from_artifact_manifest,
 )
 
+_BASE_STAGE_MANIFEST_FIELDS = {
+    "schema_version",
+    "contract_version",
+    "input_stage_manifest",
+    "diagnostics",
+    "auxiliary_artifacts",
+    "metadata",
+    "complete",
+    "stage_id",
+}
+
 
 def test_every_canonical_stage_has_typed_output_manifest():
     assert tuple(US_STAGE_OUTPUT_MANIFEST_TYPES) == US_CANONICAL_STAGE_IDS
@@ -39,6 +50,21 @@ def test_stage_output_manifests_use_contract_outputs_as_required_source():
 
         assert output.required_output_keys() == expected
         assert set(expected) <= {item.name for item in fields(manifest_type)}
+
+
+def test_stage_output_manifest_fields_are_declared_by_contracts():
+    for stage_id, manifest_type in US_STAGE_OUTPUT_MANIFEST_TYPES.items():
+        contract = get_us_pipeline_stage_contract(stage_id)
+        contract_output_keys = {resource.key for resource in contract.outputs}
+        contract_artifact_keys = {artifact.key for artifact in contract.artifacts}
+        typed_output_fields = {
+            item.name
+            for item in fields(manifest_type)
+            if item.name not in _BASE_STAGE_MANIFEST_FIELDS
+        }
+
+        assert contract_output_keys <= typed_output_fields
+        assert typed_output_fields <= contract_output_keys | contract_artifact_keys
 
 
 def test_stage_run_writer_records_typed_stage_manifests(tmp_path):
@@ -375,6 +401,28 @@ def test_build_stage_outputs_hydrates_stage9_summary_from_validation_evidence(
         }
     }
     assert stage9.diagnostics["stage_summary"].summary == stage9.benchmark_summary
+
+
+def test_build_stage_outputs_does_not_complete_stage9_from_stale_evidence_summary(
+    tmp_path,
+):
+    _write_artifact_bundle_files(tmp_path)
+    evidence_path = _write_validation_evidence_manifest(tmp_path)
+    (tmp_path / "policyengine_native_scores.json").unlink()
+    manifest = _artifact_manifest()
+    manifest.pop("policyengine_native_scores")
+    manifest["artifacts"]["validation_evidence"] = str(
+        evidence_path.relative_to(tmp_path)
+    )
+
+    outputs = build_us_stage_output_manifests_from_artifact_manifest(
+        tmp_path,
+        manifest,
+    )
+
+    stage9 = outputs[8]
+    assert stage9.complete is False
+    assert stage9.benchmark_summary == {}
 
 
 def test_stage_run_writer_preserves_existing_validation_evidence_summary(

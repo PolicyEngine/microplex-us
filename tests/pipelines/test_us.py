@@ -25,11 +25,13 @@ from microplex.core import (
 from microplex.targets import TargetAggregation, TargetQuery, TargetSpec
 
 import microplex_us.pipelines.us as us_pipeline_module
+from microplex_us.geography import BlockGeography
 from microplex_us.pipelines.us import (
     USMicroplexBuildConfig,
     USMicroplexBuildResult,
     USMicroplexPipeline,
     USMicroplexTargets,
+    _attach_household_census_geographies,
     _policyengine_target_loss_geography_key,
     _select_feasible_policyengine_calibration_constraints,
     _select_policyengine_deferred_stage_constraints,
@@ -604,6 +606,44 @@ class TestUSMicroplexPipeline:
             }
         )
 
+    def test_attach_household_census_geographies_from_state_county(self):
+        geography = BlockGeography.from_data(
+            pd.DataFrame(
+                {
+                    "geoid": ["060010201001000", "360610101001000"],
+                    "state_fips": ["06", "36"],
+                    "county": ["001", "061"],
+                    "county_fips": ["06001", "36061"],
+                    "tract": ["020100", "010100"],
+                    "tract_geoid": ["06001020100", "36061010100"],
+                    "cd_id": ["CA-01", "NY-12"],
+                    "prob": [1.0, 1.0],
+                }
+            )
+        )
+        households = pd.DataFrame(
+            {
+                "household_id": [10, 20],
+                "state_fips": [6, 36],
+                "county_fips": [1, 61],
+            },
+            index=[100, 200],
+        )
+
+        result = _attach_household_census_geographies(
+            households,
+            seed=0,
+            geography=geography,
+        ).sort_values("household_id")
+
+        assert result["block_geoid"].tolist() == [
+            "060010201001000",
+            "360610101001000",
+        ]
+        assert result["county_fips"].tolist() == ["06001", "36061"]
+        assert result["tract_geoid"].tolist() == ["06001020100", "36061010100"]
+        assert result["congressional_district_geoid"].tolist() == [601, 3612]
+
     def test_prepare_seed_data(self, persons, households):
         pipeline = USMicroplexPipeline(USMicroplexBuildConfig())
 
@@ -612,6 +652,9 @@ class TestUSMicroplexPipeline:
         assert len(seed) == len(persons)
         assert "state" in seed.columns
         assert "county_fips" in seed.columns
+        assert "block_geoid" in seed.columns
+        assert "tract_geoid" in seed.columns
+        assert "congressional_district_geoid" in seed.columns
         assert "age_group" in seed.columns
         assert "income_bracket" in seed.columns
         assert set(seed["state"]) == {"CA", "NY", "TX"}

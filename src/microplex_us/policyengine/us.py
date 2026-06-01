@@ -311,6 +311,7 @@ SAFE_POLICYENGINE_US_EXPORT_VARIABLES: set[str] = {
     "salt_refund_income",
     "self_employment_income_before_lsr",
     "social_security_disability",
+    "social_security_retirement",
     "social_security_survivors",
     "social_security_dependents",
     "stock_assets",
@@ -561,6 +562,12 @@ POLICYENGINE_US_DATA_OVERRIDABLE_COMPUTED_EXPORT_VARIABLES: frozenset[str] = fro
         # inputs for these fallback formulas.
         "fsla_overtime_premium",
         "meets_ssi_disability_criteria",
+        # social_security_retirement is a storable INPUT in the pinned pe-us
+        # (no formula), reconstructed from the CPS SS_VAL/RESNSS split. Some
+        # pe-us versions add a fallback formula; listing it here keeps the
+        # source-data value exported so the computed-export guard cannot
+        # silently drop the leaf if that formula ever returns.
+        "social_security_retirement",
     }
 )
 

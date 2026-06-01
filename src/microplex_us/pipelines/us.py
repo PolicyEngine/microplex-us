@@ -160,14 +160,19 @@ def _congressional_district_geoid_from_cd_id(
     if not cd_text or cd_text.lower() in {"nan", "none", "<na>"}:
         return 0
     district_token = cd_text.split("-")[-1]
-    if district_token.upper() == "AL":
+    # eCPS normalizes at-large districts to 01: the raw Census codes "AL"/"ZZ"
+    # (at-large) and "98" (DC) map to district 0, which is then bumped to 1
+    # (policyengine-us-data db/create_initial_strata.py). Microplex's crosswalk
+    # feeds the "-AL" token, but accept the raw Census forms too so the encoder
+    # stays faithful to the eCPS 436-CD universe regardless of input convention.
+    if district_token.upper() in {"AL", "ZZ"}:
         district = 1
     else:
         try:
             district = int(district_token)
         except ValueError:
             return 0
-        if district == 0:
+        if district in (0, 98):
             district = 1
     return state * 100 + district
 
@@ -179,7 +184,12 @@ def _attach_household_census_geographies(
     geography: BlockGeography | None = None,
 ) -> pd.DataFrame:
     """Attach eCPS-contract block, tract, county, and CD geographies to households."""
-    result = households.copy()
+    # Intermediate frames are indexed by row label and written back via .loc;
+    # a non-unique household-frame index makes those reindex operations ambiguous
+    # (ValueError: cannot reindex on an axis with duplicate labels). The caller
+    # consumes this result by merging on the household_id column, not the index,
+    # so collapsing to a fresh RangeIndex here is both safe and robust.
+    result = households.reset_index(drop=True)
     for column, default in (
         ("block_geoid", ""),
         ("tract_geoid", ""),

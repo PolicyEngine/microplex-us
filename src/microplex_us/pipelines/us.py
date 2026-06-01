@@ -4135,6 +4135,7 @@ class USMicroplexPipeline:
         persons = self._assign_family_and_spm_units(persons)
         families = self._collapse_group_table(persons, "family_id")
         spm_units = self._collapse_group_table(persons, "spm_unit_id")
+        spm_units = self._attach_spm_unit_source_columns(persons, spm_units)
         if "tenure_type" in persons.columns:
             spm_tenure = (
                 persons.groupby("spm_unit_id", as_index=False)["tenure_type"]
@@ -7981,6 +7982,31 @@ class USMicroplexPipeline:
             .agg({"household_id": "first"})
             .astype({id_column: np.int64, "household_id": np.int64})
         )
+
+    def _attach_spm_unit_source_columns(
+        self,
+        persons: pd.DataFrame,
+        spm_units: pd.DataFrame,
+    ) -> pd.DataFrame:
+        """Attach observed SPM-unit inputs carried on CPS person rows."""
+        if "spm_unit_id" not in persons.columns:
+            return spm_units
+
+        aggregation_by_column = {
+            "receives_housing_assistance": "max",
+            "takes_up_housing_assistance_if_eligible": "max",
+            "spm_unit_energy_subsidy": "first",
+        }
+        aggregations = {
+            column: aggregation
+            for column, aggregation in aggregation_by_column.items()
+            if column in persons.columns and column not in spm_units.columns
+        }
+        if not aggregations:
+            return spm_units
+
+        source_values = persons.groupby("spm_unit_id", as_index=False).agg(aggregations)
+        return spm_units.merge(source_values, on="spm_unit_id", how="left")
 
     def _normalize_relationship_to_head(self, persons: pd.DataFrame) -> pd.Series:
         family_normalized: pd.Series | None = None

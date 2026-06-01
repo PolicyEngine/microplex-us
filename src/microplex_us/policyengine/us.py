@@ -284,6 +284,7 @@ SAFE_POLICYENGINE_US_EXPORT_VARIABLES: set[str] = {
     "child_support_received",
     "charitable_cash_donations",
     "charitable_non_cash_donations",
+    "receives_housing_assistance",
     "receives_wic",
     "cps_race",
     "disability_benefits",
@@ -538,11 +539,13 @@ POLICYENGINE_US_LEGACY_CONTRACT_VARIABLE_ENTITIES: dict[str, str] = {
     "snap_reported": "spm_unit",
     "spm_unit_broadband_subsidy_reported": "spm_unit",
     "spm_unit_capped_housing_subsidy_reported": "spm_unit",
+    "spm_unit_energy_subsidy": "spm_unit",
     "spm_unit_energy_subsidy_reported": "spm_unit",
     "spm_unit_federal_tax_reported": "spm_unit",
     "spm_unit_payroll_tax_reported": "spm_unit",
     "spm_unit_state_tax_reported": "spm_unit",
     "spm_unit_wic_reported": "spm_unit",
+    "takes_up_housing_assistance_if_eligible": "spm_unit",
     "tanf_reported": "person",
     "taxpayer_id_type": "person",
 }
@@ -564,6 +567,7 @@ POLICYENGINE_US_DATA_OVERRIDABLE_COMPUTED_EXPORT_VARIABLES: frozenset[str] = fro
         # inputs for these fallback formulas.
         "fsla_overtime_premium",
         "meets_ssi_disability_criteria",
+        "spm_unit_energy_subsidy",
         # social_security_retirement is a storable INPUT in the pinned pe-us
         # (no formula), reconstructed from the CPS SS_VAL/RESNSS split. Some
         # pe-us versions add a fallback formula; listing it here keeps the

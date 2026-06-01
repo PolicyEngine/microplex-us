@@ -847,6 +847,36 @@ class TestUSMicroplexPipeline:
             "RENTER",
         ]
 
+    def test_build_policyengine_entity_tables_preserves_spm_source_inputs(
+        self,
+    ):
+        pipeline = USMicroplexPipeline(USMicroplexBuildConfig())
+        population = pd.DataFrame(
+            {
+                "person_id": [1, 2, 3],
+                "household_id": [10, 10, 20],
+                "spm_unit_id": [100, 100, 200],
+                "weight": [1.0, 1.0, 2.0],
+                "age": [45, 12, 70],
+                "income": [60_000.0, 0.0, 25_000.0],
+                "relationship_to_head": [0, 2, 0],
+                "receives_housing_assistance": [False, True, False],
+                "takes_up_housing_assistance_if_eligible": [False, True, False],
+                "spm_unit_energy_subsidy": [90.0, 90.0, 0.0],
+            }
+        )
+
+        tables = pipeline.build_policyengine_entity_tables(population)
+        spm_units = tables.spm_units.sort_values("household_id").reset_index(drop=True)
+
+        assert len(spm_units) == 2
+        assert spm_units["receives_housing_assistance"].tolist() == [True, False]
+        assert spm_units["takes_up_housing_assistance_if_eligible"].tolist() == [
+            True,
+            False,
+        ]
+        assert spm_units["spm_unit_energy_subsidy"].tolist() == [90.0, 0.0]
+
     def test_build_policyengine_entity_tables_recomputes_child_count_contract_inputs(
         self,
     ):

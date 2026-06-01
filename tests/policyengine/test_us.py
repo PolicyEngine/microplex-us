@@ -2115,7 +2115,14 @@ class TestPolicyEngineUSProjection:
             "unrecaptured_section_1250_gain",
             "unreported_payroll_tax",
         )
-        spm_unit_contract_inputs = ("spm_unit_tenure_type",)
+        spm_unit_contract_inputs = (
+            "receives_housing_assistance",
+            "spm_unit_tenure_type",
+        )
+        legacy_spm_unit_contract_inputs = (
+            "spm_unit_energy_subsidy",
+            "takes_up_housing_assistance_if_eligible",
+        )
         legacy_person_contract_inputs = ("count_under_18", "count_under_6")
 
         class FakeSystem:
@@ -2126,7 +2133,13 @@ class TestPolicyEngineUSProjection:
                     for name in household_contract_inputs
                 },
                 **{name: FakeVariable("tax_unit") for name in tax_unit_contract_inputs},
-                **{name: FakeVariable("spm_unit") for name in spm_unit_contract_inputs},
+                **{
+                    name: FakeVariable("spm_unit")
+                    for name in (
+                        *spm_unit_contract_inputs,
+                        *legacy_spm_unit_contract_inputs,
+                    )
+                },
                 "self_employed_health_insurance_ald": FakeVariable("tax_unit"),
                 "self_employed_pension_contribution_ald": FakeVariable("tax_unit"),
             }
@@ -2160,7 +2173,9 @@ class TestPolicyEngineUSProjection:
                 {
                     "spm_unit_id": [1000],
                     "household_id": [10],
-                    **{name: ["RENTER"] for name in spm_unit_contract_inputs},
+                    "receives_housing_assistance": [True],
+                    "spm_unit_tenure_type": ["RENTER"],
+                    **{name: [1.0] for name in legacy_spm_unit_contract_inputs},
                 }
             ),
         )
@@ -2180,9 +2195,13 @@ class TestPolicyEngineUSProjection:
         assert export_maps["tax_unit"] == {
             name: name for name in tax_unit_contract_inputs
         }
-        assert {name: name for name in spm_unit_contract_inputs}.items() <= export_maps[
-            "spm_unit"
-        ].items()
+        assert {
+            name: name
+            for name in (
+                *spm_unit_contract_inputs,
+                *legacy_spm_unit_contract_inputs,
+            )
+        }.items() <= export_maps["spm_unit"].items()
 
     def test_build_policyengine_us_export_variable_maps_blocks_computed_direct_overrides(
         self,

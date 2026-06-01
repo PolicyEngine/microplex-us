@@ -325,6 +325,10 @@ SAFE_POLICYENGINE_US_EXPORT_VARIABLES: set[str] = {
     "roth_401k_contributions_desired",
     "traditional_ira_contributions_desired",
     "roth_ira_contributions_desired",
+    # CPS-derived direct income copies (eCPS cps.py:1493-1495).
+    "survivor_benefits",
+    "educational_assistance",
+    "financial_assistance",
     "stock_assets",
     "taxable_ira_distributions",
     "tip_income",

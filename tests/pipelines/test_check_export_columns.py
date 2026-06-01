@@ -150,6 +150,32 @@ def test_main_h5_path_accepts_flat_datasets(tmp_path, contract_path):
     assert rc == 0
 
 
+def test_main_entity_tables_path_uses_schema_columns(
+    tmp_path, contract_path, monkeypatch
+):
+    checkpoint_dir = tmp_path / "post-imputation"
+
+    def fake_columns(path, *, direct_override_variables):
+        assert path == checkpoint_dir
+        assert direct_override_variables == ("non_sch_d_capital_gains",)
+        return {"age", "snap", "employment_income"}
+
+    monkeypatch.setattr(cec, "_columns_from_entity_tables", fake_columns)
+
+    rc = main(
+        [
+            "--entity-tables",
+            str(checkpoint_dir),
+            "--direct-override-variable",
+            "non_sch_d_capital_gains",
+            "--contract",
+            str(contract_path),
+        ]
+    )
+
+    assert rc == 0
+
+
 def test_main_requires_exactly_one_input(tmp_path, contract_path):
     # Neither input -> argparse error (SystemExit code 2).
     with pytest.raises(SystemExit) as exc:

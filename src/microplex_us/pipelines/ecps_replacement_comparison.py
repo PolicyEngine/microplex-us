@@ -192,14 +192,12 @@ def build_sound_ecps_replacement_comparison(
         and candidate_score_error <= score_consistency_tol
         and baseline_score_error <= score_consistency_tol
     )
-    ecps_refit_recovery_passed = (
-        baseline_refit["optimized_full_loss"]
+    ecps_refit_recovery_passed = baseline_refit[
+        "optimized_full_loss"
+    ] <= baseline_refit["initial_full_loss"] + score_consistency_tol and (
+        baseline_score_loss is None
+        or baseline_score_loss
         <= baseline_refit["initial_full_loss"] + score_consistency_tol
-        and (
-            baseline_score_loss is None
-            or baseline_score_loss
-            <= baseline_refit["initial_full_loss"] + score_consistency_tol
-        )
     )
 
     protected_family_losses = _protected_family_losses(
@@ -324,7 +322,9 @@ def build_sound_ecps_replacement_comparison(
             "train_targets": int((~holdout_mask).sum()),
             "holdout_targets": int(holdout_mask.sum()),
             "holdout_target_names": [
-                name for name, holdout in zip(target_names, holdout_mask, strict=True) if holdout
+                name
+                for name, holdout in zip(target_names, holdout_mask, strict=True)
+                if holdout
             ],
         },
         "refit_config": refit_config,
@@ -386,7 +386,9 @@ def _write_matched_dataset(
     force: bool,
 ) -> None:
     if output_path.exists() and not force:
-        raise FileExistsError(f"{output_path} already exists; pass --force to replace it")
+        raise FileExistsError(
+            f"{output_path} already exists; pass --force to replace it"
+        )
     _write_matched_policyengine_us_baseline_dataset(
         input_path,
         output_path,
@@ -438,9 +440,7 @@ def _entity_structure_summary(
             period_key,
         )
         if person_ids.shape[0] != person_household_ids.shape[0]:
-            raise ValueError(
-                f"{path} person_id and person_household_id lengths differ"
-            )
+            raise ValueError(f"{path} person_id and person_household_id lengths differ")
 
         household_count = int(household_ids.shape[0])
         summary: dict[str, Any] = {
@@ -500,8 +500,7 @@ def _entity_membership_summary(
     )
     if person_entity_ids.shape[0] != person_household_ids.shape[0]:
         raise ValueError(
-            f"{dataset_path} person_{entity}_id and person_household_id "
-            "lengths differ"
+            f"{dataset_path} person_{entity}_id and person_household_id lengths differ"
         )
     unique_entity_ids = np.unique(entity_ids)
     duplicate_unit_id_count = int(entity_ids.shape[0] - unique_entity_ids.shape[0])
@@ -602,8 +601,10 @@ def _extract_pe_native_loss_inputs(
             check=False,
         )
         if completed.returncode != 0:
-            detail = completed.stderr.strip() or completed.stdout.strip() or str(
-                completed.returncode
+            detail = (
+                completed.stderr.strip()
+                or completed.stdout.strip()
+                or str(completed.returncode)
             )
             raise RuntimeError(f"PE-native loss-matrix extraction failed: {detail}")
         return {
@@ -771,7 +772,6 @@ def _protected_family_losses(
 ) -> dict[str, dict[str, float | int]]:
     candidate_terms = _loss_terms(candidate_inputs, candidate_weights)
     baseline_terms = _loss_terms(baseline_inputs, baseline_weights)
-    n_targets = float(len(target_names))
     rows: dict[str, dict[str, float | int]] = {}
     for family, patterns in _PROTECTED_TARGET_PATTERNS.items():
         indices = [
@@ -781,8 +781,8 @@ def _protected_family_losses(
         ]
         if not indices:
             continue
-        candidate_loss = float(candidate_terms[indices].sum() / n_targets)
-        baseline_loss = float(baseline_terms[indices].sum() / n_targets)
+        candidate_loss = float(candidate_terms[indices].sum())
+        baseline_loss = float(baseline_terms[indices].sum())
         rows[family] = {
             "n_targets": int(len(indices)),
             "candidate_loss": candidate_loss,
@@ -921,9 +921,9 @@ def _target_value_diagnostics(
             target[native_mask] = np.asarray(unscaled_target, dtype=np.float64)[
                 native_mask
             ]
-            estimate[native_mask] = scaled_estimate[native_mask] / scaling_array[
-                native_mask
-            ]
+            estimate[native_mask] = (
+                scaled_estimate[native_mask] / scaling_array[native_mask]
+            )
             value_scale[native_mask] = "native"
     if target.shape != estimate.shape:
         raise ValueError("target and estimate shapes differ")
@@ -945,7 +945,6 @@ def _target_family_breakdown(
     families: dict[str, list[dict[str, Any]]] = {}
     for row in target_rows:
         families.setdefault(str(row["family"]), []).append(row)
-    denominator = float(total_targets) if total_targets else 1.0
     breakdown = []
     for family, rows in sorted(families.items()):
         candidate_loss = sum(float(row["candidate_loss_term"]) for row in rows)
@@ -954,19 +953,13 @@ def _target_family_breakdown(
             {
                 "family": family,
                 "n_targets": int(len(rows)),
-                "train_targets": int(
-                    sum(1 for row in rows if row["split"] == "train")
-                ),
+                "train_targets": int(sum(1 for row in rows if row["split"] == "train")),
                 "holdout_targets": int(
                     sum(1 for row in rows if row["split"] == "holdout")
                 ),
-                "candidate_loss_contribution": float(
-                    candidate_loss / denominator
-                ),
-                "baseline_loss_contribution": float(baseline_loss / denominator),
-                "loss_delta": float(
-                    (candidate_loss - baseline_loss) / denominator
-                ),
+                "candidate_loss_contribution": float(candidate_loss),
+                "baseline_loss_contribution": float(baseline_loss),
+                "loss_delta": float(candidate_loss - baseline_loss),
                 "candidate_wins": int(
                     sum(1 for row in rows if row["winner"] == "candidate")
                 ),
@@ -976,7 +969,9 @@ def _target_family_breakdown(
                 "ties": int(sum(1 for row in rows if row["winner"] == "tie")),
             }
         )
-    return sorted(breakdown, key=lambda row: abs(float(row["loss_delta"])), reverse=True)
+    return sorted(
+        breakdown, key=lambda row: abs(float(row["loss_delta"])), reverse=True
+    )
 
 
 def _support_audit_summary(support_audit: dict[str, Any]) -> dict[str, Any]:
@@ -1042,10 +1037,7 @@ def _target_matches_protected_family(
     patterns: tuple[str, ...],
 ) -> bool:
     normalized = (
-        target_name.lower()
-        .replace("-", "_")
-        .replace(" ", "_")
-        .replace("/", "_")
+        target_name.lower().replace("-", "_").replace(" ", "_").replace("/", "_")
     )
     if family == "wages" and (
         "self_employment" in normalized or "business_income" in normalized

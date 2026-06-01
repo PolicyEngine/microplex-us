@@ -11,6 +11,9 @@ from microplex_us.pipelines.pe_us_data_rebuild import (
     default_policyengine_us_data_rebuild_config,
     default_policyengine_us_data_rebuild_program,
 )
+from microplex_us.pipelines.stage_run import (
+    resolve_us_manifest_or_contract_artifact_path,
+)
 
 _HARNESS_SUMMARY_KEYS = (
     "candidate_mean_abs_relative_error",
@@ -85,32 +88,50 @@ def build_policyengine_us_data_rebuild_parity_artifact(
         if manifest_payload is not None
         else json.loads((artifact_root / "manifest.json").read_text())
     )
+    harness_path = _resolve_stage_artifact_path(
+        artifact_root,
+        manifest,
+        "policyengine_harness",
+        stage_id="09_validation_benchmarking",
+    )
     harness_source = _resolve_payload_source(
-        artifact_root / "policyengine_harness.json",
+        harness_path,
         override_supplied=harness_payload is not None,
     )
     harness = (
         dict(harness_payload)
         if harness_payload is not None
-        else _load_optional_json(artifact_root / "policyengine_harness.json")
+        else _load_optional_json(harness_path)
+    )
+    native_scores_path = _resolve_stage_artifact_path(
+        artifact_root,
+        manifest,
+        "policyengine_native_scores",
+        stage_id="09_validation_benchmarking",
     )
     native_scores_source = _resolve_payload_source(
-        artifact_root / "policyengine_native_scores.json",
+        native_scores_path,
         override_supplied=native_scores_payload is not None,
     )
     native_scores = (
         dict(native_scores_payload)
         if native_scores_payload is not None
-        else _load_optional_json(artifact_root / "policyengine_native_scores.json")
+        else _load_optional_json(native_scores_path)
+    )
+    imputation_ablation_path = _resolve_stage_artifact_path(
+        artifact_root,
+        manifest,
+        "imputation_ablation",
+        stage_id="09_validation_benchmarking",
     )
     imputation_ablation_source = _resolve_payload_source(
-        artifact_root / "imputation_ablation.json",
+        imputation_ablation_path,
         override_supplied=imputation_ablation_payload is not None,
     )
     imputation_ablation = (
         dict(imputation_ablation_payload)
         if imputation_ablation_payload is not None
-        else _load_optional_json(artifact_root / "imputation_ablation.json")
+        else _load_optional_json(imputation_ablation_path)
     )
 
     resolved_program = program or default_policyengine_us_data_rebuild_program()
@@ -278,6 +299,21 @@ def _load_optional_json(path: Path) -> dict[str, Any] | None:
     if not path.exists():
         return None
     return json.loads(path.read_text())
+
+
+def _resolve_stage_artifact_path(
+    artifact_root: Path,
+    manifest: dict[str, Any],
+    artifact_key: str,
+    *,
+    stage_id: str,
+) -> Path:
+    return resolve_us_manifest_or_contract_artifact_path(
+        artifact_root,
+        manifest,
+        artifact_key,
+        stage_id=stage_id,
+    )
 
 
 def _build_profile_conformance(

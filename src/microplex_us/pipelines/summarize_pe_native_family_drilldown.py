@@ -8,6 +8,11 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
+from microplex_us.pipelines.stage_contracts import (
+    get_us_stage_artifact_contract,
+    resolve_us_stage_artifact_contract_path,
+)
+
 
 def classify_pe_native_target_family(target_name: str) -> str:
     """Classify one PE target name into the broad-loss family buckets."""
@@ -77,7 +82,13 @@ def summarize_us_pe_native_family_drilldown(
         root_key = artifact_root.name
         for bundle_dir in _iter_native_audit_bundle_dirs(artifact_root):
             total_audits += 1
-            payload = json.loads((bundle_dir / "pe_us_data_rebuild_native_audit.json").read_text())
+            payload = json.loads(
+                resolve_us_stage_artifact_contract_path(
+                    bundle_dir,
+                    "09_validation_benchmarking",
+                    "policyengine_native_audit",
+                ).read_text()
+            )
             verdict_hints = dict(payload.get("verdictHints", {}))
             support_summary = dict(payload.get("supportAuditSummary", {}))
             matching_targets = [
@@ -190,11 +201,21 @@ def summarize_us_pe_native_family_drilldown(
 
 
 def _iter_native_audit_bundle_dirs(artifact_root: Path) -> tuple[Path, ...]:
+    audit_hint = get_us_stage_artifact_contract(
+        "09_validation_benchmarking",
+        "policyengine_native_audit",
+    ).path_hint
+    dataset_hint = get_us_stage_artifact_contract(
+        "08_dataset_assembly",
+        "policyengine_dataset",
+    ).path_hint
+    if audit_hint is None or dataset_hint is None:
+        return ()
     return tuple(
         sorted(
             path.parent
-            for path in artifact_root.rglob("pe_us_data_rebuild_native_audit.json")
-            if (path.parent / "policyengine_us.h5").exists()
+            for path in artifact_root.rglob(audit_hint)
+            if (path.parent / dataset_hint).exists()
         )
     )
 

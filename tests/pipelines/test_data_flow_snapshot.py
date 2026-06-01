@@ -13,6 +13,27 @@ def test_build_us_microplex_data_flow_snapshot_reads_manifest_runtime_mix(tmp_pa
     artifact_dir.mkdir()
     (artifact_dir / "policyengine_us.h5").write_text("dataset")
     (artifact_dir / "policyengine_harness.json").write_text("{}")
+    evidence_path = (
+        artifact_dir
+        / "stage_artifacts"
+        / "09_validation_benchmarking"
+        / "evidence_manifest.json"
+    )
+    evidence_path.parent.mkdir(parents=True)
+    evidence_path.write_text(
+        json.dumps(
+            {
+                "schemaVersion": 1,
+                "evidence": [
+                    {
+                        "key": "policyengine_harness",
+                        "path": "policyengine_harness.json",
+                        "exists": True,
+                    }
+                ],
+            }
+        )
+    )
     (artifact_dir / "manifest.json").write_text(
         json.dumps(
             {
@@ -52,6 +73,10 @@ def test_build_us_microplex_data_flow_snapshot_reads_manifest_runtime_mix(tmp_pa
                 "artifacts": {
                     "policyengine_dataset": "policyengine_us.h5",
                     "policyengine_harness": "policyengine_harness.json",
+                    "validation_evidence": (
+                        "stage_artifacts/09_validation_benchmarking/"
+                        "evidence_manifest.json"
+                    ),
                 },
                 "policyengine_harness": {
                     "mean_abs_relative_error_delta": -0.2,
@@ -220,7 +245,11 @@ def test_write_us_microplex_data_flow_snapshot_ignores_stale_stage_manifest(
         artifact_dir,
         artifact_dir / "data_flow_snapshot.json",
         manifest_payload=manifest,
-        assume_existing_stage_artifact_keys=("stage_manifest",),
+        assume_existing_stage_artifact_keys=(
+            "stage_manifest",
+            "artifact_inventory",
+            "conditional_readiness",
+        ),
     )
 
     snapshot = json.loads((artifact_dir / "data_flow_snapshot.json").read_text())

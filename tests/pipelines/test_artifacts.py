@@ -302,6 +302,10 @@ class TestSaveUSMicroplexArtifacts:
         assert paths.policyengine_dataset.exists()
         assert paths.stage_manifest is not None
         assert paths.stage_manifest.exists()
+        assert paths.artifact_inventory is not None
+        assert paths.artifact_inventory.exists()
+        assert paths.conditional_readiness is not None
+        assert paths.conditional_readiness.exists()
         assert paths.source_plan is not None
         assert paths.source_plan.exists()
         assert paths.policyengine_entity_tables is not None
@@ -324,6 +328,14 @@ class TestSaveUSMicroplexArtifacts:
         assert manifest["artifacts"]["policyengine_dataset"] == "policyengine_us.h5"
         assert manifest["artifacts"]["stage_manifest"] == "stage_manifest.json"
         assert (
+            manifest["artifacts"]["artifact_inventory"]
+            == "stage_artifacts/artifact_inventory.json"
+        )
+        assert (
+            manifest["artifacts"]["conditional_readiness"]
+            == "stage_artifacts/conditional_readiness.json"
+        )
+        assert (
             manifest["artifacts"]["policyengine_entity_tables"]
             == "stage_artifacts/06_policyengine_entities/metadata.json"
         )
@@ -332,6 +344,23 @@ class TestSaveUSMicroplexArtifacts:
             == "source_weight_diagnostics.json"
         )
         source_diagnostics = json.loads(paths.source_weight_diagnostics.read_text())
+        artifact_inventory = json.loads(paths.artifact_inventory.read_text())
+        conditional_readiness = json.loads(paths.conditional_readiness.read_text())
+        inventory_records = {
+            (record["stageId"], record["key"]): record
+            for record in artifact_inventory["artifacts"]
+        }
+        assert inventory_records[("01_run_profile", "manifest")]["exists"] is True
+        assert inventory_records[
+            ("08_dataset_assembly", "policyengine_dataset")
+        ]["classification"] == "post_artifact_evidence"
+        readiness = {
+            stage["stageId"]: stage
+            for stage in conditional_readiness["stages"]
+        }
+        assert readiness["09_validation_benchmarking"]["readiness"] == (
+            "post_artifact_evidence"
+        )
         assert (
             source_diagnostics["summary"]["diagnostic_scope"]
             == "saved_artifact_entity_weight_by_source_rows"

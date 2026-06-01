@@ -8,6 +8,9 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+from microplex_us.pipelines.stage_contracts import (
+    resolve_us_stage_artifact_contract_path,
+)
 from microplex_us.pipelines.stage_manifest import (
     build_us_stage_manifest,
     load_us_stage_manifest,
@@ -45,7 +48,11 @@ def require_saved_us_microplex_data_flow_snapshot(
 ) -> dict[str, Any]:
     """Load the saved canonical US data-flow snapshot or raise."""
     artifact_root = Path(artifact_dir)
-    snapshot_path = artifact_root / "data_flow_snapshot.json"
+    snapshot_path = resolve_us_stage_artifact_contract_path(
+        artifact_root,
+        "08_dataset_assembly",
+        "data_flow_snapshot",
+    )
     if not snapshot_path.exists():
         raise FileNotFoundError(
             f"US artifact bundle is missing data_flow_snapshot.json: {snapshot_path}"
@@ -202,7 +209,11 @@ def _materialize_us_microplex_data_flow_snapshot(
 
 
 def _load_saved_data_flow_snapshot(artifact_root: Path) -> dict[str, Any] | None:
-    snapshot_path = artifact_root / "data_flow_snapshot.json"
+    snapshot_path = resolve_us_stage_artifact_contract_path(
+        artifact_root,
+        "08_dataset_assembly",
+        "data_flow_snapshot",
+    )
     if not snapshot_path.exists():
         return None
     snapshot = json.loads(snapshot_path.read_text())

@@ -53,9 +53,13 @@ from microplex_us.pipelines.registry import (
     load_us_microplex_run_registry,
     select_us_microplex_frontier_entry,
 )
-from microplex_us.pipelines.stage_manifest import (
-    write_us_stage_manifest,
-    write_us_validation_evidence_manifest,
+from microplex_us.pipelines.stage_contracts import (
+    resolve_us_stage_artifact_contract_path,
+)
+from microplex_us.pipelines.stage_run import (
+    USStageInputOverride,
+    parse_us_stage_input_override,
+    write_us_stage_run_manifests_from_artifact_manifest,
 )
 from microplex_us.variables import prune_redundant_variables
 
@@ -235,6 +239,37 @@ def _resolve_saved_artifact_path(
             return cwd_relative
         candidate = artifact_relative
     return candidate
+
+
+def _resolve_required_saved_artifact_path(
+    artifact_root: Path,
+    artifacts: dict[str, Any],
+    artifact_key: str,
+) -> Path:
+    path = _resolve_saved_artifact_path(artifact_root, artifacts.get(artifact_key))
+    if path is None:
+        raise KeyError(f"Saved artifact manifest does not declare {artifact_key!r}")
+    return path
+
+
+def _resolve_saved_stage_artifact_path(
+    artifact_root: Path,
+    artifacts: dict[str, Any],
+    artifact_key: str,
+    *,
+    stage_id: str,
+) -> Path | None:
+    declared_path = _resolve_saved_artifact_path(
+        artifact_root, artifacts.get(artifact_key)
+    )
+    if declared_path is not None:
+        return declared_path
+    contract_path = resolve_us_stage_artifact_contract_path(
+        artifact_root,
+        stage_id,
+        artifact_key,
+    )
+    return contract_path if contract_path.exists() else None
 
 
 def _infer_policyengine_baseline_household_weight_sum(
@@ -970,134 +1005,29 @@ def _build_checkpoint_imputation_ablation_payload(
     }
 
 
-def _build_checkpoint_benchmark_stage(
-    manifest: dict[str, Any],
-    *,
-    extra_outputs: tuple[str, ...] = (),
-) -> dict[str, Any]:
-    artifacts = dict(manifest.get("artifacts", {}))
-    calibration_summary = dict(manifest.get("calibration", {}))
-    harness_summary = dict(manifest.get("policyengine_harness", {}))
-    native_scores_summary = dict(manifest.get("policyengine_native_scores", {}))
-    imputation_ablation_summary = dict(manifest.get("imputation_ablation", {}))
-    outputs = [
-        value
-        for value in (
-            artifacts.get("policyengine_harness"),
-            artifacts.get("policyengine_native_scores"),
-            artifacts.get("imputation_ablation"),
-            artifacts.get("policyengine_native_audit"),
-            *extra_outputs,
-        )
-        if value
-    ]
-    return {
-        "id": "09_validation_benchmarking",
-        "legacyId": "benchmark",
-        "step": "09",
-        "title": "Validation and benchmarking",
-        "summary": (
-            "Harness, native-loss, and donor-imputation diagnostics stay attached "
-            "to the same artifact bundle."
-        ),
-        "status": (
-            "ready"
-            if harness_summary or native_scores_summary or imputation_ablation_summary
-            else "missing"
-        ),
-        "metrics": [
-            {
-                "label": "Capped full oracle loss",
-                "value": calibration_summary.get(
-                    "full_oracle_capped_mean_abs_relative_error"
-                ),
-            },
-            {
-                "label": "Full oracle loss",
-                "value": calibration_summary.get("full_oracle_mean_abs_relative_error"),
-            },
-            {
-                "label": "Harness delta",
-                "value": harness_summary.get("mean_abs_relative_error_delta"),
-            },
-            {
-                "label": "Native delta",
-                "value": native_scores_summary.get("enhanced_cps_native_loss_delta"),
-            },
-            {
-                "label": "Win rate",
-                "value": harness_summary.get("target_win_rate"),
-            },
-            {
-                "label": "Imputation MAE",
-                "value": imputation_ablation_summary.get(
-                    "production_mean_weighted_mae"
-                ),
-            },
-            {
-                "label": "Imputation F1",
-                "value": imputation_ablation_summary.get("production_mean_support_f1"),
-            },
-        ],
-        "outputs": list(dict.fromkeys(outputs)),
-    }
-
-
 def _refresh_checkpoint_data_flow_snapshot(
     artifact_root: Path,
     manifest: dict[str, Any],
     *,
     extra_outputs: tuple[str, ...] = (),
 ) -> Path | None:
-    snapshot_path = artifact_root / "data_flow_snapshot.json"
-    stage_manifest_path = artifact_root / "stage_manifest.json"
-    validation_evidence_path = (
-        artifact_root
-        / "stage_artifacts"
-        / "09_validation_benchmarking"
-        / "evidence_manifest.json"
-    )
-    artifacts = dict(manifest.get("artifacts", {}))
-    artifacts.setdefault("stage_manifest", stage_manifest_path.name)
-    artifacts.setdefault(
-        "validation_evidence",
-        str(validation_evidence_path.relative_to(artifact_root)),
-    )
-    manifest["artifacts"] = artifacts
-    write_us_validation_evidence_manifest(
+    if extra_outputs:
+        manifest.setdefault("diagnostics", {}).setdefault(
+            "checkpoint_extra_outputs",
+            list(extra_outputs),
+        )
+    updated_manifest = write_us_stage_run_manifests_from_artifact_manifest(
         artifact_root,
-        validation_evidence_path,
-        manifest_payload=manifest,
-    )
-    write_us_stage_manifest(
-        artifact_root,
-        stage_manifest_path,
-        manifest_payload=manifest,
-    )
-    if not snapshot_path.exists():
-        return None
-    snapshot = json.loads(snapshot_path.read_text())
-    if snapshot.get("schemaVersion") != 1:
-        return snapshot_path
-    stages = list(snapshot.get("stages", []))
-    benchmark_stage = _build_checkpoint_benchmark_stage(
         manifest,
-        extra_outputs=extra_outputs,
     )
-    replaced = False
-    for index, stage in enumerate(stages):
-        if isinstance(stage, dict) and stage.get("id") in {
-            "benchmark",
-            "09_validation_benchmarking",
-        }:
-            stages[index] = benchmark_stage
-            replaced = True
-            break
-    if not replaced:
-        stages.append(benchmark_stage)
-    snapshot["stages"] = stages
-    _write_json_atomically(snapshot_path, snapshot)
-    return snapshot_path
+    manifest.clear()
+    manifest.update(updated_manifest)
+    snapshot_path = resolve_us_stage_artifact_contract_path(
+        artifact_root,
+        "08_dataset_assembly",
+        "data_flow_snapshot",
+    )
+    return snapshot_path if snapshot_path.exists() else None
 
 
 def _attach_checkpoint_registry_and_index(
@@ -1215,35 +1145,128 @@ def _load_checkpoint_versioned_artifacts(
     artifact_paths = USMicroplexArtifactPaths(
         output_dir=artifact_root,
         version_id=artifact_root.name,
-        seed_data=artifact_root / str(artifacts["seed_data"]),
-        synthetic_data=artifact_root / str(artifacts["synthetic_data"]),
-        calibrated_data=artifact_root / str(artifacts["calibrated_data"]),
-        targets=artifact_root / str(artifacts["targets"]),
+        seed_data=_resolve_required_saved_artifact_path(
+            artifact_root,
+            artifacts,
+            "seed_data",
+        ),
+        synthetic_data=_resolve_required_saved_artifact_path(
+            artifact_root,
+            artifacts,
+            "synthetic_data",
+        ),
+        calibrated_data=_resolve_required_saved_artifact_path(
+            artifact_root,
+            artifacts,
+            "calibrated_data",
+        ),
+        targets=_resolve_required_saved_artifact_path(
+            artifact_root,
+            artifacts,
+            "targets",
+        ),
         manifest=manifest_path,
-        synthesizer=_resolve_saved_artifact_path(
+        scaffold_seed_data=_resolve_saved_stage_artifact_path(
             artifact_root,
-            artifacts.get("synthesizer"),
+            artifacts,
+            "scaffold_seed_data",
+            stage_id="04_seed_scaffold",
         ),
-        policyengine_dataset=_resolve_saved_artifact_path(
+        synthesizer=_resolve_saved_stage_artifact_path(
             artifact_root,
-            artifacts.get("policyengine_dataset"),
+            artifacts,
+            "synthesizer",
+            stage_id="05_donor_integration_synthesis",
         ),
-        data_flow_snapshot=(
-            artifact_root / "data_flow_snapshot.json"
-            if (artifact_root / "data_flow_snapshot.json").exists()
-            else None
-        ),
-        policyengine_harness=_resolve_saved_artifact_path(
+        policyengine_dataset=_resolve_saved_stage_artifact_path(
             artifact_root,
-            artifacts.get("policyengine_harness"),
+            artifacts,
+            "policyengine_dataset",
+            stage_id="08_dataset_assembly",
         ),
-        policyengine_native_scores=_resolve_saved_artifact_path(
+        data_flow_snapshot=_resolve_saved_stage_artifact_path(
             artifact_root,
-            artifacts.get("policyengine_native_scores"),
+            artifacts,
+            "data_flow_snapshot",
+            stage_id="08_dataset_assembly",
         ),
-        policyengine_native_audit=_resolve_saved_artifact_path(
+        stage_manifest=_resolve_saved_stage_artifact_path(
             artifact_root,
-            artifacts.get("policyengine_native_audit"),
+            artifacts,
+            "stage_manifest",
+            stage_id="08_dataset_assembly",
+        ),
+        artifact_inventory=_resolve_saved_stage_artifact_path(
+            artifact_root,
+            artifacts,
+            "artifact_inventory",
+            stage_id="08_dataset_assembly",
+        ),
+        conditional_readiness=_resolve_saved_stage_artifact_path(
+            artifact_root,
+            artifacts,
+            "conditional_readiness",
+            stage_id="08_dataset_assembly",
+        ),
+        source_plan=_resolve_saved_stage_artifact_path(
+            artifact_root,
+            artifacts,
+            "source_plan",
+            stage_id="03_source_planning",
+        ),
+        policyengine_entity_tables=_resolve_saved_stage_artifact_path(
+            artifact_root,
+            artifacts,
+            "policyengine_entity_tables",
+            stage_id="06_policyengine_entities",
+        ),
+        calibration_summary=_resolve_saved_stage_artifact_path(
+            artifact_root,
+            artifacts,
+            "calibration_summary",
+            stage_id="07_calibration",
+        ),
+        validation_evidence=_resolve_saved_stage_artifact_path(
+            artifact_root,
+            artifacts,
+            "validation_evidence",
+            stage_id="09_validation_benchmarking",
+        ),
+        policyengine_harness=_resolve_saved_stage_artifact_path(
+            artifact_root,
+            artifacts,
+            "policyengine_harness",
+            stage_id="09_validation_benchmarking",
+        ),
+        policyengine_native_scores=_resolve_saved_stage_artifact_path(
+            artifact_root,
+            artifacts,
+            "policyengine_native_scores",
+            stage_id="09_validation_benchmarking",
+        ),
+        policyengine_native_audit=_resolve_saved_stage_artifact_path(
+            artifact_root,
+            artifacts,
+            "policyengine_native_audit",
+            stage_id="09_validation_benchmarking",
+        ),
+        child_tax_unit_agi_drift=_resolve_saved_stage_artifact_path(
+            artifact_root,
+            artifacts,
+            "child_tax_unit_agi_drift",
+            stage_id="09_validation_benchmarking",
+        ),
+        capital_gains_lots=_resolve_saved_stage_artifact_path(
+            artifact_root,
+            artifacts,
+            "capital_gains_lots",
+            stage_id="08_dataset_assembly",
+        ),
+        source_weight_diagnostics=_resolve_saved_stage_artifact_path(
+            artifact_root,
+            artifacts,
+            "source_weight_diagnostics",
+            stage_id="05_donor_integration_synthesis",
         ),
         run_registry=_resolve_saved_artifact_path(
             artifact_root,
@@ -1481,7 +1504,11 @@ def attach_policyengine_us_data_rebuild_checkpoint_evidence(
         )
         harness_payload = harness_run.to_dict()
     if harness_payload is not None:
-        harness_path = artifact_root / "policyengine_harness.json"
+        harness_path = resolve_us_stage_artifact_contract_path(
+            artifact_root,
+            "09_validation_benchmarking",
+            "policyengine_harness",
+        )
         _write_json_atomically(harness_path, harness_payload)
         artifacts["policyengine_harness"] = harness_path.name
         manifest["policyengine_harness"] = dict(harness_payload.get("summary", {}))
@@ -1512,7 +1539,11 @@ def attach_policyengine_us_data_rebuild_checkpoint_evidence(
             policyengine_us_data_python=policyengine_us_data_python,
         )
     if native_scores_payload is not None:
-        native_scores_path = artifact_root / "policyengine_native_scores.json"
+        native_scores_path = resolve_us_stage_artifact_contract_path(
+            artifact_root,
+            "09_validation_benchmarking",
+            "policyengine_native_scores",
+        )
         _write_json_atomically(native_scores_path, native_scores_payload)
         artifacts["policyengine_native_scores"] = native_scores_path.name
         manifest["policyengine_native_scores"] = dict(
@@ -1540,7 +1571,11 @@ def attach_policyengine_us_data_rebuild_checkpoint_evidence(
             manifest=manifest,
         )
     if imputation_ablation_payload is not None:
-        imputation_ablation_path = artifact_root / "imputation_ablation.json"
+        imputation_ablation_path = resolve_us_stage_artifact_contract_path(
+            artifact_root,
+            "09_validation_benchmarking",
+            "imputation_ablation",
+        )
         _write_json_atomically(imputation_ablation_path, imputation_ablation_payload)
         artifacts["imputation_ablation"] = imputation_ablation_path.name
         manifest["imputation_ablation"] = dict(
@@ -1610,35 +1645,17 @@ def attach_policyengine_us_data_rebuild_checkpoint_evidence(
             policyengine_us_data_repo=policyengine_us_data_repo,
             policyengine_us_data_python=policyengine_us_data_python,
         )
-        native_audit_path = artifact_root / "pe_us_data_rebuild_native_audit.json"
+        native_audit_path = resolve_us_stage_artifact_contract_path(
+            artifact_root,
+            "09_validation_benchmarking",
+            "policyengine_native_audit",
+        )
         _write_json_atomically(native_audit_path, native_audit_payload)
         artifacts["policyengine_native_audit"] = native_audit_path.name
         manifest["policyengine_native_audit"] = dict(
             native_audit_payload.get("verdictHints", {})
         )
-    stage_manifest_path = artifact_root / "stage_manifest.json"
-    validation_evidence_path = (
-        artifact_root
-        / "stage_artifacts"
-        / "09_validation_benchmarking"
-        / "evidence_manifest.json"
-    )
-    artifacts.setdefault("stage_manifest", stage_manifest_path.name)
-    artifacts.setdefault(
-        "validation_evidence",
-        str(validation_evidence_path.relative_to(artifact_root)),
-    )
     manifest["artifacts"] = artifacts
-    write_us_validation_evidence_manifest(
-        artifact_root,
-        validation_evidence_path,
-        manifest_payload=manifest,
-    )
-    write_us_stage_manifest(
-        artifact_root,
-        stage_manifest_path,
-        manifest_payload=manifest,
-    )
     _refresh_checkpoint_data_flow_snapshot(
         artifact_root,
         manifest,
@@ -1845,6 +1862,8 @@ def run_policyengine_us_data_rebuild_checkpoint(
     run_registry_path: str | Path | None = None,
     run_index_path: str | Path | None = None,
     run_registry_metadata: dict[str, Any] | None = None,
+    allow_stage_input_overrides: bool = False,
+    stage_input_overrides: tuple[USStageInputOverride, ...] = (),
 ) -> PEUSDataRebuildCheckpointResult:
     """Run one saved rebuild checkpoint and write its PE comparison sidecars."""
 
@@ -1983,6 +2002,8 @@ def run_policyengine_us_data_rebuild_checkpoint(
         run_index_path=run_index_path,
         run_registry_metadata=resolved_registry_metadata,
         enable_child_tax_unit_agi_drift=True,
+        allow_stage_input_overrides=allow_stage_input_overrides,
+        stage_input_overrides=stage_input_overrides,
     )
     _emit_checkpoint_progress(
         "PE-US-data rebuild checkpoint: build complete",
@@ -2216,7 +2237,27 @@ def main(argv: list[str] | None = None) -> None:
     )
     parser.add_argument("--capital-gains-lots-max-lots-per-person", type=int)
     parser.add_argument("--capital-gains-lots-random-seed", type=int)
+    parser.add_argument(
+        "--allow-stage-input-overrides",
+        action="store_true",
+        help=(
+            "Allow typed stage manifests to consume explicit CLI input overrides "
+            "instead of the immediately previous stage manifest."
+        ),
+    )
+    parser.add_argument(
+        "--stage-input-override",
+        action="append",
+        default=[],
+        metavar="STAGE_ID.KEY=PATH",
+        help=("Explicit stage input override. Requires --allow-stage-input-overrides."),
+    )
     args = parser.parse_args(argv)
+    stage_input_overrides = tuple(
+        parse_us_stage_input_override(value) for value in args.stage_input_override
+    )
+    if stage_input_overrides and not args.allow_stage_input_overrides:
+        parser.error("--stage-input-override requires --allow-stage-input-overrides")
 
     config_overrides = {
         "n_synthetic": int(args.n_synthetic),
@@ -2302,6 +2343,8 @@ def main(argv: list[str] | None = None) -> None:
         defer_policyengine_native_score=args.defer_policyengine_native_score,
         defer_native_audit=args.defer_native_audit,
         defer_imputation_ablation=args.defer_imputation_ablation,
+        allow_stage_input_overrides=args.allow_stage_input_overrides,
+        stage_input_overrides=stage_input_overrides,
     )
 
     print(result.artifacts.artifact_paths.output_dir)

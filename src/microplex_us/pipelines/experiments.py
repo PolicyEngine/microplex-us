@@ -31,6 +31,9 @@ from microplex_us.pipelines.registry import (
     load_us_microplex_run_registry,
     select_us_microplex_frontier_entry,
 )
+from microplex_us.pipelines.stage_contracts import (
+    resolve_us_stage_artifact_contract_path,
+)
 from microplex_us.pipelines.us import USMicroplexBuildConfig
 from microplex_us.policyengine.harness import (
     PolicyEngineUSComparisonCache,
@@ -264,6 +267,16 @@ class USMicroplexExperimentResult:
                     if self.artifact_paths.data_flow_snapshot is not None
                     else None
                 ),
+                "artifact_inventory": (
+                    str(self.artifact_paths.artifact_inventory)
+                    if self.artifact_paths.artifact_inventory is not None
+                    else None
+                ),
+                "conditional_readiness": (
+                    str(self.artifact_paths.conditional_readiness)
+                    if self.artifact_paths.conditional_readiness is not None
+                    else None
+                ),
                 "policyengine_harness": (
                     str(self.artifact_paths.policyengine_harness)
                     if self.artifact_paths.policyengine_harness is not None
@@ -340,6 +353,16 @@ class USMicroplexExperimentResult:
                 data_flow_snapshot=(
                     Path(artifact_paths["data_flow_snapshot"])
                     if artifact_paths.get("data_flow_snapshot") is not None
+                    else None
+                ),
+                artifact_inventory=(
+                    Path(artifact_paths["artifact_inventory"])
+                    if artifact_paths.get("artifact_inventory") is not None
+                    else None
+                ),
+                conditional_readiness=(
+                    Path(artifact_paths["conditional_readiness"])
+                    if artifact_paths.get("conditional_readiness") is not None
                     else None
                 ),
                 policyengine_harness=(
@@ -768,7 +791,21 @@ def _refresh_experiment_artifact_paths(
         data_flow_snapshot=_resolve_optional_result_artifact_path(
             artifact_root,
             artifacts.get("data_flow_snapshot"),
-            fallback="data_flow_snapshot.json",
+            fallback=str(
+                resolve_us_stage_artifact_contract_path(
+                    artifact_root,
+                    "08_dataset_assembly",
+                    "data_flow_snapshot",
+                ).relative_to(artifact_root)
+            ),
+        ),
+        artifact_inventory=_resolve_optional_result_artifact_path(
+            artifact_root,
+            artifacts.get("artifact_inventory"),
+        ),
+        conditional_readiness=_resolve_optional_result_artifact_path(
+            artifact_root,
+            artifacts.get("conditional_readiness"),
         ),
         policyengine_harness=_resolve_optional_result_artifact_path(
             artifact_root,

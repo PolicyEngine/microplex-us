@@ -11,6 +11,12 @@ from microplex_us.pipelines.pe_native_scores import (
     compare_us_pe_native_target_deltas,
     compute_us_pe_native_support_audit,
 )
+from microplex_us.pipelines.stage_contracts import (
+    resolve_us_stage_artifact_contract_path,
+)
+from microplex_us.pipelines.stage_run import (
+    resolve_us_manifest_or_contract_artifact_path,
+)
 
 
 def build_policyengine_us_data_rebuild_native_audit(
@@ -33,18 +39,32 @@ def build_policyengine_us_data_rebuild_native_audit(
         if manifest_payload is not None
         else json.loads((artifact_root / "manifest.json").read_text())
     )
+    artifacts = dict(manifest.get("artifacts", {}))
     native_scores = (
         dict(native_scores_payload)
         if native_scores_payload is not None
-        else json.loads((artifact_root / "policyengine_native_scores.json").read_text())
+        else json.loads(
+            _resolve_stage_artifact_path(
+                artifact_root,
+                manifest,
+                "policyengine_native_scores",
+                stage_id="09_validation_benchmarking",
+            ).read_text()
+        )
     )
     imputation_ablation = (
         dict(imputation_ablation_payload)
         if imputation_ablation_payload is not None
-        else _load_optional_json(artifact_root / "imputation_ablation.json")
+        else _load_optional_json(
+            _resolve_stage_artifact_path(
+                artifact_root,
+                manifest,
+                "imputation_ablation",
+                stage_id="09_validation_benchmarking",
+            )
+        )
     )
     config = dict(manifest.get("config", {}))
-    artifacts = dict(manifest.get("artifacts", {}))
     candidate_dataset_path = _resolve_candidate_dataset_path(artifact_root, artifacts)
     baseline_dataset_path = _resolve_baseline_dataset_path(config)
     period = int(
@@ -176,7 +196,11 @@ def write_policyengine_us_data_rebuild_native_audit(
     destination = (
         Path(output_path)
         if output_path is not None
-        else artifact_root / "pe_us_data_rebuild_native_audit.json"
+        else resolve_us_stage_artifact_contract_path(
+            artifact_root,
+            "09_validation_benchmarking",
+            "policyengine_native_audit",
+        )
     )
     payload = build_policyengine_us_data_rebuild_native_audit(
         artifact_root,
@@ -193,6 +217,21 @@ def write_policyengine_us_data_rebuild_native_audit(
     return destination
 
 
+def _resolve_stage_artifact_path(
+    artifact_root: Path,
+    manifest: dict[str, Any],
+    artifact_key: str,
+    *,
+    stage_id: str,
+) -> Path:
+    return resolve_us_manifest_or_contract_artifact_path(
+        artifact_root,
+        manifest,
+        artifact_key,
+        stage_id=stage_id,
+    )
+
+
 def _resolve_candidate_dataset_path(
     artifact_root: Path,
     artifacts: dict[str, Any],
@@ -202,7 +241,9 @@ def _resolve_candidate_dataset_path(
         raise FileNotFoundError(
             "Artifact bundle is missing artifacts.policyengine_dataset in manifest.json"
         )
-    dataset_path = artifact_root / dataset_name
+    dataset_path = Path(dataset_name)
+    if not dataset_path.is_absolute():
+        dataset_path = artifact_root / dataset_path
     if not dataset_path.exists():
         raise FileNotFoundError(
             f"Artifact bundle is missing saved policyengine dataset: {dataset_path}"

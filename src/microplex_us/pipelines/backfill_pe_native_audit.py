@@ -22,6 +22,10 @@ from microplex_us.pipelines.pe_us_data_rebuild_audit import (
 from microplex_us.pipelines.pe_us_data_rebuild_checkpoint import (
     _refresh_checkpoint_data_flow_snapshot,
 )
+from microplex_us.pipelines.stage_contracts import (
+    get_us_stage_artifact_contract,
+    resolve_us_stage_artifact_contract_path,
+)
 
 
 def backfill_us_pe_native_audit_bundle(
@@ -43,7 +47,11 @@ def backfill_us_pe_native_audit_bundle(
 
     native_scores_path = _resolve_required_native_scores_path(bundle_dir, artifacts)
     native_scores_payload = json.loads(native_scores_path.read_text())
-    native_audit_path = bundle_dir / "pe_us_data_rebuild_native_audit.json"
+    native_audit_path = resolve_us_stage_artifact_contract_path(
+        bundle_dir,
+        "09_validation_benchmarking",
+        "policyengine_native_audit",
+    )
     if native_audit_path.exists() and not force:
         payload = json.loads(native_audit_path.read_text())
     else:
@@ -96,7 +104,11 @@ def backfill_us_pe_native_audit_bundles(
             continue
         manifest_paths.append(manifest_path)
         native_scores_payload = json.loads(native_scores_path.read_text())
-        native_audit_path = bundle_dir / "pe_us_data_rebuild_native_audit.json"
+        native_audit_path = resolve_us_stage_artifact_contract_path(
+            bundle_dir,
+            "09_validation_benchmarking",
+            "policyengine_native_audit",
+        )
         if native_audit_path.exists() and not force:
             _write_native_audit_payload_to_bundle(
                 bundle_dir=bundle_dir,
@@ -222,11 +234,17 @@ def _write_native_audit_payload_to_bundle(
     manifest: dict,
     payload: dict,
 ) -> Path:
-    native_audit_path = bundle_dir / "pe_us_data_rebuild_native_audit.json"
+    native_audit_path = resolve_us_stage_artifact_contract_path(
+        bundle_dir,
+        "09_validation_benchmarking",
+        "policyengine_native_audit",
+    )
     native_audit_path.write_text(json.dumps(payload, indent=2, sort_keys=True))
 
     artifacts = dict(manifest.get("artifacts", {}))
-    artifacts["policyengine_native_audit"] = native_audit_path.name
+    artifacts["policyengine_native_audit"] = str(
+        native_audit_path.relative_to(bundle_dir)
+    )
     manifest["artifacts"] = artifacts
     manifest["policyengine_native_audit"] = dict(payload.get("verdictHints", {}))
 
@@ -276,8 +294,14 @@ def _resolve_optional_native_scores_path(
     artifacts: dict,
 ) -> Path | None:
     artifact_name = (
-        artifacts.get("policyengine_native_scores") or "policyengine_native_scores.json"
+        artifacts.get("policyengine_native_scores")
+        or get_us_stage_artifact_contract(
+            "09_validation_benchmarking",
+            "policyengine_native_scores",
+        ).path_hint
     )
+    if artifact_name is None:
+        return None
     path = bundle_dir / str(artifact_name)
     if path.exists():
         return path

@@ -75,15 +75,37 @@ def test_backfill_us_pe_native_scores_root_updates_manifest_and_registry(
     assert sidecar_path.exists()
 
     updated_manifest = json.loads(manifest_path.read_text())
+    stage_manifest = json.loads((bundle_dir / "stage_manifest.json").read_text())
+    validation_evidence = json.loads(
+        (
+            bundle_dir
+            / "stage_artifacts"
+            / "09_validation_benchmarking"
+            / "evidence_manifest.json"
+        ).read_text()
+    )
     assert (
         updated_manifest["artifacts"]["policyengine_native_scores"]
         == "policyengine_native_scores.json"
+    )
+    assert updated_manifest["artifacts"]["stage_manifest"] == "stage_manifest.json"
+    assert (
+        updated_manifest["artifacts"]["validation_evidence"]
+        == "stage_artifacts/09_validation_benchmarking/evidence_manifest.json"
     )
     assert updated_manifest["policyengine_native_scores"]["candidate_beats_baseline"] is True
     assert (
         updated_manifest["run_registry"]["default_frontier_metric"]
         == "enhanced_cps_native_loss_delta"
     )
+    stage9 = next(
+        stage
+        for stage in stage_manifest["stages"]
+        if stage["id"] == "09_validation_benchmarking"
+    )
+    assert stage9["status"] == "ready"
+    assert validation_evidence["evidence"][0]["key"] == "policyengine_native_scores"
+    assert validation_evidence["evidence"][0]["exists"] is True
 
     registry_path = artifact_root / "run_registry.jsonl"
     assert registry_path.exists()

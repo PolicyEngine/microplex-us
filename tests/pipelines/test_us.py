@@ -1012,6 +1012,7 @@ class TestUSMicroplexPipeline:
                 "relationship_to_head": [0, 2, 0],
                 "receives_housing_assistance": [False, True, False],
                 "takes_up_housing_assistance_if_eligible": [False, True, False],
+                "takes_up_snap_if_eligible": [False, True, False],
                 "spm_unit_energy_subsidy": [90.0, 90.0, 0.0],
             }
         )
@@ -1025,7 +1026,44 @@ class TestUSMicroplexPipeline:
             True,
             False,
         ]
+        assert spm_units["takes_up_snap_if_eligible"].tolist() == [True, False]
         assert spm_units["spm_unit_energy_subsidy"].tolist() == [90.0, 0.0]
+
+    def test_build_policyengine_entity_tables_adds_deterministic_snap_takeup(
+        self,
+        monkeypatch,
+    ):
+        calls: list[tuple[str, int]] = []
+
+        def fake_load_takeup_rate(variable_name: str, year: int) -> float:
+            calls.append((variable_name, year))
+            return 0.0
+
+        monkeypatch.setattr(
+            us_pipeline_module,
+            "_load_policyengine_us_data_takeup_rate",
+            fake_load_takeup_rate,
+        )
+        pipeline = USMicroplexPipeline(
+            USMicroplexBuildConfig(policyengine_dataset_year=2024)
+        )
+        population = pd.DataFrame(
+            {
+                "person_id": [1, 2, 3],
+                "household_id": [10, 10, 20],
+                "spm_unit_id": [100, 100, 200],
+                "weight": [1.0, 1.0, 2.0],
+                "age": [45, 12, 70],
+                "income": [60_000.0, 0.0, 25_000.0],
+                "relationship_to_head": [0, 2, 0],
+            }
+        )
+
+        tables = pipeline.build_policyengine_entity_tables(population)
+        spm_units = tables.spm_units.sort_values("household_id").reset_index(drop=True)
+
+        assert calls == [("snap", 2024)]
+        assert spm_units["takes_up_snap_if_eligible"].tolist() == [False, False]
 
     def test_build_policyengine_entity_tables_recomputes_child_count_contract_inputs(
         self,

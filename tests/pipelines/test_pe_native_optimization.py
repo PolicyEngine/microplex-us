@@ -114,6 +114,17 @@ def test_optimize_pe_native_loss_weights_respects_target_total_weight():
     assert summary["optimized_loss"] < summary["initial_loss"]
 
 
+def test_project_to_simplex_does_not_accept_relative_weight_sum_drift():
+    """Population-sized sums still need exact projection, not np.isclose rtol drift."""
+    total = 153_767_768.0
+    values = np.asarray([153_768_768.0, 0.0], dtype=np.float64)
+
+    projected = pe_opt._project_to_simplex(values, total)
+
+    assert np.isclose(projected.sum(), total, rtol=0.0, atol=1e-6)
+    assert projected[0] == total
+
+
 def test_optimize_pe_native_loss_weights_rejects_objective_increasing_steps(
     monkeypatch,
 ):
@@ -155,7 +166,9 @@ def test_rewrite_policyengine_us_dataset_weights_updates_group_weights(tmp_path:
 
     assert rewritten == output_path.resolve()
     with h5py.File(output_path, "r") as handle:
-        assert np.allclose(handle["household_weight"]["2024"][:], np.asarray([7.0, 3.0]))
+        assert np.allclose(
+            handle["household_weight"]["2024"][:], np.asarray([7.0, 3.0])
+        )
         assert np.allclose(
             handle["person_weight"]["2024"][:],
             np.asarray([7.0, 7.0, 3.0]),
@@ -163,7 +176,9 @@ def test_rewrite_policyengine_us_dataset_weights_updates_group_weights(tmp_path:
         assert np.allclose(handle["tax_unit_weight"]["2024"][:], np.asarray([7.0, 3.0]))
 
 
-def test_optimize_policyengine_us_native_loss_dataset_rewrites_dataset(tmp_path: Path, monkeypatch):
+def test_optimize_policyengine_us_native_loss_dataset_rewrites_dataset(
+    tmp_path: Path, monkeypatch
+):
     source_path = _build_stub_dataset(tmp_path / "input.h5")
     output_path = tmp_path / "optimized.h5"
 

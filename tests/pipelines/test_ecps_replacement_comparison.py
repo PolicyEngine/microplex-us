@@ -50,9 +50,7 @@ def _write_minimal_policyengine_dataset(
         "family_id": {str(period): np.asarray([1000, 2000])},
         "person_family_id": {str(period): np.asarray([1000, 1000, 2000])},
         "marital_unit_id": {str(period): np.asarray([10000, 10001, 20000])},
-        "person_marital_unit_id": {
-            str(period): np.asarray([10000, 10001, 20000])
-        },
+        "person_marital_unit_id": {str(period): np.asarray([10000, 10001, 20000])},
     }
     return write_policyengine_us_time_period_dataset(arrays, path)
 
@@ -184,6 +182,25 @@ def _fake_support_audit(**_kwargs) -> dict[str, object]:
                     "weighted_aca_ptc_delta": -10.0,
                 }
             ],
+            "state_marketplace_enrollment_top_gaps": [
+                {
+                    "state": "NY",
+                    "weighted_marketplace_enrollment_delta": 9.0,
+                }
+            ],
+            "state_age_bucket_top_gaps": [
+                {
+                    "state": "TX",
+                    "age_bucket": "80_to_84",
+                    "weighted_count_delta": -8.0,
+                }
+            ],
+            "mfs_high_agi_delta": [
+                {
+                    "agi_bin": "500k_to_1m",
+                    "weighted_count_delta": 7.0,
+                }
+            ],
         },
     }
 
@@ -212,8 +229,83 @@ def test_protected_family_losses_match_pe_native_labels_with_spaces():
     )
 
     assert rows["wages"]["n_targets"] == 1
+    assert rows["wages"]["candidate_loss"] == pytest.approx(1.0)
+    assert rows["wages"]["baseline_loss"] == pytest.approx(0.0)
+    assert rows["wages"]["loss_delta"] == pytest.approx(1.0)
     assert rows["capital_gains"]["n_targets"] == 1
+    assert rows["capital_gains"]["candidate_loss"] == pytest.approx(1.0)
     assert rows["household_net_income"]["n_targets"] == 1
+    assert rows["household_net_income"]["candidate_loss"] == pytest.approx(1.0)
+
+
+def test_target_family_breakdown_uses_headline_loss_scale():
+    rows = [
+        {
+            "family": "national_irs_other",
+            "split": "train",
+            "candidate_loss_term": 0.20,
+            "baseline_loss_term": 0.05,
+            "winner": "baseline",
+        },
+        {
+            "family": "national_irs_other",
+            "split": "holdout",
+            "candidate_loss_term": 0.10,
+            "baseline_loss_term": 0.02,
+            "winner": "baseline",
+        },
+        {
+            "family": "state_snap_cost",
+            "split": "train",
+            "candidate_loss_term": 0.01,
+            "baseline_loss_term": 0.02,
+            "winner": "candidate",
+        },
+    ]
+
+    breakdown = ecps._target_family_breakdown(rows, total_targets=100)
+
+    irs_row = next(row for row in breakdown if row["family"] == "national_irs_other")
+    assert irs_row["candidate_loss_contribution"] == pytest.approx(0.30)
+    assert irs_row["baseline_loss_contribution"] == pytest.approx(0.07)
+    assert irs_row["loss_delta"] == pytest.approx(0.23)
+
+
+def test_support_audit_summary_drops_zero_only_secondary_panels():
+    summary = ecps._support_audit_summary(
+        {
+            "comparisons": {
+                "state_marketplace_enrollment_top_gaps": [
+                    {
+                        "state": "CA",
+                        "weighted_marketplace_enrollment_delta": 0.0,
+                    }
+                ],
+                "state_age_bucket_top_gaps": [
+                    {
+                        "state": "NY",
+                        "weighted_count_delta": -3.0,
+                    },
+                    {
+                        "state": "CA",
+                        "weighted_count_delta": 0.0,
+                    },
+                ],
+                "mfs_high_agi_delta": [
+                    {
+                        "agi_bin": "500k_to_1m",
+                        "weighted_count_delta": 0.0,
+                    }
+                ],
+            }
+        }
+    )
+
+    assert summary["top_state_marketplace_enrollment_gaps"] == []
+    assert summary["top_state_age_bucket_gaps"] == [
+        {"state": "NY", "weighted_count_delta": -3.0}
+    ]
+    assert summary["top_mfs_high_agi_gaps"] == []
 
 
 def _artifact_manifest(artifact_dir: Path, baseline_dataset: Path) -> None:
@@ -314,9 +406,18 @@ def test_sound_ecps_replacement_comparison_satisfies_gate_contract(
     assert summary["score_candidate_only"] is False
     assert summary["refit_objective_matches_scoring"] is True
     assert summary["ecps_refit_recovery_passed"] is True
-    assert summary["candidate_enhanced_cps_native_loss"] < summary[
-        "baseline_enhanced_cps_native_loss"
-    ]
+    assert isinstance(summary["candidate_refit_converged"], bool)
+    assert isinstance(summary["baseline_refit_converged"], bool)
+    assert summary["candidate_refit_iterations"] > 0
+    assert summary["baseline_refit_iterations"] > 0
+    assert (
+        summary["candidate_refit_train_loss_improvement_last_step"] is None
+        or summary["candidate_refit_train_loss_improvement_last_step"] >= -1e-12
+    )
+    assert (
+        summary["candidate_enhanced_cps_native_loss"]
+        < summary["baseline_enhanced_cps_native_loss"]
+    )
     assert summary["holdout_targets"] > 0
     assert set(summary["protected_family_losses"]) == {
         "ssi",
@@ -333,12 +434,9 @@ def test_sound_ecps_replacement_comparison_satisfies_gate_contract(
     assert summary["protected_family_losses"]["wages"]["n_targets"] == 1
     target_diagnostics = payload["target_diagnostics"]
     assert target_diagnostics["summary"]["n_targets"] == len(_TARGET_NAMES)
-    assert (
-        target_diagnostics["summary"]["candidate_wins"]
-        + target_diagnostics["summary"]["baseline_wins"]
-        + target_diagnostics["summary"]["ties"]
-        == len(_TARGET_NAMES)
-    )
+    assert target_diagnostics["summary"]["candidate_wins"] + target_diagnostics[
+        "summary"
+    ]["baseline_wins"] + target_diagnostics["summary"]["ties"] == len(_TARGET_NAMES)
     assert target_diagnostics["summary"]["train_targets"] > 0
     assert target_diagnostics["summary"]["holdout_targets"] > 0
     assert target_diagnostics["top_regressions"]
@@ -351,9 +449,12 @@ def test_sound_ecps_replacement_comparison_satisfies_gate_contract(
     assert "baseline_estimate" in first_target
     assert "candidate_relative_error" in first_target
     assert "baseline_relative_error" in first_target
-    assert {
-        row["split"] for row in target_diagnostics["targets"]
-    } == {"train", "holdout"}
+    assert "candidate_shifted_residual_ratio" in first_target
+    assert "baseline_shifted_residual_ratio" in first_target
+    assert {row["split"] for row in target_diagnostics["targets"]} == {
+        "train",
+        "holdout",
+    }
     assert target_diagnostics["family_breakdown"]
     support_summary = payload["summary"]["support_audit"]
     assert support_summary["top_filing_status_gaps"][0]["filing_status"] == (
@@ -366,6 +467,17 @@ def test_sound_ecps_replacement_comparison_satisfies_gate_contract(
         == "10_to_19"
     )
     assert support_summary["top_aca_ptc_spending_gaps"][0]["state"] == "CA"
+    assert support_summary["top_state_marketplace_enrollment_gaps"][0]["state"] == "NY"
+    assert support_summary["top_state_age_bucket_gaps"][0]["state"] == "TX"
+    assert support_summary["top_mfs_high_agi_gaps"][0]["agi_bin"] == "500k_to_1m"
+    assert (
+        payload["comparison_contract"]["candidate_refit_converged"]
+        == summary["candidate_refit_converged"]
+    )
+    assert (
+        payload["comparison_contract"]["baseline_refit_converged"]
+        == summary["baseline_refit_converged"]
+    )
     structure = payload["entity_structure"]["candidate_matched"]
     assert structure["household_count"] == 2
     assert structure["person_count"] == 3

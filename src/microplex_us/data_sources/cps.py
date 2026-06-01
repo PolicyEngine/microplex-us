@@ -37,7 +37,7 @@ from microplex_us.source_registry import resolve_source_variable_capabilities
 
 # Default cache directory
 DEFAULT_CACHE_DIR = Path.home() / ".cache" / "microplex"
-CPS_ASEC_PROCESSED_CACHE_VERSION = "20260412pe_export_ssn"
+CPS_ASEC_PROCESSED_CACHE_VERSION = "20260601_ecps_spm_takeup_inputs"
 
 # CPS ASEC data URLs by year
 CPS_URLS = {
@@ -101,6 +101,8 @@ PERSON_VARIABLES = {
     "PMED_VAL": "other_medical_expenses",
     "PEMCPREM": "medicare_part_b_premiums",
     "WICYN": "_receives_wic",
+    "SPM_CAPHOUSESUB": "_spm_capped_housing_subsidy",
+    "SPM_ENGVAL": "spm_unit_energy_subsidy",
     # Identifiers
     "PH_SEQ": "household_id",
     "GESTFIPS": "state_fips",
@@ -180,6 +182,7 @@ PERSON_NONNEGATIVE_VALUE_COLUMNS = (
     "social_security_retirement",
     "social_security_survivors",
     "social_security_dependents",
+    "spm_unit_energy_subsidy",
 )
 
 PERSON_ZERO_DEFAULT_VALUE_COLUMNS = (
@@ -195,6 +198,7 @@ PERSON_ZERO_DEFAULT_VALUE_COLUMNS = (
     "social_security_retirement",
     "social_security_survivors",
     "social_security_dependents",
+    "spm_unit_energy_subsidy",
 )
 
 PERSON_CACHE_REQUIRED_COLUMNS = (
@@ -1433,6 +1437,26 @@ def _process_persons(df: pl.DataFrame, year: int) -> pl.DataFrame:
         ).drop("_receives_wic")
     elif "_receives_wic" in result.columns:
         result = result.drop("_receives_wic")
+    if (
+        "_spm_capped_housing_subsidy" in result.columns
+        and "receives_housing_assistance" not in result.columns
+    ):
+        result = result.with_columns(
+            (pl.col("_spm_capped_housing_subsidy") > 0).alias(
+                "receives_housing_assistance"
+            )
+        )
+    if (
+        "receives_housing_assistance" in result.columns
+        and "takes_up_housing_assistance_if_eligible" not in result.columns
+    ):
+        result = result.with_columns(
+            pl.col("receives_housing_assistance").alias(
+                "takes_up_housing_assistance_if_eligible"
+            )
+        )
+    if "_spm_capped_housing_subsidy" in result.columns:
+        result = result.drop("_spm_capped_housing_subsidy")
     for value_column in PERSON_ZERO_DEFAULT_VALUE_COLUMNS:
         if value_column not in result.columns:
             result = result.with_columns(pl.lit(0.0).alias(value_column))
@@ -1445,6 +1469,13 @@ def _process_persons(df: pl.DataFrame, year: int) -> pl.DataFrame:
     ):
         if bool_column in result.columns:
             result = result.with_columns((pl.col(bool_column) == 1).alias(bool_column))
+    if (
+        "has_medicare" in result.columns
+        and "takes_up_medicare_if_eligible" not in result.columns
+    ):
+        result = result.with_columns(
+            pl.col("has_medicare").alias("takes_up_medicare_if_eligible")
+        )
     for col in PERSON_NONNEGATIVE_VALUE_COLUMNS:
         if col in result.columns:
             result = result.with_columns(

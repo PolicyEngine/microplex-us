@@ -440,6 +440,8 @@ def test_load_cps_asec_derives_policyengine_value_inputs(tmp_path):
             "MCARE": [1, 2],
             "MCAID": [2, 1],
             "WICYN": [1, 2],
+            "SPM_CAPHOUSESUB": [700, 0],
+            "SPM_ENGVAL": [90, -1],
             "PHIP_VAL": [900, -1],
             "POTC_VAL": [120, -1],
             "PMED_VAL": [450, -1],
@@ -461,8 +463,12 @@ def test_load_cps_asec_derives_policyengine_value_inputs(tmp_path):
     assert persons["social_security_survivors"].tolist() == [0, 0]
     assert persons["social_security_dependents"].tolist() == [0, 0]
     assert persons["has_medicare"].tolist() == [True, False]
+    assert persons["takes_up_medicare_if_eligible"].tolist() == [True, False]
     assert persons["has_medicaid"].tolist() == [False, True]
     assert persons["receives_wic"].tolist() == [True, False]
+    assert persons["receives_housing_assistance"].tolist() == [True, False]
+    assert persons["takes_up_housing_assistance_if_eligible"].tolist() == [True, False]
+    assert persons["spm_unit_energy_subsidy"].tolist() == [90, 0]
     assert persons["health_insurance_premiums_without_medicare_part_b"].tolist() == [900, 0]
     assert persons["over_the_counter_health_expenses"].tolist() == [120, 0]
     assert persons["other_medical_expenses"].tolist() == [450, 0]

@@ -8,7 +8,6 @@ import logging
 import sys
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
-from importlib import import_module
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -40,126 +39,141 @@ MIN_CHECKPOINT_IMPUTATION_ABLATION_HOUSEHOLDS = 8
 LOGGER = logging.getLogger(__name__)
 
 
-class _LazySymbol:
-    """Resolve an optional runtime dependency only when the symbol is used."""
+_RUNTIME_SYMBOLS_LOADED = False
 
-    def __init__(self, module_name: str, attr_name: str) -> None:
-        self._module_name = module_name
-        self._attr_name = attr_name
+EntityObservation: Any = None
+EntityType: Any = None
+ObservationFrame: Any = None
+SourceDescriptor: Any = None
+SourceQuery: Any = None
+assert_valid_benchmark_artifact_manifest: Any = None
+USMicroplexArtifactPaths: Any = None
+USMicroplexVersionedBuildArtifacts: Any = None
+build_and_save_versioned_us_microplex_from_source_providers: Any = None
+ImputationAblationSliceSpec: Any = None
+ImputationAblationVariant: Any = None
+score_imputation_ablation_variants: Any = None
+append_us_microplex_run_index_entry: Any = None
+PEUSDataRebuildProgram: Any = None
+default_policyengine_us_data_rebuild_config: Any = None
+default_policyengine_us_data_rebuild_program: Any = None
+default_policyengine_us_data_rebuild_source_providers: Any = None
+build_policyengine_us_data_rebuild_native_audit: Any = None
+build_policyengine_us_data_rebuild_parity_artifact: Any = None
+write_policyengine_us_data_rebuild_parity_artifact: Any = None
+append_us_microplex_run_registry_entry: Any = None
+build_us_microplex_run_registry_entry: Any = None
+load_us_microplex_run_registry: Any = None
+select_us_microplex_frontier_entry: Any = None
+resolve_us_stage_artifact_contract_path: Any = None
+USStageInputOverride: Any = None
+parse_us_stage_input_override: Any = None
+write_us_stage_run_manifests_from_artifact_manifest: Any = None
+prune_redundant_variables: Any = None
 
-    def _resolve(self) -> Any:
-        value = getattr(import_module(self._module_name), self._attr_name)
-        globals()[self._attr_name] = value
-        return value
 
-    def __call__(self, *args: Any, **kwargs: Any) -> Any:
-        return self._resolve()(*args, **kwargs)
+def _load_runtime_symbols() -> None:
+    """Import execution dependencies after CLI parsing has had a chance to exit."""
 
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._resolve(), name)
+    global _RUNTIME_SYMBOLS_LOADED
+    global EntityObservation, EntityType, ObservationFrame, SourceDescriptor, SourceQuery
+    global assert_valid_benchmark_artifact_manifest
+    global USMicroplexArtifactPaths, USMicroplexVersionedBuildArtifacts
+    global build_and_save_versioned_us_microplex_from_source_providers
+    global ImputationAblationSliceSpec, ImputationAblationVariant
+    global score_imputation_ablation_variants, append_us_microplex_run_index_entry
+    global PEUSDataRebuildProgram, default_policyengine_us_data_rebuild_config
+    global default_policyengine_us_data_rebuild_program
+    global default_policyengine_us_data_rebuild_source_providers
+    global build_policyengine_us_data_rebuild_native_audit
+    global build_policyengine_us_data_rebuild_parity_artifact
+    global write_policyengine_us_data_rebuild_parity_artifact
+    global append_us_microplex_run_registry_entry, build_us_microplex_run_registry_entry
+    global load_us_microplex_run_registry, select_us_microplex_frontier_entry
+    global resolve_us_stage_artifact_contract_path
+    global USStageInputOverride, parse_us_stage_input_override
+    global write_us_stage_run_manifests_from_artifact_manifest
+    global prune_redundant_variables
 
+    if _RUNTIME_SYMBOLS_LOADED:
+        return
 
-EntityObservation = _LazySymbol("microplex.core", "EntityObservation")
-EntityType = _LazySymbol("microplex.core", "EntityType")
-ObservationFrame = _LazySymbol("microplex.core", "ObservationFrame")
-SourceDescriptor = _LazySymbol("microplex.core", "SourceDescriptor")
-SourceQuery = _LazySymbol("microplex.core", "SourceQuery")
-assert_valid_benchmark_artifact_manifest = _LazySymbol(
-    "microplex.targets",
-    "assert_valid_benchmark_artifact_manifest",
-)
-USMicroplexArtifactPaths = _LazySymbol(
-    "microplex_us.pipelines.artifacts",
-    "USMicroplexArtifactPaths",
-)
-USMicroplexVersionedBuildArtifacts = _LazySymbol(
-    "microplex_us.pipelines.artifacts",
-    "USMicroplexVersionedBuildArtifacts",
-)
-build_and_save_versioned_us_microplex_from_source_providers = _LazySymbol(
-    "microplex_us.pipelines.artifacts",
-    "build_and_save_versioned_us_microplex_from_source_providers",
-)
-ImputationAblationSliceSpec = _LazySymbol(
-    "microplex_us.pipelines.imputation_ablation",
-    "ImputationAblationSliceSpec",
-)
-ImputationAblationVariant = _LazySymbol(
-    "microplex_us.pipelines.imputation_ablation",
-    "ImputationAblationVariant",
-)
-score_imputation_ablation_variants = _LazySymbol(
-    "microplex_us.pipelines.imputation_ablation",
-    "score_imputation_ablation_variants",
-)
-append_us_microplex_run_index_entry = _LazySymbol(
-    "microplex_us.pipelines.index_db",
-    "append_us_microplex_run_index_entry",
-)
-PEUSDataRebuildProgram = _LazySymbol(
-    "microplex_us.pipelines.pe_us_data_rebuild",
-    "PEUSDataRebuildProgram",
-)
-default_policyengine_us_data_rebuild_config = _LazySymbol(
-    "microplex_us.pipelines.pe_us_data_rebuild",
-    "default_policyengine_us_data_rebuild_config",
-)
-default_policyengine_us_data_rebuild_program = _LazySymbol(
-    "microplex_us.pipelines.pe_us_data_rebuild",
-    "default_policyengine_us_data_rebuild_program",
-)
-default_policyengine_us_data_rebuild_source_providers = _LazySymbol(
-    "microplex_us.pipelines.pe_us_data_rebuild",
-    "default_policyengine_us_data_rebuild_source_providers",
-)
-build_policyengine_us_data_rebuild_native_audit = _LazySymbol(
-    "microplex_us.pipelines.pe_us_data_rebuild_audit",
-    "build_policyengine_us_data_rebuild_native_audit",
-)
-build_policyengine_us_data_rebuild_parity_artifact = _LazySymbol(
-    "microplex_us.pipelines.pe_us_data_rebuild_parity",
-    "build_policyengine_us_data_rebuild_parity_artifact",
-)
-write_policyengine_us_data_rebuild_parity_artifact = _LazySymbol(
-    "microplex_us.pipelines.pe_us_data_rebuild_parity",
-    "write_policyengine_us_data_rebuild_parity_artifact",
-)
-append_us_microplex_run_registry_entry = _LazySymbol(
-    "microplex_us.pipelines.registry",
-    "append_us_microplex_run_registry_entry",
-)
-build_us_microplex_run_registry_entry = _LazySymbol(
-    "microplex_us.pipelines.registry",
-    "build_us_microplex_run_registry_entry",
-)
-load_us_microplex_run_registry = _LazySymbol(
-    "microplex_us.pipelines.registry",
-    "load_us_microplex_run_registry",
-)
-select_us_microplex_frontier_entry = _LazySymbol(
-    "microplex_us.pipelines.registry",
-    "select_us_microplex_frontier_entry",
-)
-resolve_us_stage_artifact_contract_path = _LazySymbol(
-    "microplex_us.pipelines.stage_contracts",
-    "resolve_us_stage_artifact_contract_path",
-)
-USStageInputOverride = _LazySymbol(
-    "microplex_us.pipelines.stage_run",
-    "USStageInputOverride",
-)
-parse_us_stage_input_override = _LazySymbol(
-    "microplex_us.pipelines.stage_run",
-    "parse_us_stage_input_override",
-)
-write_us_stage_run_manifests_from_artifact_manifest = _LazySymbol(
-    "microplex_us.pipelines.stage_run",
-    "write_us_stage_run_manifests_from_artifact_manifest",
-)
-prune_redundant_variables = _LazySymbol(
-    "microplex_us.variables",
-    "prune_redundant_variables",
-)
+    import microplex.core as microplex_core
+    import microplex.targets as microplex_targets
+
+    import microplex_us.pipelines.artifacts as artifacts_module
+    import microplex_us.pipelines.imputation_ablation as imputation_ablation_module
+    import microplex_us.pipelines.index_db as index_db_module
+    import microplex_us.pipelines.pe_us_data_rebuild as rebuild_module
+    import microplex_us.pipelines.pe_us_data_rebuild_audit as rebuild_audit_module
+    import microplex_us.pipelines.pe_us_data_rebuild_parity as rebuild_parity_module
+    import microplex_us.pipelines.registry as registry_module
+    import microplex_us.pipelines.stage_contracts as stage_contracts_module
+    import microplex_us.pipelines.stage_run as stage_run_module
+    import microplex_us.variables as variables_module
+
+    EntityObservation = microplex_core.EntityObservation
+    EntityType = microplex_core.EntityType
+    ObservationFrame = microplex_core.ObservationFrame
+    SourceDescriptor = microplex_core.SourceDescriptor
+    SourceQuery = microplex_core.SourceQuery
+    assert_valid_benchmark_artifact_manifest = (
+        microplex_targets.assert_valid_benchmark_artifact_manifest
+    )
+    USMicroplexArtifactPaths = artifacts_module.USMicroplexArtifactPaths
+    USMicroplexVersionedBuildArtifacts = (
+        artifacts_module.USMicroplexVersionedBuildArtifacts
+    )
+    build_and_save_versioned_us_microplex_from_source_providers = (
+        artifacts_module.build_and_save_versioned_us_microplex_from_source_providers
+    )
+    ImputationAblationSliceSpec = imputation_ablation_module.ImputationAblationSliceSpec
+    ImputationAblationVariant = imputation_ablation_module.ImputationAblationVariant
+    score_imputation_ablation_variants = (
+        imputation_ablation_module.score_imputation_ablation_variants
+    )
+    append_us_microplex_run_index_entry = (
+        index_db_module.append_us_microplex_run_index_entry
+    )
+    PEUSDataRebuildProgram = rebuild_module.PEUSDataRebuildProgram
+    default_policyengine_us_data_rebuild_config = (
+        rebuild_module.default_policyengine_us_data_rebuild_config
+    )
+    default_policyengine_us_data_rebuild_program = (
+        rebuild_module.default_policyengine_us_data_rebuild_program
+    )
+    default_policyengine_us_data_rebuild_source_providers = (
+        rebuild_module.default_policyengine_us_data_rebuild_source_providers
+    )
+    build_policyengine_us_data_rebuild_native_audit = (
+        rebuild_audit_module.build_policyengine_us_data_rebuild_native_audit
+    )
+    build_policyengine_us_data_rebuild_parity_artifact = (
+        rebuild_parity_module.build_policyengine_us_data_rebuild_parity_artifact
+    )
+    write_policyengine_us_data_rebuild_parity_artifact = (
+        rebuild_parity_module.write_policyengine_us_data_rebuild_parity_artifact
+    )
+    append_us_microplex_run_registry_entry = (
+        registry_module.append_us_microplex_run_registry_entry
+    )
+    build_us_microplex_run_registry_entry = (
+        registry_module.build_us_microplex_run_registry_entry
+    )
+    load_us_microplex_run_registry = registry_module.load_us_microplex_run_registry
+    select_us_microplex_frontier_entry = (
+        registry_module.select_us_microplex_frontier_entry
+    )
+    resolve_us_stage_artifact_contract_path = (
+        stage_contracts_module.resolve_us_stage_artifact_contract_path
+    )
+    USStageInputOverride = stage_run_module.USStageInputOverride
+    parse_us_stage_input_override = stage_run_module.parse_us_stage_input_override
+    write_us_stage_run_manifests_from_artifact_manifest = (
+        stage_run_module.write_us_stage_run_manifests_from_artifact_manifest
+    )
+    prune_redundant_variables = variables_module.prune_redundant_variables
+    _RUNTIME_SYMBOLS_LOADED = True
 
 
 def _root_logger_has_handlers() -> bool:
@@ -1514,6 +1528,8 @@ def attach_policyengine_us_data_rebuild_checkpoint_evidence(
 ) -> PEUSDataRebuildCheckpointEvidenceResult:
     """Attach PE comparison evidence to an already-saved rebuild artifact."""
 
+    _load_runtime_symbols()
+
     from microplex_us.pipelines.pe_native_scores import compute_us_pe_native_scores
     from microplex_us.policyengine.harness import evaluate_policyengine_us_harness
     from microplex_us.policyengine.us import load_policyengine_us_entity_tables
@@ -1777,6 +1793,8 @@ def default_policyengine_us_data_rebuild_checkpoint_config(
 ) -> USMicroplexBuildConfig:
     """Return the canonical rebuild config with required PE comparison context."""
 
+    _load_runtime_symbols()
+
     resolved_target_period = int(target_period)
     resolved_baseline_weight_sum = _infer_policyengine_baseline_household_weight_sum(
         policyengine_baseline_dataset,
@@ -1838,6 +1856,8 @@ def default_policyengine_us_data_rebuild_queries(
     random_seed: int = 0,
 ) -> dict[str, SourceQuery]:
     """Return default provider queries for a rebuild checkpoint smoke run."""
+
+    _load_runtime_symbols()
 
     from microplex_us.data_sources.cps import CPSASECSourceProvider
     from microplex_us.data_sources.donor_surveys import DonorSurveySourceProvider
@@ -1948,6 +1968,8 @@ def run_policyengine_us_data_rebuild_checkpoint(
     stage_input_overrides: tuple[USStageInputOverride, ...] = (),
 ) -> PEUSDataRebuildCheckpointResult:
     """Run one saved rebuild checkpoint and write its PE comparison sidecars."""
+
+    _load_runtime_symbols()
 
     if config is not None and config_overrides:
         raise ValueError(
@@ -2152,8 +2174,8 @@ def run_policyengine_us_data_rebuild_checkpoint(
     )
 
 
-def main(argv: list[str] | None = None) -> None:
-    """CLI entry point for one PE-US-data rebuild checkpoint."""
+def build_policyengine_us_data_rebuild_checkpoint_parser() -> argparse.ArgumentParser:
+    """Build the lightweight checkpoint CLI parser."""
 
     parser = argparse.ArgumentParser(
         description="Run a versioned PE-US-data rebuild checkpoint in microplex-us."
@@ -2334,11 +2356,15 @@ def main(argv: list[str] | None = None) -> None:
         metavar="STAGE_ID.KEY=PATH",
         help=("Explicit stage input override. Requires --allow-stage-input-overrides."),
     )
+    return parser
+
+
+def main(argv: list[str] | None = None) -> None:
+    """CLI entry point for one PE-US-data rebuild checkpoint."""
+
+    parser = build_policyengine_us_data_rebuild_checkpoint_parser()
     args = parser.parse_args(argv)
-    stage_input_overrides = tuple(
-        parse_us_stage_input_override(value) for value in args.stage_input_override
-    )
-    if stage_input_overrides and not args.allow_stage_input_overrides:
+    if args.stage_input_override and not args.allow_stage_input_overrides:
         parser.error("--stage-input-override requires --allow-stage-input-overrides")
 
     config_overrides = {
@@ -2381,6 +2407,11 @@ def main(argv: list[str] | None = None) -> None:
         config_overrides["capital_gains_lots_random_seed"] = int(
             args.capital_gains_lots_random_seed
         )
+
+    _load_runtime_symbols()
+    stage_input_overrides = tuple(
+        parse_us_stage_input_override(value) for value in args.stage_input_override
+    )
 
     result = run_policyengine_us_data_rebuild_checkpoint(
         output_root=args.output_root,

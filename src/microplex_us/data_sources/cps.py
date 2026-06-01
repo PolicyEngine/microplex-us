@@ -100,6 +100,13 @@ PERSON_VARIABLES = {
     "MCAID": "has_medicaid",
     "NOW_GRP": "has_esi",
     "NOW_MRK": "has_marketplace_health_coverage",
+    # Employer-sponsored insurance policyholder + premium inputs (eCPS
+    # cps.py:197-275). NOW_OWNGRP flags own-name current group (ESI) coverage;
+    # NOW_HIPAID is who pays the premium; NOW_GRPFTYP is family vs self-only
+    # plan. These seed the ESI policyholder recode and the premium imputation.
+    "NOW_OWNGRP": "_now_owngrp",
+    "NOW_HIPAID": "_now_hipaid",
+    "NOW_GRPFTYP": "_now_grpftyp",
     "PHIP_VAL": "health_insurance_premiums_without_medicare_part_b",
     "POTC_VAL": "over_the_counter_health_expenses",
     "PMED_VAL": "other_medical_expenses",
@@ -107,6 +114,9 @@ PERSON_VARIABLES = {
     "WICYN": "_receives_wic",
     "SPM_CAPHOUSESUB": "_spm_capped_housing_subsidy",
     "SPM_ENGVAL": "spm_unit_energy_subsidy",
+    # Person relationship-to-householder code (eCPS cps.py:190-195, :1219).
+    # Codes 43/44/46/47 mark an unmarried partner of the household head.
+    "PERRP": "_person_relationship_to_householder",
     # Identifiers
     "PH_SEQ": "household_id",
     "GESTFIPS": "state_fips",
@@ -261,6 +271,33 @@ DC_SHARE_OF_RETIREMENT_CONTRIBUTIONS = 0.908
 ROTH_SHARE_OF_DC_CONTRIBUTIONS = 0.15
 TRADITIONAL_SHARE_OF_IRA_CONTRIBUTIONS = 0.392
 
+# Census CPS ASEC 2024 technical documentation, PERRP (relationship to
+# household reference person). Codes 43/44/46/47 mark an unmarried partner of
+# the household head. Mirrors policyengine-us-data cps.py:190-195, :1219.
+# https://www2.census.gov/programs-surveys/cps/techdocs/cpsmar24.pdf
+PERRP_UNMARRIED_PARTNER_OF_HOUSEHOLD_HEAD_CODES = (43, 44, 46, 47)
+
+# Employer-sponsored insurance recode/imputation codes and plan-type priors,
+# mirrored verbatim from policyengine-us-data cps.py:204-274.
+ESI_HAS_CURRENT_OWN_COVERAGE = 1  # NOW_OWNGRP: holds ESI in own name.
+ESI_EMPLOYER_PAYS_ALL = 1  # NOW_HIPAID
+ESI_EMPLOYER_PAYS_SOME = 2  # NOW_HIPAID
+ESI_FAMILY_PLAN = 1  # NOW_GRPFTYP
+ESI_SELF_ONLY_PLAN = 2  # NOW_GRPFTYP
+# AHRQ MEPS-IC Table IV.A.1 (private sector, 2024) plan-type averages. eCPS
+# hardcodes these same constants to seed CPS policyholder premium records;
+# national calibration later aligns the aggregate to the BEA full-economy
+# employer premium total. These are constants in eCPS, not external data.
+ESI_PLAN_PRIORS_2024 = {
+    "family": {
+        "total_premium": 21_207.52589669509,
+        "employee_contribution": 6_490.205059544782,
+    },
+    "self_only": {
+        "total_premium": 8_389.275834815255,
+        "employee_contribution": 1_909.5781466113417,
+    },
+}
 PE_CPS_UNDOCUMENTED_TARGET = 13e6
 PE_CPS_UNDOCUMENTED_WORKERS_TARGET = 8.3e6
 PE_CPS_UNDOCUMENTED_STUDENTS_TARGET = 0.21 * 1.9e6
@@ -1461,6 +1498,89 @@ def _process_persons(df: pl.DataFrame, year: int) -> pl.DataFrame:
         )
     if "_spm_capped_housing_subsidy" in result.columns:
         result = result.drop("_spm_capped_housing_subsidy")
+    # Unmarried partner of the household head (G8). Mirrors eCPS cps.py:1219
+    # `perrp.isin(PERRP_UNMARRIED_PARTNER_OF_HOUSEHOLD_HEAD_CODES)`.
+    if (
+        "_person_relationship_to_householder" in result.columns
+        and "is_unmarried_partner_of_household_head" not in result.columns
+    ):
+        result = result.with_columns(
+            pl.col("_person_relationship_to_householder")
+            .is_in(PERRP_UNMARRIED_PARTNER_OF_HOUSEHOLD_HEAD_CODES)
+            .alias("is_unmarried_partner_of_household_head")
+        ).drop("_person_relationship_to_householder")
+    elif "_person_relationship_to_householder" in result.columns:
+        result = result.drop("_person_relationship_to_householder")
+    # Employer-sponsored insurance policyholder + premium (G6). Mirrors eCPS
+    # cps.py:1576-1581: the policyholder flag is `NOW_OWNGRP == 1`, and the
+    # premium is `impute_employer_sponsored_insurance_premiums(person)`
+    # (eCPS cps.py:229-273), reproduced here on the renamed CPS columns.
+    _esi_source_columns = {"_now_owngrp", "_now_hipaid", "_now_grpftyp"}
+    if _esi_source_columns.issubset(set(result.columns)):
+        own_esi = pl.col("_now_owngrp") == ESI_HAS_CURRENT_OWN_COVERAGE
+        premium_status = pl.col("_now_hipaid")
+        plan_type = pl.col("_now_grpftyp")
+        if "reported_owns_employer_sponsored_health_insurance_at_interview" not in (
+            result.columns
+        ):
+            result = result.with_columns(
+                own_esi.alias(
+                    "reported_owns_employer_sponsored_health_insurance_at_interview"
+                )
+            )
+        if "employer_sponsored_insurance_premiums" not in result.columns:
+            # Employee-paid premium (PHIP_VAL), clipped at zero like eCPS.
+            employee_paid = (
+                pl.when(
+                    pl.col("health_insurance_premiums_without_medicare_part_b") > 0
+                )
+                .then(pl.col("health_insurance_premiums_without_medicare_part_b"))
+                .otherwise(0.0)
+                if "health_insurance_premiums_without_medicare_part_b"
+                in result.columns
+                else pl.lit(0.0)
+            )
+            total_premium = (
+                pl.when(plan_type == ESI_SELF_ONLY_PLAN)
+                .then(ESI_PLAN_PRIORS_2024["self_only"]["total_premium"])
+                .otherwise(ESI_PLAN_PRIORS_2024["family"]["total_premium"])
+            )
+            average_employee_contribution = (
+                pl.when(plan_type == ESI_SELF_ONLY_PLAN)
+                .then(ESI_PLAN_PRIORS_2024["self_only"]["employee_contribution"])
+                .otherwise(ESI_PLAN_PRIORS_2024["family"]["employee_contribution"])
+            )
+            employee_share = (
+                pl.when(employee_paid > 0)
+                .then(employee_paid)
+                .otherwise(average_employee_contribution)
+            )
+            employer_paid_when_some = (total_premium - employee_share).clip(
+                lower_bound=0.0
+            )
+            employer_paid = (
+                pl.when(premium_status == ESI_EMPLOYER_PAYS_ALL)
+                .then(total_premium)
+                .when(premium_status == ESI_EMPLOYER_PAYS_SOME)
+                .then(employer_paid_when_some)
+                .otherwise(0.0)
+            )
+            valid_owner_with_plan = own_esi & plan_type.is_in(
+                [ESI_FAMILY_PLAN, ESI_SELF_ONLY_PLAN]
+            )
+            result = result.with_columns(
+                pl.when(valid_owner_with_plan)
+                .then(employer_paid)
+                .otherwise(0.0)
+                .alias("employer_sponsored_insurance_premiums")
+            )
+        result = result.drop(
+            [c for c in _esi_source_columns if c in result.columns]
+        )
+    else:
+        result = result.drop(
+            [c for c in _esi_source_columns if c in result.columns]
+        )
     for value_column in PERSON_ZERO_DEFAULT_VALUE_COLUMNS:
         if value_column not in result.columns:
             result = result.with_columns(pl.lit(0.0).alias(value_column))

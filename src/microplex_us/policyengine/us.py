@@ -352,6 +352,16 @@ SAFE_POLICYENGINE_US_EXPORT_VARIABLES: set[str] = {
     "farm_rent_income",
     "has_esi",
     "has_marketplace_health_coverage",
+    # CPS-derived employer-sponsored insurance leaves (eCPS cps.py:1576-1581).
+    # employer_sponsored_insurance_premiums is a storable pe-us INPUT
+    # (def_formula=0 in pinned pe-us 1.715.3). The policyholder flag is not yet
+    # a released pe-us variable; it is routed through the legacy-contract entity
+    # map below so it still exports for eCPS column parity.
+    "employer_sponsored_insurance_premiums",
+    "reported_owns_employer_sponsored_health_insurance_at_interview",
+    # Unmarried partner of the household head (eCPS cps.py:1219). Storable
+    # pe-us INPUT (def_formula=0 in pinned pe-us 1.715.3).
+    "is_unmarried_partner_of_household_head",
     "health_savings_account_ald",
     "is_separated",
     "is_surviving_spouse",
@@ -513,6 +523,16 @@ POLICYENGINE_US_EXPORT_DEFAULTS: dict[str, Any] = {
     "ssi_reported": 0.0,
     "ssn_card_type": "CITIZEN",
     "sstb_self_employment_income_before_lsr": 0,
+    # SSTB QBI-qualification flag (G9). eCPS computes this in its PUF QBI
+    # simulation as `np.where(business_is_sstb, self_employment_income_would_
+    # be_qualified, False)` (policyengine-us-data puf.py:768). MP does not run
+    # that PUF QBI simulation and already exports business_is_sstb=False for
+    # every record, so the eCPS expression collapses to False everywhere. A
+    # constant False is therefore the exact value eCPS would emit given MP's
+    # SSTB inputs, and is more correct than the pe-us default_value=True (which
+    # would wrongly qualify all SE income as SSTB-qualified). Storable pe-us
+    # INPUT (def_formula=0 in pinned pe-us 1.715.3).
+    "sstb_self_employment_income_would_be_qualified": False,
     "sstb_unadjusted_basis_qualified_property": 0.0,
     "sstb_w2_wages_from_qualified_business": 0.0,
     "strike_benefits": 0,
@@ -602,6 +622,10 @@ POLICYENGINE_US_LEGACY_CONTRACT_VARIABLE_ENTITIES: dict[str, str] = {
     "reported_has_chip_health_coverage_at_interview": "person",
     "reported_has_direct_purchase_health_coverage_at_interview": "person",
     "reported_has_employer_sponsored_health_coverage_at_interview": "person",
+    # Real CPS recode (NOW_OWNGRP == 1) carried on the person frame. Not yet a
+    # released pe-us input variable, so the entity is pinned here (like its
+    # reported_has_* siblings) to keep it on the eCPS-parity export surface.
+    "reported_owns_employer_sponsored_health_insurance_at_interview": "person",
     "reported_has_indian_health_service_coverage_at_interview": "person",
     "reported_has_marketplace_health_coverage_at_interview": "person",
     "reported_has_means_tested_health_coverage_at_interview": "person",

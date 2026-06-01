@@ -1,7 +1,7 @@
 {
-  "_description": "Frozen column-parity contract for the eCPS export. Defines what a Microplex (MP) dataset must export to be a drop-in replacement for the enhanced CPS (eCPS) baseline. Derived from the 252-column eCPS baseline H5 export. Consumed by check_export_columns.py; mirrors the required/forbidden diff in _h5_export_compatibility_gate (mp300k_artifact_gates.py).",
+  "_description": "Frozen column-parity contract for the eCPS export. Defines what a Microplex (MP) dataset must export to be a drop-in replacement for the enhanced CPS (eCPS) baseline. Derived from the 252-column eCPS baseline H5 export. Consumed by check_export_columns.py; mirrors the required/forbidden diff in _column_contract_gate (mp300k_artifact_gates.py).",
   "_categories": {
-    "required": "Columns MP MUST export to match eCPS. The gate FAILS if any are missing from the candidate export. Equals the 244 eCPS columns minus the eCPS clone-bookkeeping columns in ecps_internal_optional.",
+    "required": "Columns MP MUST export to match eCPS. The gate FAILS if any are missing from the candidate export. Equals the 252 clone-correct baseline columns minus the 5 clone-bookkeeping flags (ecps_internal_optional) and weeks_worked (formula_owned_excluded).",
     "ecps_internal_optional": "eCPS clone-bookkeeping columns (PUF-clone flags). eCPS emits these internally; MP is NOT required to export them, so they never count as missing. The gate neither requires nor forbids them.",
     "forbidden": "Columns eCPS deliberately drops from its export: the transient *_reported takeup-input family and the PUF reported/calculated tax-credit outputs. The gate FAILS if MP exports any.",
     "formula_owned_excluded": "pe-us FORMULA variables the baseline does NOT persist as inputs (currently just weeks_worked). Structural/overridable computed fields (has_tin/has_itin/in_nyc/fsla_overtime_premium/meets_ssi_disability_criteria) are REQUIRED, not here, per the in-tree _column_contract_gate."

@@ -20,11 +20,14 @@ from microplex_us.pipelines.stage_contracts import (
     US_STAGE_CONTRACT_VERSION,
     StageArtifactFormat,
     StageArtifactResumeRole,
+    StageResourceKind,
+    USStageResourceContract,
     get_us_pipeline_stage_contract,
     get_us_stage_artifact_contract,
     resolve_us_stage_artifact_contract_path,
 )
 from microplex_us.pipelines.stage_manifest import (
+    build_us_validation_evidence_manifest,
     write_us_stage_manifest,
     write_us_validation_evidence_manifest,
 )
@@ -157,6 +160,21 @@ class USStageInputOverride:
             "path": path_text,
             "reason": self.reason,
         }
+
+
+@dataclass(frozen=True)
+class USStageInputValidationSettings:
+    """Stage-specific settings for typed input boundary validation."""
+
+    stage_id: str
+    require_previous_stage_manifest: bool = True
+    enforce_required_stage_inputs: bool = True
+    enforce_only_when_stage_complete: bool = True
+    enforced_resource_kinds: tuple[StageResourceKind, ...] = (
+        "artifact",
+        "manifest",
+        "stage_output",
+    )
 
 
 @dataclass(frozen=True)
@@ -367,6 +385,12 @@ class USStageRunWriter:
         for override in self.stage_input_overrides:
             _validate_us_stage_input_override(override)
         self._recorded: dict[str, USStageOutputManifest] = {}
+        self._input_validator = USStageInputValidator(
+            self.artifact_root,
+            self._recorded,
+            allow_stage_input_overrides=self.allow_stage_input_overrides,
+            stage_input_overrides=self.stage_input_overrides,
+        )
 
     @property
     def recorded_stages(self) -> tuple[USStageOutputManifest, ...]:
@@ -430,29 +454,7 @@ class USStageRunWriter:
     def validate_transition(self, outputs: USStageOutputManifest) -> None:
         """Validate that a stage consumes the previous stage output manifest."""
 
-        stage_index = US_CANONICAL_STAGE_IDS.index(outputs.stage_id)
-        if stage_index == 0:
-            return
-        previous_stage_id = US_CANONICAL_STAGE_IDS[stage_index - 1]
-        if previous_stage_id in self._recorded:
-            return
-        if outputs.input_stage_manifest is not None:
-            path = Path(outputs.input_stage_manifest)
-            if not path.is_absolute():
-                path = self.artifact_root / path
-            if (
-                path == self._stage_output_manifest_path(previous_stage_id)
-                and path.exists()
-            ):
-                return
-        if self.allow_stage_input_overrides and self._overrides_for_stage(
-            outputs.stage_id
-        ):
-            return
-        raise ValueError(
-            f"{outputs.stage_id} requires {previous_stage_id} output manifest "
-            "or an explicit stage input override"
-        )
+        self._input_validator.validate(outputs)
 
     def write_manifest_files(self) -> dict[str, Any]:
         """Write per-stage manifests and derived aggregate run manifests."""
@@ -647,6 +649,176 @@ class USStageRunWriter:
         return path
 
 
+class USStageInputValidator:
+    """Validate stage input seams against typed stage manifests and overrides."""
+
+    def __init__(
+        self,
+        artifact_root: str | Path,
+        recorded_stages: Mapping[str, USStageOutputManifest],
+        *,
+        allow_stage_input_overrides: bool = False,
+        stage_input_overrides: tuple[USStageInputOverride, ...] = (),
+        settings_by_stage: Mapping[str, USStageInputValidationSettings] | None = None,
+    ) -> None:
+        self.artifact_root = Path(artifact_root)
+        self.recorded_stages = recorded_stages
+        self.allow_stage_input_overrides = allow_stage_input_overrides
+        self.stage_input_overrides = tuple(stage_input_overrides)
+        self.settings_by_stage = dict(
+            settings_by_stage or default_us_stage_input_validation_settings()
+        )
+
+    def validate(self, outputs: USStageOutputManifest) -> None:
+        """Validate one stage's required input boundary."""
+
+        stage_index = US_CANONICAL_STAGE_IDS.index(outputs.stage_id)
+        if stage_index == 0:
+            return
+        settings = self.settings_by_stage[outputs.stage_id]
+        previous_stage_id = US_CANONICAL_STAGE_IDS[stage_index - 1]
+        required_stage_inputs = tuple(
+            resource
+            for resource in get_us_pipeline_stage_contract(outputs.stage_id).inputs
+            if self._enforces_resource(resource, settings)
+        )
+        missing_inputs = tuple(
+            self._resource_label(resource)
+            for resource in required_stage_inputs
+            if not self._resource_is_satisfied(resource, outputs)
+        )
+        previous_inputs = tuple(
+            resource
+            for resource in required_stage_inputs
+            if resource.stage_id == previous_stage_id
+        )
+        previous_stage_available = self._stage_manifest_available(
+            previous_stage_id,
+            outputs,
+        )
+        previous_stage_overridden = bool(previous_inputs) and all(
+            self._override_satisfies(outputs.stage_id, resource)
+            for resource in previous_inputs
+        )
+        if (
+            settings.require_previous_stage_manifest
+            and not previous_stage_available
+            and not previous_stage_overridden
+        ):
+            detail = (
+                f"; missing required inputs: {', '.join(missing_inputs)}"
+                if missing_inputs
+                else ""
+            )
+            raise ValueError(
+                f"{outputs.stage_id} requires {previous_stage_id} output manifest "
+                "or explicit overrides for all required inputs from that stage"
+                f"{detail}"
+            )
+        if (
+            settings.enforce_required_stage_inputs
+            and missing_inputs
+            and (not settings.enforce_only_when_stage_complete or outputs.complete)
+        ):
+            raise ValueError(
+                f"{outputs.stage_id} is missing required stage input(s): "
+                f"{', '.join(missing_inputs)}"
+            )
+
+    def _enforces_resource(
+        self,
+        resource: USStageResourceContract,
+        settings: USStageInputValidationSettings,
+    ) -> bool:
+        return (
+            resource.required
+            and resource.stage_id is not None
+            and resource.kind in settings.enforced_resource_kinds
+        )
+
+    def _resource_is_satisfied(
+        self,
+        resource: USStageResourceContract,
+        outputs: USStageOutputManifest,
+    ) -> bool:
+        if self._override_satisfies(outputs.stage_id, resource):
+            return True
+        source_stage_id = resource.stage_id
+        if source_stage_id is None:
+            return False
+        recorded_outputs = self.recorded_stages.get(source_stage_id)
+        if recorded_outputs is not None:
+            return not _required_output_is_missing(
+                getattr(recorded_outputs, resource.key, None),
+                self.artifact_root,
+            )
+        serialized_stage = self._serialized_input_stage_manifest(outputs)
+        if (
+            serialized_stage is not None
+            and serialized_stage.get("stageId") == source_stage_id
+        ):
+            return _serialized_output_key_is_available(
+                serialized_stage,
+                resource.key,
+            )
+        return False
+
+    def _stage_manifest_available(
+        self,
+        stage_id: str,
+        outputs: USStageOutputManifest,
+    ) -> bool:
+        if stage_id in self.recorded_stages:
+            return True
+        serialized_stage = self._serialized_input_stage_manifest(outputs)
+        return (
+            serialized_stage is not None and serialized_stage.get("stageId") == stage_id
+        )
+
+    def _serialized_input_stage_manifest(
+        self,
+        outputs: USStageOutputManifest,
+    ) -> Mapping[str, Any] | None:
+        if outputs.input_stage_manifest is None:
+            return None
+        stage_index = US_CANONICAL_STAGE_IDS.index(outputs.stage_id)
+        if stage_index == 0:
+            return None
+        previous_stage_id = US_CANONICAL_STAGE_IDS[stage_index - 1]
+        path = Path(outputs.input_stage_manifest)
+        if not path.is_absolute():
+            path = self.artifact_root / path
+        expected_path = (
+            self.artifact_root
+            / "stage_artifacts"
+            / "manifests"
+            / f"{previous_stage_id}.json"
+        )
+        if path != expected_path or not path.exists():
+            return None
+        try:
+            payload = json.loads(path.read_text())
+        except (OSError, json.JSONDecodeError):
+            return None
+        return payload if isinstance(payload, Mapping) else None
+
+    def _override_satisfies(
+        self,
+        stage_id: str,
+        resource: USStageResourceContract,
+    ) -> bool:
+        if not self.allow_stage_input_overrides:
+            return False
+        return any(
+            override.stage_id == stage_id and override.key == resource.key
+            for override in self.stage_input_overrides
+        )
+
+    @staticmethod
+    def _resource_label(resource: USStageResourceContract) -> str:
+        return f"{resource.stage_id}.{resource.key}"
+
+
 def build_us_stage_output_manifests_from_artifact_manifest(
     artifact_root: str | Path,
     manifest_payload: Mapping[str, Any],
@@ -664,12 +836,9 @@ def build_us_stage_output_manifests_from_artifact_manifest(
         for source in synthesis.get("source_names", ())
         if isinstance(source, str)
     )
-    benchmark_summary = _benchmark_summary(manifest)
+    benchmark_summary = _benchmark_summary(root, manifest)
     has_benchmark = bool(benchmark_summary)
-    has_dataset = (
-        _artifact_ref(root, artifacts, "policyengine_dataset", "08_dataset_assembly")
-        is not None
-    )
+    has_dataset = _artifact_exists(root, artifacts, "policyengine_dataset")
     return (
         USRunProfileOutputs(
             manifest=_artifact_ref(
@@ -844,7 +1013,11 @@ def build_us_stage_output_manifests_from_artifact_manifest(
                 "09_validation_benchmarking",
                 category="diagnostic",
             ),
-            diagnostics=_diagnostics("09_validation_benchmarking", manifest),
+            diagnostics=_diagnostics(
+                "09_validation_benchmarking",
+                manifest,
+                stage_summary=benchmark_summary,
+            ),
             complete=bool(has_benchmark),
         ),
     )
@@ -910,6 +1083,20 @@ def parse_us_stage_input_override(value: str) -> USStageInputOverride:
     override = USStageInputOverride(stage_id=stage_id, key=key, path=path)
     _validate_us_stage_input_override(override)
     return override
+
+
+def default_us_stage_input_validation_settings() -> dict[
+    str, USStageInputValidationSettings
+]:
+    """Return stage-specific settings for typed input boundary validation."""
+
+    return {
+        stage_id: USStageInputValidationSettings(
+            stage_id=stage_id,
+            require_previous_stage_manifest=stage_id != "01_run_profile",
+        )
+        for stage_id in US_CANONICAL_STAGE_IDS
+    }
 
 
 def _validate_us_stage_input_override(override: USStageInputOverride) -> None:
@@ -1047,12 +1234,16 @@ def _policyengine_entity_metadata_summary(
 def _diagnostics(
     stage_id: str,
     manifest: Mapping[str, Any],
+    *,
+    stage_summary: Mapping[str, Any] | None = None,
 ) -> dict[str, USDiagnosticOutput]:
     diagnostics = dict(manifest.get("diagnostics", {}))
     stage_diagnostics = diagnostics.get(stage_id)
     summary = (
         dict(stage_diagnostics)
         if isinstance(stage_diagnostics, Mapping)
+        else dict(stage_summary)
+        if stage_summary is not None
         else _default_stage_diagnostic_summary(stage_id, manifest)
     )
     return {
@@ -1097,11 +1288,28 @@ def _default_stage_diagnostic_summary(
     if stage_id == "08_dataset_assembly":
         return {"dataset": artifacts.get("policyengine_dataset")}
     if stage_id == "09_validation_benchmarking":
-        return _benchmark_summary(manifest)
+        return _manifest_benchmark_summary(manifest)
     return {}
 
 
-def _benchmark_summary(manifest: Mapping[str, Any]) -> dict[str, Any]:
+def _benchmark_summary(
+    artifact_root: Path,
+    manifest: Mapping[str, Any],
+) -> dict[str, Any]:
+    try:
+        evidence = build_us_validation_evidence_manifest(
+            artifact_root,
+            manifest_payload=dict(manifest),
+        )
+    except (OSError, ValueError, TypeError):
+        return _manifest_benchmark_summary(manifest)
+    summaries = evidence.get("summaries")
+    if isinstance(summaries, Mapping) and summaries:
+        return {str(key): item for key, item in summaries.items()}
+    return _manifest_benchmark_summary(manifest)
+
+
+def _manifest_benchmark_summary(manifest: Mapping[str, Any]) -> dict[str, Any]:
     summary: dict[str, Any] = {}
     for key in (
         "policyengine_harness",
@@ -1155,6 +1363,28 @@ def _required_output_is_missing(value: Any, artifact_root: str | Path) -> bool:
     return False
 
 
+def _serialized_output_key_is_available(
+    stage_manifest: Mapping[str, Any],
+    key: str,
+) -> bool:
+    outputs = stage_manifest.get("outputs")
+    if not isinstance(outputs, Mapping) or key not in outputs:
+        return False
+    value = outputs[key]
+    if value is None:
+        return False
+    if isinstance(value, Mapping):
+        exists = value.get("exists")
+        if exists is not None:
+            return bool(exists)
+        return bool(value)
+    if isinstance(value, (tuple, list, set, frozenset)):
+        return bool(value)
+    if isinstance(value, str):
+        return bool(value)
+    return True
+
+
 def _optional_str(value: Any) -> str | None:
     if value is None:
         return None
@@ -1182,10 +1412,13 @@ __all__ = [
     "USSourceLoadingOutputs",
     "USSourcePlanningOutputs",
     "USStageInputOverride",
+    "USStageInputValidationSettings",
+    "USStageInputValidator",
     "USStageOutputManifest",
     "USStageRunWriter",
     "USValidationBenchmarkingOutputs",
     "build_us_stage_output_manifests_from_artifact_manifest",
+    "default_us_stage_input_validation_settings",
     "parse_us_stage_input_override",
     "resolve_us_manifest_or_contract_artifact_path",
     "write_us_stage_run_manifests_from_artifact_manifest",

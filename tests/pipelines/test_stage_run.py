@@ -16,6 +16,7 @@ from microplex_us.pipelines.stage_run import (
     USDiagnosticOutput,
     USRunProfileOutputs,
     USSourceLoadingOutputs,
+    USSourcePlanningOutputs,
     USStageInputOverride,
     USStageRunWriter,
     build_us_stage_output_manifests_from_artifact_manifest,
@@ -140,6 +141,91 @@ def test_stage_run_writer_requires_prior_stage_or_override(tmp_path):
     assert writer.recorded_stages == (output,)
 
 
+def test_stage_run_writer_requires_specific_input_override(tmp_path):
+    output = USSourceLoadingOutputs(
+        observation_frame_summary={"source_count": 1},
+        source_descriptors=("source",),
+        source_relationships={"status": "summarized"},
+        diagnostics={
+            "stage_summary": USDiagnosticOutput(
+                key="stage_summary",
+                summary={"source_names": ["source"]},
+            )
+        },
+    )
+
+    writer = USStageRunWriter(
+        tmp_path,
+        allow_stage_input_overrides=True,
+        stage_input_overrides=(
+            USStageInputOverride(
+                stage_id="02_source_loading",
+                key="source_datasets",
+                path="overrides/source_datasets.json",
+            ),
+        ),
+    )
+
+    with pytest.raises(ValueError, match="provider_query_plan"):
+        writer.record_stage(output)
+
+
+def test_stage_run_writer_validates_required_inputs_from_prior_manifest(tmp_path):
+    writer = USStageRunWriter(tmp_path)
+    writer.record_stage(
+        USRunProfileOutputs(
+            manifest=USArtifactRef(
+                key="manifest",
+                path="manifest.json",
+                format="json",
+                required=True,
+                assume_exists=True,
+            ),
+            resolved_config={"n_synthetic": 10},
+            provider_query_plan={},
+            diagnostics={
+                "stage_summary": USDiagnosticOutput(
+                    key="stage_summary",
+                    summary={"has_config": True},
+                )
+            },
+            complete=False,
+        )
+    )
+    output = USSourceLoadingOutputs(
+        observation_frame_summary={"source_count": 1},
+        source_descriptors=("source",),
+        source_relationships={"status": "summarized"},
+        diagnostics={
+            "stage_summary": USDiagnosticOutput(
+                key="stage_summary",
+                summary={"source_names": ["source"]},
+            )
+        },
+    )
+
+    with pytest.raises(ValueError, match="01_run_profile.provider_query_plan"):
+        writer.record_stage(output)
+
+
+def test_stage_run_writer_requires_prior_stage_even_without_stage_bound_inputs(
+    tmp_path,
+):
+    output = USSourcePlanningOutputs(
+        scaffold_selection={"scaffold_source": "source"},
+        diagnostics={
+            "stage_summary": USDiagnosticOutput(
+                key="stage_summary",
+                summary={"scaffold_source": "source"},
+            )
+        },
+        complete=False,
+    )
+
+    with pytest.raises(ValueError, match="requires 02_source_loading"):
+        USStageRunWriter(tmp_path).record_stage(output)
+
+
 def test_stage_run_writer_rejects_arbitrary_input_manifest(tmp_path):
     arbitrary_manifest = tmp_path / "arbitrary.json"
     arbitrary_manifest.write_text("{}")
@@ -249,6 +335,90 @@ def test_build_stage_outputs_from_manifest_exposes_diagnostics(tmp_path):
     assert stage6.materialized_policyengine_inputs["tables"]["households"]["rows"] == 1
 
 
+def test_build_stage_outputs_treats_missing_declared_dataset_as_incomplete(
+    tmp_path,
+):
+    _write_artifact_bundle_files(tmp_path)
+    (tmp_path / "policyengine_us.h5").unlink()
+
+    outputs = build_us_stage_output_manifests_from_artifact_manifest(
+        tmp_path,
+        _artifact_manifest(),
+    )
+
+    stage8 = outputs[7]
+    assert stage8.complete is False
+    assert stage8.missing_required_outputs(tmp_path) == ("policyengine_dataset",)
+
+
+def test_build_stage_outputs_hydrates_stage9_summary_from_validation_evidence(
+    tmp_path,
+):
+    _write_artifact_bundle_files(tmp_path)
+    evidence_path = _write_validation_evidence_manifest(tmp_path)
+    manifest = _artifact_manifest()
+    manifest.pop("policyengine_native_scores")
+    manifest["artifacts"]["validation_evidence"] = str(
+        evidence_path.relative_to(tmp_path)
+    )
+
+    outputs = build_us_stage_output_manifests_from_artifact_manifest(
+        tmp_path,
+        manifest,
+    )
+
+    stage9 = outputs[8]
+    assert stage9.complete is True
+    assert stage9.benchmark_summary == {
+        "policyengine_native_scores": {
+            "enhanced_cps_native_loss_delta": -0.1,
+        }
+    }
+    assert stage9.diagnostics["stage_summary"].summary == stage9.benchmark_summary
+
+
+def test_stage_run_writer_preserves_existing_validation_evidence_summary(
+    tmp_path,
+):
+    _write_artifact_bundle_files(tmp_path)
+    evidence_path = _write_validation_evidence_manifest(tmp_path)
+    manifest = _artifact_manifest()
+    manifest.pop("policyengine_native_scores")
+    manifest["artifacts"]["validation_evidence"] = str(
+        evidence_path.relative_to(tmp_path)
+    )
+
+    write_us_stage_run_manifests_from_artifact_manifest(tmp_path, manifest)
+
+    stage9_manifest = json.loads(
+        (
+            tmp_path
+            / "stage_artifacts"
+            / "manifests"
+            / "09_validation_benchmarking.json"
+        ).read_text()
+    )
+    rewritten_evidence = json.loads(evidence_path.read_text())
+
+    assert stage9_manifest["complete"] is True
+    assert stage9_manifest["outputs"]["benchmark_summary"] == {
+        "policyengine_native_scores": {
+            "enhanced_cps_native_loss_delta": -0.1,
+        }
+    }
+    assert rewritten_evidence["summaries"] == {
+        "policyengine_native_scores": {
+            "enhanced_cps_native_loss_delta": -0.1,
+        }
+    }
+    assert any(
+        record["key"] == "policyengine_native_scores"
+        and record["path"] == "policyengine_native_scores.json"
+        and record["exists"] is True
+        for record in rewritten_evidence["evidence"]
+    )
+
+
 def _write_artifact_bundle_files(root):
     for relative in (
         "seed_data.parquet",
@@ -278,6 +448,37 @@ def _write_artifact_bundle_files(root):
             }
         )
     )
+
+
+def _write_validation_evidence_manifest(root):
+    evidence_path = (
+        root
+        / "stage_artifacts"
+        / "09_validation_benchmarking"
+        / "evidence_manifest.json"
+    )
+    evidence_path.parent.mkdir(parents=True, exist_ok=True)
+    evidence_path.write_text(
+        json.dumps(
+            {
+                "formatVersion": 1,
+                "stageId": "09_validation_benchmarking",
+                "evidence": [
+                    {
+                        "key": "policyengine_native_scores",
+                        "path": "policyengine_native_scores.json",
+                        "exists": True,
+                    }
+                ],
+                "summaries": {
+                    "policyengine_native_scores": {
+                        "enhanced_cps_native_loss_delta": -0.1,
+                    }
+                },
+            }
+        )
+    )
+    return evidence_path
 
 
 def _artifact_manifest():

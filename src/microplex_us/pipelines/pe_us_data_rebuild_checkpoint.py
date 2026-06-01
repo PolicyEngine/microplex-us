@@ -259,7 +259,9 @@ def _resolve_saved_stage_artifact_path(
     *,
     stage_id: str,
 ) -> Path | None:
-    declared_path = _resolve_saved_artifact_path(artifact_root, artifacts.get(artifact_key))
+    declared_path = _resolve_saved_artifact_path(
+        artifact_root, artifacts.get(artifact_key)
+    )
     if declared_path is not None:
         return declared_path
     contract_path = resolve_us_stage_artifact_contract_path(
@@ -2248,20 +2250,14 @@ def main(argv: list[str] | None = None) -> None:
         action="append",
         default=[],
         metavar="STAGE_ID.KEY=PATH",
-        help=(
-            "Explicit stage input override. Requires "
-            "--allow-stage-input-overrides."
-        ),
+        help=("Explicit stage input override. Requires --allow-stage-input-overrides."),
     )
     args = parser.parse_args(argv)
     stage_input_overrides = tuple(
-        parse_us_stage_input_override(value)
-        for value in args.stage_input_override
+        parse_us_stage_input_override(value) for value in args.stage_input_override
     )
     if stage_input_overrides and not args.allow_stage_input_overrides:
-        parser.error(
-            "--stage-input-override requires --allow-stage-input-overrides"
-        )
+        parser.error("--stage-input-override requires --allow-stage-input-overrides")
 
     config_overrides = {
         "n_synthetic": int(args.n_synthetic),

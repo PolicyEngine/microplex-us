@@ -186,8 +186,7 @@ def load_us_stage_manifest(path: str | Path) -> USStageManifest:
     payload = json.loads(manifest_path.read_text())
     if payload.get("schemaVersion") not in SUPPORTED_US_STAGE_MANIFEST_SCHEMA_VERSIONS:
         raise RuntimeError(
-            "Unsupported US stage manifest schema: "
-            f"{payload.get('schemaVersion')!r}"
+            f"Unsupported US stage manifest schema: {payload.get('schemaVersion')!r}"
         )
     return cast(USStageManifest, payload)
 
@@ -308,6 +307,7 @@ def build_us_validation_evidence_manifest(
 
     artifact_root = Path(artifact_dir)
     artifacts = dict(manifest_payload.get("artifacts", {}))
+    existing = _load_existing_validation_evidence_manifest(artifact_root, artifacts)
     evidence_keys = (
         "policyengine_harness",
         "policyengine_native_scores",
@@ -315,27 +315,31 @@ def build_us_validation_evidence_manifest(
         "imputation_ablation",
         "child_tax_unit_agi_drift",
     )
-    evidence: list[USValidationEvidenceRecord] = []
+    evidence_by_key: dict[str, USValidationEvidenceRecord] = {}
+    if existing is not None:
+        for record in existing.get("evidence", ()):
+            if not isinstance(record, Mapping) or not record.get("key"):
+                continue
+            key = str(record["key"])
+            evidence_by_key[key] = _validation_evidence_record(
+                artifact_root,
+                key,
+                record.get("path"),
+            )
     for key in evidence_keys:
         filename = artifacts.get(key)
         if not filename:
             continue
-        path_text = str(filename)
-        path = Path(path_text)
-        if not path.is_absolute():
-            path = artifact_root / path
-        evidence.append(
-            {
-                "key": key,
-                "path": path_text,
-                "exists": path.exists(),
-            }
+        evidence_by_key[key] = _validation_evidence_record(
+            artifact_root,
+            key,
+            filename,
         )
-    return {
-        "formatVersion": 1,
-        "stageId": US_VALIDATION_STAGE_ID,
-        "evidence": evidence,
-        "summaries": {
+    summaries: dict[str, Any] = {}
+    if existing is not None and isinstance(existing.get("summaries"), Mapping):
+        summaries.update(dict(existing["summaries"]))
+    summaries.update(
+        {
             key: manifest_payload[key]
             for key in (
                 "policyengine_harness",
@@ -344,7 +348,13 @@ def build_us_validation_evidence_manifest(
                 "imputation_ablation",
             )
             if isinstance(manifest_payload.get(key), dict)
-        },
+        }
+    )
+    return {
+        "formatVersion": 1,
+        "stageId": US_VALIDATION_STAGE_ID,
+        "evidence": list(evidence_by_key.values()),
+        "summaries": summaries,
     }
 
 
@@ -705,6 +715,41 @@ def _manifest_artifact_path(
     return path
 
 
+def _load_existing_validation_evidence_manifest(
+    artifact_root: Path,
+    artifacts: Mapping[str, Any],
+) -> Mapping[str, Any] | None:
+    evidence_name = artifacts.get("validation_evidence")
+    if not evidence_name:
+        return None
+    path = Path(str(evidence_name))
+    if not path.is_absolute():
+        path = artifact_root / path
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, Mapping) else None
+
+
+def _validation_evidence_record(
+    artifact_root: Path,
+    key: str,
+    path_value: Any,
+) -> USValidationEvidenceRecord:
+    path_text = str(path_value) if path_value else ""
+    path = Path(path_text)
+    if path_text and not path.is_absolute():
+        path = artifact_root / path
+    return {
+        "key": key,
+        "path": path_text,
+        "exists": bool(path_text) and path.exists(),
+    }
+
+
 def _optional_str(value: Any) -> str | None:
     if value is None:
         return None
@@ -721,7 +766,10 @@ def _stage_metrics(stage_id: str, *, manifest: dict[str, Any]) -> list[USStageMe
     config = dict(manifest.get("config", {}))
     if stage_id == "01_run_profile":
         return [
-            {"label": "Target period", "value": config.get("policyengine_target_period")},
+            {
+                "label": "Target period",
+                "value": config.get("policyengine_target_period"),
+            },
             {"label": "Backend", "value": config.get("calibration_backend")},
         ]
     if stage_id == "02_source_loading":
@@ -746,7 +794,12 @@ def _stage_metrics(stage_id: str, *, manifest: dict[str, Any]) -> list[USStageMe
             {"label": "Synthetic rows", "value": rows.get("synthetic")},
         ]
     if stage_id == "06_policyengine_entities":
-        return [{"label": "Entity bundle", "value": artifacts.get("policyengine_entity_tables")}]
+        return [
+            {
+                "label": "Entity bundle",
+                "value": artifacts.get("policyengine_entity_tables"),
+            }
+        ]
     if stage_id == "07_calibration":
         return [
             {"label": "Backend", "value": calibration.get("backend")},
@@ -760,16 +813,20 @@ def _stage_metrics(stage_id: str, *, manifest: dict[str, Any]) -> list[USStageMe
         return [
             {
                 "label": "Capped full oracle loss",
-                "value": calibration.get(
-                    "full_oracle_capped_mean_abs_relative_error"
-                ),
+                "value": calibration.get("full_oracle_capped_mean_abs_relative_error"),
             },
             {
                 "label": "Full oracle loss",
                 "value": calibration.get("full_oracle_mean_abs_relative_error"),
             },
-            {"label": "Harness delta", "value": harness.get("mean_abs_relative_error_delta")},
-            {"label": "Native delta", "value": native_scores.get("enhanced_cps_native_loss_delta")},
+            {
+                "label": "Harness delta",
+                "value": harness.get("mean_abs_relative_error_delta"),
+            },
+            {
+                "label": "Native delta",
+                "value": native_scores.get("enhanced_cps_native_loss_delta"),
+            },
             {"label": "Win rate", "value": harness.get("target_win_rate")},
             {
                 "label": "Imputation MAE",

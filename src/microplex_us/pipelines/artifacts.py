@@ -269,7 +269,9 @@ def _resolve_saved_artifact_file(
     artifacts = dict(manifest.get("artifacts", {}))
     filename = artifacts.get(artifact_key)
     if not filename:
-        filename = "targets.json" if artifact_key == "targets" else f"{artifact_key}.parquet"
+        filename = (
+            "targets.json" if artifact_key == "targets" else f"{artifact_key}.parquet"
+        )
     path = Path(filename)
     if not path.is_absolute():
         path = artifact_root / path
@@ -323,9 +325,7 @@ def _write_us_source_plan_artifact(
         "donorAuthoritativeOverrideVariables": list(
             synthesis.get("donor_authoritative_override_variables", ())
         ),
-        "donorExcludedVariables": list(
-            synthesis.get("donor_excluded_variables", ())
-        ),
+        "donorExcludedVariables": list(synthesis.get("donor_excluded_variables", ())),
     }
     if result.fusion_plan is not None:
         payload["fusionPlan"] = {
@@ -360,8 +360,7 @@ def _build_source_weight_diagnostics(
             entity: {
                 "count": fixed_spine_entry.get(f"{prefix}_count", 0),
                 "weight_sum": fixed_spine_entry.get(f"{prefix}_weight_sum", 0.0),
-                "available": fixed_spine_entry.get(f"{prefix}_weight_sum")
-                is not None,
+                "available": fixed_spine_entry.get(f"{prefix}_weight_sum") is not None,
             }
             for entity, prefix in _SOURCE_DIAGNOSTIC_ENTITY_PREFIXES.items()
         }
@@ -1087,14 +1086,14 @@ def save_us_microplex_artifacts(
                 output_dir,
                 variables=variables,
             )
-            drift_path.write_text(
-                json.dumps(payload, indent=2, sort_keys=True)
-            )
+            drift_path.write_text(json.dumps(payload, indent=2, sort_keys=True))
             child_tax_unit_agi_drift_path = drift_path
-            child_tax_unit_agi_drift_summary = _summarize_child_tax_unit_agi_drift_ratios(
-                payload,
-                stage="calibrated",
-                variables=variables,
+            child_tax_unit_agi_drift_summary = (
+                _summarize_child_tax_unit_agi_drift_ratios(
+                    payload,
+                    stage="calibrated",
+                    variables=variables,
+                )
             )
         except Exception as exc:  # pragma: no cover - diagnostic best-effort
             child_tax_unit_agi_drift_summary = {
@@ -1145,9 +1144,7 @@ def save_us_microplex_artifacts(
             ),
             "data_flow_snapshot": data_flow_snapshot_path.name,
             "stage_manifest": stage_manifest_path.name,
-            "artifact_inventory": str(
-                artifact_inventory_path.relative_to(output_dir)
-            ),
+            "artifact_inventory": str(artifact_inventory_path.relative_to(output_dir)),
             "conditional_readiness": str(
                 conditional_readiness_path.relative_to(output_dir)
             ),
@@ -1182,18 +1179,20 @@ def save_us_microplex_artifacts(
             child_tax_unit_agi_drift_path.name
         )
     if child_tax_unit_agi_drift_summary is not None:
-        manifest.setdefault("diagnostics", {})[
-            "child_tax_unit_agi_drift"
-        ] = child_tax_unit_agi_drift_summary
+        manifest.setdefault("diagnostics", {})["child_tax_unit_agi_drift"] = (
+            child_tax_unit_agi_drift_summary
+        )
     if capital_gains_lots_summary is not None:
-        manifest.setdefault("diagnostics", {})[
-            "capital_gains_lots"
-        ] = capital_gains_lots_summary
+        manifest.setdefault("diagnostics", {})["capital_gains_lots"] = (
+            capital_gains_lots_summary
+        )
     manifest.setdefault("diagnostics", {})["source_weight_diagnostics"] = dict(
         source_weight_diagnostics_payload.get("summary", {})
     )
     if harness_summary is not None or native_scores_payload is not None:
-        resolved_run_registry_path = Path(run_registry_path or output_dir.parent / "run_registry.jsonl")
+        resolved_run_registry_path = Path(
+            run_registry_path or output_dir.parent / "run_registry.jsonl"
+        )
         run_entry = build_us_microplex_run_registry_entry(
             artifact_dir=output_dir,
             manifest_path=manifest_path,
@@ -1435,6 +1434,8 @@ def save_versioned_us_microplex_build_result(
     run_registry_metadata: dict[str, Any] | None = None,
     enable_child_tax_unit_agi_drift: bool = False,
     child_tax_unit_agi_drift_variables: tuple[str, ...] | None = None,
+    allow_stage_input_overrides: bool = False,
+    stage_input_overrides: tuple[USStageInputOverride, ...] = (),
 ) -> USMicroplexVersionedBuildArtifacts:
     """Save an already-built result as a versioned bundle and report frontier gap."""
     return _finalize_versioned_build_artifacts(
@@ -1458,6 +1459,8 @@ def save_versioned_us_microplex_build_result(
         run_registry_metadata=run_registry_metadata,
         enable_child_tax_unit_agi_drift=enable_child_tax_unit_agi_drift,
         child_tax_unit_agi_drift_variables=child_tax_unit_agi_drift_variables,
+        allow_stage_input_overrides=allow_stage_input_overrides,
+        stage_input_overrides=stage_input_overrides,
     )
 
 
@@ -1487,6 +1490,8 @@ def build_and_save_versioned_us_microplex_from_source_provider(
     run_registry_metadata: dict[str, Any] | None = None,
     enable_child_tax_unit_agi_drift: bool = False,
     child_tax_unit_agi_drift_variables: tuple[str, ...] | None = None,
+    allow_stage_input_overrides: bool = False,
+    stage_input_overrides: tuple[USStageInputOverride, ...] = (),
 ) -> USMicroplexVersionedBuildArtifacts:
     """Build from one source provider, save a versioned bundle, and report frontier gap."""
     pipeline = USMicroplexPipeline(config)
@@ -1512,6 +1517,8 @@ def build_and_save_versioned_us_microplex_from_source_provider(
         run_registry_metadata=run_registry_metadata,
         enable_child_tax_unit_agi_drift=enable_child_tax_unit_agi_drift,
         child_tax_unit_agi_drift_variables=child_tax_unit_agi_drift_variables,
+        allow_stage_input_overrides=allow_stage_input_overrides,
+        stage_input_overrides=stage_input_overrides,
     )
 
 
@@ -1541,6 +1548,8 @@ def build_and_save_versioned_us_microplex_from_source_providers(
     run_registry_metadata: dict[str, Any] | None = None,
     enable_child_tax_unit_agi_drift: bool = False,
     child_tax_unit_agi_drift_variables: tuple[str, ...] | None = None,
+    allow_stage_input_overrides: bool = False,
+    stage_input_overrides: tuple[USStageInputOverride, ...] = (),
 ) -> USMicroplexVersionedBuildArtifacts:
     """Build from multiple source providers, save a versioned bundle, and report frontier gap."""
     pipeline = USMicroplexPipeline(config)
@@ -1566,6 +1575,8 @@ def build_and_save_versioned_us_microplex_from_source_providers(
         run_registry_metadata=run_registry_metadata,
         enable_child_tax_unit_agi_drift=enable_child_tax_unit_agi_drift,
         child_tax_unit_agi_drift_variables=child_tax_unit_agi_drift_variables,
+        allow_stage_input_overrides=allow_stage_input_overrides,
+        stage_input_overrides=stage_input_overrides,
     )
 
 
@@ -1594,6 +1605,8 @@ def build_and_save_versioned_us_microplex_from_data_dir(
     run_registry_metadata: dict[str, Any] | None = None,
     enable_child_tax_unit_agi_drift: bool = False,
     child_tax_unit_agi_drift_variables: tuple[str, ...] | None = None,
+    allow_stage_input_overrides: bool = False,
+    stage_input_overrides: tuple[USStageInputOverride, ...] = (),
 ) -> USMicroplexVersionedBuildArtifacts:
     """Build from a CPS-style parquet directory, save a versioned bundle, and report frontier gap."""
     pipeline = USMicroplexPipeline(config)
@@ -1619,6 +1632,8 @@ def build_and_save_versioned_us_microplex_from_data_dir(
         run_registry_metadata=run_registry_metadata,
         enable_child_tax_unit_agi_drift=enable_child_tax_unit_agi_drift,
         child_tax_unit_agi_drift_variables=child_tax_unit_agi_drift_variables,
+        allow_stage_input_overrides=allow_stage_input_overrides,
+        stage_input_overrides=stage_input_overrides,
     )
 
 
@@ -1675,7 +1690,10 @@ def _finalize_versioned_build_artifacts(
     current_entry = None
     frontier_entry = None
     frontier_delta = None
-    if artifact_paths.run_registry is not None and artifact_paths.version_id is not None:
+    if (
+        artifact_paths.run_registry is not None
+        and artifact_paths.version_id is not None
+    ):
         registry_entries = load_us_microplex_run_registry(artifact_paths.run_registry)
         current_entry = next(
             (
@@ -1726,7 +1744,10 @@ def _resolve_policyengine_harness_context(
     dict[str, Any],
 ]:
     resolved_target_provider = policyengine_target_provider
-    if resolved_target_provider is None and result.config.policyengine_targets_db is not None:
+    if (
+        resolved_target_provider is None
+        and result.config.policyengine_targets_db is not None
+    ):
         resolved_target_provider = PolicyEngineUSDBTargetProvider(
             result.config.policyengine_targets_db
         )
@@ -1774,7 +1795,9 @@ def _resolve_policyengine_harness_context(
             result.config.policyengine_calibration_target_profile
         ),
         "target_reform_id": result.config.policyengine_target_reform_id,
-        "harness_slice_names": [slice_spec.name for slice_spec in resolved_harness_slices],
+        "harness_slice_names": [
+            slice_spec.name for slice_spec in resolved_harness_slices
+        ],
         "policyengine_us_runtime_version": _resolve_policyengine_us_runtime_version(),
         "harness_suite": (
             "policyengine_us_all_targets"
@@ -1808,7 +1831,9 @@ def _allocate_versioned_output_dir(
     if version_id is not None:
         output_dir = output_root / version_id
         if output_dir.exists():
-            raise FileExistsError(f"Versioned artifact directory already exists: {output_dir}")
+            raise FileExistsError(
+                f"Versioned artifact directory already exists: {output_dir}"
+            )
         return version_id, output_dir
 
     config_hash = _short_config_hash(result.config.to_dict())

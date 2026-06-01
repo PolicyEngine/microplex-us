@@ -157,7 +157,9 @@ def build_us_conditional_readiness_report(
         "generatedAt": _optional_str(manifest.get("created_at")),
         "pipeline": "us_microplex",
         "artifactRoot": ".",
-        "manifest": str(dict(manifest.get("artifacts", {})).get("manifest", "manifest.json")),
+        "manifest": str(
+            dict(manifest.get("artifacts", {})).get("manifest", "manifest.json")
+        ),
         "artifactInventory": _optional_str(
             dict(manifest.get("artifacts", {})).get("artifact_inventory")
         ),
@@ -297,9 +299,15 @@ def _stage_readiness(
                 "post_artifact_evidence",
                 "Stage 8 dataset is available for validation or benchmark evidence.",
             )
-        return "must_rerun", "Validation is deferred and no Stage 8 dataset is available."
+        return (
+            "must_rerun",
+            "Validation is deferred and no Stage 8 dataset is available.",
+        )
     if compatibility == "mismatch":
-        return "must_rerun", "Requested configuration does not match this stage's saved run inputs."
+        return (
+            "must_rerun",
+            "Requested configuration does not match this stage's saved run inputs.",
+        )
     classifications = {
         str(artifact.get("classification"))
         for artifact in artifacts
@@ -311,7 +319,10 @@ def _stage_readiness(
                 f"Stage has existing {readiness.replace('_', ' ')} artifacts."
             )
     if "diagnostic_only" in classifications:
-        return "diagnostic_only", "Stage has diagnostic artifacts but no replay boundary."
+        return (
+            "diagnostic_only",
+            "Stage has diagnostic artifacts but no replay boundary.",
+        )
     if status in {"missing", "incomplete"}:
         return "must_rerun", f"Stage status is {status}."
     if status == "metadata_only":
@@ -345,7 +356,9 @@ def _load_or_build_inventory(
     *,
     manifest_payload: dict[str, Any],
 ) -> USStageArtifactInventory:
-    inventory_name = dict(manifest_payload.get("artifacts", {})).get("artifact_inventory")
+    inventory_name = dict(manifest_payload.get("artifacts", {})).get(
+        "artifact_inventory"
+    )
     if isinstance(inventory_name, str):
         inventory_path = Path(inventory_name)
         if not inventory_path.is_absolute():

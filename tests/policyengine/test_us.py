@@ -2107,7 +2107,11 @@ class TestPolicyEngineUSProjection:
         household_contract_inputs = (
             "auto_loan_balance",
             "auto_loan_interest",
+            "block_geoid",
+            "congressional_district_geoid",
+            "county_fips",
             "tenure_type",
+            "tract_geoid",
         )
         tax_unit_contract_inputs = (
             "domestic_production_ald",

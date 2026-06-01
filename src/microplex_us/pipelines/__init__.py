@@ -359,6 +359,13 @@ _EXPORT_MODULES: dict[str, str] = {
         ),
     ),
     **_exports(
+        "microplex_us.pipelines.stage9_replay",
+        (
+            "USStage9ReplayResult",
+            "replay_us_stage9_validation_benchmarking",
+        ),
+    ),
+    **_exports(
         "microplex_us.pipelines.summarize_pe_native_family_drilldown",
         (
             "classify_pe_native_target_family",
@@ -367,21 +374,15 @@ _EXPORT_MODULES: dict[str, str] = {
     ),
     **_exports(
         "microplex_us.pipelines.summarize_pe_native_regressions",
-        (
-            "summarize_us_pe_native_regressions",
-        ),
+        ("summarize_us_pe_native_regressions",),
     ),
     **_exports(
         "microplex_us.pipelines.summarize_policyengine_oracle_regressions",
-        (
-            "summarize_us_policyengine_oracle_regressions",
-        ),
+        ("summarize_us_policyengine_oracle_regressions",),
     ),
     **_exports(
         "microplex_us.pipelines.summarize_policyengine_oracle_target_drilldown",
-        (
-            "summarize_us_policyengine_oracle_target_drilldown",
-        ),
+        ("summarize_us_policyengine_oracle_target_drilldown",),
     ),
     **_exports(
         "microplex_us.pipelines.source_stage_parity",

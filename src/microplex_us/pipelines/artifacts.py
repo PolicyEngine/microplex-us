@@ -39,6 +39,7 @@ from microplex_us.pipelines.registry import (
     select_us_microplex_frontier_entry,
 )
 from microplex_us.pipelines.stage_contracts import (
+    get_us_stage_artifact_contract,
     resolve_us_stage_artifact_contract_path,
 )
 from microplex_us.pipelines.stage_manifest import (
@@ -46,9 +47,11 @@ from microplex_us.pipelines.stage_manifest import (
 )
 from microplex_us.pipelines.stage_run import (
     USArtifactRef,
+    USDatasetAssemblyOutputs,
     USDiagnosticOutput,
     USRunProfileOutputs,
     USStageInputOverride,
+    USValidationBenchmarkingOutputs,
     write_us_stage_run_manifests_from_artifact_manifest,
 )
 from microplex_us.pipelines.stage_runtime import USStageRuntimeWriter
@@ -119,6 +122,85 @@ class USMicroplexVersionedBuildArtifacts:
     current_entry: Any | None = None
     frontier_entry: Any | None = None
     frontier_delta: float | None = None
+
+
+def _stage_artifact_ref(
+    artifact_root: str | Path,
+    stage_id: str,
+    artifact_key: str,
+    *,
+    assume_exists: bool = False,
+) -> USArtifactRef:
+    contract = get_us_stage_artifact_contract(stage_id, artifact_key)
+    return USArtifactRef(
+        key=artifact_key,
+        path=resolve_us_stage_artifact_contract_path(
+            artifact_root,
+            stage_id,
+            artifact_key,
+        ),
+        format=contract.format,
+        required=contract.required,
+        resume_role=contract.resume_role,
+        assume_exists=assume_exists,
+    )
+
+
+def _stage_diagnostics(
+    stage_id: str,
+    summary: Mapping[str, Any],
+) -> dict[str, USDiagnosticOutput]:
+    return {
+        "stage_summary": USDiagnosticOutput(
+            key="stage_summary",
+            description=f"Runtime diagnostic summary for {stage_id}.",
+            summary=dict(summary),
+        )
+    }
+
+
+def _write_parquet_unless_live_artifact_exists(
+    path: Path,
+    frame: pd.DataFrame,
+    *,
+    live_artifact: bool,
+) -> None:
+    if live_artifact and path.exists():
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    frame.to_parquet(path, index=False)
+
+
+def _write_json_unless_live_artifact_exists(
+    path: Path,
+    payload: Mapping[str, Any],
+    *,
+    live_artifact: bool,
+) -> None:
+    if live_artifact and path.exists():
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True))
+
+
+def _stage9_benchmark_summary(manifest: Mapping[str, Any]) -> dict[str, Any]:
+    summary: dict[str, Any] = {}
+    for key in (
+        "policyengine_harness",
+        "policyengine_native_scores",
+        "policyengine_native_audit",
+        "imputation_ablation",
+    ):
+        value = manifest.get(key)
+        if isinstance(value, Mapping):
+            summary[key] = dict(value)
+    diagnostics = manifest.get("diagnostics")
+    if isinstance(diagnostics, Mapping):
+        for key in ("child_tax_unit_agi_drift", "capital_gains_lots"):
+            value = diagnostics.get(key)
+            if isinstance(value, Mapping):
+                summary[key] = dict(value)
+    return summary
 
 
 def replay_us_microplex_policyengine_stage_from_artifact(
@@ -937,29 +1019,48 @@ def save_us_microplex_artifacts(
     resolved_run_registry_path = None
     resolved_run_index_path = None
     harness_payload = None
+    live_artifacts = stage_runtime_writer is not None
+
+    if stage_runtime_writer is not None:
+        stage_runtime_writer.start_stage("08_dataset_assembly")
 
     if result.scaffold_seed_data is not None and scaffold_seed_data_path is not None:
-        scaffold_seed_data_path.parent.mkdir(parents=True, exist_ok=True)
-        result.scaffold_seed_data.to_parquet(scaffold_seed_data_path, index=False)
-    result.seed_data.to_parquet(seed_data_path, index=False)
-    result.synthetic_data.to_parquet(synthetic_data_path, index=False)
-    result.calibrated_data.to_parquet(calibrated_data_path, index=False)
-    targets_path.write_text(
-        json.dumps(
-            {
-                "marginal": result.targets.marginal,
-                "continuous": result.targets.continuous,
-            },
-            indent=2,
-            sort_keys=True,
+        _write_parquet_unless_live_artifact_exists(
+            scaffold_seed_data_path,
+            result.scaffold_seed_data,
+            live_artifact=live_artifacts,
         )
+    _write_parquet_unless_live_artifact_exists(
+        seed_data_path,
+        result.seed_data,
+        live_artifact=live_artifacts,
+    )
+    _write_parquet_unless_live_artifact_exists(
+        synthetic_data_path,
+        result.synthetic_data,
+        live_artifact=live_artifacts,
+    )
+    _write_parquet_unless_live_artifact_exists(
+        calibrated_data_path,
+        result.calibrated_data,
+        live_artifact=live_artifacts,
+    )
+    _write_json_unless_live_artifact_exists(
+        targets_path,
+        {
+            "marginal": result.targets.marginal,
+            "continuous": result.targets.continuous,
+        },
+        live_artifact=live_artifacts,
     )
 
     if result.synthesizer is not None and synthesizer_path is not None:
         result.synthesizer.save(synthesizer_path)
 
-    _write_us_source_plan_artifact(result, source_plan_path)
-    _write_json_atomically(calibration_summary_path, result.calibration_summary)
+    if not (live_artifacts and source_plan_path.exists()):
+        _write_us_source_plan_artifact(result, source_plan_path)
+    if not (live_artifacts and calibration_summary_path.exists()):
+        _write_json_atomically(calibration_summary_path, result.calibration_summary)
     source_weight_diagnostics_payload = _build_source_weight_diagnostics(result)
     _write_json_atomically(
         source_weight_diagnostics_path,
@@ -968,10 +1069,11 @@ def save_us_microplex_artifacts(
 
     if result.policyengine_tables is not None and policyengine_dataset_path is not None:
         if policyengine_entity_tables_path is not None:
-            write_us_policyengine_entity_stage_artifact(
-                result.policyengine_tables,
-                output_dir,
-            )
+            if not (live_artifacts and policyengine_entity_tables_path.exists()):
+                write_us_policyengine_entity_stage_artifact(
+                    result.policyengine_tables,
+                    output_dir,
+                )
         period = result.config.policyengine_dataset_year or 2024
         USMicroplexPipeline(result.config).export_policyengine_dataset(
             result,
@@ -981,6 +1083,57 @@ def save_us_microplex_artifacts(
     capital_gains_lots_path, capital_gains_lots_summary = (
         _maybe_write_capital_gains_lot_artifact(result, output_dir)
     )
+
+    if stage_runtime_writer is not None:
+        stage_runtime_writer.complete_stage(
+            USDatasetAssemblyOutputs(
+                policyengine_dataset=(
+                    _stage_artifact_ref(
+                        output_dir,
+                        "08_dataset_assembly",
+                        "policyengine_dataset",
+                    )
+                    if policyengine_dataset_path is not None
+                    else None
+                ),
+                stage_manifest=_stage_artifact_ref(
+                    output_dir,
+                    "08_dataset_assembly",
+                    "stage_manifest",
+                    assume_exists=True,
+                ),
+                data_flow_snapshot=_stage_artifact_ref(
+                    output_dir,
+                    "08_dataset_assembly",
+                    "data_flow_snapshot",
+                    assume_exists=True,
+                ),
+                artifact_inventory=_stage_artifact_ref(
+                    output_dir,
+                    "08_dataset_assembly",
+                    "artifact_inventory",
+                    assume_exists=True,
+                ),
+                conditional_readiness=_stage_artifact_ref(
+                    output_dir,
+                    "08_dataset_assembly",
+                    "conditional_readiness",
+                    assume_exists=True,
+                ),
+                diagnostics=_stage_diagnostics(
+                    "08_dataset_assembly",
+                    {
+                        "policyengine_dataset": (
+                            str(policyengine_dataset_path.relative_to(output_dir))
+                            if policyengine_dataset_path is not None
+                            else None
+                        ),
+                        "has_capital_gains_lots": capital_gains_lots_path is not None,
+                    },
+                ),
+            )
+        )
+        stage_runtime_writer.start_stage("09_validation_benchmarking")
 
     (
         resolved_target_provider,
@@ -1234,6 +1387,47 @@ def save_us_microplex_artifacts(
             "artifact_id": recorded_entry.artifact_id,
         }
     if stage_runtime_writer is not None:
+        stage_runtime_writer.manifest_payload = manifest
+        stage9_summary = _stage9_benchmark_summary(manifest)
+        if stage9_summary:
+            stage_runtime_writer.complete_stage(
+                USValidationBenchmarkingOutputs(
+                    validation_evidence=_stage_artifact_ref(
+                        output_dir,
+                        "09_validation_benchmarking",
+                        "validation_evidence",
+                        assume_exists=True,
+                    ),
+                    benchmark_summary=stage9_summary,
+                    policyengine_harness=(
+                        _stage_artifact_ref(
+                            output_dir,
+                            "09_validation_benchmarking",
+                            "policyengine_harness",
+                        )
+                        if policyengine_harness_path is not None
+                        else None
+                    ),
+                    policyengine_native_scores=(
+                        _stage_artifact_ref(
+                            output_dir,
+                            "09_validation_benchmarking",
+                            "policyengine_native_scores",
+                        )
+                        if policyengine_native_scores_path is not None
+                        else None
+                    ),
+                    diagnostics=_stage_diagnostics(
+                        "09_validation_benchmarking",
+                        stage9_summary,
+                    ),
+                )
+            )
+        else:
+            stage_runtime_writer.defer_stage(
+                "09_validation_benchmarking",
+                "No validation or benchmark evidence was configured for this run.",
+            )
         manifest = stage_runtime_writer.finalize_from_artifact_manifest(manifest)
     else:
         manifest = write_us_stage_run_manifests_from_artifact_manifest(

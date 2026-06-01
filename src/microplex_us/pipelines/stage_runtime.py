@@ -84,6 +84,7 @@ class USStageRuntimeWriter:
         payload["failedAt"] = None
         payload["deferredReason"] = None
         payload["failure"] = None
+        payload["inputOverrides"] = self._serialized_overrides_for_stage(stage_id)
         payload["metadata"] = {
             **dict(payload.get("metadata", {})),
             **dict(metadata or {}),
@@ -186,8 +187,14 @@ class USStageRuntimeWriter:
         )
         self._run_writer.manifest_payload = self.manifest_payload
         self._run_writer.record_stage(lifecycle_outputs)
-        self.manifest_payload = self._run_writer.write_manifest_files()
-        return self._stage_payload(outputs.stage_id)
+        payload = lifecycle_outputs.to_dict(
+            self.artifact_root,
+            input_stage_manifest=input_stage_manifest,
+            input_overrides=self._input_overrides_for_stage(outputs.stage_id),
+        )
+        self._write_stage_payload(outputs.stage_id, payload)
+        self._refresh_aggregate()
+        return payload
 
     def fail_stage(
         self,
@@ -330,6 +337,9 @@ class USStageRuntimeWriter:
         artifacts.setdefault("stage_manifest", stage_manifest_path.name)
         artifacts.setdefault("manifest", "manifest.json")
         self.manifest_payload["artifacts"] = artifacts
+        _write_json_atomically(
+            self.artifact_root / "manifest.json", self.manifest_payload
+        )
         write_us_stage_manifest(
             self.artifact_root,
             stage_manifest_path,
@@ -354,6 +364,7 @@ class USStageRuntimeWriter:
         previous_stage_id = US_CANONICAL_STAGE_IDS[stage_index - 1]
         previous_payload = self._stage_payload(previous_stage_id)
         if previous_payload.get("lifecycleStatus") == "complete":
+            self._validate_completed_previous_stage(previous_stage_id, previous_payload)
             return
         contract = get_us_pipeline_stage_contract(stage_id)
         required_previous_inputs = tuple(
@@ -371,12 +382,55 @@ class USStageRuntimeWriter:
             "unless explicit stage input overrides are enabled"
         )
 
+    def _validate_completed_previous_stage(
+        self,
+        stage_id: str,
+        payload: Mapping[str, Any],
+    ) -> None:
+        if payload.get("contractVersion") != US_STAGE_CONTRACT_VERSION:
+            raise ValueError(
+                f"{stage_id} uses stale contract version "
+                f"{payload.get('contractVersion')!r}; expected "
+                f"{US_STAGE_CONTRACT_VERSION!r}"
+            )
+        missing = tuple(payload.get("missingRequiredOutputs") or ())
+        if missing:
+            raise ValueError(
+                f"{stage_id} is complete but missing required outputs: "
+                f"{', '.join(str(item) for item in missing)}"
+            )
+        outputs = payload.get("outputs")
+        if not isinstance(outputs, Mapping):
+            raise ValueError(f"{stage_id} has no serialized outputs")
+        required_outputs = tuple(payload.get("requiredOutputs") or ())
+        for key in required_outputs:
+            if not _serialized_output_is_available(outputs.get(str(key))):
+                raise ValueError(
+                    f"{stage_id} is complete but required output {key!r} is unavailable"
+                )
+
     def _override_satisfies(self, stage_id: str, key: str) -> bool:
         if not self.allow_stage_input_overrides:
             return False
         return any(
             override.stage_id == stage_id and override.key == key
             for override in self.stage_input_overrides
+        )
+
+    def _serialized_overrides_for_stage(self, stage_id: str) -> list[dict[str, Any]]:
+        return [
+            override.to_dict(self.artifact_root)
+            for override in self._input_overrides_for_stage(stage_id)
+        ]
+
+    def _input_overrides_for_stage(
+        self,
+        stage_id: str,
+    ) -> tuple[USStageInputOverride, ...]:
+        return tuple(
+            override
+            for override in self.stage_input_overrides
+            if override.stage_id == stage_id
         )
 
     def _validate_output_key(self, stage_id: str, key: str) -> None:
@@ -477,6 +531,21 @@ def _runtime_serialize(value: Any, artifact_root: str | Path | None) -> Any:
     if isinstance(value, USDiagnosticOutput):
         return value.to_dict(artifact_root)
     return _serialize_value(value, artifact_root)
+
+
+def _serialized_output_is_available(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, Mapping):
+        exists = value.get("exists")
+        if exists is not None:
+            return bool(exists)
+        return bool(value)
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return bool(value)
+    if isinstance(value, str):
+        return bool(value)
+    return True
 
 
 def _event(

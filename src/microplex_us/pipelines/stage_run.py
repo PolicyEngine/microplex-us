@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field, fields, is_dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Any, Literal
 
@@ -1419,6 +1420,8 @@ def _serialize_value(value: Any, artifact_root: str | Path | None) -> Any:
         return value.to_dict(artifact_root)
     if isinstance(value, Path):
         return str(value)
+    if isinstance(value, Enum):
+        return value.value
     if isinstance(value, Mapping):
         return {
             str(key): _serialize_value(item, artifact_root)

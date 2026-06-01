@@ -7,7 +7,7 @@ import sys
 import time
 import warnings
 from collections import Counter
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass, field
 from functools import lru_cache
 from pathlib import Path
@@ -73,9 +73,23 @@ from microplex_us.pipelines.pe_l0 import PolicyEngineL0Calibrator
 from microplex_us.pipelines.pe_native_optimization import (
     optimize_policyengine_us_native_loss_dataset,
 )
+from microplex_us.pipelines.stage_contracts import (
+    get_us_stage_artifact_contract,
+    resolve_us_stage_artifact_contract_path,
+)
+from microplex_us.pipelines.stage_manifest_io import write_json_atomically
+from microplex_us.pipelines.stage_policyengine_artifacts import (
+    write_us_policyengine_entity_stage_artifact,
+)
 from microplex_us.pipelines.stage_run import (
+    USArtifactRef,
+    USCalibrationOutputs,
     USDiagnosticOutput,
+    USDonorSynthesisOutputs,
+    USPolicyEngineEntityOutputs,
+    USSeedScaffoldOutputs,
     USSourceLoadingOutputs,
+    USSourcePlanningOutputs,
 )
 from microplex_us.pipelines.stage_runtime import USStageRuntimeWriter
 from microplex_us.policyengine.aotc import (
@@ -1980,7 +1994,7 @@ def _source_loading_stage_outputs(
                 "childEntity": relationship.child_entity.value,
                 "parentKey": relationship.parent_key,
                 "childKey": relationship.child_key,
-                "cardinality": relationship.cardinality,
+                "cardinality": relationship.cardinality.value,
             }
             for relationship in frame.relationships
         ]
@@ -2004,6 +2018,142 @@ def _source_loading_stage_outputs(
     )
 
 
+def _runtime_stage_artifact_path(
+    writer: USStageRuntimeWriter,
+    stage_id: str,
+    artifact_key: str,
+) -> Path:
+    return resolve_us_stage_artifact_contract_path(
+        writer.artifact_root,
+        stage_id,
+        artifact_key,
+    )
+
+
+def _runtime_stage_artifact_ref(
+    writer: USStageRuntimeWriter,
+    stage_id: str,
+    artifact_key: str,
+    *,
+    assume_exists: bool = False,
+) -> USArtifactRef:
+    contract = get_us_stage_artifact_contract(stage_id, artifact_key)
+    return USArtifactRef(
+        key=artifact_key,
+        path=_runtime_stage_artifact_path(writer, stage_id, artifact_key),
+        format=contract.format,
+        required=contract.required,
+        resume_role=contract.resume_role,
+        assume_exists=assume_exists,
+    )
+
+
+def _runtime_stage_diagnostics(
+    stage_id: str,
+    summary: Mapping[str, Any],
+) -> dict[str, USDiagnosticOutput]:
+    return {
+        "stage_summary": USDiagnosticOutput(
+            key="stage_summary",
+            description=f"Runtime diagnostic summary for {stage_id}.",
+            summary=dict(summary),
+        )
+    }
+
+
+def _write_runtime_dataframe_artifact(path: Path, frame: pd.DataFrame) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    frame.to_parquet(path, index=False)
+
+
+def _runtime_source_plan_payload(
+    source_inputs: list[USMicroplexSourceInput],
+    fusion_plan: FusionPlan,
+    scaffold_input: USMicroplexSourceInput,
+) -> dict[str, Any]:
+    source_names = tuple(input.frame.source.name for input in source_inputs)
+    return {
+        "formatVersion": 1,
+        "stageId": "03_source_planning",
+        "sourceNames": list(source_names),
+        "scaffoldSource": scaffold_input.frame.source.name,
+        "donorSourceNames": [
+            source_name
+            for source_name in source_names
+            if source_name != scaffold_input.frame.source.name
+        ],
+        "fusionPlan": {
+            "sourceNames": list(fusion_plan.source_names),
+        },
+        "scaffoldSelection": _runtime_scaffold_selection_summary(
+            source_inputs,
+            scaffold_input,
+        ),
+    }
+
+
+def _runtime_scaffold_selection_summary(
+    source_inputs: list[USMicroplexSourceInput],
+    scaffold_input: USMicroplexSourceInput,
+) -> dict[str, Any]:
+    return {
+        "scaffold_source": scaffold_input.frame.source.name,
+        "candidate_sources": [
+            source_input.frame.source.name for source_input in source_inputs
+        ],
+        "household_rows": int(len(scaffold_input.households)),
+        "person_rows": int(len(scaffold_input.persons)),
+    }
+
+
+def _runtime_seed_schema_metadata(seed_data: pd.DataFrame) -> dict[str, Any]:
+    identifier_columns = (
+        "household_id",
+        "person_id",
+        "tax_unit_id",
+        "spm_unit_id",
+        "family_id",
+        "marital_unit_id",
+    )
+    return {
+        "rows": int(len(seed_data)),
+        "columns": int(len(seed_data.columns)),
+        "identifier_columns": {
+            column: column in seed_data.columns for column in identifier_columns
+        },
+        "has_weight": "weight" in seed_data.columns,
+    }
+
+
+def _runtime_targets_payload(targets: USMicroplexTargets) -> dict[str, Any]:
+    return {
+        "marginal": targets.marginal,
+        "continuous": targets.continuous,
+    }
+
+
+def _runtime_target_ledger(targets: USMicroplexTargets) -> dict[str, Any]:
+    return {
+        "n_marginal_groups": len(targets.marginal),
+        "n_continuous": len(targets.continuous),
+        "marginal_keys": sorted(targets.marginal.keys()),
+        "continuous_keys": sorted(targets.continuous.keys()),
+    }
+
+
+def _runtime_policyengine_table_summary(
+    tables: PolicyEngineUSEntityTableBundle,
+) -> dict[str, Any]:
+    return {
+        "households": int(len(tables.households)),
+        "persons": int(len(tables.persons)),
+        "tax_units": int(len(tables.tax_units)),
+        "spm_units": int(len(tables.spm_units)),
+        "families": int(len(tables.families)),
+        "marital_units": int(len(tables.marital_units)),
+    }
+
+
 class USMicroplexPipeline:
     """End-to-end build orchestration for a US microplex dataset."""
 
@@ -2015,6 +2165,25 @@ class USMicroplexPipeline:
     ):
         self.config = config or USMicroplexBuildConfig()
         self.stage_runtime_writer = stage_runtime_writer
+
+    def _runtime_start_stage(
+        self,
+        stage_id: str,
+        *,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> None:
+        if self.stage_runtime_writer is not None:
+            self.stage_runtime_writer.start_stage(stage_id, metadata=metadata)
+
+    def _runtime_fail_stage(
+        self,
+        stage_id: str,
+        error: BaseException,
+        *,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> None:
+        if self.stage_runtime_writer is not None:
+            self.stage_runtime_writer.fail_stage(stage_id, error, metadata=metadata)
 
     def build_from_data_dir(self, data_dir: str | Path) -> USMicroplexBuildResult:
         from microplex_us.data_sources.cps import (
@@ -2051,7 +2220,18 @@ class USMicroplexPipeline:
         provider: SourceProvider,
         query: SourceQuery | None = None,
     ) -> USMicroplexBuildResult:
-        frame = provider.load_frame(query)
+        if self.stage_runtime_writer is not None:
+            self.stage_runtime_writer.start_stage("02_source_loading")
+        try:
+            frame = provider.load_frame(query)
+        except Exception as exc:
+            if self.stage_runtime_writer is not None:
+                self.stage_runtime_writer.fail_stage("02_source_loading", exc)
+            raise
+        if self.stage_runtime_writer is not None:
+            self.stage_runtime_writer.complete_stage(
+                _source_loading_stage_outputs([frame])
+            )
         return self.build_from_frames([frame])
 
     def build_from_source_providers(
@@ -2084,6 +2264,11 @@ class USMicroplexPipeline:
         return self.build_from_frames(frames)
 
     def build_from_frame(self, frame: ObservationFrame) -> USMicroplexBuildResult:
+        if self.stage_runtime_writer is not None:
+            self.stage_runtime_writer.start_stage("02_source_loading")
+            self.stage_runtime_writer.complete_stage(
+                _source_loading_stage_outputs([frame])
+            )
         return self.build_from_frames([frame])
 
     def build_from_frames(
@@ -2095,100 +2280,222 @@ class USMicroplexPipeline:
                 "USMicroplexPipeline requires at least one observation frame"
             )
 
-        source_inputs = [self.prepare_source_input(frame) for frame in frames]
-        fusion_plan = FusionPlan.from_sources([frame.source for frame in frames])
-        scaffold_input = self._select_scaffold_source(source_inputs)
-        seed_data = self.prepare_seed_data_from_source(scaffold_input)
-        seed_data = self._strip_generated_entity_ids(
-            seed_data,
-            scaffold_input=scaffold_input,
-        )
-        scaffold_seed_data = seed_data.copy()
-        donor_integration = self._integrate_donor_sources(
-            seed_data,
-            scaffold_input=scaffold_input,
-            donor_inputs=[
-                source for source in source_inputs if source is not scaffold_input
-            ],
-        )
-        seed_data = donor_integration["seed_data"]
-        seed_data = self._apply_dependent_tax_leaf_soft_caps(seed_data)
-        _emit_us_pipeline_progress(
-            "US microplex build: seed ready",
-            scaffold_source=scaffold_input.frame.source.name,
-            sources=_format_progress_values(fusion_plan.source_names),
-            rows=int(len(seed_data)),
-            columns=int(len(seed_data.columns)),
-            donor_integrated_variables=int(
-                len(donor_integration["integrated_variables"])
-            ),
-        )
-        _emit_us_pipeline_progress(
-            "US microplex build: targets start",
-            rows=int(len(seed_data)),
-        )
-        targets = self.build_targets(seed_data)
-        _emit_us_pipeline_progress(
-            "US microplex build: targets complete",
-            marginal_targets=int(len(targets.marginal)),
-            continuous_targets=int(len(targets.continuous)),
-        )
-        synthesis_variables = self._resolve_synthesis_variables(
-            scaffold_input,
-            fusion_plan=fusion_plan,
-            include_all_observed_targets=len(source_inputs) > 1,
-            available_columns=set(seed_data.columns),
-            observed_frame=seed_data,
-        )
-        _emit_us_pipeline_progress(
-            "US microplex build: synthesis variables ready",
-            condition_vars=int(len(synthesis_variables.condition_vars)),
-            target_vars=int(len(synthesis_variables.target_vars)),
-        )
-        _emit_us_pipeline_progress(
-            "US microplex build: synthesis start",
-            rows=int(len(seed_data)),
-        )
-        synthetic_data, synthesizer, synthesis_metadata = self.synthesize(
-            seed_data,
-            synthesis_variables=synthesis_variables,
-        )
-        _emit_us_pipeline_progress(
-            "US microplex build: synthesis complete",
-            rows=int(len(synthetic_data)),
-            columns=int(len(synthetic_data.columns)),
-        )
-        synthesis_metadata = {
-            **synthesis_metadata,
-            "source_names": fusion_plan.source_names,
-            "condition_vars": list(synthesis_variables.condition_vars),
-            "target_vars": list(synthesis_variables.target_vars),
-            "scaffold_source": scaffold_input.frame.source.name,
-            "donor_integrated_variables": donor_integration["integrated_variables"],
-            "donor_conditioning_diagnostics": donor_integration.get(
-                "conditioning_diagnostics", []
-            ),
-            "donor_excluded_variables": list(
-                self.config.donor_imputer_excluded_variables
-            ),
-            "donor_authoritative_override_variables": list(
-                self.config.donor_imputer_authoritative_override_variables
-            ),
-            "state_program_support_proxies": _state_program_support_proxy_summary(
-                set(seed_data.columns)
-            ),
-        }
-        _emit_us_pipeline_progress(
-            "US microplex build: support enforcement start",
-            rows=int(len(synthetic_data)),
-        )
-        synthetic_data = self.ensure_target_support(synthetic_data, seed_data, targets)
-        _emit_us_pipeline_progress(
-            "US microplex build: support enforcement complete",
-            rows=int(len(synthetic_data)),
-            columns=int(len(synthetic_data.columns)),
-        )
-        if self._has_policyengine_calibration_targets():
+        self._runtime_start_stage("03_source_planning")
+        try:
+            source_inputs = [self.prepare_source_input(frame) for frame in frames]
+            fusion_plan = FusionPlan.from_sources([frame.source for frame in frames])
+            scaffold_input = self._select_scaffold_source(source_inputs)
+            if self.stage_runtime_writer is not None:
+                source_plan_path = _runtime_stage_artifact_path(
+                    self.stage_runtime_writer,
+                    "03_source_planning",
+                    "source_plan",
+                )
+                write_json_atomically(
+                    source_plan_path,
+                    _runtime_source_plan_payload(
+                        source_inputs,
+                        fusion_plan,
+                        scaffold_input,
+                    ),
+                )
+                scaffold_selection = _runtime_scaffold_selection_summary(
+                    source_inputs,
+                    scaffold_input,
+                )
+                self.stage_runtime_writer.complete_stage(
+                    USSourcePlanningOutputs(
+                        source_plan=_runtime_stage_artifact_ref(
+                            self.stage_runtime_writer,
+                            "03_source_planning",
+                            "source_plan",
+                        ),
+                        scaffold_selection=scaffold_selection,
+                        diagnostics=_runtime_stage_diagnostics(
+                            "03_source_planning",
+                            scaffold_selection,
+                        ),
+                    )
+                )
+        except Exception as exc:
+            self._runtime_fail_stage("03_source_planning", exc)
+            raise
+
+        self._runtime_start_stage("04_seed_scaffold")
+        try:
+            seed_data = self.prepare_seed_data_from_source(scaffold_input)
+            seed_data = self._strip_generated_entity_ids(
+                seed_data,
+                scaffold_input=scaffold_input,
+            )
+            scaffold_seed_data = seed_data.copy()
+            if self.stage_runtime_writer is not None:
+                scaffold_seed_path = _runtime_stage_artifact_path(
+                    self.stage_runtime_writer,
+                    "04_seed_scaffold",
+                    "scaffold_seed_data",
+                )
+                _write_runtime_dataframe_artifact(
+                    scaffold_seed_path, scaffold_seed_data
+                )
+                seed_schema_metadata = _runtime_seed_schema_metadata(scaffold_seed_data)
+                self.stage_runtime_writer.complete_stage(
+                    USSeedScaffoldOutputs(
+                        scaffold_seed_data=_runtime_stage_artifact_ref(
+                            self.stage_runtime_writer,
+                            "04_seed_scaffold",
+                            "scaffold_seed_data",
+                        ),
+                        seed_schema_metadata=seed_schema_metadata,
+                        diagnostics=_runtime_stage_diagnostics(
+                            "04_seed_scaffold",
+                            {
+                                **seed_schema_metadata,
+                                "scaffold_source": scaffold_input.frame.source.name,
+                            },
+                        ),
+                    )
+                )
+        except Exception as exc:
+            self._runtime_fail_stage("04_seed_scaffold", exc)
+            raise
+
+        self._runtime_start_stage("05_donor_integration_synthesis")
+        try:
+            donor_integration = self._integrate_donor_sources(
+                seed_data,
+                scaffold_input=scaffold_input,
+                donor_inputs=[
+                    source for source in source_inputs if source is not scaffold_input
+                ],
+            )
+            seed_data = donor_integration["seed_data"]
+            seed_data = self._apply_dependent_tax_leaf_soft_caps(seed_data)
+            _emit_us_pipeline_progress(
+                "US microplex build: seed ready",
+                scaffold_source=scaffold_input.frame.source.name,
+                sources=_format_progress_values(fusion_plan.source_names),
+                rows=int(len(seed_data)),
+                columns=int(len(seed_data.columns)),
+                donor_integrated_variables=int(
+                    len(donor_integration["integrated_variables"])
+                ),
+            )
+            _emit_us_pipeline_progress(
+                "US microplex build: targets start",
+                rows=int(len(seed_data)),
+            )
+            targets = self.build_targets(seed_data)
+            _emit_us_pipeline_progress(
+                "US microplex build: targets complete",
+                marginal_targets=int(len(targets.marginal)),
+                continuous_targets=int(len(targets.continuous)),
+            )
+            synthesis_variables = self._resolve_synthesis_variables(
+                scaffold_input,
+                fusion_plan=fusion_plan,
+                include_all_observed_targets=len(source_inputs) > 1,
+                available_columns=set(seed_data.columns),
+                observed_frame=seed_data,
+            )
+            _emit_us_pipeline_progress(
+                "US microplex build: synthesis variables ready",
+                condition_vars=int(len(synthesis_variables.condition_vars)),
+                target_vars=int(len(synthesis_variables.target_vars)),
+            )
+            _emit_us_pipeline_progress(
+                "US microplex build: synthesis start",
+                rows=int(len(seed_data)),
+            )
+            synthetic_data, synthesizer, synthesis_metadata = self.synthesize(
+                seed_data,
+                synthesis_variables=synthesis_variables,
+            )
+            _emit_us_pipeline_progress(
+                "US microplex build: synthesis complete",
+                rows=int(len(synthetic_data)),
+                columns=int(len(synthetic_data.columns)),
+            )
+            synthesis_metadata = {
+                **synthesis_metadata,
+                "source_names": fusion_plan.source_names,
+                "condition_vars": list(synthesis_variables.condition_vars),
+                "target_vars": list(synthesis_variables.target_vars),
+                "scaffold_source": scaffold_input.frame.source.name,
+                "donor_integrated_variables": donor_integration["integrated_variables"],
+                "donor_conditioning_diagnostics": donor_integration.get(
+                    "conditioning_diagnostics", []
+                ),
+                "donor_excluded_variables": list(
+                    self.config.donor_imputer_excluded_variables
+                ),
+                "donor_authoritative_override_variables": list(
+                    self.config.donor_imputer_authoritative_override_variables
+                ),
+                "state_program_support_proxies": _state_program_support_proxy_summary(
+                    set(seed_data.columns)
+                ),
+            }
+            _emit_us_pipeline_progress(
+                "US microplex build: support enforcement start",
+                rows=int(len(synthetic_data)),
+            )
+            synthetic_data = self.ensure_target_support(
+                synthetic_data, seed_data, targets
+            )
+            _emit_us_pipeline_progress(
+                "US microplex build: support enforcement complete",
+                rows=int(len(synthetic_data)),
+                columns=int(len(synthetic_data.columns)),
+            )
+            if self.stage_runtime_writer is not None:
+                seed_data_path = _runtime_stage_artifact_path(
+                    self.stage_runtime_writer,
+                    "05_donor_integration_synthesis",
+                    "seed_data",
+                )
+                synthetic_data_path = _runtime_stage_artifact_path(
+                    self.stage_runtime_writer,
+                    "05_donor_integration_synthesis",
+                    "synthetic_data",
+                )
+                _write_runtime_dataframe_artifact(seed_data_path, seed_data)
+                _write_runtime_dataframe_artifact(synthetic_data_path, synthetic_data)
+                self.stage_runtime_writer.complete_stage(
+                    USDonorSynthesisOutputs(
+                        seed_data=_runtime_stage_artifact_ref(
+                            self.stage_runtime_writer,
+                            "05_donor_integration_synthesis",
+                            "seed_data",
+                        ),
+                        synthetic_data=_runtime_stage_artifact_ref(
+                            self.stage_runtime_writer,
+                            "05_donor_integration_synthesis",
+                            "synthetic_data",
+                        ),
+                        synthesis_metadata=synthesis_metadata,
+                        diagnostics=_runtime_stage_diagnostics(
+                            "05_donor_integration_synthesis",
+                            {
+                                "seed_rows": int(len(seed_data)),
+                                "synthetic_rows": int(len(synthetic_data)),
+                                "donor_integrated_variables": len(
+                                    donor_integration["integrated_variables"]
+                                ),
+                                "condition_vars": len(
+                                    synthesis_variables.condition_vars
+                                ),
+                                "target_vars": len(synthesis_variables.target_vars),
+                            },
+                        ),
+                    )
+                )
+        except Exception as exc:
+            self._runtime_fail_stage("05_donor_integration_synthesis", exc)
+            raise
+
+        self._runtime_start_stage("06_policyengine_entities")
+        try:
             _emit_us_pipeline_progress(
                 "US microplex build: policyengine tables start",
                 rows=int(len(synthetic_data)),
@@ -2213,44 +2520,127 @@ class USMicroplexPipeline:
                 synthetic_tables,
                 stage="pre_calibration",
             )
-            _emit_us_pipeline_progress(
-                "US microplex build: policyengine calibration start",
-                backend=self.config.calibration_backend,
-            )
-            (
-                policyengine_tables,
-                calibrated_data,
-                calibration_summary,
-            ) = self.calibrate_policyengine_tables(synthetic_tables)
-            _emit_us_pipeline_progress(
-                "US microplex build: policyengine calibration complete",
-                backend=self.config.calibration_backend,
-                calibrated_rows=int(len(calibrated_data)),
-            )
-        else:
-            _emit_us_pipeline_progress(
-                "US microplex build: calibration start",
-                backend=self.config.calibration_backend,
-                rows=int(len(synthetic_data)),
-            )
-            calibrated_data, calibration_summary = self.calibrate(
-                synthetic_data, targets
-            )
-            _emit_us_pipeline_progress(
-                "US microplex build: calibration complete",
-                backend=self.config.calibration_backend,
-                calibrated_rows=int(len(calibrated_data)),
-            )
-            _emit_us_pipeline_progress(
-                "US microplex build: policyengine tables start",
-                rows=int(len(calibrated_data)),
-            )
-            policyengine_tables = self.build_policyengine_entity_tables(calibrated_data)
-            _emit_us_pipeline_progress(
-                "US microplex build: policyengine tables complete",
-                households=int(len(policyengine_tables.households)),
-                persons=int(len(policyengine_tables.persons)),
-            )
+            if self.stage_runtime_writer is not None:
+                write_us_policyengine_entity_stage_artifact(
+                    synthetic_tables,
+                    self.stage_runtime_writer.artifact_root,
+                )
+                entity_summary = _runtime_policyengine_table_summary(synthetic_tables)
+                self.stage_runtime_writer.complete_stage(
+                    USPolicyEngineEntityOutputs(
+                        policyengine_entity_tables=_runtime_stage_artifact_ref(
+                            self.stage_runtime_writer,
+                            "06_policyengine_entities",
+                            "policyengine_entity_tables",
+                        ),
+                        materialized_policyengine_inputs=entity_summary,
+                        diagnostics=_runtime_stage_diagnostics(
+                            "06_policyengine_entities",
+                            entity_summary,
+                        ),
+                    )
+                )
+        except Exception as exc:
+            self._runtime_fail_stage("06_policyengine_entities", exc)
+            raise
+
+        self._runtime_start_stage("07_calibration")
+        try:
+            if self._has_policyengine_calibration_targets():
+                _emit_us_pipeline_progress(
+                    "US microplex build: policyengine calibration start",
+                    backend=self.config.calibration_backend,
+                )
+                (
+                    policyengine_tables,
+                    calibrated_data,
+                    calibration_summary,
+                ) = self.calibrate_policyengine_tables(synthetic_tables)
+                _emit_us_pipeline_progress(
+                    "US microplex build: policyengine calibration complete",
+                    backend=self.config.calibration_backend,
+                    calibrated_rows=int(len(calibrated_data)),
+                )
+            else:
+                _emit_us_pipeline_progress(
+                    "US microplex build: calibration start",
+                    backend=self.config.calibration_backend,
+                    rows=int(len(synthetic_data)),
+                )
+                calibrated_data, calibration_summary = self.calibrate(
+                    synthetic_data, targets
+                )
+                _emit_us_pipeline_progress(
+                    "US microplex build: calibration complete",
+                    backend=self.config.calibration_backend,
+                    calibrated_rows=int(len(calibrated_data)),
+                )
+                _emit_us_pipeline_progress(
+                    "US microplex build: policyengine tables start",
+                    rows=int(len(calibrated_data)),
+                )
+                policyengine_tables = self.build_policyengine_entity_tables(
+                    calibrated_data
+                )
+                _emit_us_pipeline_progress(
+                    "US microplex build: policyengine tables complete",
+                    households=int(len(policyengine_tables.households)),
+                    persons=int(len(policyengine_tables.persons)),
+                )
+            if self.stage_runtime_writer is not None:
+                calibrated_data_path = _runtime_stage_artifact_path(
+                    self.stage_runtime_writer,
+                    "07_calibration",
+                    "calibrated_data",
+                )
+                targets_path = _runtime_stage_artifact_path(
+                    self.stage_runtime_writer,
+                    "07_calibration",
+                    "targets",
+                )
+                calibration_summary_path = _runtime_stage_artifact_path(
+                    self.stage_runtime_writer,
+                    "07_calibration",
+                    "calibration_summary",
+                )
+                _write_runtime_dataframe_artifact(
+                    calibrated_data_path,
+                    calibrated_data,
+                )
+                write_json_atomically(targets_path, _runtime_targets_payload(targets))
+                write_json_atomically(calibration_summary_path, calibration_summary)
+                target_ledger = _runtime_target_ledger(targets)
+                self.stage_runtime_writer.complete_stage(
+                    USCalibrationOutputs(
+                        calibrated_data=_runtime_stage_artifact_ref(
+                            self.stage_runtime_writer,
+                            "07_calibration",
+                            "calibrated_data",
+                        ),
+                        targets=_runtime_stage_artifact_ref(
+                            self.stage_runtime_writer,
+                            "07_calibration",
+                            "targets",
+                        ),
+                        calibration_summary=_runtime_stage_artifact_ref(
+                            self.stage_runtime_writer,
+                            "07_calibration",
+                            "calibration_summary",
+                        ),
+                        target_ledger=target_ledger,
+                        diagnostics=_runtime_stage_diagnostics(
+                            "07_calibration",
+                            {
+                                "calibrated_rows": int(len(calibrated_data)),
+                                "backend": self.config.calibration_backend,
+                                **target_ledger,
+                            },
+                        ),
+                    )
+                )
+        except Exception as exc:
+            self._runtime_fail_stage("07_calibration", exc)
+            raise
 
         return USMicroplexBuildResult(
             config=self.config,

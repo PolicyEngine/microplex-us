@@ -69,3 +69,35 @@ def test_forbidden_columns_absent_are_not_spuriously_excluded():
         _NoComputedVariables(), exported
     )
     assert excluded.isdisjoint(_contract_forbidden())
+
+
+def test_forbidden_columns_absent_from_written_h5(tmp_path):
+    # End-to-end: the forbidden columns must not appear in the written H5,
+    # not merely in the resolver's return value. This pins the full chain
+    # resolve -> excluded_variables -> writer.
+    import numpy as np
+
+    from microplex_us.policyengine.us import (
+        write_policyengine_us_time_period_dataset,
+    )
+
+    forbidden = sorted(_contract_forbidden())
+    exported = forbidden + ["age", "household_weight"]
+    # data shape: {variable: {period: array}}
+    data = {name: {"2024": np.zeros(3)} for name in exported}
+
+    excluded = resolve_policyengine_excluded_export_variables(
+        _NoComputedVariables(), exported
+    )
+    out = write_policyengine_us_time_period_dataset(
+        data, tmp_path / "export.h5", excluded_variables=excluded
+    )
+
+    import h5py
+
+    with h5py.File(out, "r") as handle:
+        written = set(handle.keys())
+    # No forbidden column reaches the H5; legitimate inputs do.
+    assert written.isdisjoint(set(forbidden))
+    assert "age" in written
+    assert "household_weight" in written

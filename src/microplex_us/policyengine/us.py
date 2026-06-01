@@ -272,6 +272,20 @@ ENTITY_TYPE_TO_POLICYENGINE_US_ENTITY_KEY: dict[EntityType, str] = {
 
 SAFE_POLICYENGINE_US_EXPORT_VARIABLES: set[str] = {
     "age",
+    # American Opportunity Tax Credit (AOTC) factual eligibility inputs,
+    # populated per tax unit by
+    # ``USMicroplexPipeline._construct_aotc_eligibility_inputs`` from the
+    # PUF ``american_opportunity_credit`` signal. Mirrors the enhanced-CPS
+    # tuple ``AOTC_ELIGIBILITY_INPUTS`` at PolicyEngine/policyengine-us-data
+    # ``policyengine_us_data/datasets/cps/extended_cps.py:61-71``.
+    "is_pursuing_credential_for_american_opportunity_credit",
+    "attends_eligible_educational_institution_for_american_opportunity_credit",
+    "is_enrolled_at_least_half_time_for_american_opportunity_credit",
+    "has_american_opportunity_credit_1098_t_or_exception",
+    "has_american_opportunity_credit_institution_ein",
+    "has_completed_first_four_years_of_postsecondary_education",
+    "has_felony_drug_conviction",
+    "american_opportunity_credit_claimed_prior_years",
     "alimony_expense",
     "alimony_income",
     "amt_foreign_tax_credit",
@@ -412,6 +426,20 @@ POLICYENGINE_US_EXPORT_COLUMN_ALIASES: dict[str, str] = {
 
 POLICYENGINE_US_EXPORT_DEFAULTS: dict[str, Any] = {
     "auto_loan_balance": 0.0,
+    # American Opportunity Tax Credit factual eligibility inputs. The
+    # per-tax-unit construction in
+    # ``USMicroplexPipeline._construct_aotc_eligibility_inputs`` writes the
+    # real values for selected students; these defaults guarantee the
+    # contract-required columns always export (False / 0) for the
+    # non-student majority and for builds with no positive AOTC signal.
+    "is_pursuing_credential_for_american_opportunity_credit": False,
+    "attends_eligible_educational_institution_for_american_opportunity_credit": False,
+    "is_enrolled_at_least_half_time_for_american_opportunity_credit": False,
+    "has_american_opportunity_credit_1098_t_or_exception": False,
+    "has_american_opportunity_credit_institution_ein": False,
+    "has_completed_first_four_years_of_postsecondary_education": False,
+    "has_felony_drug_conviction": False,
+    "american_opportunity_credit_claimed_prior_years": 0,
     "auto_loan_interest": 0.0,
     # SCF net-worth component leaves (G1): positive-magnitude balances,
     # default 0 when the SCF donor leaves a row without that component.

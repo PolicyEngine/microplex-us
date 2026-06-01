@@ -66,6 +66,10 @@ from microplex_us.pipelines.pe_l0 import PolicyEngineL0Calibrator
 from microplex_us.pipelines.pe_native_optimization import (
     optimize_policyengine_us_native_loss_dataset,
 )
+from microplex_us.policyengine.aotc import (
+    maximum_american_opportunity_credit_per_student,
+    qualifying_expenses_from_american_opportunity_credit,
+)
 from microplex_us.policyengine.comparison import (
     evaluate_policyengine_us_target_set,
     slice_policyengine_us_target_evaluation_report,
@@ -4345,6 +4349,7 @@ class USMicroplexPipeline:
 
         households = self._build_policyengine_households(persons)
         tax_units, persons = self._build_policyengine_tax_units(persons)
+        persons = self._construct_aotc_eligibility_inputs(persons)
         persons = self._assign_family_and_spm_units(persons)
         families = self._collapse_group_table(persons, "family_id")
         spm_units = self._collapse_group_table(persons, "spm_unit_id")
@@ -4368,6 +4373,227 @@ class USMicroplexPipeline:
             marital_units=marital_units,
         )
         return tables
+
+    # AOTC eligibility-input columns populated by
+    # ``_construct_aotc_eligibility_inputs``. Mirrors the enhanced-CPS
+    # baseline tuple ``AOTC_ELIGIBILITY_INPUTS`` at
+    # ``PolicyEngine/policyengine-us-data``
+    # ``policyengine_us_data/datasets/cps/extended_cps.py:61-71``.
+    _AOTC_TRUE_FLAG_COLUMNS = (
+        "is_pursuing_credential_for_american_opportunity_credit",
+        "attends_eligible_educational_institution_for_american_opportunity_credit",
+        "is_enrolled_at_least_half_time_for_american_opportunity_credit",
+        "has_american_opportunity_credit_1098_t_or_exception",
+        "has_american_opportunity_credit_institution_ein",
+    )
+    _AOTC_FALSE_FLAG_COLUMNS = (
+        "has_completed_first_four_years_of_postsecondary_education",
+        "has_felony_drug_conviction",
+    )
+    _AOTC_PRIOR_YEARS_COLUMN = "american_opportunity_credit_claimed_prior_years"
+
+    def _construct_aotc_eligibility_inputs(
+        self,
+        persons: pd.DataFrame,
+    ) -> pd.DataFrame:
+        """Convert the PUF AOTC signal into person eligibility inputs.
+
+        Mirrors the enhanced-CPS baseline
+        ``ExtendedCPS._impute_aotc_eligibility_inputs`` at
+        ``PolicyEngine/policyengine-us-data``
+        ``policyengine_us_data/datasets/cps/extended_cps.py:1204-1369``.
+
+        The enhanced CPS operates on a flat ``{variable: {period: array}}``
+        payload keyed by ``person_tax_unit_id``; Microplex carries the same
+        signals (``american_opportunity_credit``,
+        ``qualified_tuition_expenses``, ``is_full_time_college_student``,
+        ``is_tax_unit_dependent``) as columns on the person table keyed by
+        ``tax_unit_id`` once ``_build_policyengine_tax_units`` has assigned
+        authoritative tax units, so the per-tax-unit back-solve is the same
+        algorithm applied to a single DataFrame.
+
+        Driven by the PUF-imputed ``american_opportunity_credit`` (PUF
+        ``E87521``; see ``data_sources/puf.py`` / ``manifests/puf.json`` and
+        ``policyengine_us_data`` ``datasets/puf/puf.py:707``). For each tax
+        unit with positive credit, the credit is back-solved into per-student
+        qualified-tuition expenses and students are selected by the enhanced
+        CPS priority (positive tuition -> full-time college student ->
+        tax-unit dependent -> any member) until the credit is exhausted.
+        With no credit signal it falls back to the enhanced-CPS
+        ``aotc_student = qualified_tuition_expenses > 0`` rule. The selected
+        students receive the five factual eligibility flags as ``True``,
+        ``has_completed_first_four_years_of_postsecondary_education`` and
+        ``has_felony_drug_conviction`` as ``False`` (constants the enhanced
+        CPS also hard-codes), and
+        ``american_opportunity_credit_claimed_prior_years`` clamped to a
+        maximum of 3. ``american_opportunity_credit`` is a PUF
+        calculated-tax output (see ``microdata_roles.py``) and is not itself
+        exported; PolicyEngine-US recomputes the credit from these inputs.
+        """
+        if persons is None or persons.empty:
+            return persons
+        if "tax_unit_id" not in persons.columns:
+            return persons
+
+        result = persons.copy()
+        n = len(result)
+        time_period = int(self.config.policyengine_dataset_year or 2024)
+
+        person_tax_unit_ids = result["tax_unit_id"].to_numpy()
+        tuition = (
+            pd.to_numeric(
+                result["qualified_tuition_expenses"],
+                errors="coerce",
+            )
+            .fillna(0.0)
+            .to_numpy(dtype=float, copy=True)
+            if "qualified_tuition_expenses" in result.columns
+            else np.zeros(n, dtype=float)
+        )
+        if "qualified_tuition_expenses" not in result.columns:
+            # No tuition signal and no credit-derived tuition can be
+            # back-solved, so there is no student population to mark.
+            credit_present = "american_opportunity_credit" in result.columns
+            if not credit_present:
+                return persons
+
+        credit = (
+            pd.to_numeric(
+                result["american_opportunity_credit"],
+                errors="coerce",
+            )
+            .fillna(0.0)
+            .to_numpy(dtype=float)
+            if "american_opportunity_credit" in result.columns
+            else None
+        )
+        full_time = (
+            pd.to_numeric(result["is_full_time_college_student"], errors="coerce")
+            .fillna(0)
+            .astype(bool)
+            .to_numpy()
+            if "is_full_time_college_student" in result.columns
+            else np.zeros(n, dtype=bool)
+        )
+        dependent = (
+            pd.to_numeric(result["is_tax_unit_dependent"], errors="coerce")
+            .fillna(0)
+            .astype(bool)
+            .to_numpy()
+            if "is_tax_unit_dependent" in result.columns
+            else np.zeros(n, dtype=bool)
+        )
+
+        aotc_student = np.zeros(n, dtype=bool)
+
+        if credit is not None:
+            positive_credit = credit > 0
+            if not positive_credit.any():
+                # No positive credit anywhere: nothing to construct. The
+                # enhanced CPS returns early here without writing inputs.
+                return persons
+
+            # ``american_opportunity_credit`` rides on the person table as the
+            # per-tax-unit value repeated across members; collapse to one
+            # value per tax unit (the maximum guards against any per-member
+            # zero-fill on non-filer rows).
+            credit_by_tax_unit: dict[Any, float] = {}
+            for tax_unit_id, member_credit in zip(person_tax_unit_ids, credit):
+                prior = credit_by_tax_unit.get(tax_unit_id, 0.0)
+                if member_credit > prior:
+                    credit_by_tax_unit[tax_unit_id] = float(member_credit)
+
+            max_student_credit = maximum_american_opportunity_credit_per_student(
+                time_period
+            )
+            positive_credit_units = [
+                tax_unit_id
+                for tax_unit_id, unit_credit in credit_by_tax_unit.items()
+                if unit_credit > 0
+            ]
+            for tax_unit_id in positive_credit_units:
+                member_indices = np.flatnonzero(person_tax_unit_ids == tax_unit_id)
+                if member_indices.size == 0 or max_student_credit <= 0:
+                    continue
+
+                tuition_indices = member_indices[tuition[member_indices] > 0]
+                candidate_groups = []
+                if tuition_indices.size > 0:
+                    candidate_groups.append(tuition_indices)
+                candidate_groups.extend(
+                    (
+                        member_indices[full_time[member_indices]],
+                        member_indices[dependent[member_indices]],
+                        member_indices,
+                    )
+                )
+                ordered_candidates = []
+                seen = set()
+                for group in candidate_groups:
+                    for index in group:
+                        if index not in seen:
+                            ordered_candidates.append(index)
+                            seen.add(index)
+
+                remaining_credit = float(credit_by_tax_unit[tax_unit_id])
+                for selected in ordered_candidates:
+                    if remaining_credit <= 0:
+                        break
+                    student_credit = min(remaining_credit, max_student_credit)
+                    target_tuition = (
+                        qualifying_expenses_from_american_opportunity_credit(
+                            student_credit,
+                            time_period,
+                        )
+                    )
+                    aotc_student[selected] = True
+                    tuition[selected] = target_tuition
+                    remaining_credit -= student_credit
+        else:
+            aotc_student = tuition > 0
+            if not aotc_student.any():
+                return persons
+
+        # Five factual eligibility flags -> True for selected students.
+        for column in self._AOTC_TRUE_FLAG_COLUMNS:
+            values = (
+                result[column].fillna(False).astype(bool).to_numpy().copy()
+                if column in result.columns
+                else np.zeros(n, dtype=bool)
+            )
+            values[aotc_student] = True
+            result[column] = values
+
+        # has_completed_first_four_years / has_felony_drug_conviction -> False.
+        for column in self._AOTC_FALSE_FLAG_COLUMNS:
+            values = (
+                result[column].fillna(False).astype(bool).to_numpy().copy()
+                if column in result.columns
+                else np.zeros(n, dtype=bool)
+            )
+            values[aotc_student] = False
+            result[column] = values
+
+        # Prior-year claims clamped to the 4-year (max 3 prior) AOTC limit.
+        prior_years = (
+            pd.to_numeric(result[self._AOTC_PRIOR_YEARS_COLUMN], errors="coerce")
+            .fillna(0)
+            .astype(np.int64)
+            .to_numpy()
+            .copy()
+            if self._AOTC_PRIOR_YEARS_COLUMN in result.columns
+            else np.zeros(n, dtype=np.int64)
+        )
+        prior_years[aotc_student] = np.minimum(prior_years[aotc_student], 3)
+        result[self._AOTC_PRIOR_YEARS_COLUMN] = prior_years
+
+        # Write the back-solved per-student tuition the credit implies, so the
+        # exported ``qualified_tuition_expenses`` reproduces the PUF credit
+        # under PolicyEngine-US (enhanced CPS does the same).
+        if "qualified_tuition_expenses" in result.columns:
+            result["qualified_tuition_expenses"] = tuition
+
+        return result
 
     def export_policyengine_dataset(
         self,

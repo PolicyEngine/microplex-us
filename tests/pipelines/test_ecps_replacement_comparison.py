@@ -29,6 +29,10 @@ _TARGET_NAMES = [
     "nation/irs/pension_income",
     "nation/irs/disability_income",
     "nation/irs/household_net_income",
+    "state/CA/adjusted_gross_income/amount/0_1",
+    "state/census/age/CA/65",
+    "nation/ssa/retirement",
+    "nation/irs/aca_spending/CA",
 ]
 
 
@@ -350,6 +354,8 @@ def test_sound_ecps_replacement_comparison_satisfies_gate_contract(
     assert payload["matched_datasets"]["sample_method"] == "uniform"
     assert summary["symmetric_refit"] is True
     assert summary["score_candidate_only"] is False
+    assert summary["score_source"] == "refit_loss_matrix"
+    assert summary["exact_rescore_status"] == "skipped"
     assert summary["refit_objective_matches_scoring"] is True
     assert summary["ecps_refit_recovery_passed"] is True
     assert (
@@ -452,6 +458,33 @@ def test_sound_ecps_replacement_comparison_satisfies_gate_contract(
     assert gate_report["gates"]["ecps_comparison"]["status"] == "pass"
 
 
+def test_sound_ecps_replacement_comparison_skips_exact_rescore_by_default(
+    monkeypatch,
+    tmp_path,
+):
+    candidate = _write_minimal_policyengine_dataset(tmp_path / "candidate.h5")
+    baseline = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    monkeypatch.setattr(ecps, "_extract_pe_native_loss_inputs", _fake_loss_inputs)
+    monkeypatch.setattr(ecps, "compute_us_pe_native_support_audit", _fake_support_audit)
+
+    def fail_exact_rescore(**_kwargs):
+        raise AssertionError("exact PE-native rescore should be opt-in")
+
+    monkeypatch.setattr(ecps, "compute_us_pe_native_scores", fail_exact_rescore)
+
+    payload = ecps.build_sound_ecps_replacement_comparison(
+        candidate_dataset_path=candidate,
+        baseline_dataset_path=baseline,
+        output_dir=tmp_path / "comparison",
+        optimizer_max_iter=50,
+    )
+
+    assert payload["summary"]["score_source"] == "refit_loss_matrix"
+    assert payload["summary"]["exact_rescore_requested"] is False
+    assert payload["summary"]["exact_rescore_status"] == "skipped"
+    assert payload["score"]["score_source"] == "refit_loss_matrix"
+
+
 def test_sound_ecps_replacement_comparison_writes_target_diagnostics_sidecar(
     monkeypatch,
     tmp_path,
@@ -511,6 +544,7 @@ def test_sound_ecps_replacement_comparison_flags_score_mismatch(
         baseline_dataset_path=baseline,
         output_dir=tmp_path / "comparison",
         optimizer_max_iter=50,
+        exact_rescore=True,
     )
 
     assert payload["summary"]["refit_objective_matches_scoring"] is False

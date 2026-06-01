@@ -7,7 +7,7 @@ exports, so column drift is catchable locally and in CI without producing
 any data.
 
 The required/forbidden column diff here mirrors the one inside
-``_h5_export_compatibility_gate`` in ``mp300k_artifact_gates`` (``required
+``_column_contract_gate`` in ``mp300k_artifact_gates`` (``required
 - present`` and ``forbidden & present``) -- but that gate only runs deep
 in the slow artifact path. This module surfaces the same check as a
 one-line local command and the first, cheap CI job. It also reuses that
@@ -69,17 +69,20 @@ def compute_column_diff(
     required: set[str],
     forbidden: set[str],
     optional: frozenset[str] | set[str] = frozenset(),
+    excluded: frozenset[str] | set[str] = frozenset(),
 ) -> ColumnDiff:
     """Compare a present column set against contract categories.
 
-    Mirrors the required/forbidden diff in
-    ``_h5_export_compatibility_gate`` (``required - present`` and
-    ``forbidden & present``). ``extra_unknown`` is informational only:
-    columns present that are in no known category.
+    Mirrors the required/forbidden diff in ``_column_contract_gate`` in
+    ``mp300k_artifact_gates`` (``required - present`` and ``forbidden &
+    present``). ``optional`` (clone-bookkeeping flags) and ``excluded``
+    (formula-owned columns MP need not export) are recognized categories, so
+    they never appear in ``extra_unknown``. ``extra_unknown`` is informational
+    only: columns present that are in no known category.
     """
     missing_required = required - present
     forbidden_present = forbidden & present
-    known = required | forbidden | set(optional)
+    known = required | forbidden | set(optional) | set(excluded)
     extra_unknown = present - known
     return ColumnDiff(
         missing_required=sorted(missing_required),
@@ -96,6 +99,7 @@ def load_contract(path: Path) -> dict:
         if key not in contract:
             raise ValueError(f"Contract {path} is missing required key '{key}'.")
     contract.setdefault("ecps_internal_optional", [])
+    contract.setdefault("formula_owned_excluded", [])
     return contract
 
 
@@ -217,6 +221,7 @@ def main(argv: list[str] | None = None) -> int:
     required = set(contract["required"])
     forbidden = set(contract["forbidden"])
     optional = set(contract["ecps_internal_optional"])
+    excluded = set(contract.get("formula_owned_excluded", []))
 
     if args.columns_json:
         source = args.columns_json
@@ -230,6 +235,7 @@ def main(argv: list[str] | None = None) -> int:
         required=required,
         forbidden=forbidden,
         optional=optional,
+        excluded=excluded,
     )
     print(
         _format_report(

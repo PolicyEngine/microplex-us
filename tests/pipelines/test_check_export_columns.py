@@ -202,13 +202,17 @@ def test_committed_contract_parses_with_expected_categories():
         assert isinstance(contract[key], list)
     # Category sizes of the eCPS contract, aligned to the clone-correct baseline
     # H5 (postfix_clonecorrect): required exports the 5 *_desired retirement
-    # INPUTS (not the bare formula-computed columns), excludes pe-us formula
-    # variables (in_nyc/has_tin/has_itin/weeks_worked), and forbids the
-    # PUF_REPORTED_CALCULATED_TAX_OUTPUT_VARIABLES tax-credit outputs.
-    assert len(contract["required"]) == 235
+    # INPUTS (not the bare formula-computed columns), forbids the
+    # PUF_REPORTED_CALCULATED_TAX_OUTPUT_VARIABLES tax-credit outputs, and
+    # excludes only weeks_worked (the lone pe-us formula var the baseline does
+    # not persist). Structural/overridable computed fields
+    # (has_tin/has_itin/in_nyc/fsla_overtime_premium/meets_ssi_disability_criteria)
+    # are REQUIRED, matching the in-tree _column_contract_gate.
+    # Sizes sum to the 252-column clone-correct baseline: 246 + 5 + 1.
+    assert len(contract["required"]) == 246
     assert len(contract["ecps_internal_optional"]) == 5
     assert len(contract["forbidden"]) == 22
-    assert len(contract["formula_owned_excluded"]) == 4
+    assert len(contract["formula_owned_excluded"]) == 1
     # Categories must be disjoint.
     req = set(contract["required"])
     opt = set(contract["ecps_internal_optional"])
@@ -222,6 +226,18 @@ def test_committed_contract_parses_with_expected_categories():
     # The clone-bookkeeping flags are optional, not required.
     assert "person_is_puf_clone" in opt
     assert "person_is_puf_clone" not in req
+    # Structural/overridable computed fields are REQUIRED (in-tree gate parity),
+    # NOT excluded; only weeks_worked is excluded.
+    for structural in (
+        "has_tin",
+        "has_itin",
+        "in_nyc",
+        "fsla_overtime_premium",
+        "meets_ssi_disability_criteria",
+        "difficulty_hearing",
+    ):
+        assert structural in req
+    assert excl == {"weeks_worked"}
 
 
 def test_committed_clean_fixture_passes_committed_contract():
@@ -230,6 +246,26 @@ def test_committed_clean_fixture_passes_committed_contract():
     fixture = Path(__file__).parent / "fixtures" / "ecps_clean_columns.json"
     rc = main(["--columns-json", str(fixture)])
     assert rc == 0
+
+
+def test_committed_contract_covers_every_baseline_column():
+    # Completeness invariant: every column the clean baseline fixture exports
+    # must be accounted for by some contract category, so a baseline-shaped
+    # export produces no extra_unknown columns. This pins the contract to the
+    # real baseline and catches silent under-specification of `required`.
+    contract = load_contract(DEFAULT_CONTRACT_PATH)
+    fixture = Path(__file__).parent / "fixtures" / "ecps_clean_columns.json"
+    present = set(json.loads(fixture.read_text()))
+    diff = compute_column_diff(
+        present,
+        required=set(contract["required"]),
+        forbidden=set(contract["forbidden"]),
+        optional=set(contract["ecps_internal_optional"]),
+        excluded=set(contract["formula_owned_excluded"]),
+    )
+    assert diff.extra_unknown == []
+    assert diff.missing_required == []
+    assert diff.forbidden_present == []
 
 
 def test_default_contract_path_is_packaged():

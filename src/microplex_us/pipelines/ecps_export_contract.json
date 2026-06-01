@@ -1,12 +1,12 @@
 {
-  "_description": "Frozen column-parity contract for the eCPS export. Defines what a Microplex (MP) dataset must export to be a drop-in replacement for the enhanced CPS (eCPS) baseline. Derived from the 244-column eCPS baseline H5 export. Consumed by check_export_columns.py; mirrors the required/forbidden diff in _h5_export_compatibility_gate (mp300k_artifact_gates.py).",
+  "_description": "Frozen column-parity contract for the eCPS export. Defines what a Microplex (MP) dataset must export to be a drop-in replacement for the enhanced CPS (eCPS) baseline. Derived from the 252-column eCPS baseline H5 export. Consumed by check_export_columns.py; mirrors the required/forbidden diff in _h5_export_compatibility_gate (mp300k_artifact_gates.py).",
   "_categories": {
     "required": "Columns MP MUST export to match eCPS. The gate FAILS if any are missing from the candidate export. Equals the 244 eCPS columns minus the eCPS clone-bookkeeping columns in ecps_internal_optional.",
     "ecps_internal_optional": "eCPS clone-bookkeeping columns (PUF-clone flags). eCPS emits these internally; MP is NOT required to export them, so they never count as missing. The gate neither requires nor forbids them.",
-    "forbidden": "Transient takeup-input columns (the *_reported / *_at_interview family) that eCPS deliberately drops from its export. The gate FAILS if MP exports any of these.",
-    "formula_owned_excluded": "pe-us FORMULA variables (def formula confirmed in policyengine-us 1.715.2 source). eCPS leaks them but MP should not export formulas; neither required nor forbidden."
+    "forbidden": "Columns eCPS deliberately drops from its export: the transient *_reported takeup-input family and the PUF reported/calculated tax-credit outputs. The gate FAILS if MP exports any.",
+    "formula_owned_excluded": "pe-us FORMULA variables the baseline does NOT persist as inputs (currently just weeks_worked). Structural/overridable computed fields (has_tin/has_itin/in_nyc/fsla_overtime_premium/meets_ssi_disability_criteria) are REQUIRED, not here, per the in-tree _column_contract_gate."
   },
-  "_source": "eCPS baseline H5 export column set (244 columns).",
+  "_source": "eCPS clone-correct baseline H5 export column set (252 columns).",
   "required": [
     "age",
     "alimony_expense",
@@ -30,6 +30,12 @@
     "county_fips",
     "cps_race",
     "detailed_occupation_recode",
+    "difficulty_doing_errands",
+    "difficulty_dressing_or_bathing",
+    "difficulty_hearing",
+    "difficulty_remembering_or_making_decisions",
+    "difficulty_seeing",
+    "difficulty_walking_or_climbing_stairs",
     "disability_benefits",
     "domestic_production_ald",
     "educational_assistance",
@@ -48,6 +54,7 @@
     "first_home_mortgage_balance",
     "first_home_mortgage_interest",
     "first_home_mortgage_origination_year",
+    "fsla_overtime_premium",
     "has_american_opportunity_credit_1098_t_or_exception",
     "has_american_opportunity_credit_institution_ein",
     "has_champva_health_coverage_at_interview",
@@ -55,12 +62,14 @@
     "has_esi",
     "has_felony_drug_conviction",
     "has_indian_health_service_coverage_at_interview",
+    "has_itin",
     "has_marketplace_health_coverage",
     "has_marketplace_health_coverage_at_interview",
     "has_medicaid_health_coverage_at_interview",
     "has_never_worked",
     "has_non_marketplace_direct_purchase_health_coverage_at_interview",
     "has_other_means_tested_health_coverage_at_interview",
+    "has_tin",
     "has_tricare_health_coverage_at_interview",
     "has_va_health_coverage_at_interview",
     "has_valid_ssn",
@@ -74,6 +83,7 @@
     "household_vehicles_value",
     "household_weight",
     "immigration_status_str",
+    "in_nyc",
     "investment_income_elected_form_4952",
     "investment_interest_expense",
     "is_blind",
@@ -100,6 +110,7 @@
     "long_term_capital_gains_before_response",
     "long_term_capital_gains_on_collectibles",
     "marital_unit_id",
+    "meets_ssi_disability_criteria",
     "miscellaneous_income",
     "net_worth",
     "non_qualified_dividend_income",
@@ -276,9 +287,6 @@
     "unreported_payroll_tax"
   ],
   "formula_owned_excluded": [
-    "has_itin",
-    "has_tin",
-    "in_nyc",
     "weeks_worked"
   ]
 }

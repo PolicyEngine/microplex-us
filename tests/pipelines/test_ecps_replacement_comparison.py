@@ -50,9 +50,7 @@ def _write_minimal_policyengine_dataset(
         "family_id": {str(period): np.asarray([1000, 2000])},
         "person_family_id": {str(period): np.asarray([1000, 1000, 2000])},
         "marital_unit_id": {str(period): np.asarray([10000, 10001, 20000])},
-        "person_marital_unit_id": {
-            str(period): np.asarray([10000, 10001, 20000])
-        },
+        "person_marital_unit_id": {str(period): np.asarray([10000, 10001, 20000])},
     }
     return write_policyengine_us_time_period_dataset(arrays, path)
 
@@ -214,6 +212,46 @@ def test_protected_family_losses_match_pe_native_labels_with_spaces():
     assert rows["wages"]["n_targets"] == 1
     assert rows["capital_gains"]["n_targets"] == 1
     assert rows["household_net_income"]["n_targets"] == 1
+    assert rows["wages"]["candidate_loss"] == pytest.approx(1.0)
+    assert rows["wages"]["baseline_loss"] == pytest.approx(0.0)
+    assert rows["capital_gains"]["loss_delta"] == pytest.approx(1.0)
+
+
+def test_target_loss_diagnostics_family_breakdown_uses_total_loss_scale():
+    target_names = [
+        "nation/irs/capital gains gross/total/AGI in 1m-inf/taxable/All",
+        "state/census/age/CA/65",
+    ]
+    candidate_inputs = {
+        "scaled_matrix": np.asarray([[2.0, 3.0]]),
+        "scaled_target": np.ones(len(target_names), dtype=np.float64),
+    }
+    baseline_inputs = {
+        "scaled_matrix": np.asarray([[1.0, 1.0]]),
+        "scaled_target": np.ones(len(target_names), dtype=np.float64),
+    }
+
+    diagnostics = ecps._target_loss_diagnostics(
+        target_names=target_names,
+        candidate_inputs=candidate_inputs,
+        baseline_inputs=baseline_inputs,
+        candidate_weights=np.asarray([1.0]),
+        baseline_weights=np.asarray([1.0]),
+        holdout_mask=np.asarray([False, True]),
+        top_k=2,
+    )
+
+    assert diagnostics["summary"]["candidate_loss"] == pytest.approx(5.0)
+    breakdown = {row["family"]: row for row in diagnostics["family_breakdown"]}
+    assert breakdown["national_irs_other"][
+        "candidate_loss_contribution"
+    ] == pytest.approx(1.0)
+    assert breakdown["state_age_distribution"][
+        "candidate_loss_contribution"
+    ] == pytest.approx(4.0)
+    assert sum(
+        row["candidate_loss_contribution"] for row in diagnostics["family_breakdown"]
+    ) == pytest.approx(diagnostics["summary"]["candidate_loss"])
 
 
 def _artifact_manifest(artifact_dir: Path, baseline_dataset: Path) -> None:
@@ -314,9 +352,10 @@ def test_sound_ecps_replacement_comparison_satisfies_gate_contract(
     assert summary["score_candidate_only"] is False
     assert summary["refit_objective_matches_scoring"] is True
     assert summary["ecps_refit_recovery_passed"] is True
-    assert summary["candidate_enhanced_cps_native_loss"] < summary[
-        "baseline_enhanced_cps_native_loss"
-    ]
+    assert (
+        summary["candidate_enhanced_cps_native_loss"]
+        < summary["baseline_enhanced_cps_native_loss"]
+    )
     assert summary["holdout_targets"] > 0
     assert set(summary["protected_family_losses"]) == {
         "ssi",
@@ -333,12 +372,9 @@ def test_sound_ecps_replacement_comparison_satisfies_gate_contract(
     assert summary["protected_family_losses"]["wages"]["n_targets"] == 1
     target_diagnostics = payload["target_diagnostics"]
     assert target_diagnostics["summary"]["n_targets"] == len(_TARGET_NAMES)
-    assert (
-        target_diagnostics["summary"]["candidate_wins"]
-        + target_diagnostics["summary"]["baseline_wins"]
-        + target_diagnostics["summary"]["ties"]
-        == len(_TARGET_NAMES)
-    )
+    assert target_diagnostics["summary"]["candidate_wins"] + target_diagnostics[
+        "summary"
+    ]["baseline_wins"] + target_diagnostics["summary"]["ties"] == len(_TARGET_NAMES)
     assert target_diagnostics["summary"]["train_targets"] > 0
     assert target_diagnostics["summary"]["holdout_targets"] > 0
     assert target_diagnostics["top_regressions"]
@@ -351,9 +387,10 @@ def test_sound_ecps_replacement_comparison_satisfies_gate_contract(
     assert "baseline_estimate" in first_target
     assert "candidate_relative_error" in first_target
     assert "baseline_relative_error" in first_target
-    assert {
-        row["split"] for row in target_diagnostics["targets"]
-    } == {"train", "holdout"}
+    assert {row["split"] for row in target_diagnostics["targets"]} == {
+        "train",
+        "holdout",
+    }
     assert target_diagnostics["family_breakdown"]
     support_summary = payload["summary"]["support_audit"]
     assert support_summary["top_filing_status_gaps"][0]["filing_status"] == (

@@ -195,6 +195,7 @@ PUF_SUPPORT_CLONE_IMPUTED_VARIABLES: tuple[str, ...] = (
     "self_employment_income_would_be_qualified",
 )
 
+DEFAULT_ACA_TAKEUP_RATE = 0.672
 DEFAULT_SNAP_TAKEUP_RATE = 0.82
 
 
@@ -222,10 +223,12 @@ def _policyengine_us_data_seeded_rng(
 
 
 def _load_policyengine_us_data_takeup_rate(variable_name: str, year: int) -> float:
-    """Load an eCPS take-up rate, with a SNAP fallback for non-PE-data envs."""
+    """Load an eCPS take-up rate, with scalar fallbacks for non-PE-data envs."""
     try:
         from policyengine_us_data.parameters import load_take_up_rate
     except ImportError:
+        if variable_name == "aca":
+            return DEFAULT_ACA_TAKEUP_RATE
         if variable_name == "snap":
             return DEFAULT_SNAP_TAKEUP_RATE
         raise
@@ -4750,6 +4753,7 @@ class USMicroplexPipeline:
 
         households = self._build_policyengine_households(persons)
         tax_units, persons = self._build_policyengine_tax_units(persons)
+        tax_units = self._attach_policyengine_aca_takeup(tax_units)
         persons = self._construct_aotc_eligibility_inputs(persons)
         persons = self._assign_family_and_spm_units(persons)
         families = self._collapse_group_table(persons, "family_id")
@@ -8450,24 +8454,33 @@ class USMicroplexPipeline:
                 .ne(0.0)
                 .any()
             )
-        marketplace_columns = (
-            "has_marketplace_health_coverage",
-            "has_marketplace_health_coverage_at_interview",
-            "reported_has_marketplace_health_coverage_at_interview",
-            "reported_has_subsidized_marketplace_health_coverage_at_interview",
-            "reported_has_unsubsidized_marketplace_health_coverage_at_interview",
-        )
-        observed = [
-            column for column in marketplace_columns if column in unit_persons.columns
-        ]
-        if not observed:
-            return None
-        marketplace = pd.Series(False, index=unit_persons.index, dtype=bool)
-        for column in observed:
-            marketplace |= (
-                pd.to_numeric(unit_persons[column], errors="coerce").fillna(0.0).ne(0.0)
+        return None
+
+    def _attach_policyengine_aca_takeup(
+        self,
+        tax_units: pd.DataFrame,
+    ) -> pd.DataFrame:
+        """Attach eCPS-style ACA take-up input before PE materialization."""
+        result = tax_units.copy()
+        column = "takes_up_aca_if_eligible"
+        if column in result.columns:
+            result[column] = (
+                pd.to_numeric(result[column], errors="coerce")
+                .fillna(0.0)
+                .ne(0.0)
+                .astype(bool)
             )
-        return bool(marketplace.any())
+            return result
+
+        year = int(
+            self.config.policyengine_dataset_year
+            or self.config.policyengine_target_period
+            or 2024
+        )
+        rate = _load_policyengine_us_data_takeup_rate("aca", year)
+        rng = _policyengine_us_data_seeded_rng(column)
+        result[column] = rng.random(len(result)) < rate
+        return result
 
     def _split_preserved_tax_unit_members(
         self,

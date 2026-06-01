@@ -1056,6 +1056,7 @@ class TestUSMicroplexPipeline:
                 "age": [45, 12, 70],
                 "income": [60_000.0, 0.0, 25_000.0],
                 "relationship_to_head": [0, 2, 0],
+                "takes_up_aca_if_eligible": [True, True, True],
             }
         )
 
@@ -1257,7 +1258,21 @@ class TestUSMicroplexPipeline:
         assert person_rows["medicaid_enrolled"].tolist() == [False, True]
         assert person_rows["state_income_tax_reported"].tolist() == [400.0, 50.0]
 
-    def test_build_policyengine_entity_tables_adds_deterministic_aca_takeup(self):
+    def test_build_policyengine_entity_tables_adds_deterministic_aca_takeup(
+        self,
+        monkeypatch,
+    ):
+        calls: list[tuple[str, int]] = []
+
+        def fake_load_takeup_rate(variable_name: str, year: int) -> float:
+            calls.append((variable_name, year))
+            return 0.0
+
+        monkeypatch.setattr(
+            us_pipeline_module,
+            "_load_policyengine_us_data_takeup_rate",
+            fake_load_takeup_rate,
+        )
         pipeline = USMicroplexPipeline(
             USMicroplexBuildConfig(policyengine_dataset_year=2024)
         )
@@ -1274,13 +1289,19 @@ class TestUSMicroplexPipeline:
                 "state_fips": [6, 12, 48],
                 "tenure": [1, 1, 1],
                 "has_marketplace_health_coverage": [True, False, True],
+                "takes_up_snap_if_eligible": [True, True, True],
             }
         )
 
         tables = pipeline.build_policyengine_entity_tables(population)
 
         tax_units = tables.tax_units.sort_values("household_id").reset_index(drop=True)
-        assert tax_units["takes_up_aca_if_eligible"].tolist() == [True, False, True]
+        assert calls == [("aca", 2024)]
+        assert tax_units["takes_up_aca_if_eligible"].tolist() == [
+            False,
+            False,
+            False,
+        ]
 
     def test_build_policyengine_entity_tables_preserves_explicit_aca_takeup(self):
         pipeline = USMicroplexPipeline(

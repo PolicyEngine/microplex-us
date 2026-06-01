@@ -247,6 +247,21 @@ PERSON_CPS_DISABILITY_COLUMNS = (
     "_disability_cognitive",
 )
 
+# eCPS difficulty_* eligibility leaves recoded from the ASEC PEDIS* fields
+# (PEDIS{X} == 1 -> True, the same recode eCPS uses for is_blind from PEDISEYE).
+# These are eCPS final-H5 contract columns, not pe-us variables, so they export
+# via the legacy-contract entity map. Mirrors policyengine-us-data
+# datasets/cps/cps.py (unmerged branch claude/document-census-tax-id-replacement)
+# which maps each difficulty leaf to its PEDIS source field.
+PERSON_CPS_DIFFICULTY_LEAVES = {
+    "_disability_dressing": "difficulty_dressing_or_bathing",
+    "_disability_hearing": "difficulty_hearing",
+    "_disability_vision": "difficulty_seeing",
+    "_disability_errands": "difficulty_doing_errands",
+    "_disability_physical": "difficulty_walking_or_climbing_stairs",
+    "_disability_cognitive": "difficulty_remembering_or_making_decisions",
+}
+
 WORKERS_COMP_DISABILITY_CODE = 1
 ALIMONY_OTHER_INCOME_CODE = 20
 SOCIAL_SECURITY_RETIREMENT_REASON_CODE = 1
@@ -1427,6 +1442,17 @@ def _process_persons(df: pl.DataFrame, year: int) -> pl.DataFrame:
     disability_columns = [
         column for column in PERSON_CPS_DISABILITY_COLUMNS if column in result.columns
     ]
+    if disability_columns:
+        # eCPS difficulty_* leaves: PEDIS{X} == 1 -> True. Built from the staging
+        # columns before they are dropped below (the same staging feeds
+        # is_disabled). These are exported as eCPS dataset columns.
+        difficulty_exprs = [
+            (pl.col(staging) == 1).alias(leaf)
+            for staging, leaf in PERSON_CPS_DIFFICULTY_LEAVES.items()
+            if staging in result.columns and leaf not in result.columns
+        ]
+        if difficulty_exprs:
+            result = result.with_columns(difficulty_exprs)
     if disability_columns and "is_disabled" not in result.columns:
         result = result.with_columns(
             pl.any_horizontal(

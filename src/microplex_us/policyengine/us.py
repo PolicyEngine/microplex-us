@@ -314,6 +314,14 @@ SAFE_POLICYENGINE_US_EXPORT_VARIABLES: set[str] = {
     "is_hispanic",
     "is_blind",
     "is_disabled",
+    # eCPS disability-difficulty leaves (ASEC PEDIS* recodes). Not pe-us
+    # variables; exported as dataset columns via the legacy-contract map.
+    "difficulty_seeing",
+    "difficulty_hearing",
+    "difficulty_walking_or_climbing_stairs",
+    "difficulty_dressing_or_bathing",
+    "difficulty_doing_errands",
+    "difficulty_remembering_or_making_decisions",
     "is_household_head",
     "long_term_capital_gains_on_collectibles",
     "employment_income_before_lsr",
@@ -494,6 +502,12 @@ POLICYENGINE_US_EXPORT_DEFAULTS: dict[str, Any] = {
     "is_executive_administrative_professional": False,
     "is_farmer_fisher": False,
     "is_blind": False,
+    "difficulty_seeing": False,
+    "difficulty_hearing": False,
+    "difficulty_walking_or_climbing_stairs": False,
+    "difficulty_dressing_or_bathing": False,
+    "difficulty_doing_errands": False,
+    "difficulty_remembering_or_making_decisions": False,
     "is_full_time_college_student": False,
     "is_military": False,
     "is_paid_hourly": False,
@@ -619,6 +633,15 @@ POLICYENGINE_US_NUMERIC_ENUM_EXPORT_MAPS: dict[str, dict[float, str]] = {
 }
 
 POLICYENGINE_US_LEGACY_CONTRACT_VARIABLE_ENTITIES: dict[str, str] = {
+    # eCPS disability-difficulty leaves (ASEC PEDIS* recodes): eCPS final-H5
+    # contract columns with no pe-us variable, attached as person-level data
+    # columns (matching eCPS per-person storage).
+    "difficulty_seeing": "person",
+    "difficulty_hearing": "person",
+    "difficulty_walking_or_climbing_stairs": "person",
+    "difficulty_dressing_or_bathing": "person",
+    "difficulty_doing_errands": "person",
+    "difficulty_remembering_or_making_decisions": "person",
     # SCF net-worth component leaves (G1). These are eCPS final-H5 contract
     # columns (ecps_export_contract.json "required"), not pe-us registered
     # variables, so the export resolver has no pe-us metadata for them. Map

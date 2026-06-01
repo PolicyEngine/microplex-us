@@ -2100,6 +2100,7 @@ class TestPolicyEngineUSProjection:
             "qualified_tuition_expenses",
             "salt_refund_income",
             "stock_assets",
+            "sstb_self_employment_income_would_be_qualified",
             "taxable_ira_distributions",
             "tip_income",
             "unreimbursed_business_employee_expenses",

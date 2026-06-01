@@ -999,6 +999,7 @@ class TestUSMicroplexPipeline:
                 "unemployment_compensation": [0.0, 150.0],
                 "medicaid": [0.0, 1_250.0],
                 "medicaid_enrolled": [False, True],
+                "business_is_sstb": [True, False],
                 "state_income_tax_paid": [400.0, 50.0],
                 "filing_status": ["JOINT", "JOINT"],
                 "relationship_to_head": [0, 1],
@@ -1030,6 +1031,10 @@ class TestUSMicroplexPipeline:
         assert person_rows["social_security_retirement"].tolist() == [0.0, 800.0]
         assert person_rows["ssi"].tolist() == [0.0, 600.0]
         assert person_rows["takes_up_ssi_if_eligible"].tolist() == [False, True]
+        assert person_rows["sstb_self_employment_income_would_be_qualified"].tolist() == [
+            True,
+            False,
+        ]
         assert person_rows["taxable_private_pension_income"].tolist() == [0.0, 300.0]
         assert person_rows["unemployment_compensation"].tolist() == [0.0, 150.0]
         assert person_rows["is_female"].tolist() == [False, True]

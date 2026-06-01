@@ -453,6 +453,7 @@ POLICYENGINE_US_EXPORT_DEFAULTS: dict[str, Any] = {
     "ssi_reported": 0.0,
     "ssn_card_type": "CITIZEN",
     "sstb_self_employment_income_before_lsr": 0,
+    "sstb_self_employment_income_would_be_qualified": True,
     "sstb_unadjusted_basis_qualified_property": 0.0,
     "sstb_w2_wages_from_qualified_business": 0.0,
     "strike_benefits": 0,

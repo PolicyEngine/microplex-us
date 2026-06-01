@@ -8290,6 +8290,15 @@ class USMicroplexPipeline:
                 .astype(float)
                 .ne(0.0)
             )
+        if (
+            "business_is_sstb" in result.columns
+            and "sstb_self_employment_income_would_be_qualified" not in result.columns
+        ):
+            result["sstb_self_employment_income_would_be_qualified"] = (
+                pd.to_numeric(result["business_is_sstb"], errors="coerce")
+                .fillna(0.0)
+                .ne(0.0)
+            )
         if "is_blind" in result.columns:
             result["is_blind"] = (
                 pd.to_numeric(result["is_blind"], errors="coerce").fillna(0.0).ne(0.0)

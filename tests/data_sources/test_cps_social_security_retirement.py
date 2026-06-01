@@ -204,6 +204,47 @@ def test_social_security_retirement_in_export_allowlist():
     )
 
 
+def test_social_security_retirement_survives_computed_export_guard():
+    """A future pe-us that re-adds a formula must not silently drop the leaf.
+
+    The export path filters out PolicyEngine-computed variables unless they are
+    in POLICYENGINE_US_ALLOWED_COMPUTED_EXPORT_VARIABLES. Allowlisting the leaf
+    alone is not enough: if a pe-us version re-introduces the historical
+    fallback formula, the computed-export guard would strip it before the
+    hard-raise validation runs, leaving the column silently missing. Pin the
+    insurance: the leaf is in the override set, so the guard always keeps it.
+    """
+    from microplex_us.policyengine.us import (
+        POLICYENGINE_US_ALLOWED_COMPUTED_EXPORT_VARIABLES,
+        POLICYENGINE_US_DATA_OVERRIDABLE_COMPUTED_EXPORT_VARIABLES,
+        detect_policyengine_computed_export_variables,
+    )
+
+    assert (
+        "social_security_retirement"
+        in POLICYENGINE_US_DATA_OVERRIDABLE_COMPUTED_EXPORT_VARIABLES
+    )
+    assert (
+        "social_security_retirement"
+        in POLICYENGINE_US_ALLOWED_COMPUTED_EXPORT_VARIABLES
+    )
+
+    # Simulate a pe-us where the leaf has a formula: the computed-export
+    # detector must NOT mark it for exclusion, because it is allow-listed.
+    class _FormulaVar:
+        formulas = {"2024": object()}
+        adds = None
+        subtracts = None
+
+    class _SystemWithFormula:
+        variables = {"social_security_retirement": _FormulaVar()}
+
+    excluded = detect_policyengine_computed_export_variables(
+        _SystemWithFormula(), ["social_security_retirement"]
+    )
+    assert "social_security_retirement" not in excluded
+
+
 # Standalone runner so the suite executes without pytest installed in the env.
 if __name__ == "__main__":
     import traceback

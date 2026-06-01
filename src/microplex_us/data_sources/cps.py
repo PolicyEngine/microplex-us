@@ -74,6 +74,11 @@ PERSON_VARIABLES = {
     # Income (annual)
     "WSAL_VAL": "wage_income",
     "SEMP_VAL": "self_employment_income",
+    # Bundled retirement-contribution total (Census asks a single
+    # "how much did you contribute to retirement accounts?" question).
+    # Split into account-type-specific desired leaves in _process_persons,
+    # mirroring eCPS cps.py:1500-1552. Staging column dropped after split.
+    "RETCB_VAL": "_retirement_contributions",
     "INT_VAL": "interest_income",
     "DIV_VAL": "dividend_income",
     "RNT_VAL": "rental_income",
@@ -231,6 +236,23 @@ SOCIAL_SECURITY_DISABILITY_REASON_CODE = 2
 SOCIAL_SECURITY_SURVIVOR_REASON_CODES = (3, 5)
 SOCIAL_SECURITY_DEPENDENT_REASON_CODES = (4, 6, 7)
 MINIMUM_RETIREMENT_AGE = 62
+
+# Retirement-contribution allocation fractions used to split the single
+# bundled CPS RETCB_VAL total into the account-type-specific desired
+# contribution leaves the eCPS contract requires. These mirror the eCPS
+# split (PolicyEngine/policyengine-us-data
+# policyengine_us_data/datasets/cps/cps.py:1500-1552) and trace exactly to
+# policyengine_us_data/datasets/cps/imputation_parameters.yaml:
+#   se_pension_share_of_retirement_contributions: 0.046  (yaml line 30)
+#   dc_share_of_retirement_contributions:        0.908  (yaml line 38)
+#   roth_share_of_dc_contributions:              0.15   (yaml line 48)
+#   traditional_share_of_ira_contributions:      0.392  (yaml line 55)
+# "Desired" means pre-statutory-limit; PolicyEngine-US applies the limits.
+SE_PENSION_SHARE_OF_RETIREMENT_CONTRIBUTIONS = 0.046
+DC_SHARE_OF_RETIREMENT_CONTRIBUTIONS = 0.908
+ROTH_SHARE_OF_DC_CONTRIBUTIONS = 0.15
+TRADITIONAL_SHARE_OF_IRA_CONTRIBUTIONS = 0.392
+
 PE_CPS_UNDOCUMENTED_TARGET = 13e6
 PE_CPS_UNDOCUMENTED_WORKERS_TARGET = 8.3e6
 PE_CPS_UNDOCUMENTED_STUDENTS_TARGET = 0.21 * 1.9e6
@@ -1267,6 +1289,96 @@ def _process_persons(df: pl.DataFrame, year: int) -> pl.DataFrame:
         ]
         if drop_columns:
             result = result.drop(drop_columns)
+    # Split the bundled CPS retirement-contribution total (RETCB_VAL, staged
+    # as _retirement_contributions) into the five account-type-specific
+    # desired contribution leaves the eCPS contract requires. This mirrors
+    # PolicyEngine/policyengine-us-data
+    # policyengine_us_data/datasets/cps/cps.py:1500-1552 exactly: a
+    # proportional split using IRS SOI / BEA-FRED / Vanguard-PSCA shares
+    # (see imputation_parameters.yaml). The leaves are "desired"
+    # (pre-statutory-limit) inputs; PolicyEngine-US applies the limits.
+    _RETIREMENT_CONTRIBUTION_DESIRED_LEAVES = (
+        "self_employed_pension_contributions_desired",
+        "traditional_401k_contributions_desired",
+        "roth_401k_contributions_desired",
+        "traditional_ira_contributions_desired",
+        "roth_ira_contributions_desired",
+    )
+    if {
+        "_retirement_contributions",
+        "wage_income",
+        "self_employment_income",
+    }.issubset(set(result.columns)) and any(
+        leaf not in result.columns
+        for leaf in _RETIREMENT_CONTRIBUTION_DESIRED_LEAVES
+    ):
+        retirement_contributions = pl.col("_retirement_contributions")
+        has_wages = pl.col("wage_income") > 0
+        has_se = pl.col("self_employment_income") > 0
+        has_earned_income = has_wages | has_se
+
+        # 1) Self-employed pension: a share of the total, gated on SE income.
+        #    No statutory limit applied here (PolicyEngine-US applies it).
+        se_pension = (
+            pl.when(has_se)
+            .then(retirement_contributions * SE_PENSION_SHARE_OF_RETIREMENT_CONTRIBUTIONS)
+            .otherwise(0.0)
+        )
+        remaining = pl.max_horizontal(
+            retirement_contributions - se_pension,
+            pl.lit(0.0),
+        )
+
+        # 2) Split the remainder into a DC (401k) pool and an IRA pool.
+        #    DC requires an employer, so it is gated on wages; the IRA pool
+        #    takes whatever is left for anyone with earned income.
+        dc_pool = (
+            pl.when(has_wages)
+            .then(remaining * DC_SHARE_OF_RETIREMENT_CONTRIBUTIONS)
+            .otherwise(0.0)
+        )
+        ira_pool = (
+            pl.when(has_earned_income)
+            .then(remaining - dc_pool)
+            .otherwise(0.0)
+        )
+
+        derived_retirement_columns: list[pl.Expr] = []
+        if "self_employed_pension_contributions_desired" not in result.columns:
+            derived_retirement_columns.append(
+                se_pension.alias("self_employed_pension_contributions_desired")
+            )
+        # DC pool: traditional/Roth 401(k) split.
+        if "traditional_401k_contributions_desired" not in result.columns:
+            derived_retirement_columns.append(
+                (dc_pool * (1 - ROTH_SHARE_OF_DC_CONTRIBUTIONS)).alias(
+                    "traditional_401k_contributions_desired"
+                )
+            )
+        if "roth_401k_contributions_desired" not in result.columns:
+            derived_retirement_columns.append(
+                (dc_pool * ROTH_SHARE_OF_DC_CONTRIBUTIONS).alias(
+                    "roth_401k_contributions_desired"
+                )
+            )
+        # IRA pool: traditional/Roth IRA split.
+        if "traditional_ira_contributions_desired" not in result.columns:
+            derived_retirement_columns.append(
+                (ira_pool * TRADITIONAL_SHARE_OF_IRA_CONTRIBUTIONS).alias(
+                    "traditional_ira_contributions_desired"
+                )
+            )
+        if "roth_ira_contributions_desired" not in result.columns:
+            derived_retirement_columns.append(
+                (ira_pool * (1 - TRADITIONAL_SHARE_OF_IRA_CONTRIBUTIONS)).alias(
+                    "roth_ira_contributions_desired"
+                )
+            )
+        result = result.with_columns(derived_retirement_columns).drop(
+            "_retirement_contributions"
+        )
+    elif "_retirement_contributions" in result.columns:
+        result = result.drop("_retirement_contributions")
     disability_columns = [
         column for column in PERSON_CPS_DISABILITY_COLUMNS if column in result.columns
     ]

@@ -316,6 +316,14 @@ SAFE_POLICYENGINE_US_EXPORT_VARIABLES: set[str] = {
     "social_security_retirement",
     "social_security_survivors",
     "social_security_dependents",
+    # Desired retirement-contribution leaves split from CPS RETCB_VAL
+    # (eCPS cps.py:1500-1552; shares in imputation_parameters.yaml).
+    # "Desired" = pre-statutory-limit; PolicyEngine-US applies the limits.
+    "self_employed_pension_contributions_desired",
+    "traditional_401k_contributions_desired",
+    "roth_401k_contributions_desired",
+    "traditional_ira_contributions_desired",
+    "roth_ira_contributions_desired",
     "stock_assets",
     "taxable_ira_distributions",
     "tip_income",

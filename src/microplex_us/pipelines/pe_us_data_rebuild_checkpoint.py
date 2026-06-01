@@ -8,63 +8,23 @@ import logging
 import sys
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
+from importlib import import_module
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import h5py
 import numpy as np
 import pandas as pd
-from microplex.core import (
-    EntityObservation,
-    EntityType,
-    ObservationFrame,
-    SourceDescriptor,
-    SourceQuery,
-)
-from microplex.targets import assert_valid_benchmark_artifact_manifest
-
-from microplex_us.pipelines.artifacts import (
-    USMicroplexArtifactPaths,
-    USMicroplexVersionedBuildArtifacts,
-    build_and_save_versioned_us_microplex_from_source_providers,
-)
-from microplex_us.pipelines.imputation_ablation import (
-    ImputationAblationSliceSpec,
-    ImputationAblationVariant,
-    score_imputation_ablation_variants,
-)
-from microplex_us.pipelines.index_db import append_us_microplex_run_index_entry
-from microplex_us.pipelines.pe_us_data_rebuild import (
-    PEUSDataRebuildProgram,
-    default_policyengine_us_data_rebuild_config,
-    default_policyengine_us_data_rebuild_program,
-    default_policyengine_us_data_rebuild_source_providers,
-)
-from microplex_us.pipelines.pe_us_data_rebuild_audit import (
-    build_policyengine_us_data_rebuild_native_audit,
-)
-from microplex_us.pipelines.pe_us_data_rebuild_parity import (
-    build_policyengine_us_data_rebuild_parity_artifact,
-    write_policyengine_us_data_rebuild_parity_artifact,
-)
-from microplex_us.pipelines.registry import (
-    append_us_microplex_run_registry_entry,
-    build_us_microplex_run_registry_entry,
-    load_us_microplex_run_registry,
-    select_us_microplex_frontier_entry,
-)
-from microplex_us.pipelines.stage_contracts import (
-    resolve_us_stage_artifact_contract_path,
-)
-from microplex_us.pipelines.stage_run import (
-    USStageInputOverride,
-    parse_us_stage_input_override,
-    write_us_stage_run_manifests_from_artifact_manifest,
-)
-from microplex_us.variables import prune_redundant_variables
 
 if TYPE_CHECKING:
-    from microplex.core import SourceProvider
+    from microplex.core import (
+        EntityObservation,
+        EntityType,
+        ObservationFrame,
+        SourceDescriptor,
+        SourceProvider,
+        SourceQuery,
+    )
     from microplex.targets import TargetProvider
 
     from microplex_us.pipelines.registry import FrontierMetric
@@ -78,6 +38,128 @@ if TYPE_CHECKING:
 DEFAULT_CHECKPOINT_IMPUTATION_ABLATION_EVAL_FRACTION = 0.25
 MIN_CHECKPOINT_IMPUTATION_ABLATION_HOUSEHOLDS = 8
 LOGGER = logging.getLogger(__name__)
+
+
+class _LazySymbol:
+    """Resolve an optional runtime dependency only when the symbol is used."""
+
+    def __init__(self, module_name: str, attr_name: str) -> None:
+        self._module_name = module_name
+        self._attr_name = attr_name
+
+    def _resolve(self) -> Any:
+        value = getattr(import_module(self._module_name), self._attr_name)
+        globals()[self._attr_name] = value
+        return value
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        return self._resolve()(*args, **kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._resolve(), name)
+
+
+EntityObservation = _LazySymbol("microplex.core", "EntityObservation")
+EntityType = _LazySymbol("microplex.core", "EntityType")
+ObservationFrame = _LazySymbol("microplex.core", "ObservationFrame")
+SourceDescriptor = _LazySymbol("microplex.core", "SourceDescriptor")
+SourceQuery = _LazySymbol("microplex.core", "SourceQuery")
+assert_valid_benchmark_artifact_manifest = _LazySymbol(
+    "microplex.targets",
+    "assert_valid_benchmark_artifact_manifest",
+)
+USMicroplexArtifactPaths = _LazySymbol(
+    "microplex_us.pipelines.artifacts",
+    "USMicroplexArtifactPaths",
+)
+USMicroplexVersionedBuildArtifacts = _LazySymbol(
+    "microplex_us.pipelines.artifacts",
+    "USMicroplexVersionedBuildArtifacts",
+)
+build_and_save_versioned_us_microplex_from_source_providers = _LazySymbol(
+    "microplex_us.pipelines.artifacts",
+    "build_and_save_versioned_us_microplex_from_source_providers",
+)
+ImputationAblationSliceSpec = _LazySymbol(
+    "microplex_us.pipelines.imputation_ablation",
+    "ImputationAblationSliceSpec",
+)
+ImputationAblationVariant = _LazySymbol(
+    "microplex_us.pipelines.imputation_ablation",
+    "ImputationAblationVariant",
+)
+score_imputation_ablation_variants = _LazySymbol(
+    "microplex_us.pipelines.imputation_ablation",
+    "score_imputation_ablation_variants",
+)
+append_us_microplex_run_index_entry = _LazySymbol(
+    "microplex_us.pipelines.index_db",
+    "append_us_microplex_run_index_entry",
+)
+PEUSDataRebuildProgram = _LazySymbol(
+    "microplex_us.pipelines.pe_us_data_rebuild",
+    "PEUSDataRebuildProgram",
+)
+default_policyengine_us_data_rebuild_config = _LazySymbol(
+    "microplex_us.pipelines.pe_us_data_rebuild",
+    "default_policyengine_us_data_rebuild_config",
+)
+default_policyengine_us_data_rebuild_program = _LazySymbol(
+    "microplex_us.pipelines.pe_us_data_rebuild",
+    "default_policyengine_us_data_rebuild_program",
+)
+default_policyengine_us_data_rebuild_source_providers = _LazySymbol(
+    "microplex_us.pipelines.pe_us_data_rebuild",
+    "default_policyengine_us_data_rebuild_source_providers",
+)
+build_policyengine_us_data_rebuild_native_audit = _LazySymbol(
+    "microplex_us.pipelines.pe_us_data_rebuild_audit",
+    "build_policyengine_us_data_rebuild_native_audit",
+)
+build_policyengine_us_data_rebuild_parity_artifact = _LazySymbol(
+    "microplex_us.pipelines.pe_us_data_rebuild_parity",
+    "build_policyengine_us_data_rebuild_parity_artifact",
+)
+write_policyengine_us_data_rebuild_parity_artifact = _LazySymbol(
+    "microplex_us.pipelines.pe_us_data_rebuild_parity",
+    "write_policyengine_us_data_rebuild_parity_artifact",
+)
+append_us_microplex_run_registry_entry = _LazySymbol(
+    "microplex_us.pipelines.registry",
+    "append_us_microplex_run_registry_entry",
+)
+build_us_microplex_run_registry_entry = _LazySymbol(
+    "microplex_us.pipelines.registry",
+    "build_us_microplex_run_registry_entry",
+)
+load_us_microplex_run_registry = _LazySymbol(
+    "microplex_us.pipelines.registry",
+    "load_us_microplex_run_registry",
+)
+select_us_microplex_frontier_entry = _LazySymbol(
+    "microplex_us.pipelines.registry",
+    "select_us_microplex_frontier_entry",
+)
+resolve_us_stage_artifact_contract_path = _LazySymbol(
+    "microplex_us.pipelines.stage_contracts",
+    "resolve_us_stage_artifact_contract_path",
+)
+USStageInputOverride = _LazySymbol(
+    "microplex_us.pipelines.stage_run",
+    "USStageInputOverride",
+)
+parse_us_stage_input_override = _LazySymbol(
+    "microplex_us.pipelines.stage_run",
+    "parse_us_stage_input_override",
+)
+write_us_stage_run_manifests_from_artifact_manifest = _LazySymbol(
+    "microplex_us.pipelines.stage_run",
+    "write_us_stage_run_manifests_from_artifact_manifest",
+)
+prune_redundant_variables = _LazySymbol(
+    "microplex_us.variables",
+    "prune_redundant_variables",
+)
 
 
 def _root_logger_has_handlers() -> bool:

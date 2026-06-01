@@ -1057,13 +1057,20 @@ class TestUSMicroplexPipeline:
                 "income": [60_000.0, 0.0, 25_000.0],
                 "relationship_to_head": [0, 2, 0],
                 "takes_up_aca_if_eligible": [True, True, True],
+                "would_file_taxes_voluntarily": [False, False, False],
             }
         )
 
         tables = pipeline.build_policyengine_entity_tables(population)
         spm_units = tables.spm_units.sort_values("household_id").reset_index(drop=True)
 
-        assert calls == [("snap", 2024)]
+        assert calls == [
+            ("head_start", 2024),
+            ("early_head_start", 2024),
+            ("dc_ptc", 2024),
+            ("snap", 2024),
+            ("tanf", 2024),
+        ]
         assert spm_units["takes_up_snap_if_eligible"].tolist() == [False, False]
 
     def test_build_policyengine_entity_tables_recomputes_child_count_contract_inputs(
@@ -1290,13 +1297,20 @@ class TestUSMicroplexPipeline:
                 "tenure": [1, 1, 1],
                 "has_marketplace_health_coverage": [True, False, True],
                 "takes_up_snap_if_eligible": [True, True, True],
+                "would_file_taxes_voluntarily": [False, False, False],
             }
         )
 
         tables = pipeline.build_policyengine_entity_tables(population)
 
         tax_units = tables.tax_units.sort_values("household_id").reset_index(drop=True)
-        assert calls == [("aca", 2024)]
+        assert calls == [
+            ("head_start", 2024),
+            ("early_head_start", 2024),
+            ("aca", 2024),
+            ("dc_ptc", 2024),
+            ("tanf", 2024),
+        ]
         assert tax_units["takes_up_aca_if_eligible"].tolist() == [
             False,
             False,
@@ -1328,6 +1342,278 @@ class TestUSMicroplexPipeline:
 
         tax_units = tables.tax_units.sort_values("household_id").reset_index(drop=True)
         assert tax_units["takes_up_aca_if_eligible"].tolist() == [True, False]
+
+    def test_build_policyengine_entity_tables_adds_ecps_stochastic_takeup_inputs(
+        self,
+        monkeypatch,
+    ):
+        scalar_calls: list[tuple[str, int]] = []
+        medicaid_calls: list[int] = []
+        eitc_calls: list[int] = []
+        voluntary_calls: list[int] = []
+
+        def fake_load_takeup_rate(variable_name: str, year: int) -> float:
+            scalar_calls.append((variable_name, year))
+            return {
+                "head_start": 0.0,
+                "early_head_start": 1.0,
+                "dc_ptc": 1.0,
+                "snap": 1.0,
+                "tanf": 0.0,
+                "aca": 1.0,
+            }[variable_name]
+
+        def fake_load_medicaid_rates(year: int) -> dict[str, float]:
+            medicaid_calls.append(year)
+            return {"CA": 0.0, "TX": 1.0}
+
+        def fake_load_eitc_rates(year: int) -> dict[int, float]:
+            eitc_calls.append(year)
+            return {0: 0.0, 1: 1.0, 2: 1.0, 3: 1.0}
+
+        def fake_load_voluntary_rates(
+            year: int,
+        ) -> dict[str, dict[str, dict[str, float]]]:
+            voluntary_calls.append(year)
+            return {
+                children: {
+                    wage: {age: 1.0 for age in ("under_65", "age_65_plus")}
+                    for wage in ("zero", "low", "medium", "high")
+                }
+                for children in ("no_children", "with_children")
+            }
+
+        monkeypatch.setattr(
+            us_pipeline_module,
+            "_load_policyengine_us_data_takeup_rate",
+            fake_load_takeup_rate,
+        )
+        monkeypatch.setattr(
+            us_pipeline_module,
+            "_load_policyengine_us_data_medicaid_takeup_rates",
+            fake_load_medicaid_rates,
+        )
+        monkeypatch.setattr(
+            us_pipeline_module,
+            "_load_policyengine_us_data_eitc_takeup_rates",
+            fake_load_eitc_rates,
+        )
+        monkeypatch.setattr(
+            us_pipeline_module,
+            "_load_policyengine_us_data_voluntary_filing_rates",
+            fake_load_voluntary_rates,
+        )
+        pipeline = USMicroplexPipeline(
+            USMicroplexBuildConfig(policyengine_dataset_year=2024)
+        )
+        population = pd.DataFrame(
+            {
+                "person_id": [1, 2, 3],
+                "household_id": [10, 20, 20],
+                "spm_unit_id": [100, 200, 200],
+                "weight": [1.0, 1.0, 1.0],
+                "age": [34, 42, 8],
+                "sex": [2, 1, 2],
+                "income": [40_000.0, 35_000.0, 0.0],
+                "relationship_to_head": [0, 0, 2],
+                "state_fips": [6, 48, 48],
+            }
+        )
+
+        tables = pipeline.build_policyengine_entity_tables(population)
+
+        persons = tables.persons.sort_values("person_id").reset_index(drop=True)
+        assert persons["takes_up_medicaid_if_eligible"].tolist() == [
+            False,
+            True,
+            True,
+        ]
+        assert persons["takes_up_head_start_if_eligible"].tolist() == [
+            False,
+            False,
+            False,
+        ]
+        assert persons["takes_up_early_head_start_if_eligible"].tolist() == [
+            True,
+            True,
+            True,
+        ]
+
+        tax_units = tables.tax_units.sort_values("household_id").reset_index(drop=True)
+        assert tax_units["takes_up_aca_if_eligible"].tolist() == [True, True]
+        assert tax_units["takes_up_dc_ptc"].tolist() == [True, True]
+        assert tax_units["takes_up_eitc"].tolist() == [False, True]
+        assert tax_units["would_file_taxes_voluntarily"].tolist() == [True, False]
+
+        spm_units = tables.spm_units.sort_values("household_id").reset_index(drop=True)
+        assert spm_units["takes_up_snap_if_eligible"].tolist() == [True, True]
+        assert spm_units["takes_up_tanf_if_eligible"].tolist() == [False, False]
+        assert scalar_calls == [
+            ("head_start", 2024),
+            ("early_head_start", 2024),
+            ("aca", 2024),
+            ("dc_ptc", 2024),
+            ("snap", 2024),
+            ("tanf", 2024),
+        ]
+        assert medicaid_calls == [2024]
+        assert eitc_calls == [2024]
+        assert voluntary_calls == [2024]
+
+    def test_build_policyengine_entity_tables_preserves_explicit_stochastic_takeup_inputs(
+        self,
+        monkeypatch,
+    ):
+        def fail_scalar_rate(variable_name: str, year: int) -> float:
+            raise AssertionError(f"unexpected scalar rate load: {variable_name} {year}")
+
+        def fail_medicaid_rates(year: int) -> dict[str, float]:
+            raise AssertionError(f"unexpected Medicaid rate load: {year}")
+
+        def fail_eitc_rates(year: int) -> dict[int, float]:
+            raise AssertionError(f"unexpected EITC rate load: {year}")
+
+        def fail_voluntary_rates(year: int) -> dict:
+            raise AssertionError(f"unexpected voluntary filing rate load: {year}")
+
+        monkeypatch.setattr(
+            us_pipeline_module,
+            "_load_policyengine_us_data_takeup_rate",
+            fail_scalar_rate,
+        )
+        monkeypatch.setattr(
+            us_pipeline_module,
+            "_load_policyengine_us_data_medicaid_takeup_rates",
+            fail_medicaid_rates,
+        )
+        monkeypatch.setattr(
+            us_pipeline_module,
+            "_load_policyengine_us_data_eitc_takeup_rates",
+            fail_eitc_rates,
+        )
+        monkeypatch.setattr(
+            us_pipeline_module,
+            "_load_policyengine_us_data_voluntary_filing_rates",
+            fail_voluntary_rates,
+        )
+        pipeline = USMicroplexPipeline(
+            USMicroplexBuildConfig(policyengine_dataset_year=2024)
+        )
+        population = pd.DataFrame(
+            {
+                "person_id": [1, 2],
+                "household_id": [10, 10],
+                "spm_unit_id": [100, 100],
+                "weight": [1.0, 1.0],
+                "age": [34, 8],
+                "sex": [2, 2],
+                "income": [40_000.0, 0.0],
+                "relationship_to_head": [0, 2],
+                "state_fips": [6, 6],
+                "takes_up_medicaid_if_eligible": [False, True],
+                "takes_up_head_start_if_eligible": [False, True],
+                "takes_up_early_head_start_if_eligible": [True, False],
+                "takes_up_aca_if_eligible": [False, True],
+                "takes_up_dc_ptc": [False, True],
+                "takes_up_eitc": [False, True],
+                "would_file_taxes_voluntarily": [True, False],
+                "takes_up_snap_if_eligible": [False, True],
+                "takes_up_tanf_if_eligible": [True, False],
+            }
+        )
+
+        tables = pipeline.build_policyengine_entity_tables(population)
+
+        persons = tables.persons.sort_values("person_id").reset_index(drop=True)
+        assert persons["takes_up_medicaid_if_eligible"].tolist() == [False, True]
+        assert persons["takes_up_head_start_if_eligible"].tolist() == [False, True]
+        assert persons["takes_up_early_head_start_if_eligible"].tolist() == [
+            True,
+            False,
+        ]
+
+        tax_units = tables.tax_units.sort_values("household_id").reset_index(drop=True)
+        assert tax_units["takes_up_aca_if_eligible"].tolist() == [True]
+        assert tax_units["takes_up_dc_ptc"].tolist() == [True]
+        assert tax_units["takes_up_eitc"].tolist() == [True]
+        assert tax_units["would_file_taxes_voluntarily"].tolist() == [True]
+
+        spm_units = tables.spm_units.sort_values("household_id").reset_index(drop=True)
+        assert spm_units["takes_up_snap_if_eligible"].tolist() == [True]
+        assert spm_units["takes_up_tanf_if_eligible"].tolist() == [True]
+
+    def test_build_policyengine_entity_tables_uses_eitc_children_for_eitc_takeup(
+        self,
+        monkeypatch,
+    ):
+        eitc_calls: list[int] = []
+
+        def fail_scalar_rate(variable_name: str, year: int) -> float:
+            raise AssertionError(f"unexpected scalar rate load: {variable_name} {year}")
+
+        def fail_medicaid_rates(year: int) -> dict[str, float]:
+            raise AssertionError(f"unexpected Medicaid rate load: {year}")
+
+        def fake_eitc_rates(year: int) -> dict[int, float]:
+            eitc_calls.append(year)
+            return {0: 0.0, 1: 1.0, 2: 1.0, 3: 1.0}
+
+        def fail_voluntary_rates(year: int) -> dict:
+            raise AssertionError(f"unexpected voluntary filing rate load: {year}")
+
+        monkeypatch.setattr(
+            us_pipeline_module,
+            "_load_policyengine_us_data_takeup_rate",
+            fail_scalar_rate,
+        )
+        monkeypatch.setattr(
+            us_pipeline_module,
+            "_load_policyengine_us_data_medicaid_takeup_rates",
+            fail_medicaid_rates,
+        )
+        monkeypatch.setattr(
+            us_pipeline_module,
+            "_load_policyengine_us_data_eitc_takeup_rates",
+            fake_eitc_rates,
+        )
+        monkeypatch.setattr(
+            us_pipeline_module,
+            "_load_policyengine_us_data_voluntary_filing_rates",
+            fail_voluntary_rates,
+        )
+        pipeline = USMicroplexPipeline(
+            USMicroplexBuildConfig(policyengine_dataset_year=2024)
+        )
+        population = pd.DataFrame(
+            {
+                "person_id": [1],
+                "household_id": [10],
+                "spm_unit_id": [100],
+                "weight": [1.0],
+                "age": [34],
+                "sex": [2],
+                "income": [40_000.0],
+                "relationship_to_head": [0],
+                "state_fips": [6],
+                "eitc_children": [1],
+                "eitc_child_count": [0],
+                "takes_up_medicaid_if_eligible": [True],
+                "takes_up_head_start_if_eligible": [False],
+                "takes_up_early_head_start_if_eligible": [False],
+                "takes_up_aca_if_eligible": [True],
+                "takes_up_dc_ptc": [False],
+                "would_file_taxes_voluntarily": [False],
+                "takes_up_snap_if_eligible": [True],
+                "takes_up_tanf_if_eligible": [False],
+            }
+        )
+
+        tables = pipeline.build_policyengine_entity_tables(population)
+
+        tax_units = tables.tax_units.sort_values("household_id").reset_index(drop=True)
+        assert tax_units["takes_up_eitc"].tolist() == [True]
+        assert "_mp_eitc_child_count_for_takeup" not in tax_units.columns
+        assert eitc_calls == [2024]
 
     def test_build_policyengine_entity_tables_fallback_employment_excludes_transfer_income(
         self,

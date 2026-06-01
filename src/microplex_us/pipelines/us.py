@@ -123,6 +123,132 @@ from microplex_us.variables import (
 
 LOGGER = logging.getLogger(__name__)
 
+PUF_SUPPORT_CLONE_FLAG_COLUMN = "person_is_puf_clone"
+
+PUF_SUPPORT_CLONE_IMPUTED_VARIABLES: tuple[str, ...] = (
+    "employment_income",
+    "partnership_s_corp_income",
+    "social_security",
+    "taxable_pension_income",
+    "interest_deduction",
+    "tax_exempt_pension_income",
+    "long_term_capital_gains",
+    "unreimbursed_business_employee_expenses",
+    "pre_tax_contributions",
+    "taxable_ira_distributions",
+    "self_employment_income",
+    "w2_wages_from_qualified_business",
+    "unadjusted_basis_qualified_property",
+    "business_is_sstb",
+    "short_term_capital_gains",
+    "qualified_dividend_income",
+    "charitable_cash_donations",
+    "self_employed_pension_contribution_ald",
+    "unrecaptured_section_1250_gain",
+    "taxable_unemployment_compensation",
+    "taxable_interest_income",
+    "domestic_production_ald",
+    "self_employed_health_insurance_ald",
+    "rental_income",
+    "non_qualified_dividend_income",
+    "cdcc_relevant_expenses",
+    "tax_exempt_interest_income",
+    "salt_refund_income",
+    "foreign_tax_credit",
+    "estate_income",
+    "charitable_non_cash_donations",
+    "american_opportunity_credit",
+    "miscellaneous_income",
+    "alimony_expense",
+    "farm_income",
+    "partnership_se_income",
+    "alimony_income",
+    "health_savings_account_ald",
+    "non_sch_d_capital_gains",
+    "general_business_credit",
+    "energy_efficient_home_improvement_credit",
+    "traditional_ira_contributions",
+    "amt_foreign_tax_credit",
+    "excess_withheld_payroll_tax",
+    "savers_credit",
+    "student_loan_interest",
+    "investment_income_elected_form_4952",
+    "early_withdrawal_penalty",
+    "prior_year_minimum_tax_credit",
+    "farm_rent_income",
+    "qualified_tuition_expenses",
+    "educator_expense",
+    "long_term_capital_gains_on_collectibles",
+    "other_credits",
+    "casualty_loss",
+    "unreported_payroll_tax",
+    "recapture_of_investment_credit",
+    "deductible_mortgage_interest",
+    "qualified_reit_and_ptp_income",
+    "qualified_bdc_income",
+    "farm_operations_income",
+    "estate_income_would_be_qualified",
+    "farm_operations_income_would_be_qualified",
+    "farm_rent_income_would_be_qualified",
+    "partnership_s_corp_income_would_be_qualified",
+    "rental_income_would_be_qualified",
+    "self_employment_income_would_be_qualified",
+)
+
+PUF_SUPPORT_CLONE_OVERRIDDEN_VARIABLES: tuple[str, ...] = (
+    "partnership_s_corp_income",
+    "interest_deduction",
+    "unreimbursed_business_employee_expenses",
+    "pre_tax_contributions",
+    "w2_wages_from_qualified_business",
+    "unadjusted_basis_qualified_property",
+    "business_is_sstb",
+    "charitable_cash_donations",
+    "self_employed_pension_contribution_ald",
+    "unrecaptured_section_1250_gain",
+    "taxable_unemployment_compensation",
+    "domestic_production_ald",
+    "self_employed_health_insurance_ald",
+    "cdcc_relevant_expenses",
+    "salt_refund_income",
+    "foreign_tax_credit",
+    "estate_income",
+    "charitable_non_cash_donations",
+    "american_opportunity_credit",
+    "miscellaneous_income",
+    "alimony_expense",
+    "health_savings_account_ald",
+    "non_sch_d_capital_gains",
+    "general_business_credit",
+    "energy_efficient_home_improvement_credit",
+    "amt_foreign_tax_credit",
+    "excess_withheld_payroll_tax",
+    "savers_credit",
+    "student_loan_interest",
+    "investment_income_elected_form_4952",
+    "early_withdrawal_penalty",
+    "prior_year_minimum_tax_credit",
+    "farm_rent_income",
+    "qualified_tuition_expenses",
+    "educator_expense",
+    "long_term_capital_gains_on_collectibles",
+    "other_credits",
+    "casualty_loss",
+    "unreported_payroll_tax",
+    "recapture_of_investment_credit",
+    "deductible_mortgage_interest",
+    "qualified_reit_and_ptp_income",
+    "qualified_bdc_income",
+    "farm_operations_income",
+    "estate_income_would_be_qualified",
+    "farm_operations_income_would_be_qualified",
+    "farm_rent_income_would_be_qualified",
+    "partnership_s_corp_income_would_be_qualified",
+    "rental_income_would_be_qualified",
+)
+
+PUF_SUPPORT_CLONE_SPECIAL_VARIABLES: tuple[str, ...] = ("weeks_unemployed",)
+
 
 @lru_cache(maxsize=1)
 def _default_block_geography() -> BlockGeography:
@@ -1684,6 +1810,19 @@ class USMicroplexBuildConfig:
     donor_imputer_max_condition_vars: int | None = 8
     donor_imputer_excluded_variables: tuple[str, ...] = ("filing_status_code",)
     donor_imputer_authoritative_override_variables: tuple[str, ...] = ()
+    puf_support_clone_enabled: bool = False
+    puf_support_clone_source_prefixes: tuple[str, ...] = ("irs_soi_puf",)
+    puf_support_clone_zero_initial_weight: bool = True
+    puf_support_clone_flag_column: str = PUF_SUPPORT_CLONE_FLAG_COLUMN
+    puf_support_clone_prior_weight_share: float = 0.05
+    puf_support_clone_overlap_variables: tuple[str, ...] = (
+        PUF_SUPPORT_CLONE_IMPUTED_VARIABLES
+        + PUF_SUPPORT_CLONE_SPECIAL_VARIABLES
+        + ("wage_income", "dividend_income", "capital_gains")
+    )
+    puf_support_clone_both_halves_override_variables: tuple[str, ...] = (
+        PUF_SUPPORT_CLONE_OVERRIDDEN_VARIABLES
+    )
     dependent_tax_leaf_soft_cap_multiplier: float | None = None
     dependent_tax_leaf_soft_cap_base_variables: tuple[str, ...] = (
         "employment_income",
@@ -1798,6 +1937,27 @@ class USMicroplexBuildConfig:
     forbes_fixed_spine_replicates_per_unit: int = 10
 
     def __post_init__(self) -> None:
+        if self.puf_support_clone_enabled:
+            if self.synthesis_backend != "seed":
+                raise ValueError(
+                    "puf_support_clone_enabled requires synthesis_backend='seed' "
+                    "until post-synthesis clone construction is implemented"
+                )
+            if self.policyengine_selection_household_budget is not None:
+                raise ValueError(
+                    "puf_support_clone_enabled cannot be combined with "
+                    "policyengine_selection_household_budget until selector "
+                    "clone activation is implemented"
+                )
+            if not self.puf_support_clone_source_prefixes:
+                raise ValueError(
+                    "puf_support_clone_source_prefixes must not be empty when "
+                    "puf_support_clone_enabled is true"
+                )
+            if not (0.0 <= self.puf_support_clone_prior_weight_share < 1.0):
+                raise ValueError(
+                    "puf_support_clone_prior_weight_share must be in [0, 1)"
+                )
         if (
             self.policyengine_calibration_rescale_to_input_weight_sum
             and self.policyengine_calibration_rescale_to_target_total_weight
@@ -2098,6 +2258,13 @@ class USMicroplexPipeline:
             "donor_conditioning_diagnostics": donor_integration.get(
                 "conditioning_diagnostics", []
             ),
+            "processed_donor_source_order": donor_integration.get(
+                "processed_donor_source_order", []
+            ),
+            "puf_clone_source_order": donor_integration.get(
+                "puf_clone_source_order", []
+            ),
+            "puf_support_clone": donor_integration.get("puf_support_clone_summary"),
             "donor_excluded_variables": list(
                 self.config.donor_imputer_excluded_variables
             ),
@@ -3198,6 +3365,127 @@ class USMicroplexPipeline:
             )
         return kwargs
 
+    def _puf_clone_household_summary(
+        self,
+        tables: PolicyEngineUSEntityTableBundle,
+    ) -> dict[str, Any]:
+        flag_column = self.config.puf_support_clone_flag_column
+        if tables.persons is None or flag_column not in tables.persons.columns:
+            return {
+                "available": False,
+                "clone_household_count": 0,
+                "mixed_flag_household_count": 0,
+            }
+        persons = tables.persons
+        if "household_id" not in persons.columns:
+            return {
+                "available": False,
+                "reason": "missing_person_household_id",
+                "clone_household_count": 0,
+                "mixed_flag_household_count": 0,
+            }
+        flags = pd.to_numeric(persons[flag_column], errors="coerce").fillna(0.0)
+        grouped = flags.groupby(persons["household_id"], sort=False)
+        flag_min = grouped.min()
+        flag_max = grouped.max()
+        clone_household_ids = flag_min.index[(flag_min > 0.5) & (flag_max > 0.5)]
+        mixed_household_ids = flag_min.index[(flag_min <= 0.5) & (flag_max > 0.5)]
+        activated_count = 0
+        weight_sum = 0.0
+        weight_share = 0.0
+        if "household_id" in tables.households.columns:
+            households = tables.households
+            weights = pd.to_numeric(
+                households.get("household_weight", 0.0),
+                errors="coerce",
+            ).fillna(0.0)
+            household_weights = pd.Series(
+                weights.to_numpy(dtype=float),
+                index=households["household_id"].to_numpy(),
+                dtype=float,
+            )
+            clone_weights = household_weights.reindex(clone_household_ids).fillna(0.0)
+            activated_count = int((clone_weights > 0.0).sum())
+            weight_sum = float(clone_weights.sum())
+            total_weight = float(weights.sum())
+            weight_share = float(weight_sum / total_weight) if total_weight else 0.0
+        clone_household_id_values = [
+            value.item() if hasattr(value, "item") else value
+            for value in clone_household_ids.to_list()
+        ]
+        return {
+            "available": True,
+            "flag_column": flag_column,
+            "clone_household_count": int(len(clone_household_ids)),
+            "mixed_flag_household_count": int(len(mixed_household_ids)),
+            "activated_household_count": activated_count,
+            "household_weight_sum": weight_sum,
+            "household_weight_share": weight_share,
+            "clone_household_ids": clone_household_id_values,
+        }
+
+    def _initialize_puf_clone_calibration_weights(
+        self,
+        tables: PolicyEngineUSEntityTableBundle,
+    ) -> tuple[PolicyEngineUSEntityTableBundle, dict[str, Any]]:
+        if not self.config.puf_support_clone_enabled:
+            return tables, {"applied": False}
+        summary = self._puf_clone_household_summary(tables)
+        if not summary.get("available"):
+            return tables, {"applied": False, **summary}
+        if summary.get("mixed_flag_household_count", 0):
+            raise ValueError(
+                "PUF support clone household diagnostics found mixed original/clone "
+                "person flags within a household"
+            )
+        if self.config.calibration_backend == "none":
+            return tables, {
+                "applied": False,
+                "reason": "calibration_backend_none",
+                **summary,
+            }
+        clone_household_ids = set(summary.get("clone_household_ids", []))
+        if not clone_household_ids or "household_id" not in tables.households.columns:
+            return tables, {"applied": False, **summary}
+        households = tables.households.copy()
+        weights = pd.to_numeric(
+            households["household_weight"],
+            errors="coerce",
+        ).fillna(0.0)
+        clone_mask = households["household_id"].isin(clone_household_ids)
+        share = float(self.config.puf_support_clone_prior_weight_share)
+        clone_count = int(clone_mask.sum())
+        original_weight_sum = float(weights.loc[~clone_mask].sum())
+        clone_prior_total = (
+            original_weight_sum * share / (1.0 - share)
+            if share > 0.0 and original_weight_sum > 0.0 and clone_count
+            else 0.0
+        )
+        clone_prior_weight = (
+            clone_prior_total / clone_count
+            if clone_count and clone_prior_total
+            else 0.0
+        )
+        if clone_prior_weight > 0.0:
+            households.loc[clone_mask, "household_weight"] = clone_prior_weight
+        updated_tables = PolicyEngineUSEntityTableBundle(
+            households=households,
+            persons=tables.persons,
+            tax_units=tables.tax_units,
+            spm_units=tables.spm_units,
+            families=tables.families,
+            marital_units=tables.marital_units,
+        )
+        return updated_tables, {
+            "applied": bool(clone_prior_weight > 0.0),
+            "clone_prior_weight_share": share,
+            "clone_prior_total_weight": clone_prior_total,
+            "clone_prior_household_weight": clone_prior_weight,
+            "clone_household_count": clone_count,
+            "pre_clone_weight_sum": float(weights.loc[clone_mask].sum()),
+            "pre_clone_original_weight_sum": original_weight_sum,
+        }
+
     def calibrate_policyengine_tables(
         self,
         tables: PolicyEngineUSEntityTableBundle,
@@ -3245,6 +3533,9 @@ class USMicroplexPipeline:
                 "US microplex build: post-microsim checkpoint saved",
                 path=str(self.config.pipeline_checkpoint_save_post_microsim_path),
             )
+        tables, puf_clone_calibration_initialization = (
+            self._initialize_puf_clone_calibration_weights(tables)
+        )
         preselection_supported_targets = list(supported_targets)
         target_planning_household_count = len(tables.households)
         if not supported_targets:
@@ -3893,6 +4184,13 @@ class USMicroplexPipeline:
             "active_solve_capped_mean_abs_relative_error": oracle_loss["active_solve"][
                 "capped_mean_abs_relative_error"
             ],
+            "puf_support_clone": {
+                "enabled": bool(self.config.puf_support_clone_enabled),
+                "calibration_initialization": puf_clone_calibration_initialization,
+                "final_household_diagnostics": self._puf_clone_household_summary(
+                    updated_tables
+                ),
+            },
         }
         if selection_summary is not None:
             summary["selection"] = selection_summary
@@ -4938,6 +5236,183 @@ class USMicroplexPipeline:
         state_fips = pd.to_numeric(households["state_fips"], errors="coerce").fillna(0)
         return int((state_fips > 0).sum())
 
+    def _is_puf_support_clone_source(self, source_name: str) -> bool:
+        return any(
+            source_name.startswith(prefix)
+            for prefix in self.config.puf_support_clone_source_prefixes
+        )
+
+    def _is_cps_asec_scaffold_source(self, source_name: str) -> bool:
+        return source_name.startswith(("cps", "cps_asec"))
+
+    def _ordered_donor_inputs_for_puf_support_clone(
+        self,
+        *,
+        scaffold_input: USMicroplexSourceInput,
+        donor_inputs: list[USMicroplexSourceInput],
+    ) -> tuple[list[USMicroplexSourceInput], list[str], list[str]]:
+        """Return PUF-first donor inputs and clone source order for clone mode."""
+        input_order = [donor.frame.source.name for donor in donor_inputs]
+        if not self.config.puf_support_clone_enabled:
+            return donor_inputs, input_order, []
+
+        scaffold_name = scaffold_input.frame.source.name
+        if self._is_puf_support_clone_source(scaffold_name):
+            raise ValueError(
+                "puf_support_clone_enabled requires the PUF source to be a donor, "
+                f"but selected scaffold source is {scaffold_name!r}"
+            )
+        if not self._is_cps_asec_scaffold_source(scaffold_name):
+            raise ValueError(
+                "puf_support_clone_enabled requires a CPS/ASEC-shaped scaffold; "
+                f"selected scaffold source is {scaffold_name!r}"
+            )
+
+        puf_donors = [
+            donor
+            for donor in donor_inputs
+            if self._is_puf_support_clone_source(donor.frame.source.name)
+        ]
+        if not puf_donors:
+            raise ValueError(
+                "puf_support_clone_enabled requires exactly one PUF donor source, "
+                "but none matched puf_support_clone_source_prefixes"
+            )
+        if len(puf_donors) > 1:
+            raise ValueError(
+                "puf_support_clone_enabled requires an unambiguous PUF donor source; "
+                "matched " + ", ".join(donor.frame.source.name for donor in puf_donors)
+            )
+
+        non_puf_donors = [
+            donor
+            for donor in donor_inputs
+            if not self._is_puf_support_clone_source(donor.frame.source.name)
+        ]
+        ordered = [*puf_donors, *non_puf_donors]
+        return (
+            ordered,
+            [donor.frame.source.name for donor in ordered],
+            [donor.frame.source.name for donor in puf_donors],
+        )
+
+    def _prepare_puf_support_clone_frame(self, original: pd.DataFrame) -> pd.DataFrame:
+        """Create a zero-stored-weight PUF clone frame from CPS support rows."""
+        clone = original.copy()
+        structural_id_columns = {"person_id", *ENTITY_ID_COLUMNS.values()}
+        for column in sorted(structural_id_columns & set(clone.columns)):
+            series = clone[column]
+            if pd.api.types.is_numeric_dtype(series):
+                numeric = pd.to_numeric(series, errors="coerce")
+                finite = numeric[np.isfinite(numeric)]
+                offset = int(finite.max()) + 1 if not finite.empty else len(clone)
+                clone[column] = numeric.fillna(-1).astype(np.int64) + int(offset)
+            else:
+                clone[column] = series.astype(str) + "__puf_clone"
+        if self.config.puf_support_clone_zero_initial_weight:
+            for column in clone.columns:
+                if column == "weight" or "_weight" in column:
+                    clone[column] = 0.0
+        clone[self.config.puf_support_clone_flag_column] = 1.0
+        return clone
+
+    def _finalize_puf_support_clone_frame(
+        self,
+        *,
+        original: pd.DataFrame,
+        imputed_clone: pd.DataFrame,
+        donor_source_name: str,
+        integrated_variables: list[str],
+        preclone_columns: set[str],
+        donor_seed_columns: set[str],
+        donor_observed: set[str],
+    ) -> tuple[pd.DataFrame, dict[str, Any]]:
+        """Concatenate original CPS support and its PUF-imputed support clone."""
+        flag_column = self.config.puf_support_clone_flag_column
+        original = original.copy()
+        clone = imputed_clone.copy()
+        original[flag_column] = 0.0
+        clone[flag_column] = 1.0
+
+        integrated_set = set(integrated_variables)
+        both_halves_override = (
+            integrated_set
+            & set(self.config.puf_support_clone_both_halves_override_variables)
+            & preclone_columns
+        )
+        for variable in sorted(both_halves_override):
+            if variable in original.columns and variable in clone.columns:
+                original[variable] = clone[variable].to_numpy(copy=True)
+
+        generated_entity_id_columns = sorted(
+            set(ENTITY_ID_COLUMNS.values()) & (set(clone.columns) - preclone_columns)
+        )
+        if generated_entity_id_columns:
+            clone = clone.drop(columns=generated_entity_id_columns)
+
+        for column in sorted(set(clone.columns) - set(original.columns)):
+            original[column] = 0.0
+        for column in sorted(set(original.columns) - set(clone.columns)):
+            clone[column] = original[column].to_numpy(copy=True)
+        original = original.loc[:, clone.columns]
+
+        combined = pd.concat([original, clone], ignore_index=True, sort=False)
+        combined = combined.reset_index(drop=True)
+
+        overlap_variables = sorted(integrated_set & preclone_columns)
+        donor_only_variables = sorted(integrated_set - preclone_columns)
+        ecps_surface = (
+            set(PUF_SUPPORT_CLONE_IMPUTED_VARIABLES)
+            | set(PUF_SUPPORT_CLONE_OVERRIDDEN_VARIABLES)
+            | set(PUF_SUPPORT_CLONE_SPECIAL_VARIABLES)
+        )
+        included_surface = sorted(ecps_surface & integrated_set)
+        excluded_surface: dict[str, str] = {}
+        for variable in sorted(ecps_surface - set(included_surface)):
+            if variable not in donor_observed and variable not in donor_seed_columns:
+                reason = "missing_puf_source_column"
+            elif variable in self.config.donor_imputer_excluded_variables:
+                reason = "excluded_by_config"
+            elif variable not in preclone_columns:
+                reason = "not_present_before_clone"
+            else:
+                reason = "not_selected_for_imputation"
+            excluded_surface[variable] = reason
+
+        clone_weight_sum = 0.0
+        for column in ("household_weight", "hh_weight", "weight"):
+            if column in clone.columns:
+                clone_weight_sum = float(
+                    pd.to_numeric(clone[column], errors="coerce").fillna(0.0).sum()
+                )
+                break
+
+        summary = {
+            "enabled": True,
+            "donor_source_name": donor_source_name,
+            "original_row_count": int(len(original)),
+            "clone_row_count": int(len(clone)),
+            "final_row_count": int(len(combined)),
+            "clone_initial_weight_sum": clone_weight_sum,
+            "integrated_variable_count": int(len(integrated_set)),
+            "clone_overlap_variable_count": int(len(overlap_variables)),
+            "clone_donor_only_variable_count": int(len(donor_only_variables)),
+            "overlap_variables": overlap_variables,
+            "donor_only_variables": donor_only_variables,
+            "both_halves_override_variables": sorted(both_halves_override),
+            "dropped_generated_entity_id_columns": generated_entity_id_columns,
+            "variable_surface": {
+                "ecps_imputed_variables": list(PUF_SUPPORT_CLONE_IMPUTED_VARIABLES),
+                "ecps_overridden_variables": list(
+                    PUF_SUPPORT_CLONE_OVERRIDDEN_VARIABLES
+                ),
+                "ecps_special_variables": list(PUF_SUPPORT_CLONE_SPECIAL_VARIABLES),
+                "included_variables": included_surface,
+                "excluded_variables": excluded_surface,
+            },
+        }
+        return combined, summary
+
     def _integrate_donor_sources(
         self,
         seed_data: pd.DataFrame,
@@ -4948,6 +5423,13 @@ class USMicroplexPipeline:
         current = seed_data.copy()
         integrated_variables: list[str] = []
         conditioning_diagnostics: list[dict[str, Any]] = []
+        donor_inputs, processed_donor_source_order, puf_clone_source_order = (
+            self._ordered_donor_inputs_for_puf_support_clone(
+                scaffold_input=scaffold_input,
+                donor_inputs=donor_inputs,
+            )
+        )
+        puf_support_clone_summary: dict[str, Any] | None = None
         scaffold_observed = prune_redundant_variables(
             scaffold_input.fusion_plan.variables_for(EntityType.HOUSEHOLD)
             | scaffold_input.fusion_plan.variables_for(EntityType.PERSON)
@@ -4975,10 +5457,27 @@ class USMicroplexPipeline:
             donor_sources=len(donor_inputs),
             seed_rows=len(current),
             condition_selection=self.config.donor_imputer_condition_selection,
+            puf_support_clone_enabled=self.config.puf_support_clone_enabled,
         )
 
         for donor_input in donor_inputs:
             donor_source_name = donor_input.frame.source.name
+            is_puf_support_clone_source = (
+                self.config.puf_support_clone_enabled
+                and self._is_puf_support_clone_source(donor_source_name)
+            )
+            source_original_current: pd.DataFrame | None = None
+            source_preclone_columns: set[str] = set(current.columns)
+            source_integrated_variables: list[str] = []
+            if is_puf_support_clone_source:
+                source_original_current = current.copy()
+                current = self._prepare_puf_support_clone_frame(source_original_current)
+                _emit_us_pipeline_progress(
+                    "US microplex donor integration: puf support clone prepared",
+                    donor_source=donor_source_name,
+                    original_rows=len(source_original_current),
+                    clone_rows=len(current),
+                )
             _emit_us_pipeline_progress(
                 "US microplex donor integration: source start",
                 donor_source=donor_source_name,
@@ -5040,8 +5539,32 @@ class USMicroplexPipeline:
                 and donor_input.frame.source.is_authoritative_for(variable)
                 and self._is_compatible_donor_target(donor_seed[variable])
             )
+            if is_puf_support_clone_source:
+                puf_clone_overlap_vars = sorted(
+                    variable
+                    for variable in set(self.config.puf_support_clone_overlap_variables)
+                    if variable not in excluded
+                    and variable not in self.config.donor_imputer_excluded_variables
+                    and variable in scaffold_observed
+                    and variable in donor_observed
+                    and variable in current.columns
+                    and variable in donor_seed.columns
+                    and variable in numeric_current
+                    and variable in numeric_donor
+                    and donor_input.frame.source.is_authoritative_for(variable)
+                    and self._is_compatible_donor_target(donor_seed[variable])
+                )
+                donor_override_vars = sorted(
+                    set(donor_override_vars) | set(puf_clone_overlap_vars)
+                )
             donor_target_vars = sorted(set(donor_only_vars) | set(donor_override_vars))
             if not shared_vars or not donor_target_vars:
+                if is_puf_support_clone_source:
+                    raise ValueError(
+                        "PUF support clone donor produced no imputation targets; "
+                        f"shared_vars={len(shared_vars)}, "
+                        f"donor_target_vars={len(donor_target_vars)}"
+                    )
                 _emit_us_pipeline_progress(
                     "US microplex donor integration: source skipped",
                     donor_source=donor_source_name,
@@ -5317,6 +5840,7 @@ class USMicroplexPipeline:
                         )
                         current = result.updated_frame
                         integrated_variables.extend(result.integrated_variables)
+                        source_integrated_variables.extend(result.integrated_variables)
                         _emit_us_pipeline_progress(
                             "US microplex donor integration: block complete",
                             donor_source=donor_source_name,
@@ -5466,6 +5990,7 @@ class USMicroplexPipeline:
                     )
                     current = result.updated_frame
                     integrated_variables.extend(result.integrated_variables)
+                    source_integrated_variables.extend(result.integrated_variables)
                     _emit_us_pipeline_progress(
                         "US microplex donor integration: block complete",
                         donor_source=donor_source_name,
@@ -5473,10 +5998,34 @@ class USMicroplexPipeline:
                         integrated_vars=len(result.integrated_variables),
                     )
 
+            if is_puf_support_clone_source:
+                if source_original_current is None:
+                    raise AssertionError("PUF support clone original frame missing")
+                current, puf_support_clone_summary = (
+                    self._finalize_puf_support_clone_frame(
+                        original=source_original_current,
+                        imputed_clone=current,
+                        donor_source_name=donor_source_name,
+                        integrated_variables=source_integrated_variables,
+                        preclone_columns=source_preclone_columns,
+                        donor_seed_columns=set(donor_seed.columns),
+                        donor_observed=donor_observed,
+                    )
+                )
+                _emit_us_pipeline_progress(
+                    "US microplex donor integration: puf support clone complete",
+                    donor_source=donor_source_name,
+                    rows=len(current),
+                    integrated_vars=len(source_integrated_variables),
+                )
+
         return {
             "seed_data": current,
             "integrated_variables": sorted(set(integrated_variables)),
             "conditioning_diagnostics": conditioning_diagnostics,
+            "processed_donor_source_order": processed_donor_source_order,
+            "puf_clone_source_order": puf_clone_source_order,
+            "puf_support_clone_summary": puf_support_clone_summary,
         }
 
     def _apply_dependent_tax_leaf_soft_caps(

@@ -89,6 +89,175 @@ def _install_fake_qrf(monkeypatch, prediction_frame: pd.DataFrame):
     return calls
 
 
+def test_load_puf_raw_disaggregates_aggregate_records(tmp_path):
+    regular_rows = [
+        {
+            "RECID": recid,
+            "MARS": 2 if recid % 2 == 0 else 1,
+            "XTOT": 2 if recid % 2 == 0 else 1,
+            "DSI": 0,
+            "EIC": 0,
+            "S006": 100,
+            "E00100": 100_000_000 + recid * 1_000_000,
+            "E00200": 2_000_000 + recid * 10_000,
+            "P23250": 60_000_000 + recid * 100_000,
+        }
+        for recid in range(1, 25)
+    ]
+    aggregate = {
+        "RECID": 999999,
+        "MARS": 0,
+        "XTOT": 0,
+        "DSI": 0,
+        "EIC": 0,
+        "S006": 50_000,
+        "E00100": 300_000_000,
+        "E00200": 10_000_000,
+        "P23250": 250_000_000,
+    }
+    puf_path = tmp_path / "puf.csv"
+    pd.DataFrame([*regular_rows, aggregate]).to_csv(puf_path, index=False)
+
+    result = puf_module.load_puf_raw(puf_path)
+    synthetic = result[result["RECID"] >= puf_module.PUF_SYNTHETIC_RECID_START]
+    synthetic_weights = synthetic["S006"] / 100
+    aggregate_weight = aggregate["S006"] / 100
+
+    assert 999999 not in set(result["RECID"])
+    assert not result["MARS"].eq(0).any()
+    assert len(synthetic) == 40
+    assert synthetic_weights.sum() == pytest.approx(aggregate_weight)
+    for column in ("E00100", "E00200", "P23250"):
+        assert (synthetic[column] * synthetic_weights).sum() == pytest.approx(
+            aggregate[column] * aggregate_weight
+        )
+
+
+def test_load_puf_raw_disaggregates_small_aggregate_records_with_positive_weights(
+    tmp_path,
+):
+    regular_rows = [
+        {
+            "RECID": recid,
+            "MARS": 2 if recid % 2 == 0 else 1,
+            "XTOT": 2 if recid % 2 == 0 else 1,
+            "DSI": 0,
+            "EIC": 0,
+            "S006": 100,
+            "E00100": 100_000_000 + recid * 1_000_000,
+            "E00200": 2_000_000 + recid * 10_000,
+            "P23250": 60_000_000 + recid * 100_000,
+        }
+        for recid in range(1, 25)
+    ]
+    aggregate = {
+        "RECID": 999999,
+        "MARS": 0,
+        "XTOT": 0,
+        "DSI": 0,
+        "EIC": 0,
+        "S006": 3_000,
+        "E00100": 300_000_000,
+        "E00200": 10_000_000,
+        "P23250": 250_000_000,
+    }
+    puf_path = tmp_path / "puf.csv"
+    pd.DataFrame([*regular_rows, aggregate]).to_csv(puf_path, index=False)
+
+    result = puf_module.load_puf_raw(puf_path)
+    synthetic = result[result["RECID"] >= puf_module.PUF_SYNTHETIC_RECID_START]
+    synthetic_weights = synthetic["S006"] / 100
+    aggregate_weight = aggregate["S006"] / 100
+
+    assert len(synthetic) == 20
+    assert synthetic_weights.min() > 0
+    assert synthetic_weights.sum() == pytest.approx(aggregate_weight)
+    for column in ("E00100", "E00200", "P23250"):
+        assert (synthetic[column] * synthetic_weights).sum() == pytest.approx(
+            aggregate[column] * aggregate_weight
+        )
+
+
+def test_load_puf_raw_disaggregates_all_aggregate_records_preserving_top_tail_totals(
+    tmp_path,
+):
+    columns_to_preserve = (
+        "E00100",
+        "P23250",
+        "P22250",
+        "E00600",
+        "E00650",
+        "E00300",
+        "E00400",
+    )
+    bucket_agi = {
+        999996: -500_000,
+        999997: 2_000_000,
+        999998: 25_000_000,
+        999999: 250_000_000,
+    }
+    regular_rows = []
+    recid = 1
+    for bucket_recid, agi in bucket_agi.items():
+        for offset in range(30):
+            regular_rows.append(
+                {
+                    "RECID": recid,
+                    "MARS": 2 if offset % 3 == 0 else 1,
+                    "XTOT": 2 if offset % 3 == 0 else 1,
+                    "DSI": 0,
+                    "EIC": 0,
+                    "S006": 100,
+                    "E00100": agi + offset * max(abs(agi) * 0.01, 1_000),
+                    "P23250": abs(agi) * 0.30 + offset * 10_000,
+                    "P22250": abs(agi) * 0.03 + offset * 1_000,
+                    "E00600": abs(agi) * 0.05 + offset * 500,
+                    "E00650": abs(agi) * 0.03 + offset * 300,
+                    "E00300": abs(agi) * 0.01 + offset * 100,
+                    "E00400": abs(agi) * 0.005 + offset * 50,
+                }
+            )
+            recid += 1
+
+    aggregate_rows = []
+    for index, (bucket_recid, agi) in enumerate(bucket_agi.items(), start=1):
+        aggregate_rows.append(
+            {
+                "RECID": bucket_recid,
+                "MARS": 0,
+                "XTOT": 0,
+                "DSI": 0,
+                "EIC": 0,
+                "S006": 20_000 + index * 100,
+                "E00100": agi,
+                "P23250": abs(agi) * 0.40,
+                "P22250": abs(agi) * 0.04,
+                "E00600": abs(agi) * 0.08,
+                "E00650": abs(agi) * 0.05,
+                "E00300": abs(agi) * 0.015,
+                "E00400": abs(agi) * 0.008,
+            }
+        )
+
+    puf_path = tmp_path / "puf.csv"
+    source = pd.DataFrame([*regular_rows, *aggregate_rows])
+    source.to_csv(puf_path, index=False)
+
+    result = puf_module.load_puf_raw(puf_path)
+    synthetic = result[result["RECID"] >= puf_module.PUF_SYNTHETIC_RECID_START]
+    synthetic_weights = synthetic["S006"] / 100
+    aggregate = pd.DataFrame(aggregate_rows)
+    aggregate_weights = aggregate["S006"] / 100
+
+    assert not set(puf_module.PUF_AGGREGATE_RECIDS) & set(result["RECID"])
+    assert len(synthetic) >= 80
+    assert synthetic_weights.sum() == pytest.approx(aggregate_weights.sum())
+    for column in columns_to_preserve:
+        expected = (aggregate[column] * aggregate_weights).sum()
+        observed = (synthetic[column] * synthetic_weights).sum()
+        assert observed == pytest.approx(expected)
+
+
 def _write_minimal_soi_csv(path):
     def row(variable, year, is_count, value):
         return {
@@ -196,7 +365,9 @@ def test_expand_to_persons_derives_retirement_social_security_for_older_records(
         }
     )
 
-    persons = expand_to_persons(tax_units).sort_values("household_id").reset_index(drop=True)
+    persons = (
+        expand_to_persons(tax_units).sort_values("household_id").reset_index(drop=True)
+    )
 
     assert persons["social_security"].tolist() == [40.0, 25.0]
     assert persons["social_security_retirement"].tolist() == [40.0, 0.0]
@@ -398,6 +569,7 @@ def test_uprate_mapped_puf_with_pe_factors_uses_aliases_and_recomputes(tmp_path)
     assert result["tax_exempt_pension_income"].tolist() == pytest.approx([5.4])
     assert result["total_pension_income"].tolist() == pytest.approx([17.3])
 
+
 def test_puf_source_provider_pe_soi_mode_uses_raw_uprating(tmp_path):
     repo_root = tmp_path / "pe-us-data"
     storage = repo_root / "policyengine_us_data" / "storage"
@@ -482,12 +654,22 @@ def test_expand_to_persons_uses_pe_demographic_helpers_when_present():
         }
     )
 
-    persons = expand_to_persons(tax_units).sort_values("person_id").reset_index(drop=True)
-    persons_repeat = expand_to_persons(tax_units).sort_values("person_id").reset_index(drop=True)
+    persons = (
+        expand_to_persons(tax_units).sort_values("person_id").reset_index(drop=True)
+    )
+    persons_repeat = (
+        expand_to_persons(tax_units).sort_values("person_id").reset_index(drop=True)
+    )
 
     pd.testing.assert_frame_equal(persons, persons_repeat)
 
-    assert persons["person_id"].tolist() == ["101:1", "101:2", "202:1", "202:3", "202:4"]
+    assert persons["person_id"].tolist() == [
+        "101:1",
+        "101:2",
+        "202:1",
+        "202:3",
+        "202:4",
+    ]
     assert persons["tax_unit_id"].tolist() == ["101", "101", "202", "202", "202"]
 
     head = persons.loc[persons["person_id"] == "101:1"].iloc[0]
@@ -515,6 +697,34 @@ def test_expand_to_persons_uses_pe_demographic_helpers_when_present():
     assert dependent_2["is_male"] == 0.0
 
 
+def test_expand_to_persons_spreads_open_ended_puf_filer_age_band():
+    tax_units = pd.DataFrame(
+        {
+            "filing_status": ["SINGLE"] * 10,
+            "weight": [1.0] * 10,
+            "household_id": [f"household-{i}" for i in range(10)],
+            "exemptions_count": [1] * 10,
+            "_puf_recid": list(range(1_001, 1_011)),
+            "_puf_agerange": [7] * 10,
+            "year": [2024] * 10,
+        }
+    )
+
+    persons = (
+        expand_to_persons(tax_units).sort_values("person_id").reset_index(drop=True)
+    )
+    persons_repeat = (
+        expand_to_persons(tax_units).sort_values("person_id").reset_index(drop=True)
+    )
+
+    pd.testing.assert_frame_equal(persons, persons_repeat)
+    ages = persons["age"].tolist()
+    assert min(ages) >= 80
+    assert max(ages) < 90
+    assert len(set(ages)) > 1
+    assert ages.count(80) < len(ages)
+
+
 def test_expand_to_persons_clears_status_flags_for_non_head_members():
     tax_units = pd.DataFrame(
         {
@@ -531,7 +741,9 @@ def test_expand_to_persons_clears_status_flags_for_non_head_members():
         }
     )
 
-    persons = expand_to_persons(tax_units).sort_values("person_id").reset_index(drop=True)
+    persons = (
+        expand_to_persons(tax_units).sort_values("person_id").reset_index(drop=True)
+    )
 
     assert persons["is_surviving_spouse"].tolist() == [True, False, False]
 
@@ -644,7 +856,9 @@ def test_puf_source_provider_marks_placeholder_and_derived_variables_in_capabili
     assert descriptor.allows_conditioning_on("age")
 
 
-def test_puf_source_provider_does_not_duplicate_joint_tax_unit_financial_income(tmp_path):
+def test_puf_source_provider_does_not_duplicate_joint_tax_unit_financial_income(
+    tmp_path,
+):
     puf = pd.DataFrame(
         {
             "RECID": [101],
@@ -930,9 +1144,15 @@ def test_map_puf_variables_can_impute_pre_tax_contributions_via_policyengine_sub
         with out_path.open("wb") as handle:
             pickle.dump(pd.DataFrame({"pre_tax_contributions": [4321.0]}), handle)
 
-    monkeypatch.setattr(puf_module, "resolve_policyengine_us_data_repo_root", _resolve_repo)
-    monkeypatch.setattr(puf_module, "resolve_policyengine_us_data_python", _resolve_python)
-    monkeypatch.setattr(puf_module, "build_policyengine_us_data_subprocess_env", _build_env)
+    monkeypatch.setattr(
+        puf_module, "resolve_policyengine_us_data_repo_root", _resolve_repo
+    )
+    monkeypatch.setattr(
+        puf_module, "resolve_policyengine_us_data_python", _resolve_python
+    )
+    monkeypatch.setattr(
+        puf_module, "build_policyengine_us_data_subprocess_env", _build_env
+    )
     monkeypatch.setattr(puf_module.subprocess, "run", _run)
     monkeypatch.setattr(
         puf_module,
@@ -1042,14 +1262,18 @@ def test_impute_missing_puf_demographics_uses_qrf_predictions(monkeypatch):
     assert imputed.loc[101, "GENDER"] == 2
 
 
-def test_download_puf_prefers_existing_local_files_without_hub_lookup(tmp_path, monkeypatch):
+def test_download_puf_prefers_existing_local_files_without_hub_lookup(
+    tmp_path, monkeypatch
+):
     puf_path = tmp_path / "puf_2015.csv"
     demographics_path = tmp_path / "demographics_2015.csv"
     puf_path.write_text("RECID,MARS\n1,1\n")
     demographics_path.write_text("RECID\n1\n")
 
     def fail_download(*args, **kwargs):
-        raise AssertionError("hf_hub_download should not be called when local files exist")
+        raise AssertionError(
+            "hf_hub_download should not be called when local files exist"
+        )
 
     monkeypatch.setattr(puf_module, "hf_hub_download", fail_download, raising=False)
 
@@ -1083,7 +1307,9 @@ def test_puf_source_provider_prefers_policyengine_repo_local_raw_files(
     )
 
     def fail_loader(*args, **kwargs):
-        raise AssertionError("remote/cache loader should not run when repo-local PUF exists")
+        raise AssertionError(
+            "remote/cache loader should not run when repo-local PUF exists"
+        )
 
     provider = PUFSourceProvider(
         target_year=2015,
@@ -1148,8 +1374,12 @@ def test_puf_source_provider_age_imputation_is_reproducible_with_same_seed(tmp_p
     first = provider.load_frame(query)
     second = provider.load_frame(query)
 
-    first_persons = first.tables[EntityType.PERSON].sort_values("person_id").reset_index(drop=True)
-    second_persons = second.tables[EntityType.PERSON].sort_values("person_id").reset_index(drop=True)
+    first_persons = (
+        first.tables[EntityType.PERSON].sort_values("person_id").reset_index(drop=True)
+    )
+    second_persons = (
+        second.tables[EntityType.PERSON].sort_values("person_id").reset_index(drop=True)
+    )
 
     assert first_persons["age"].tolist() == second_persons["age"].tolist()
 
@@ -1168,9 +1398,7 @@ def test_puf_sampling_falls_back_to_uniform_when_weighted_sampling_is_infeasible
 
     def flaky_sample(self, *args, **kwargs):
         if kwargs.get("weights") is not None:
-            raise ValueError(
-                "Weighted sampling cannot be achieved with replace=False."
-            )
+            raise ValueError("Weighted sampling cannot be achieved with replace=False.")
         return original_sample(self, *args, **kwargs)
 
     monkeypatch.setattr(pd.DataFrame, "sample", flaky_sample)

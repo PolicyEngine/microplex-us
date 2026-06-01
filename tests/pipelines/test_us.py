@@ -325,6 +325,113 @@ class TestUSMicroplexBuildConfig:
             "rental_income",
         )
 
+    def test_puf_support_clone_requires_seed_backend_and_no_household_selection(self):
+        with pytest.raises(ValueError, match="synthesis_backend='seed'"):
+            USMicroplexBuildConfig(puf_support_clone_enabled=True)
+
+        with pytest.raises(ValueError, match="policyengine_selection_household_budget"):
+            USMicroplexBuildConfig(
+                synthesis_backend="seed",
+                puf_support_clone_enabled=True,
+                policyengine_selection_household_budget=10,
+            )
+
+    def test_initialize_puf_support_clone_calibration_weights_reserves_clone_share(
+        self,
+    ):
+        pipeline = USMicroplexPipeline(
+            USMicroplexBuildConfig(
+                synthesis_backend="seed",
+                puf_support_clone_enabled=True,
+                puf_support_clone_prior_weight_share=0.05,
+            )
+        )
+        tables = PolicyEngineUSEntityTableBundle(
+            households=pd.DataFrame(
+                {
+                    "household_id": ["h1", "h2", "h1__puf_clone", "h2__puf_clone"],
+                    "household_weight": [100.0, 200.0, 0.0, 0.0],
+                }
+            ),
+            persons=pd.DataFrame(
+                {
+                    "person_id": [1, 2, 3, 4],
+                    "household_id": [
+                        "h1",
+                        "h2",
+                        "h1__puf_clone",
+                        "h2__puf_clone",
+                    ],
+                    "person_is_puf_clone": [0.0, 0.0, 1.0, 1.0],
+                    "weight": [100.0, 200.0, 0.0, 0.0],
+                }
+            ),
+            tax_units=pd.DataFrame(),
+            spm_units=pd.DataFrame(),
+            families=pd.DataFrame(),
+            marital_units=pd.DataFrame(),
+        )
+
+        updated_tables, summary = pipeline._initialize_puf_clone_calibration_weights(
+            tables
+        )
+
+        assert summary["applied"] is True
+        assert summary["clone_household_count"] == 2
+        assert summary["clone_prior_weight_share"] == pytest.approx(0.05)
+        assert summary["pre_clone_weight_sum"] == 0.0
+        assert summary["pre_clone_original_weight_sum"] == pytest.approx(300.0)
+        assert summary["clone_prior_total_weight"] == pytest.approx(300.0 * 0.05 / 0.95)
+        assert summary["clone_prior_household_weight"] == pytest.approx(
+            300.0 * 0.05 / 0.95 / 2
+        )
+        assert updated_tables.households["household_weight"].tolist() == [
+            pytest.approx(100.0),
+            pytest.approx(200.0),
+            pytest.approx(300.0 * 0.05 / 0.95 / 2),
+            pytest.approx(300.0 * 0.05 / 0.95 / 2),
+        ]
+        assert updated_tables.persons["weight"].tolist() == [100.0, 200.0, 0.0, 0.0]
+
+    def test_initialize_puf_support_clone_calibration_weights_skips_no_calibration(
+        self,
+    ):
+        pipeline = USMicroplexPipeline(
+            USMicroplexBuildConfig(
+                synthesis_backend="seed",
+                calibration_backend="none",
+                puf_support_clone_enabled=True,
+            )
+        )
+        tables = PolicyEngineUSEntityTableBundle(
+            households=pd.DataFrame(
+                {
+                    "household_id": [1, 2],
+                    "household_weight": [100.0, 0.0],
+                }
+            ),
+            persons=pd.DataFrame(
+                {
+                    "person_id": [1, 2],
+                    "household_id": [1, 2],
+                    "person_is_puf_clone": [0.0, 1.0],
+                    "weight": [100.0, 0.0],
+                }
+            ),
+            tax_units=pd.DataFrame(),
+            spm_units=pd.DataFrame(),
+            families=pd.DataFrame(),
+            marital_units=pd.DataFrame(),
+        )
+
+        updated_tables, summary = pipeline._initialize_puf_clone_calibration_weights(
+            tables
+        )
+
+        assert summary["applied"] is False
+        assert summary["reason"] == "calibration_backend_none"
+        assert updated_tables.households["household_weight"].tolist() == [100.0, 0.0]
+
     def test_rejects_conflicting_policyengine_weight_rescale_modes(self):
         with pytest.raises(ValueError, match="mutually exclusive"):
             USMicroplexBuildConfig(
@@ -3201,6 +3308,261 @@ class TestUSMicroplexPipeline:
             500.0,
         ]
 
+    def test_integrate_donor_sources_appends_puf_support_clone_before_later_donors(
+        self, monkeypatch
+    ):
+        generated_lengths: list[tuple[tuple[str, ...], int]] = []
+
+        class FakeSynthesizer:
+            def __init__(self, *, target_vars, condition_vars, **kwargs):
+                _ = condition_vars, kwargs
+                self.target_vars = tuple(target_vars)
+
+            def fit(self, *args, **kwargs):
+                _ = args, kwargs
+
+            def generate(self, frame, seed=None):
+                _ = seed
+                generated_lengths.append((self.target_vars, len(frame)))
+                result = frame.copy()
+                for target in self.target_vars:
+                    result[target] = np.linspace(1.0, float(len(result)), len(result))
+                return result
+
+        monkeypatch.setattr("microplex_us.pipelines.us.Synthesizer", FakeSynthesizer)
+
+        cps_households = pd.DataFrame(
+            {
+                "household_id": [1, 2],
+                "hh_weight": [100.0, 200.0],
+                "state_fips": [6, 36],
+                "tenure": [1, 2],
+            }
+        )
+        cps_persons = pd.DataFrame(
+            {
+                "person_id": [10, 20],
+                "household_id": [1, 2],
+                "age": [45, 62],
+                "sex": [1, 2],
+                "education": [3, 4],
+                "employment_status": [1, 0],
+                "income": [60_000.0, 12_000.0],
+                "self_employment_income": [75.0, 50.0],
+                "taxpayer_id_type": [1, 2],
+            }
+        )
+        puf_households = pd.DataFrame(
+            {
+                "household_id": [101, 102],
+                "hh_weight": [80.0, 90.0],
+                "state_fips": [6, 36],
+                "tenure": [1, 2],
+            }
+        )
+        puf_persons = pd.DataFrame(
+            {
+                "person_id": [1001, 1002],
+                "household_id": [101, 102],
+                "age": [44, 61],
+                "sex": [1, 2],
+                "education": [3, 4],
+                "employment_status": [1, 0],
+                "income": [58_000.0, 13_000.0],
+                "self_employment_income": [-250.0, 500.0],
+                "taxable_interest_income": [10.0, 20.0],
+                "state_income_tax_paid": [400.0, 50.0],
+            }
+        )
+        sipp_households = pd.DataFrame(
+            {
+                "household_id": [201, 202],
+                "hh_weight": [70.0, 75.0],
+                "state_fips": [6, 36],
+                "tenure": [1, 2],
+            }
+        )
+        sipp_persons = pd.DataFrame(
+            {
+                "person_id": [2001, 2002],
+                "household_id": [201, 202],
+                "age": [45, 62],
+                "sex": [1, 2],
+                "education": [3, 4],
+                "employment_status": [1, 0],
+                "income": [59_000.0, 14_000.0],
+                "ssi_reported": [0.0, 100.0],
+            }
+        )
+
+        def frame_for(name, households, persons, capabilities):
+            return ObservationFrame(
+                source=SourceDescriptor(
+                    name=name,
+                    shareability=Shareability.PUBLIC
+                    if name.startswith("cps")
+                    else Shareability.RESTRICTED,
+                    time_structure=TimeStructure.REPEATED_CROSS_SECTION,
+                    observations=(
+                        EntityObservation(
+                            entity=EntityType.HOUSEHOLD,
+                            key_column="household_id",
+                            variable_names=("state_fips", "tenure"),
+                            weight_column="hh_weight",
+                        ),
+                        EntityObservation(
+                            entity=EntityType.PERSON,
+                            key_column="person_id",
+                            variable_names=tuple(
+                                column
+                                for column in persons.columns
+                                if column != "person_id"
+                            ),
+                        ),
+                    ),
+                    variable_capabilities={
+                        variable: SourceVariableCapability(
+                            authoritative=True,
+                            usable_as_condition=True,
+                        )
+                        for variable in capabilities
+                    },
+                ),
+                tables={
+                    EntityType.HOUSEHOLD: households,
+                    EntityType.PERSON: persons,
+                },
+                relationships=(
+                    EntityRelationship(
+                        parent_entity=EntityType.HOUSEHOLD,
+                        child_entity=EntityType.PERSON,
+                        parent_key="household_id",
+                        child_key="household_id",
+                        cardinality=RelationshipCardinality.ONE_TO_MANY,
+                    ),
+                ),
+            )
+
+        pipeline = USMicroplexPipeline(
+            USMicroplexBuildConfig(
+                n_synthetic=4,
+                synthesis_backend="seed",
+                puf_support_clone_enabled=True,
+                puf_support_clone_overlap_variables=("self_employment_income",),
+                puf_support_clone_both_halves_override_variables=(),
+            )
+        )
+        cps_input = pipeline.prepare_source_input(
+            frame_for(
+                "cps_asec_test", cps_households, cps_persons, ("taxpayer_id_type",)
+            )
+        )
+        puf_input = pipeline.prepare_source_input(
+            frame_for(
+                "irs_soi_puf_2024",
+                puf_households,
+                puf_persons,
+                (
+                    "self_employment_income",
+                    "taxable_interest_income",
+                    "state_income_tax_paid",
+                ),
+            )
+        )
+        sipp_input = pipeline.prepare_source_input(
+            frame_for("sipp_2023", sipp_households, sipp_persons, ("ssi_reported",))
+        )
+        seed_data = pipeline.prepare_seed_data_from_source(cps_input)
+
+        integration = pipeline._integrate_donor_sources(
+            seed_data,
+            scaffold_input=cps_input,
+            donor_inputs=[sipp_input, puf_input],
+        )
+        result = integration["seed_data"]
+
+        assert integration["processed_donor_source_order"] == [
+            "irs_soi_puf_2024",
+            "sipp_2023",
+        ]
+        assert integration["puf_clone_source_order"] == ["irs_soi_puf_2024"]
+        assert result["person_is_puf_clone"].tolist() == [0.0, 0.0, 1.0, 1.0]
+        assert result["hh_weight"].tolist() == [100.0, 200.0, 0.0, 0.0]
+        assert result["self_employment_income"].iloc[:2].tolist() == [75.0, 50.0]
+        assert result["self_employment_income"].iloc[2:].tolist() == [-250.0, 500.0]
+        assert result["taxpayer_id_type"].tolist() == [1, 2, 1, 2]
+        assert result["taxable_interest_income"].iloc[:2].tolist() == [0.0, 0.0]
+        assert result["taxable_interest_income"].iloc[2:].tolist() == [10.0, 20.0]
+        assert "state_income_tax_paid" in result.columns
+        assert "tax_unit_id" not in result.columns
+        assert integration["puf_support_clone_summary"][
+            "dropped_generated_entity_id_columns"
+        ] == ["tax_unit_id"]
+        assert result.index.tolist() == [0, 1, 2, 3]
+        assert generated_lengths[-1] == (("ssi_reported",), 4)
+        assert "ssi_reported" in result.columns
+
+    def test_integrate_donor_sources_puf_support_clone_validates_scaffold_and_donor(
+        self,
+    ):
+        pipeline = USMicroplexPipeline(
+            USMicroplexBuildConfig(
+                synthesis_backend="seed",
+                puf_support_clone_enabled=True,
+            )
+        )
+        frame = ObservationFrame(
+            source=SourceDescriptor(
+                name="cps_asec_test",
+                shareability=Shareability.PUBLIC,
+                time_structure=TimeStructure.REPEATED_CROSS_SECTION,
+                observations=(
+                    EntityObservation(
+                        entity=EntityType.HOUSEHOLD,
+                        key_column="household_id",
+                        variable_names=("state_fips",),
+                        weight_column="hh_weight",
+                    ),
+                    EntityObservation(
+                        entity=EntityType.PERSON,
+                        key_column="person_id",
+                        variable_names=("household_id", "age", "income"),
+                    ),
+                ),
+            ),
+            tables={
+                EntityType.HOUSEHOLD: pd.DataFrame(
+                    {"household_id": [1], "hh_weight": [1.0], "state_fips": [6]}
+                ),
+                EntityType.PERSON: pd.DataFrame(
+                    {
+                        "person_id": [1],
+                        "household_id": [1],
+                        "age": [40],
+                        "income": [1.0],
+                    }
+                ),
+            },
+            relationships=(
+                EntityRelationship(
+                    parent_entity=EntityType.HOUSEHOLD,
+                    child_entity=EntityType.PERSON,
+                    parent_key="household_id",
+                    child_key="household_id",
+                    cardinality=RelationshipCardinality.ONE_TO_MANY,
+                ),
+            ),
+        )
+        cps_input = pipeline.prepare_source_input(frame)
+        seed_data = pipeline.prepare_seed_data_from_source(cps_input)
+
+        with pytest.raises(ValueError, match="requires exactly one PUF donor"):
+            pipeline._integrate_donor_sources(
+                seed_data,
+                scaffold_input=cps_input,
+                donor_inputs=[],
+            )
+
     def test_integrate_donor_sources_zeroes_minor_employment_income_after_authoritative_override(
         self, monkeypatch
     ):
@@ -3763,7 +4125,11 @@ class TestUSMicroplexPipeline:
         with h5py.File(output_path, "r") as handle:
             assert "county_fips" in handle
             exported_counties = handle["county_fips"]["2024"][()]
-        assert set(np.asarray(exported_counties).tolist()) == {6037, 36061, 48201}
+        normalized_counties = {
+            str(value.decode() if isinstance(value, bytes) else value).zfill(5)
+            for value in np.asarray(exported_counties).tolist()
+        }
+        assert normalized_counties == {"06037", "36061", "48201"}
 
     def test_export_policyengine_dataset_passes_direct_overrides(
         self,

@@ -27,7 +27,9 @@ from microplex_us.pipelines.us import (
 )
 
 
-def test_default_policyengine_us_data_rebuild_program_has_expected_core_stages() -> None:
+def test_default_policyengine_us_data_rebuild_program_has_expected_core_stages() -> (
+    None
+):
     program = default_policyengine_us_data_rebuild_program()
 
     assert program.program_id == "pe-us-data-rebuild-v1"
@@ -88,6 +90,7 @@ def test_default_policyengine_us_data_rebuild_config_uses_incumbent_defaults() -
     assert config.donor_imputer_backend == "qrf"
     assert config.donor_imputer_condition_selection == "pe_prespecified"
     assert config.donor_imputer_excluded_variables == ()
+    assert config.puf_support_clone_enabled is True
     assert config.policyengine_direct_override_variables == (
         "health_savings_account_ald",
         "non_sch_d_capital_gains",
@@ -97,7 +100,9 @@ def test_default_policyengine_us_data_rebuild_config_uses_incumbent_defaults() -
     assert config.cps_asec_source_year == 2022
 
 
-def test_default_policyengine_us_data_rebuild_config_respects_calibration_support_override() -> None:
+def test_default_policyengine_us_data_rebuild_config_respects_calibration_support_override() -> (
+    None
+):
     config = default_policyengine_us_data_rebuild_config(
         policyengine_calibration_min_active_households=5
     )
@@ -105,7 +110,9 @@ def test_default_policyengine_us_data_rebuild_config_respects_calibration_suppor
     assert config.policyengine_calibration_min_active_households == 5
 
 
-def test_default_policyengine_us_data_rebuild_source_providers_use_pe_style_bundle() -> None:
+def test_default_policyengine_us_data_rebuild_source_providers_use_pe_style_bundle() -> (
+    None
+):
     providers = default_policyengine_us_data_rebuild_source_providers(
         cps_source_year=2022,
         puf_target_year=2024,
@@ -138,7 +145,9 @@ def test_default_policyengine_us_data_rebuild_source_providers_use_pe_style_bund
     assert isinstance(providers[5], SCFSourceProvider)
 
 
-def test_default_policyengine_us_data_rebuild_source_providers_can_disable_donor_surveys() -> None:
+def test_default_policyengine_us_data_rebuild_source_providers_can_disable_donor_surveys() -> (
+    None
+):
     providers = default_policyengine_us_data_rebuild_source_providers(
         include_donor_surveys=False,
         cps_download=False,
@@ -149,7 +158,9 @@ def test_default_policyengine_us_data_rebuild_source_providers_can_disable_donor
     assert isinstance(providers[1], PUFSourceProvider)
 
 
-def test_default_policyengine_us_data_rebuild_source_providers_can_include_donor_surveys() -> None:
+def test_default_policyengine_us_data_rebuild_source_providers_can_include_donor_surveys() -> (
+    None
+):
     providers = default_policyengine_us_data_rebuild_source_providers(
         include_donor_surveys=True,
         cps_download=False,
@@ -166,7 +177,9 @@ def test_default_policyengine_us_data_rebuild_source_providers_can_include_donor
     assert isinstance(providers[5], SCFSourceProvider)
 
 
-def test_default_policyengine_us_data_rebuild_source_providers_can_disable_only_acs() -> None:
+def test_default_policyengine_us_data_rebuild_source_providers_can_disable_only_acs() -> (
+    None
+):
     providers = default_policyengine_us_data_rebuild_source_providers(
         include_donor_surveys=True,
         include_acs=False,
@@ -184,7 +197,9 @@ def test_default_policyengine_us_data_rebuild_source_providers_can_disable_only_
     assert not any(isinstance(provider, ACSSourceProvider) for provider in providers)
 
 
-def test_build_policyengine_us_data_rebuild_pipeline_returns_configured_pipeline() -> None:
+def test_build_policyengine_us_data_rebuild_pipeline_returns_configured_pipeline() -> (
+    None
+):
     pipeline = build_policyengine_us_data_rebuild_pipeline(
         random_seed=321,
         calibration_max_iter=77,

@@ -192,14 +192,12 @@ def build_sound_ecps_replacement_comparison(
         and candidate_score_error <= score_consistency_tol
         and baseline_score_error <= score_consistency_tol
     )
-    ecps_refit_recovery_passed = (
-        baseline_refit["optimized_full_loss"]
+    ecps_refit_recovery_passed = baseline_refit[
+        "optimized_full_loss"
+    ] <= baseline_refit["initial_full_loss"] + score_consistency_tol and (
+        baseline_score_loss is None
+        or baseline_score_loss
         <= baseline_refit["initial_full_loss"] + score_consistency_tol
-        and (
-            baseline_score_loss is None
-            or baseline_score_loss
-            <= baseline_refit["initial_full_loss"] + score_consistency_tol
-        )
     )
 
     protected_family_losses = _protected_family_losses(
@@ -232,6 +230,10 @@ def build_sound_ecps_replacement_comparison(
     support_audit_summary = (
         _support_audit_summary(support_audit) if support_audit is not None else None
     )
+    candidate_optimizer_summary = dict(candidate_refit["optimizer_summary"])
+    baseline_optimizer_summary = dict(baseline_refit["optimizer_summary"])
+    candidate_refit_progress = _refit_progress_summary(candidate_refit["loss_curve"])
+    baseline_refit_progress = _refit_progress_summary(baseline_refit["loss_curve"])
 
     score_summary.update(
         {
@@ -252,6 +254,30 @@ def build_sound_ecps_replacement_comparison(
             "baseline_score_abs_error": baseline_score_error,
             "candidate_refit_config": refit_config,
             "baseline_refit_config": refit_config,
+            "candidate_refit_converged": bool(
+                candidate_optimizer_summary.get("converged", False)
+            ),
+            "baseline_refit_converged": bool(
+                baseline_optimizer_summary.get("converged", False)
+            ),
+            "candidate_refit_iterations": int(
+                candidate_optimizer_summary.get("iterations", 0)
+            ),
+            "baseline_refit_iterations": int(
+                baseline_optimizer_summary.get("iterations", 0)
+            ),
+            "candidate_refit_train_loss_improvement_last_step": (
+                candidate_refit_progress["train_loss_improvement_last_step"]
+            ),
+            "baseline_refit_train_loss_improvement_last_step": (
+                baseline_refit_progress["train_loss_improvement_last_step"]
+            ),
+            "candidate_refit_train_loss_improvement_last_20_steps": (
+                candidate_refit_progress["train_loss_improvement_last_20_steps"]
+            ),
+            "baseline_refit_train_loss_improvement_last_20_steps": (
+                baseline_refit_progress["train_loss_improvement_last_20_steps"]
+            ),
             "symmetric_refit": True,
             "score_candidate_only": False,
             "refit_objective_matches_scoring": objective_identity_passed,
@@ -282,6 +308,12 @@ def build_sound_ecps_replacement_comparison(
             "score_candidate_only": False,
             "refit_objective_matches_scoring": objective_identity_passed,
             "ecps_refit_recovery_passed": ecps_refit_recovery_passed,
+            "candidate_refit_converged": bool(
+                candidate_optimizer_summary.get("converged", False)
+            ),
+            "baseline_refit_converged": bool(
+                baseline_optimizer_summary.get("converged", False)
+            ),
             "holdout_target_fraction": float(holdout_target_fraction),
             "holdout_targets": int(holdout_mask.sum()),
             "protected_family_losses": protected_family_losses,
@@ -324,7 +356,9 @@ def build_sound_ecps_replacement_comparison(
             "train_targets": int((~holdout_mask).sum()),
             "holdout_targets": int(holdout_mask.sum()),
             "holdout_target_names": [
-                name for name, holdout in zip(target_names, holdout_mask, strict=True) if holdout
+                name
+                for name, holdout in zip(target_names, holdout_mask, strict=True)
+                if holdout
             ],
         },
         "refit_config": refit_config,
@@ -386,7 +420,9 @@ def _write_matched_dataset(
     force: bool,
 ) -> None:
     if output_path.exists() and not force:
-        raise FileExistsError(f"{output_path} already exists; pass --force to replace it")
+        raise FileExistsError(
+            f"{output_path} already exists; pass --force to replace it"
+        )
     _write_matched_policyengine_us_baseline_dataset(
         input_path,
         output_path,
@@ -438,9 +474,7 @@ def _entity_structure_summary(
             period_key,
         )
         if person_ids.shape[0] != person_household_ids.shape[0]:
-            raise ValueError(
-                f"{path} person_id and person_household_id lengths differ"
-            )
+            raise ValueError(f"{path} person_id and person_household_id lengths differ")
 
         household_count = int(household_ids.shape[0])
         summary: dict[str, Any] = {
@@ -500,8 +534,7 @@ def _entity_membership_summary(
     )
     if person_entity_ids.shape[0] != person_household_ids.shape[0]:
         raise ValueError(
-            f"{dataset_path} person_{entity}_id and person_household_id "
-            "lengths differ"
+            f"{dataset_path} person_{entity}_id and person_household_id lengths differ"
         )
     unique_entity_ids = np.unique(entity_ids)
     duplicate_unit_id_count = int(entity_ids.shape[0] - unique_entity_ids.shape[0])
@@ -602,8 +635,10 @@ def _extract_pe_native_loss_inputs(
             check=False,
         )
         if completed.returncode != 0:
-            detail = completed.stderr.strip() or completed.stdout.strip() or str(
-                completed.returncode
+            detail = (
+                completed.stderr.strip()
+                or completed.stdout.strip()
+                or str(completed.returncode)
             )
             raise RuntimeError(f"PE-native loss-matrix extraction failed: {detail}")
         return {
@@ -761,6 +796,24 @@ def _objective(matrix: np.ndarray, target: np.ndarray, weights: np.ndarray) -> f
     return float(np.dot(residual, residual))
 
 
+def _refit_progress_summary(
+    loss_curve: list[dict[str, Any]],
+) -> dict[str, float | None]:
+    if len(loss_curve) < 2:
+        return {
+            "train_loss_improvement_last_step": None,
+            "train_loss_improvement_last_20_steps": None,
+        }
+    last_train_loss = float(loss_curve[-1]["train_loss"])
+    previous_train_loss = float(loss_curve[-2]["train_loss"])
+    lookback_index = max(0, len(loss_curve) - 21)
+    lookback_train_loss = float(loss_curve[lookback_index]["train_loss"])
+    return {
+        "train_loss_improvement_last_step": previous_train_loss - last_train_loss,
+        "train_loss_improvement_last_20_steps": lookback_train_loss - last_train_loss,
+    }
+
+
 def _protected_family_losses(
     *,
     target_names: list[str],
@@ -771,7 +824,6 @@ def _protected_family_losses(
 ) -> dict[str, dict[str, float | int]]:
     candidate_terms = _loss_terms(candidate_inputs, candidate_weights)
     baseline_terms = _loss_terms(baseline_inputs, baseline_weights)
-    n_targets = float(len(target_names))
     rows: dict[str, dict[str, float | int]] = {}
     for family, patterns in _PROTECTED_TARGET_PATTERNS.items():
         indices = [
@@ -781,8 +833,8 @@ def _protected_family_losses(
         ]
         if not indices:
             continue
-        candidate_loss = float(candidate_terms[indices].sum() / n_targets)
-        baseline_loss = float(baseline_terms[indices].sum() / n_targets)
+        candidate_loss = float(candidate_terms[indices].sum())
+        baseline_loss = float(baseline_terms[indices].sum())
         rows[family] = {
             "n_targets": int(len(indices)),
             "candidate_loss": candidate_loss,
@@ -861,6 +913,12 @@ def _target_loss_diagnostics(
                 "baseline_relative_error": float(
                     baseline_values["relative_error"][index]
                 ),
+                "candidate_shifted_residual_ratio": float(
+                    candidate_values["relative_error"][index]
+                ),
+                "baseline_shifted_residual_ratio": float(
+                    baseline_values["relative_error"][index]
+                ),
                 "candidate_loss_term": candidate_loss,
                 "baseline_loss_term": baseline_loss,
                 "loss_delta": float(loss_delta),
@@ -921,9 +979,9 @@ def _target_value_diagnostics(
             target[native_mask] = np.asarray(unscaled_target, dtype=np.float64)[
                 native_mask
             ]
-            estimate[native_mask] = scaled_estimate[native_mask] / scaling_array[
-                native_mask
-            ]
+            estimate[native_mask] = (
+                scaled_estimate[native_mask] / scaling_array[native_mask]
+            )
             value_scale[native_mask] = "native"
     if target.shape != estimate.shape:
         raise ValueError("target and estimate shapes differ")
@@ -945,7 +1003,6 @@ def _target_family_breakdown(
     families: dict[str, list[dict[str, Any]]] = {}
     for row in target_rows:
         families.setdefault(str(row["family"]), []).append(row)
-    denominator = float(total_targets) if total_targets else 1.0
     breakdown = []
     for family, rows in sorted(families.items()):
         candidate_loss = sum(float(row["candidate_loss_term"]) for row in rows)
@@ -954,19 +1011,13 @@ def _target_family_breakdown(
             {
                 "family": family,
                 "n_targets": int(len(rows)),
-                "train_targets": int(
-                    sum(1 for row in rows if row["split"] == "train")
-                ),
+                "train_targets": int(sum(1 for row in rows if row["split"] == "train")),
                 "holdout_targets": int(
                     sum(1 for row in rows if row["split"] == "holdout")
                 ),
-                "candidate_loss_contribution": float(
-                    candidate_loss / denominator
-                ),
-                "baseline_loss_contribution": float(baseline_loss / denominator),
-                "loss_delta": float(
-                    (candidate_loss - baseline_loss) / denominator
-                ),
+                "candidate_loss_contribution": float(candidate_loss),
+                "baseline_loss_contribution": float(baseline_loss),
+                "loss_delta": float(candidate_loss - baseline_loss),
                 "candidate_wins": int(
                     sum(1 for row in rows if row["winner"] == "candidate")
                 ),
@@ -976,7 +1027,9 @@ def _target_family_breakdown(
                 "ties": int(sum(1 for row in rows if row["winner"] == "tie")),
             }
         )
-    return sorted(breakdown, key=lambda row: abs(float(row["loss_delta"])), reverse=True)
+    return sorted(
+        breakdown, key=lambda row: abs(float(row["loss_delta"])), reverse=True
+    )
 
 
 def _support_audit_summary(support_audit: dict[str, Any]) -> dict[str, Any]:
@@ -1008,10 +1061,27 @@ def _support_audit_summary(support_audit: dict[str, Any]) -> dict[str, Any]:
         "top_medicare_part_b_by_age_gaps": _sort_rows_by_abs_delta(
             list(comparisons.get("medicare_part_b_premiums_by_age_delta") or ()),
             "weighted_positive_delta",
+            drop_zero=True,
         ),
         "top_aca_ptc_spending_gaps": _sort_rows_by_abs_delta(
             list(comparisons.get("state_aca_ptc_spending_top_gaps") or ()),
             "weighted_aca_ptc_delta",
+            drop_zero=True,
+        ),
+        "top_state_marketplace_enrollment_gaps": _sort_rows_by_abs_delta(
+            list(comparisons.get("state_marketplace_enrollment_top_gaps") or ()),
+            "weighted_marketplace_enrollment_delta",
+            drop_zero=True,
+        ),
+        "top_state_age_bucket_gaps": _sort_rows_by_abs_delta(
+            list(comparisons.get("state_age_bucket_top_gaps") or ()),
+            "weighted_count_delta",
+            drop_zero=True,
+        ),
+        "top_mfs_high_agi_gaps": _sort_rows_by_abs_delta(
+            list(comparisons.get("mfs_high_agi_delta") or ()),
+            "weighted_count_delta",
+            drop_zero=True,
         ),
     }
 
@@ -1021,12 +1091,20 @@ def _sort_rows_by_abs_delta(
     delta_key: str,
     *,
     limit: int = 10,
+    drop_zero: bool = False,
 ) -> list[dict[str, Any]]:
-    return sorted(
+    sorted_rows = sorted(
         rows,
         key=lambda row: abs(float(row.get(delta_key, 0.0))),
         reverse=True,
-    )[:limit]
+    )
+    if drop_zero:
+        sorted_rows = [
+            row
+            for row in sorted_rows
+            if not np.isclose(float(row.get(delta_key, 0.0)), 0.0)
+        ]
+    return sorted_rows[:limit]
 
 
 def _loss_terms(loss_inputs: dict[str, Any], weights: np.ndarray) -> np.ndarray:
@@ -1042,10 +1120,7 @@ def _target_matches_protected_family(
     patterns: tuple[str, ...],
 ) -> bool:
     normalized = (
-        target_name.lower()
-        .replace("-", "_")
-        .replace(" ", "_")
-        .replace("/", "_")
+        target_name.lower().replace("-", "_").replace(" ", "_").replace("/", "_")
     )
     if family == "wages" and (
         "self_employment" in normalized or "business_income" in normalized

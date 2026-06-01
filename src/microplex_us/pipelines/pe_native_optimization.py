@@ -166,7 +166,7 @@ def _project_to_simplex(values: np.ndarray, total: float) -> np.ndarray:
         return values.copy()
     clipped = np.maximum(values.astype(np.float64, copy=False), 0.0)
     current_sum = float(clipped.sum())
-    if np.isclose(current_sum, total):
+    if np.isclose(current_sum, total, rtol=0.0, atol=1e-6):
         return clipped
     if total <= 0.0:
         return np.zeros_like(clipped)
@@ -246,7 +246,9 @@ def optimize_pe_native_loss_weights(
 
     initial_weight_sum = float(weights0.sum())
     total_weight = (
-        float(target_total_weight) if target_total_weight is not None else initial_weight_sum
+        float(target_total_weight)
+        if target_total_weight is not None
+        else initial_weight_sum
     )
     weights = _project_to_budget_simplex(weights0, total_weight, budget)
     initial_reference = weights.copy()
@@ -358,7 +360,9 @@ def rewrite_policyengine_us_dataset_weights(
     with h5py.File(output, "r+") as handle:
         household_ids = handle["household_id"][period_key][:]
         if len(household_ids) != len(weights):
-            raise ValueError("household_weights length does not match household_id array")
+            raise ValueError(
+                "household_weights length does not match household_id array"
+            )
         household_map = {
             int(household_id): float(weight)
             for household_id, weight in zip(household_ids, weights, strict=True)
@@ -368,7 +372,10 @@ def rewrite_policyengine_us_dataset_weights(
         if "person_weight" in handle and "person_household_id" in handle:
             person_households = handle["person_household_id"][period_key][:]
             person_weights = np.array(
-                [household_map[int(household_id)] for household_id in person_households],
+                [
+                    household_map[int(household_id)]
+                    for household_id in person_households
+                ],
                 dtype=np.float32,
             )
             handle["person_weight"][period_key][...] = person_weights
@@ -448,8 +455,10 @@ def optimize_policyengine_us_native_loss_dataset(
             check=False,
         )
         if completed.returncode != 0:
-            detail = completed.stderr.strip() or completed.stdout.strip() or str(
-                completed.returncode
+            detail = (
+                completed.stderr.strip()
+                or completed.stdout.strip()
+                or str(completed.returncode)
             )
             raise RuntimeError(f"PE-native loss-matrix extraction failed: {detail}")
 

@@ -343,6 +343,29 @@ SAFE_POLICYENGINE_US_EXPORT_VARIABLES: set[str] = {
     "is_separated",
     "is_surviving_spouse",
     "net_worth",
+    # SCF net-worth component leaves (G1). eCPS persists these 19 balance-sheet
+    # columns to its final H5 (the ecps_export_contract.json "required" set);
+    # they are NOT pe-us registered variables, so they are exported via the
+    # legacy-contract entity map below, not recomputed by pe-us.
+    "scf_business_equity",
+    "scf_cash_value_life_insurance",
+    "scf_certificates_of_deposit",
+    "scf_credit_card_debt",
+    "scf_mortgage_debt",
+    "scf_nonresidential_real_estate_equity",
+    "scf_other_debt",
+    "scf_other_financial_assets",
+    "scf_other_installment_debt",
+    "scf_other_lines_of_credit",
+    "scf_other_managed_assets",
+    "scf_other_nonfinancial_assets",
+    "scf_other_residential_debt",
+    "scf_other_residential_real_estate",
+    "scf_primary_residence_value",
+    "scf_retirement_assets",
+    "scf_savings_bonds",
+    "scf_student_loan_debt",
+    "scf_vehicle_installment_debt",
     "ssn_card_type",
     "spm_unit_tenure_type",
     "taxable_private_pension_income",
@@ -360,6 +383,27 @@ POLICYENGINE_US_EXPORT_COLUMN_ALIASES: dict[str, str] = {
 POLICYENGINE_US_EXPORT_DEFAULTS: dict[str, Any] = {
     "auto_loan_balance": 0.0,
     "auto_loan_interest": 0.0,
+    # SCF net-worth component leaves (G1): positive-magnitude balances,
+    # default 0 when the SCF donor leaves a row without that component.
+    "scf_business_equity": 0.0,
+    "scf_cash_value_life_insurance": 0.0,
+    "scf_certificates_of_deposit": 0.0,
+    "scf_credit_card_debt": 0.0,
+    "scf_mortgage_debt": 0.0,
+    "scf_nonresidential_real_estate_equity": 0.0,
+    "scf_other_debt": 0.0,
+    "scf_other_financial_assets": 0.0,
+    "scf_other_installment_debt": 0.0,
+    "scf_other_lines_of_credit": 0.0,
+    "scf_other_managed_assets": 0.0,
+    "scf_other_nonfinancial_assets": 0.0,
+    "scf_other_residential_debt": 0.0,
+    "scf_other_residential_real_estate": 0.0,
+    "scf_primary_residence_value": 0.0,
+    "scf_retirement_assets": 0.0,
+    "scf_savings_bonds": 0.0,
+    "scf_student_loan_debt": 0.0,
+    "scf_vehicle_installment_debt": 0.0,
     "business_is_sstb": False,
     "detailed_occupation_recode": 0,
     "domestic_production_ald": 0,
@@ -506,6 +550,30 @@ POLICYENGINE_US_NUMERIC_ENUM_EXPORT_MAPS: dict[str, dict[float, str]] = {
 }
 
 POLICYENGINE_US_LEGACY_CONTRACT_VARIABLE_ENTITIES: dict[str, str] = {
+    # SCF net-worth component leaves (G1). These are eCPS final-H5 contract
+    # columns (ecps_export_contract.json "required"), not pe-us registered
+    # variables, so the export resolver has no pe-us metadata for them. Map
+    # them to the person entity (matching eCPS per-reference-person storage)
+    # so they are attached as direct data columns rather than recomputed.
+    "scf_business_equity": "person",
+    "scf_cash_value_life_insurance": "person",
+    "scf_certificates_of_deposit": "person",
+    "scf_credit_card_debt": "person",
+    "scf_mortgage_debt": "person",
+    "scf_nonresidential_real_estate_equity": "person",
+    "scf_other_debt": "person",
+    "scf_other_financial_assets": "person",
+    "scf_other_installment_debt": "person",
+    "scf_other_lines_of_credit": "person",
+    "scf_other_managed_assets": "person",
+    "scf_other_nonfinancial_assets": "person",
+    "scf_other_residential_debt": "person",
+    "scf_other_residential_real_estate": "person",
+    "scf_primary_residence_value": "person",
+    "scf_retirement_assets": "person",
+    "scf_savings_bonds": "person",
+    "scf_student_loan_debt": "person",
+    "scf_vehicle_installment_debt": "person",
     "count_under_18": "person",
     "count_under_6": "person",
     "free_school_meals_reported": "spm_unit",

@@ -2,28 +2,31 @@
 
 The Enhanced CPS exports four person-level leaves that Microplex did not:
 
-- ``is_unmarried_partner_of_household_head`` (G8) -- a recode of the ASEC
+- ``is_unmarried_partner_of_household_head`` -- a recode of the ASEC
   relationship-to-householder code ``PERRP``: codes 43/44/46/47 mark an
-  unmarried partner of the household head. Mirrors eCPS
-  ``policyengine_us_data/datasets/cps/cps.py:1219``
-  (``perrp.isin(PERRP_UNMARRIED_PARTNER_OF_HOUSEHOLD_HEAD_CODES)``).
+  unmarried partner of the household head. Mirrors the eCPS
+  ``perrp.isin(PERRP_UNMARRIED_PARTNER_OF_HOUSEHOLD_HEAD_CODES)`` recode
+  (policyengine-us-data, unmerged branch
+  ``claude/document-census-tax-id-replacement``).
 
-- ``reported_owns_employer_sponsored_health_insurance_at_interview`` (G6a) --
-  the ESI policyholder flag ``NOW_OWNGRP == 1``. Mirrors eCPS cps.py:1576-1578.
+- ``reported_owns_employer_sponsored_health_insurance_at_interview`` -- the ESI
+  policyholder flag ``NOW_OWNGRP == 1``. Mirrors the eCPS ESI imputation
+  (policyengine-us-data, unmerged branch ``max/esi-premiums-cbo``).
 
-- ``employer_sponsored_insurance_premiums`` (G6b) -- annual employer-paid ESI
-  premium imputed from ``NOW_OWNGRP``/``NOW_HIPAID``/``NOW_GRPFTYP``/``PHIP_VAL``
-  plus the MEPS-IC 2024 plan-type priors. Reproduces eCPS
-  ``impute_employer_sponsored_insurance_premiums`` (cps.py:229-273) verbatim;
-  the expected values below are the eCPS reference function's own outputs.
+- ``employer_sponsored_insurance_premiums`` -- annual employer-paid ESI premium
+  imputed from ``NOW_OWNGRP``/``NOW_HIPAID``/``NOW_GRPFTYP``/``PHIP_VAL`` plus
+  the MEPS-IC 2024 plan-type priors. Reproduces the eCPS
+  ``impute_employer_sponsored_insurance_premiums`` function (same branch); the
+  expected values below are that reference function's own outputs.
 
-- ``sstb_self_employment_income_would_be_qualified`` (G9) -- the SSTB QBI
-  qualification flag. eCPS computes it in its PUF QBI simulation as
-  ``np.where(business_is_sstb, self_employment_income_would_be_qualified,
-  False)`` (puf.py:768). Microplex runs no PUF QBI simulation and already
-  exports ``business_is_sstb=False`` for every record, so that expression
-  collapses to a constant ``False``; G9 is therefore exported as a constant
-  default rather than a CPS recode.
+- ``sstb_self_employment_income_would_be_qualified`` -- the SSTB QBI
+  qualification flag. eCPS never recodes this flag, so its export carries the
+  pe-us default (``default_value=True``). Microplex exports ``False`` instead;
+  because Microplex carries no SSTB self-employment income
+  (``business_is_sstb=False`` and ``sstb_self_employment_income_before_lsr=0``),
+  the section 199A SSTB component is zero under either value, so the choice is
+  tax-inert and passes the name-only column-parity gate. It is therefore
+  exported as a constant default rather than a CPS recode.
 
 The recode tests exercise the real ``_process_persons`` (no stubbing). The
 ESI-premium expectations are cross-checked against the eCPS reference

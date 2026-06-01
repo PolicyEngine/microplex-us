@@ -352,15 +352,19 @@ SAFE_POLICYENGINE_US_EXPORT_VARIABLES: set[str] = {
     "farm_rent_income",
     "has_esi",
     "has_marketplace_health_coverage",
-    # CPS-derived employer-sponsored insurance leaves (eCPS cps.py:1576-1581).
-    # employer_sponsored_insurance_premiums is a storable pe-us INPUT
-    # (def_formula=0 in pinned pe-us 1.715.3). The policyholder flag is not yet
-    # a released pe-us variable; it is routed through the legacy-contract entity
-    # map below so it still exports for eCPS column parity.
+    # CPS-derived employer-sponsored insurance leaves. Mirrors the eCPS ESI
+    # imputation (policyengine-us-data, unmerged branch max/esi-premiums-cbo):
+    # the policyholder flag is NOW_OWNGRP == 1 and the premium comes from
+    # impute_employer_sponsored_insurance_premiums(). The premium leaf is a
+    # storable pe-us INPUT (no formula in pinned pe-us 1.715.2). The policyholder
+    # flag is not a released pe-us variable; it is routed through the legacy-
+    # contract entity map below so it still exports for eCPS column parity.
     "employer_sponsored_insurance_premiums",
     "reported_owns_employer_sponsored_health_insurance_at_interview",
-    # Unmarried partner of the household head (eCPS cps.py:1219). Storable
-    # pe-us INPUT (def_formula=0 in pinned pe-us 1.715.3).
+    # Unmarried partner of the household head: ASEC PERRP recode (codes
+    # 43/44/46/47), mirroring the eCPS perrp.isin(...) recode (policyengine-us-
+    # data, unmerged branch claude/document-census-tax-id-replacement). Storable
+    # pe-us INPUT (no formula in pinned pe-us 1.715.2).
     "is_unmarried_partner_of_household_head",
     "health_savings_account_ald",
     "is_separated",
@@ -523,15 +527,15 @@ POLICYENGINE_US_EXPORT_DEFAULTS: dict[str, Any] = {
     "ssi_reported": 0.0,
     "ssn_card_type": "CITIZEN",
     "sstb_self_employment_income_before_lsr": 0,
-    # SSTB QBI-qualification flag (G9). eCPS computes this in its PUF QBI
-    # simulation as `np.where(business_is_sstb, self_employment_income_would_
-    # be_qualified, False)` (policyengine-us-data puf.py:768). MP does not run
-    # that PUF QBI simulation and already exports business_is_sstb=False for
-    # every record, so the eCPS expression collapses to False everywhere. A
-    # constant False is therefore the exact value eCPS would emit given MP's
-    # SSTB inputs, and is more correct than the pe-us default_value=True (which
-    # would wrongly qualify all SE income as SSTB-qualified). Storable pe-us
-    # INPUT (def_formula=0 in pinned pe-us 1.715.3).
+    # SSTB QBI-qualification flag (G9). eCPS never recodes this flag, so its
+    # export carries the pe-us default (default_value=True). MP exports False
+    # instead: because MP carries no SSTB self-employment income
+    # (business_is_sstb=False and sstb_self_employment_income_before_lsr=0 for
+    # every record), the section 199A SSTB component is zero under either value,
+    # so the choice is tax-inert and passes the name-only column-parity gate.
+    # False is chosen for internal consistency with MP's business_is_sstb=False;
+    # exact value-parity with the eCPS baseline would instead require True.
+    # Storable pe-us INPUT (no formula in pinned pe-us 1.715.2).
     "sstb_self_employment_income_would_be_qualified": False,
     "sstb_unadjusted_basis_qualified_property": 0.0,
     "sstb_w2_wages_from_qualified_business": 0.0,

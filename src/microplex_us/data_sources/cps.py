@@ -41,6 +41,8 @@ CPS_ASEC_PROCESSED_CACHE_VERSION = "20260601_ecps_spm_takeup_inputs"
 
 # CPS ASEC data URLs by year
 CPS_URLS = {
+    2025: "https://www2.census.gov/programs-surveys/cps/datasets/2025/march/asecpub25csv.zip",
+    2024: "https://www2.census.gov/programs-surveys/cps/datasets/2024/march/asecpub24csv.zip",
     2023: "https://www2.census.gov/programs-surveys/cps/datasets/2023/march/asecpub23csv.zip",
     2022: "https://www2.census.gov/programs-surveys/cps/datasets/2022/march/asecpub22csv.zip",
     2021: "https://www2.census.gov/programs-surveys/cps/datasets/2021/march/asecpub21csv.zip",

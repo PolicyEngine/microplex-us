@@ -13,9 +13,14 @@ from microplex_us.data_sources.cps import (
     _attach_cps_ssn_card_type,
     _cps_age_band_key,
     _sample_households_and_persons,
+    get_available_years,
     load_cps_asec,
     processed_cps_asec_cache_path,
 )
+
+
+def test_cps_asec_available_years_include_latest_survey():
+    assert max(get_available_years()) == 2025
 
 
 def test_cps_parquet_source_provider_loads_observation_frame(tmp_path):

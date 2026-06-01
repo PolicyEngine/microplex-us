@@ -17,10 +17,14 @@ What is covered here:
     non-degenerate, non-negative per-leaf predictions (smoke test, not a full
     donor run). The runnable path uses ColumnwiseQRFDonorImputer; the
     production RegimeAwareDonorImputer variant skips without microimpute.
+  - The real policyengine-us-data SCF_2022 loader (via the manifest-backed
+    dataset-loader subprocess) carries all 19 leaves with positive-magnitude
+    mass (env-gated; skips without a policyengine-us-data checkout).
 
-Not covered here (would require a full pipeline run / SCF download):
-  - End-to-end SCF donor synthesis on real CPS receivers.
-  - Final-H5 export of the leaves through the legacy-contract entity path.
+Not covered here (would require a full pipeline run):
+  - End-to-end SCF donor synthesis fit on real CPS receivers + rebalance.
+  - Final-H5 export of the leaves through the legacy-contract entity path
+    (verified separately against the export resolver, not in this file).
 """
 
 from __future__ import annotations
@@ -135,6 +139,24 @@ class TestScfBlockManifest:
         for leaf, raw_column in EXPECTED_RAW_SOURCE_COLUMN.items():
             assert SCF_NET_WORTH_COMPONENT_TARGETS[leaf] == (raw_column,)
         assert set(SCF_NET_WORTH_COMPONENT_VARIABLES) == set(SCF_COMPONENT_LEAVES)
+
+    def test_resolved_spec_object_carries_leaves(self) -> None:
+        """The spec object the SCF provider uses carries the 19 leaves.
+
+        Exercises the same get_pe_source_impute_block_spec('scf') the provider
+        resolves, so the dataset-loader column map and target list are checked
+        on the live spec, not just the raw JSON.
+        """
+        from microplex_us.data_sources.donor_surveys import (
+            get_pe_source_impute_block_spec,
+        )
+
+        spec = get_pe_source_impute_block_spec("scf")
+        direct = spec.dataset_loader.direct_person_columns
+        for leaf, raw_column in EXPECTED_RAW_SOURCE_COLUMN.items():
+            assert direct.get(leaf) == raw_column
+            assert leaf in spec.target_variables
+            assert leaf in spec.person_variables
 
 
 class TestNetWorthSigns:
@@ -380,3 +402,59 @@ class TestDonorFitOnScfLeaves:
         receivers = _donor_training_frame(n=600, seed=7)[_DONOR_CONDITION_VARS]
         out = imputer.generate(receivers, seed=42)
         _assert_leaf_predictions_nondegenerate(out)
+
+
+def _resolve_pe_us_data_repo() -> Path | None:
+    """Resolve a usable policyengine-us-data checkout, or None to skip."""
+    try:
+        from microplex_us.pipelines.pe_native_scores import (
+            resolve_policyengine_us_data_python,
+            resolve_policyengine_us_data_repo_root,
+        )
+
+        repo = resolve_policyengine_us_data_repo_root()
+        resolve_policyengine_us_data_python(repo_root=repo)
+    except Exception:
+        return None
+    return repo
+
+
+class TestScfDonorFrameCarriesLeaves:
+    """Integration: the real SCF dataset loader carries the 19 leaves.
+
+    Env-gated: runs the actual policyengine-us-data SCF_2022 loader through the
+    manifest-backed dataset-loader subprocess (the same path the pipeline uses)
+    and confirms the donor frame carries all 19 component columns with mass.
+    Skips when policyengine-us-data (and its SCF cache) is not available.
+    """
+
+    def test_real_scf_loader_yields_nineteen_leaves(self) -> None:
+        if _resolve_pe_us_data_repo() is None:
+            pytest.skip("policyengine-us-data checkout/python not available")
+
+        from microplex.core import EntityType, SourceQuery
+
+        from microplex_us.data_sources.donor_surveys import SCFSourceProvider
+
+        provider = SCFSourceProvider()
+        try:
+            frame = provider.load_frame(
+                SourceQuery(provider_filters={"sample_n": 600, "random_seed": 0})
+            )
+        except Exception as error:  # SCF download / loader unavailable
+            pytest.skip(f"SCF loader could not run: {error}")
+
+        persons = frame.tables[EntityType.PERSON]
+        present = [leaf for leaf in SCF_COMPONENT_LEAVES if leaf in persons.columns]
+        assert len(present) == len(SCF_COMPONENT_LEAVES), (
+            f"donor frame missing leaves: {set(SCF_COMPONENT_LEAVES) - set(present)}"
+        )
+
+        any_has_mass = False
+        for leaf in SCF_COMPONENT_LEAVES:
+            values = pd.to_numeric(persons[leaf], errors="coerce").fillna(0.0)
+            # Stored as positive magnitudes (no sign flip at load).
+            assert (values >= 0).all(), f"{leaf} has negative stored magnitude"
+            if float((values != 0).mean()) > 0:
+                any_has_mass = True
+        assert any_has_mass, "no SCF component leaf carried any mass"

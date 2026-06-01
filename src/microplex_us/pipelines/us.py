@@ -58,6 +58,13 @@ from microplex_us.pe_source_impute_engine import (
     PESourceImputeBlockRunRequest,
     PESourceImputeConditionedBlockRunRequest,
 )
+from microplex_us.pipelines.check_export_columns import (
+    _format_report as _format_export_column_report,
+)
+from microplex_us.pipelines.check_export_columns import (
+    compute_column_diff,
+    load_contract,
+)
 from microplex_us.pipelines.donor_imputers import (
     ColumnwiseQRFDonorImputer,
     RegimeAwareDonorImputer,
@@ -83,6 +90,7 @@ from microplex_us.policyengine.us import (
     PolicyEngineUSMicrosimulationAdapter,
     PolicyEngineUSQuantityTarget,
     PolicyEngineUSVariableBinding,
+    build_policyengine_us_export_column_names,
     build_policyengine_us_export_variable_maps,
     build_policyengine_us_time_period_arrays,
     compile_supported_policyengine_us_household_linear_constraints,
@@ -136,10 +144,11 @@ def _normalize_household_county_fips_series(
         & state_numeric.notna()
         & state_numeric.gt(0)
     )
-    combined.loc[county_fragment_mask] = (
-        state_numeric.loc[county_fragment_mask].round().astype(int) * 1000
-        + county_numeric.loc[county_fragment_mask].round().astype(int)
-    )
+    combined.loc[county_fragment_mask] = state_numeric.loc[
+        county_fragment_mask
+    ].round().astype(int) * 1000 + county_numeric.loc[
+        county_fragment_mask
+    ].round().astype(int)
     normalized = combined.round().astype("Int64").astype("string").str.zfill(5)
     invalid = combined.isna() | combined.le(0)
     return normalized.mask(invalid).astype("string")
@@ -206,7 +215,9 @@ def _attach_household_census_geographies(
     assigned_blocks = pd.Series(pd.NA, index=result.index, dtype="string")
     state_values = _normalize_household_state_fips_series(result["state_fips"])
     county_values = (
-        _normalize_household_county_fips_series(result["county_fips"], result["state_fips"])
+        _normalize_household_county_fips_series(
+            result["county_fips"], result["state_fips"]
+        )
         if "county_fips" in result.columns
         else pd.Series(pd.NA, index=result.index, dtype="string")
     )
@@ -1697,6 +1708,14 @@ class USMicroplexBuildConfig:
     policyengine_baseline_dataset: str | None = None
     policyengine_dataset_year: int | None = None
     policyengine_direct_override_variables: tuple[str, ...] = ()
+    policyengine_export_column_contract_path: str | Path | None = None
+    """Optional eCPS export-column contract checked before calibration.
+
+    When set, the pipeline verifies the final H5 column surface from the
+    post-imputation PE entity tables, then fails before microsimulation or
+    calibration if required columns are missing or forbidden columns would be
+    exported.
+    """
     policyengine_prefer_existing_tax_unit_ids: bool = True
     policyengine_quantity_targets: tuple[PolicyEngineUSQuantityTarget, ...] = ()
     policyengine_targets_db: str | None = None
@@ -2120,6 +2139,10 @@ class USMicroplexPipeline:
                     "US microplex build: post-imputation checkpoint saved",
                     path=str(self.config.pipeline_checkpoint_save_post_imputation_path),
                 )
+            self._check_policyengine_export_column_contract(
+                synthetic_tables,
+                stage="pre_calibration",
+            )
             _emit_us_pipeline_progress(
                 "US microplex build: policyengine calibration start",
                 backend=self.config.calibration_backend,
@@ -2365,9 +2388,7 @@ class USMicroplexPipeline:
         seed_data["tenure"] = seed_data["tenure"].fillna(0).astype(int)
         seed_data["state_fips"] = seed_data["state_fips"].fillna(0).astype(int)
         seed_data["county_fips"] = (
-            seed_data["county_fips"]
-            .map(normalize_us_county_fips)
-            .fillna("00000")
+            seed_data["county_fips"].map(normalize_us_county_fips).fillna("00000")
         )
         if "block_geoid" in seed_data.columns:
             seed_data["block_geoid"] = seed_data["block_geoid"].fillna("").astype(str)
@@ -3917,6 +3938,49 @@ class USMicroplexPipeline:
         for message in warning_messages:
             warnings.warn(message, stacklevel=2)
         return updated_tables, calibrated_persons, summary
+
+    def _check_policyengine_export_column_contract(
+        self,
+        tables: PolicyEngineUSEntityTableBundle,
+        *,
+        stage: str,
+    ) -> None:
+        contract_path = self.config.policyengine_export_column_contract_path
+        if contract_path is None:
+            return
+
+        tax_benefit_system = self._resolve_policyengine_tax_benefit_system()
+        contract = load_contract(Path(contract_path))
+        present = build_policyengine_us_export_column_names(
+            tables,
+            tax_benefit_system=tax_benefit_system,
+            direct_override_variables=self.config.policyengine_direct_override_variables,
+        )
+        diff = compute_column_diff(
+            present,
+            required=set(contract["required"]),
+            forbidden=set(contract["forbidden"]),
+            optional=set(contract["ecps_internal_optional"]),
+            excluded=set(contract.get("formula_owned_excluded", [])),
+        )
+        _emit_us_pipeline_progress(
+            "US microplex build: policyengine export columns check complete",
+            stage=stage,
+            status="pass" if diff.ok else "fail",
+            columns_present=int(len(present)),
+            missing_required=int(len(diff.missing_required)),
+            forbidden_present=int(len(diff.forbidden_present)),
+        )
+        if diff.ok:
+            return
+        report = _format_export_column_report(
+            diff,
+            source=f"{stage}:{contract_path}",
+            n_present=len(present),
+            n_required=len(contract["required"]),
+            n_forbidden=len(contract["forbidden"]),
+        )
+        raise ValueError(report)
 
     def _build_forbes_fixed_spine(self) -> ForbesFixedSpine | None:
         path = self.config.forbes_fixed_spine_records_path

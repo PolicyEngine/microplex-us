@@ -33,6 +33,16 @@ GEOGRAPHIC_CONSTRAINT_VARIABLES: set[str] = {
     "congressional_district_geoid",
 }
 
+NYC_FULL_COUNTY_FIPS: frozenset[int] = frozenset(
+    {
+        36005,  # Bronx
+        36047,  # Kings (Brooklyn)
+        36061,  # New York (Manhattan)
+        36081,  # Queens
+        36085,  # Richmond (Staten Island)
+    }
+)
+
 
 @dataclass(frozen=True)
 class PolicyEngineUSConstraint:
@@ -430,8 +440,30 @@ SAFE_POLICYENGINE_US_EXPORT_VARIABLES: set[str] = {
 } | set(POLICYENGINE_US_TAKEUP_INPUT_VARIABLES)
 
 POLICYENGINE_US_EXPORT_COLUMN_ALIASES: dict[str, str] = {
+    # policyengine-us #8507 made monthly_hours_worked derive from
+    # hours_worked_last_week. Microplex source frames still often carry the
+    # annualized eCPS-compatible ``hours_worked`` name, so expose it through
+    # the persisted leaf input when no explicit last-week field is present.
+    "hours_worked": "hours_worked_last_week",
     "race": "cps_race",
 }
+
+POLICYENGINE_US_STRUCTURAL_EXPORT_COLUMNS: frozenset[str] = frozenset(
+    {
+        "household_id",
+        "person_id",
+        "person_household_id",
+        "household_weight",
+        "tax_unit_id",
+        "person_tax_unit_id",
+        "spm_unit_id",
+        "person_spm_unit_id",
+        "family_id",
+        "person_family_id",
+        "marital_unit_id",
+        "person_marital_unit_id",
+    }
+)
 
 POLICYENGINE_US_EXPORT_DEFAULTS: dict[str, Any] = {
     "auto_loan_balance": 0.0,
@@ -481,7 +513,9 @@ POLICYENGINE_US_EXPORT_DEFAULTS: dict[str, Any] = {
     "first_home_mortgage_interest": 0.0,
     "first_home_mortgage_origination_year": 0,
     "free_school_meals_reported": 0.0,
+    "fsla_overtime_premium": 0.0,
     "has_champva_health_coverage_at_interview": False,
+    "has_itin": True,
     "has_indian_health_service_coverage_at_interview": False,
     "has_marketplace_health_coverage_at_interview": False,
     "has_medicaid_health_coverage_at_interview": False,
@@ -489,6 +523,7 @@ POLICYENGINE_US_EXPORT_DEFAULTS: dict[str, Any] = {
     "has_non_marketplace_direct_purchase_health_coverage_at_interview": False,
     "has_other_means_tested_health_coverage_at_interview": False,
     "has_tricare_health_coverage_at_interview": False,
+    "has_tin": True,
     "has_valid_ssn": True,
     "has_va_health_coverage_at_interview": False,
     "home_mortgage_interest": 0,
@@ -498,6 +533,7 @@ POLICYENGINE_US_EXPORT_DEFAULTS: dict[str, Any] = {
     "household_vehicles_value": 0,
     "immigration_status_str": "CITIZEN",
     "investment_interest_expense": 0,
+    "in_nyc": False,
     "is_computer_scientist": False,
     "is_executive_administrative_professional": False,
     "is_farmer_fisher": False,
@@ -516,6 +552,7 @@ POLICYENGINE_US_EXPORT_DEFAULTS: dict[str, Any] = {
     "is_union_member_or_covered": False,
     "is_wic_at_nutritional_risk": True,
     "keogh_distributions": 0,
+    "meets_ssi_disability_criteria": False,
     "net_worth": 0,
     "other_health_insurance_premiums": 0,
     "other_type_retirement_account_distributions": 0,
@@ -1710,9 +1747,7 @@ def _contract_forbidden_export_columns() -> frozenset[str]:
     gate.
     """
     contract_path = (
-        Path(__file__).resolve().parents[1]
-        / "pipelines"
-        / "ecps_export_contract.json"
+        Path(__file__).resolve().parents[1] / "pipelines" / "ecps_export_contract.json"
     )
     payload = json.loads(contract_path.read_text())
     return frozenset(str(name) for name in payload.get("forbidden", ()))
@@ -3001,11 +3036,12 @@ def build_policyengine_us_export_variable_maps(
         variable_metadata,
         direct_override_variables=direct_override_variables,
     )
+    household_table = _with_policyengine_household_export_derivatives(tables.households)
     person_table = _with_policyengine_person_export_derivatives(tables.persons)
     table_specs = (
         (
             "household",
-            tables.households,
+            household_table,
             {"household_id", "household_weight", "weight"},
         ),
         ("person", person_table, {"person_id", "household_id"}),
@@ -3021,6 +3057,47 @@ def build_policyengine_us_export_variable_maps(
             excluded_columns=structural_columns,
         )
     return export_maps
+
+
+def build_policyengine_us_export_column_names(
+    tables: PolicyEngineUSEntityTableBundle,
+    *,
+    tax_benefit_system: Any | None = None,
+    simulation_cls: Any | None = None,
+    direct_override_variables: tuple[str, ...] = (),
+) -> set[str]:
+    """Return the final PE-US H5 column names without materializing arrays.
+
+    This is the schema-only counterpart to
+    :func:`build_policyengine_us_time_period_arrays` +
+    :func:`write_policyengine_us_time_period_dataset`. It lets slow builds
+    verify the eCPS export contract from the saved post-imputation entity
+    tables, before microsimulation/calibration changes weights.
+    """
+    if tables.persons is None:
+        raise ValueError("PolicyEngine US export requires a person table")
+    if tax_benefit_system is None:
+        tax_benefit_system = _resolve_policyengine_us_tax_benefit_system(
+            simulation_cls=simulation_cls
+        )
+    export_maps = build_policyengine_us_export_variable_maps(
+        tables,
+        tax_benefit_system=tax_benefit_system,
+        direct_override_variables=direct_override_variables,
+    )
+    exported_inputs = {
+        target
+        for variable_map in export_maps.values()
+        for target in variable_map.values()
+    }
+    excluded_variables = resolve_policyengine_excluded_export_variables(
+        tax_benefit_system,
+        sorted(exported_inputs),
+        direct_override_variables=direct_override_variables,
+    )
+    return (
+        exported_inputs - excluded_variables
+    ) | POLICYENGINE_US_STRUCTURAL_EXPORT_COLUMNS
 
 
 def build_policyengine_us_time_period_arrays(
@@ -3042,12 +3119,16 @@ def build_policyengine_us_time_period_arrays(
         raise ValueError("PolicyEngine US export requires a person table")
 
     period_key = str(period)
+    household_table = _with_policyengine_household_export_derivatives(tables.households)
     households = _prepare_household_export_table(
-        tables.households,
+        household_table,
         household_id_column=household_id_column,
         household_weight_column=household_weight_column,
     )
-    person_table = _with_policyengine_person_export_derivatives(tables.persons)
+    person_table = _with_policyengine_person_export_derivatives(
+        tables.persons,
+        period=int(period),
+    )
     persons = _prepare_person_export_table(
         person_table,
         person_id_column=person_id_column,
@@ -3406,6 +3487,42 @@ def _normalize_h5_value(values: Any) -> np.ndarray:
     return array
 
 
+def _with_policyengine_household_export_derivatives(
+    households: pd.DataFrame | None,
+) -> pd.DataFrame | None:
+    """Attach eCPS persisted household fields derivable from table columns."""
+    if households is None or "in_nyc" in households.columns:
+        return households
+    if "county_fips" not in households.columns:
+        return households
+
+    household_table = households.copy()
+    county_numeric = pd.to_numeric(household_table["county_fips"], errors="coerce")
+    if "state_fips" in household_table.columns:
+        state_numeric = pd.to_numeric(household_table["state_fips"], errors="coerce")
+    else:
+        state_numeric = pd.Series(np.nan, index=household_table.index)
+    full_county_fips = county_numeric.copy()
+    county_fragment = (
+        county_numeric.notna()
+        & county_numeric.gt(0)
+        & county_numeric.lt(1000)
+        & state_numeric.notna()
+    )
+    full_county_fips.loc[county_fragment] = state_numeric.loc[
+        county_fragment
+    ].round().astype(int) * 1000 + county_numeric.loc[county_fragment].round().astype(
+        int
+    )
+    household_table["in_nyc"] = (
+        full_county_fips.round()
+        .astype("Int64")
+        .isin(NYC_FULL_COUNTY_FIPS)
+        .fillna(False)
+    )
+    return household_table
+
+
 def _prepare_household_export_table(
     households: pd.DataFrame,
     *,
@@ -3463,19 +3580,224 @@ def _prepare_person_export_table(
 
 def _with_policyengine_person_export_derivatives(
     persons: pd.DataFrame | None,
+    *,
+    period: int | None = None,
 ) -> pd.DataFrame | None:
-    if persons is None or "is_household_head" in persons.columns:
-        return persons
-    if "relationship_to_head" not in persons.columns:
+    if persons is None:
         return persons
 
     person_table = persons.copy()
-    relationship = pd.to_numeric(
-        person_table["relationship_to_head"],
-        errors="coerce",
-    )
-    person_table["is_household_head"] = relationship.eq(0).fillna(False)
+    if (
+        "is_household_head" not in person_table.columns
+        and "relationship_to_head" in person_table.columns
+    ):
+        relationship = pd.to_numeric(
+            person_table["relationship_to_head"],
+            errors="coerce",
+        )
+        person_table["is_household_head"] = relationship.eq(0).fillna(False)
+
+    if (
+        "hours_worked_last_week" not in person_table.columns
+        and "hours_worked" in person_table.columns
+    ):
+        person_table["hours_worked_last_week"] = pd.to_numeric(
+            person_table["hours_worked"],
+            errors="coerce",
+        ).fillna(0.0)
+    if "has_tin" not in person_table.columns:
+        person_table["has_tin"] = _derive_has_tin_for_export(person_table)
+    if "has_itin" not in person_table.columns:
+        person_table["has_itin"] = person_table["has_tin"].astype(bool)
+    if "meets_ssi_disability_criteria" not in person_table.columns:
+        person_table["meets_ssi_disability_criteria"] = (
+            _derive_meets_ssi_disability_criteria_for_export(person_table)
+        )
+    if "fsla_overtime_premium" not in person_table.columns:
+        fsla_premium = _derive_flsa_overtime_premium_for_export(
+            person_table,
+            period=period,
+        )
+        if fsla_premium is not None:
+            person_table["fsla_overtime_premium"] = fsla_premium
     return person_table
+
+
+def _derive_has_tin_for_export(persons: pd.DataFrame) -> pd.Series:
+    """Mirror PE-US has_tin default while honoring MP's SSN-card type signal."""
+    if "ssn_card_type" not in persons.columns:
+        return pd.Series(True, index=persons.index, dtype=bool)
+    ssn_card_type = persons["ssn_card_type"].astype("string").str.upper()
+    return ssn_card_type.ne("NONE").fillna(True)
+
+
+def _derive_meets_ssi_disability_criteria_for_export(
+    persons: pd.DataFrame,
+) -> pd.Series:
+    """Approximate eCPS's persisted SSI disability input from available signals."""
+    signals: list[pd.Series] = []
+    bool_columns = (
+        "is_disabled",
+        "difficulty_seeing",
+        "difficulty_hearing",
+        "difficulty_walking_or_climbing_stairs",
+        "difficulty_dressing_or_bathing",
+        "difficulty_doing_errands",
+        "difficulty_remembering_or_making_decisions",
+    )
+    for column in bool_columns:
+        if column in persons.columns:
+            signals.append(_truthy_series(persons[column], index=persons.index))
+    amount_columns = (
+        "ssi",
+        "ssi_reported",
+        "disability_benefits",
+        "social_security_disability",
+    )
+    for column in amount_columns:
+        if column in persons.columns:
+            signals.append(
+                pd.to_numeric(persons[column], errors="coerce").fillna(0.0).gt(0)
+            )
+    if not signals:
+        return pd.Series(False, index=persons.index, dtype=bool)
+    result = signals[0].copy()
+    for signal in signals[1:]:
+        result |= signal
+    return result.fillna(False).astype(bool)
+
+
+def _truthy_series(values: pd.Series, *, index: pd.Index) -> pd.Series:
+    if values.dtype == bool:
+        return values.fillna(False)
+    if pd.api.types.is_numeric_dtype(values):
+        return pd.to_numeric(values, errors="coerce").fillna(0.0).gt(0)
+    return (
+        values.astype("string")
+        .str.upper()
+        .isin({"TRUE", "T", "YES", "Y", "1"})
+        .reindex(index, fill_value=False)
+    )
+
+
+def _derive_flsa_overtime_premium_for_export(
+    persons: pd.DataFrame,
+    *,
+    period: int | None,
+) -> pd.Series | None:
+    """Derive the data-backed FLSA overtime proxy when ORG inputs are present."""
+    required_columns = {
+        "employment_income",
+        "hours_worked_last_week",
+        "weeks_worked",
+        "is_paid_hourly",
+        "has_never_worked",
+        "is_military",
+        "is_executive_administrative_professional",
+        "is_farmer_fisher",
+        "is_computer_scientist",
+    }
+    if not required_columns.issubset(persons.columns):
+        return None
+
+    (
+        hce_salary_threshold,
+        salary_basis_threshold,
+        computer_salary_threshold,
+        hours_threshold,
+        rate_multiplier,
+    ) = _flsa_overtime_policy_for_export(period or 2024)
+
+    employment_income = (
+        pd.to_numeric(persons["employment_income"], errors="coerce")
+        .fillna(0.0)
+        .clip(lower=0)
+    )
+    hours_worked_last_week = (
+        pd.to_numeric(persons["hours_worked_last_week"], errors="coerce")
+        .fillna(0.0)
+        .clip(lower=0)
+    )
+    weeks_worked = (
+        pd.to_numeric(persons["weeks_worked"], errors="coerce")
+        .fillna(0.0)
+        .clip(lower=0)
+    )
+    overtime_hours = (hours_worked_last_week - hours_threshold).clip(lower=0)
+    straight_time_equivalent_hours = (
+        hours_worked_last_week.clip(upper=hours_threshold)
+        + overtime_hours * rate_multiplier
+    )
+    premium_share = pd.Series(0.0, index=persons.index, dtype=float)
+    positive_hours = straight_time_equivalent_hours.gt(0)
+    premium_share.loc[positive_hours] = (
+        (rate_multiplier - 1) * overtime_hours.loc[positive_hours]
+    ) / straight_time_equivalent_hours.loc[positive_hours]
+
+    is_paid_hourly = _truthy_series(persons["is_paid_hourly"], index=persons.index)
+    has_never_worked = _truthy_series(persons["has_never_worked"], index=persons.index)
+    is_military = _truthy_series(persons["is_military"], index=persons.index)
+    is_eap = _truthy_series(
+        persons["is_executive_administrative_professional"],
+        index=persons.index,
+    )
+    is_farmer_fisher = _truthy_series(persons["is_farmer_fisher"], index=persons.index)
+    is_computer_scientist = _truthy_series(
+        persons["is_computer_scientist"],
+        index=persons.index,
+    )
+
+    salary_threshold = pd.Series(
+        hce_salary_threshold,
+        index=persons.index,
+        dtype=float,
+    )
+    salary_threshold.loc[is_computer_scientist] = min(
+        computer_salary_threshold,
+        hce_salary_threshold,
+    )
+    salary_threshold.loc[is_eap | is_farmer_fisher] = min(
+        salary_basis_threshold,
+        hce_salary_threshold,
+    )
+    always_exempt = has_never_worked | is_military
+    salary_threshold.loc[always_exempt] = 0
+    is_exempt = always_exempt | (
+        employment_income.ge(salary_threshold) & ~is_paid_hourly
+    )
+    eligible = ~is_exempt & weeks_worked.gt(0)
+    premium = pd.Series(0.0, index=persons.index, dtype=float)
+    premium.loc[eligible] = (
+        employment_income.loc[eligible] * premium_share.loc[eligible]
+    )
+    return premium.clip(lower=0, upper=employment_income).astype(np.float32)
+
+
+@lru_cache(maxsize=8)
+def _flsa_overtime_policy_for_export(
+    period: int,
+) -> tuple[float, float, float, float, float]:
+    """Return eCPS-compatible FLSA overtime thresholds for one year."""
+    try:
+        import policyengine_us
+        from policyengine_us.model_api import WEEKS_IN_YEAR
+
+        system = getattr(policyengine_us.system, "system", policyengine_us.system)
+        overtime = system.parameters(
+            f"{int(period)}-01-01"
+        ).gov.irs.income.exemption.overtime
+        hours_threshold = float(overtime.hours_threshold)
+        return (
+            float(overtime.hce_salary_threshold),
+            float(overtime.salary_basis_threshold) * float(WEEKS_IN_YEAR),
+            float(overtime.computer_salary_threshold)
+            * hours_threshold
+            * float(WEEKS_IN_YEAR),
+            hours_threshold,
+            float(overtime.rate_multiplier),
+        )
+    except Exception:
+        return (132_964.0, 35_568.0, 57_470.4, 40.0, 1.5)
 
 
 def _resolve_person_group_ids(

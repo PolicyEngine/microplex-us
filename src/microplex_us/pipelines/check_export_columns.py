@@ -30,6 +30,8 @@ Usage::
     python -m microplex_us.pipelines.check_export_columns export.h5
     python -m microplex_us.pipelines.check_export_columns \\
         --columns-json columns.json
+    python -m microplex_us.pipelines.check_export_columns \\
+        --entity-tables checkpoints/post-imputation
     python -m microplex_us.pipelines.check_export_columns export.h5 \\
         --contract custom_contract.json
 
@@ -149,6 +151,29 @@ def _columns_from_json(json_path: Path) -> set[str]:
     return {str(name).split("/")[0] for name in names}
 
 
+def _columns_from_entity_tables(
+    entity_tables_path: Path,
+    *,
+    direct_override_variables: tuple[str, ...] = (),
+) -> set[str]:
+    """Return export column names from a saved PE entity-table checkpoint.
+
+    This is the pre-calibration path: post-imputation entity tables already
+    determine the final H5 schema, while calibration only changes weights.
+    Imports stay deferred so the JSON/H5 fast paths do not import Microplex.
+    """
+    from microplex_us.policyengine.us import (
+        build_policyengine_us_export_column_names,
+        load_us_pipeline_checkpoint,
+    )
+
+    tables, _metadata = load_us_pipeline_checkpoint(entity_tables_path)
+    return build_policyengine_us_export_column_names(
+        tables,
+        direct_override_variables=direct_override_variables,
+    )
+
+
 def _bullet_lines(items: list[str]) -> list[str]:
     """Render a list as indented bullets, or a placeholder if empty."""
     if not items:
@@ -207,6 +232,25 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument(
+        "--entity-tables",
+        metavar="DIR",
+        help=(
+            "Path to a saved PolicyEngine entity-table checkpoint/stage "
+            "directory (for example checkpoints/post-imputation). Checks "
+            "the export schema before microsimulation/calibration/H5."
+        ),
+    )
+    parser.add_argument(
+        "--direct-override-variable",
+        action="append",
+        default=[],
+        metavar="VARIABLE",
+        help=(
+            "PolicyEngine formula variable intentionally exported from source "
+            "data. Repeat for each override used by the build."
+        ),
+    )
+    parser.add_argument(
         "--contract",
         metavar="FILE",
         default=str(DEFAULT_CONTRACT_PATH),
@@ -214,8 +258,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    if bool(args.h5path) == bool(args.columns_json):
-        parser.error("provide exactly one of an H5 path or --columns-json.")
+    selected_inputs = [
+        bool(args.h5path),
+        bool(args.columns_json),
+        bool(args.entity_tables),
+    ]
+    if sum(selected_inputs) != 1:
+        parser.error(
+            "provide exactly one of an H5 path, --columns-json, or --entity-tables."
+        )
 
     contract = load_contract(Path(args.contract))
     required = set(contract["required"])
@@ -226,6 +277,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.columns_json:
         source = args.columns_json
         present = _columns_from_json(Path(args.columns_json))
+    elif args.entity_tables:
+        source = args.entity_tables
+        present = _columns_from_entity_tables(
+            Path(args.entity_tables),
+            direct_override_variables=tuple(args.direct_override_variable),
+        )
     else:
         source = args.h5path
         present = _columns_from_h5(Path(args.h5path))

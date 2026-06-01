@@ -1111,7 +1111,9 @@ def _attach_checkpoint_registry_and_index(
     run_registry_metadata: dict[str, Any] | None,
 ) -> tuple[Path | None, Path | None]:
     if (
-        manifest.get("calibration", {}).get("full_oracle_capped_mean_abs_relative_error")
+        manifest.get("calibration", {}).get(
+            "full_oracle_capped_mean_abs_relative_error"
+        )
         is None
         and manifest.get("calibration", {}).get("full_oracle_mean_abs_relative_error")
         is None
@@ -1119,7 +1121,10 @@ def _attach_checkpoint_registry_and_index(
         and "policyengine_native_scores" not in manifest
     ):
         return None, None
-    if "policyengine_harness" not in manifest and "policyengine_native_scores" not in manifest:
+    if (
+        "policyengine_harness" not in manifest
+        and "policyengine_native_scores" not in manifest
+    ):
         resolved_harness_payload = None
     else:
         resolved_harness_payload = (
@@ -1637,7 +1642,9 @@ def attach_policyengine_us_data_rebuild_checkpoint_evidence(
     _refresh_checkpoint_data_flow_snapshot(
         artifact_root,
         manifest,
-        extra_outputs=(native_audit_path.name,) if native_audit_path is not None else (),
+        extra_outputs=(native_audit_path.name,)
+        if native_audit_path is not None
+        else (),
     )
     _write_json_atomically(manifest_path, manifest)
     return PEUSDataRebuildCheckpointEvidenceResult(
@@ -2177,6 +2184,16 @@ def main(argv: list[str] | None = None) -> None:
         ),
     )
     parser.add_argument(
+        "--policyengine-export-column-contract-path",
+        type=str,
+        default=None,
+        help=(
+            "If set, check the eCPS export-column contract from the "
+            "post-imputation PE entity tables before microsimulation and "
+            "calibration."
+        ),
+    )
+    parser.add_argument(
         "--pipeline-checkpoint-save-post-microsim-path",
         type=str,
         default=None,
@@ -2222,6 +2239,10 @@ def main(argv: list[str] | None = None) -> None:
     if args.pipeline_checkpoint_save_post_imputation_path is not None:
         config_overrides["pipeline_checkpoint_save_post_imputation_path"] = (
             args.pipeline_checkpoint_save_post_imputation_path
+        )
+    if args.policyengine_export_column_contract_path is not None:
+        config_overrides["policyengine_export_column_contract_path"] = (
+            args.policyengine_export_column_contract_path
         )
     if args.pipeline_checkpoint_save_post_microsim_path is not None:
         config_overrides["pipeline_checkpoint_save_post_microsim_path"] = (

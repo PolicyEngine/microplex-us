@@ -32,6 +32,7 @@ from microplex_us.policyengine.us import (
     PolicyEngineUSStratum,
     PolicyEngineUSTargetValidationError,
     PolicyEngineUSVariableBinding,
+    build_policyengine_us_export_column_names,
     build_policyengine_us_export_variable_maps,
     build_policyengine_us_time_period_arrays,
     compile_policyengine_us_household_linear_constraints,
@@ -1800,6 +1801,73 @@ class TestPolicyEngineUSProjection:
         np.testing.assert_array_equal(arrays["age"]["2024"], np.array([34, 12, 45]))
         np.testing.assert_allclose(arrays["snap"]["2024"], np.array([1200.0, 300.0]))
 
+    def test_export_column_names_match_written_time_period_arrays(self):
+        class FakeEntity:
+            def __init__(self, key):
+                self.key = key
+
+        class FakeVariable:
+            def __init__(self, entity):
+                self.entity = FakeEntity(entity)
+
+        class FakeSystem:
+            variables = {
+                "age": FakeVariable("person"),
+                "snap": FakeVariable("spm_unit"),
+                "state_code": FakeVariable("household"),
+            }
+
+        tables = PolicyEngineUSEntityTableBundle(
+            households=pd.DataFrame(
+                {
+                    "household_id": [10],
+                    "household_weight": [1.5],
+                    "state_code": ["CA"],
+                }
+            ),
+            persons=pd.DataFrame(
+                {
+                    "person_id": [1, 2],
+                    "household_id": [10, 10],
+                    "tax_unit_id": [100, 100],
+                    "spm_unit_id": [1000, 1000],
+                    "family_id": [5000, 5000],
+                    "marital_unit_id": [7000, 7000],
+                    "age": [34, 12],
+                }
+            ),
+            tax_units=pd.DataFrame({"tax_unit_id": [100], "household_id": [10]}),
+            spm_units=pd.DataFrame(
+                {"spm_unit_id": [1000], "household_id": [10], "snap": [1200.0]}
+            ),
+            families=pd.DataFrame({"family_id": [5000], "household_id": [10]}),
+            marital_units=pd.DataFrame(
+                {"marital_unit_id": [7000], "household_id": [10]}
+            ),
+        )
+
+        export_maps = build_policyengine_us_export_variable_maps(
+            tables,
+            tax_benefit_system=FakeSystem(),
+        )
+        arrays = build_policyengine_us_time_period_arrays(
+            tables,
+            period=2024,
+            household_variable_map=export_maps["household"],
+            person_variable_map=export_maps["person"],
+            spm_unit_variable_map=export_maps["spm_unit"],
+        )
+        columns = build_policyengine_us_export_column_names(
+            tables,
+            tax_benefit_system=FakeSystem(),
+        )
+        excluded = resolve_policyengine_excluded_export_variables(
+            FakeSystem(),
+            sorted(arrays),
+        )
+
+        assert columns == set(arrays) - excluded
+
     def test_derives_household_head_export_from_relationship_to_head(self):
         tables = PolicyEngineUSEntityTableBundle(
             households=pd.DataFrame(
@@ -2410,7 +2478,7 @@ class TestPolicyEngineUSProjection:
         assert "health_savings_account_ald" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         assert "filing_status" not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         assert "rent" not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
-        assert "social_security_retirement" not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
+        assert "social_security_retirement" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         assert (
             "social_security_retirement_reported"
             not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
@@ -2424,20 +2492,17 @@ class TestPolicyEngineUSProjection:
         )
         assert (
             "traditional_ira_contributions_desired"
-            not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
+            in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         )
         assert "roth_ira_contributions" not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
-        assert (
-            "roth_ira_contributions_desired"
-            not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
-        )
+        assert "roth_ira_contributions_desired" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         assert (
             "self_employed_pension_contributions"
             not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         )
         assert (
             "self_employed_pension_contributions_desired"
-            not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
+            in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         )
         assert "non_sch_d_capital_gains" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         assert "receives_wic" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
@@ -2662,6 +2727,93 @@ class TestPolicyEngineUSProjection:
             "spm_unit_tenure_type": "spm_unit_tenure_type",
             "takes_up_snap_if_eligible": "takes_up_snap_if_eligible",
         }.items() <= export_maps["spm_unit"].items()
+
+    def test_time_period_arrays_derive_ecps_persisted_computed_inputs(self):
+        class FakeEntity:
+            def __init__(self, key):
+                self.key = key
+
+        class FakeVariable:
+            def __init__(self, entity, formulas=None):
+                self.entity = FakeEntity(entity)
+                self.formulas = formulas or {}
+
+        class FakeSystem:
+            variables = {
+                "fsla_overtime_premium": FakeVariable("person"),
+                "has_itin": FakeVariable("person", formulas={"2024": object()}),
+                "has_tin": FakeVariable("person", formulas={"2024": object()}),
+                "hours_worked_last_week": FakeVariable("person"),
+                "in_nyc": FakeVariable("household", formulas={"2024": object()}),
+                "meets_ssi_disability_criteria": FakeVariable("person"),
+            }
+
+        tables = PolicyEngineUSEntityTableBundle(
+            households=pd.DataFrame(
+                {
+                    "household_id": [10, 11],
+                    "household_weight": [1.0, 2.0],
+                    "state_fips": [36, 6],
+                    "county_fips": [61, 1],
+                }
+            ),
+            persons=pd.DataFrame(
+                {
+                    "person_id": [1, 2],
+                    "household_id": [10, 11],
+                    "ssn_card_type": ["NONE", "CITIZEN"],
+                    "age": [40, 70],
+                    "difficulty_hearing": [True, False],
+                    "ssi": [0.0, 0.0],
+                    "employment_income": [0.0, 55_000.0],
+                    "hours_worked": [0.0, 50.0],
+                    "weeks_worked": [0.0, 52.0],
+                    "is_paid_hourly": [False, True],
+                    "has_never_worked": [False, False],
+                    "is_military": [False, False],
+                    "is_executive_administrative_professional": [False, False],
+                    "is_farmer_fisher": [False, False],
+                    "is_computer_scientist": [False, False],
+                }
+            ),
+        )
+
+        export_maps = build_policyengine_us_export_variable_maps(
+            tables,
+            tax_benefit_system=FakeSystem(),
+        )
+        arrays = build_policyengine_us_time_period_arrays(
+            tables,
+            period=2024,
+            household_variable_map=export_maps["household"],
+            person_variable_map=export_maps["person"],
+        )
+
+        columns = build_policyengine_us_export_column_names(
+            tables,
+            tax_benefit_system=FakeSystem(),
+        )
+
+        assert arrays["in_nyc"]["2024"].tolist() == [True, False]
+        assert arrays["has_tin"]["2024"].tolist() == [False, True]
+        assert arrays["has_itin"]["2024"].tolist() == [False, True]
+        assert arrays["hours_worked_last_week"]["2024"].tolist() == [0.0, 50.0]
+        assert arrays["meets_ssi_disability_criteria"]["2024"].tolist() == [
+            True,
+            False,
+        ]
+        np.testing.assert_allclose(
+            arrays["fsla_overtime_premium"]["2024"],
+            np.array([0.0, 5_000.0], dtype=np.float32),
+        )
+        assert {
+            "fsla_overtime_premium",
+            "has_itin",
+            "has_tin",
+            "hours_worked_last_week",
+            "in_nyc",
+            "meets_ssi_disability_criteria",
+        }.issubset(columns)
 
     def test_projects_frame_and_writes_time_period_dataset(self, tmp_path):
         frame = pd.DataFrame(

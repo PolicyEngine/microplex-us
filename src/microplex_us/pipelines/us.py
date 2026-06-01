@@ -67,7 +67,6 @@ from microplex_us.pipelines.pe_native_optimization import (
     optimize_policyengine_us_native_loss_dataset,
 )
 from microplex_us.policyengine.aotc import (
-    maximum_american_opportunity_credit_per_student,
     qualifying_expenses_from_american_opportunity_credit,
 )
 from microplex_us.policyengine.comparison import (
@@ -4375,10 +4374,10 @@ class USMicroplexPipeline:
         return tables
 
     # AOTC eligibility-input columns populated by
-    # ``_construct_aotc_eligibility_inputs``. Mirrors the enhanced-CPS
-    # baseline tuple ``AOTC_ELIGIBILITY_INPUTS`` at
-    # ``PolicyEngine/policyengine-us-data``
-    # ``policyengine_us_data/datasets/cps/extended_cps.py:61-71``.
+    # ``_construct_aotc_eligibility_inputs``, matching the per-student inputs
+    # written by the enhanced-CPS baseline ``_impute_aotc_eligibility_inputs``
+    # (PolicyEngine/policyengine-us-data, unmerged branch
+    # ``codex/fix-aotc-eligibility``).
     _AOTC_TRUE_FLAG_COLUMNS = (
         "is_pursuing_credential_for_american_opportunity_credit",
         "attends_eligible_educational_institution_for_american_opportunity_credit",
@@ -4399,9 +4398,9 @@ class USMicroplexPipeline:
         """Convert the PUF AOTC signal into person eligibility inputs.
 
         Mirrors the enhanced-CPS baseline
-        ``ExtendedCPS._impute_aotc_eligibility_inputs`` at
-        ``PolicyEngine/policyengine-us-data``
-        ``policyengine_us_data/datasets/cps/extended_cps.py:1204-1369``.
+        ``ExtendedCPS._impute_aotc_eligibility_inputs``
+        (``PolicyEngine/policyengine-us-data``, unmerged branch
+        ``codex/fix-aotc-eligibility``).
 
         The enhanced CPS operates on a flat ``{variable: {period: array}}``
         payload keyed by ``person_tax_unit_id``; Microplex carries the same
@@ -4413,13 +4412,15 @@ class USMicroplexPipeline:
         algorithm applied to a single DataFrame.
 
         Driven by the PUF-imputed ``american_opportunity_credit`` (PUF
-        ``E87521``; see ``data_sources/puf.py`` / ``manifests/puf.json`` and
-        ``policyengine_us_data`` ``datasets/puf/puf.py:707``). For each tax
-        unit with positive credit, the credit is back-solved into per-student
-        qualified-tuition expenses and students are selected by the enhanced
-        CPS priority (positive tuition -> full-time college student ->
-        tax-unit dependent -> any member) until the credit is exhausted.
-        With no credit signal it falls back to the enhanced-CPS
+        ``E87521``; see ``data_sources/puf.py`` / ``manifests/puf.json``). For
+        each tax unit with positive credit the enhanced-CPS rule applies: if
+        any member already reports positive qualified tuition, every such
+        member is marked an AOTC student and the reported tuition is left
+        unchanged; otherwise a single student is selected by priority
+        (full-time college student -> tax-unit dependent -> any member) and
+        that student's qualified tuition is back-solved to the minimum amount
+        reproducing the unit's credit under PolicyEngine-US. With no credit
+        signal it falls back to the enhanced-CPS
         ``aotc_student = qualified_tuition_expenses > 0`` rule. The selected
         students receive the five factual eligibility flags as ``True``,
         ``has_completed_first_four_years_of_postsecondary_education`` and
@@ -4503,9 +4504,6 @@ class USMicroplexPipeline:
                 if member_credit > prior:
                     credit_by_tax_unit[tax_unit_id] = float(member_credit)
 
-            max_student_credit = maximum_american_opportunity_credit_per_student(
-                time_period
-            )
             positive_credit_units = [
                 tax_unit_id
                 for tax_unit_id, unit_credit in credit_by_tax_unit.items()
@@ -4513,42 +4511,35 @@ class USMicroplexPipeline:
             ]
             for tax_unit_id in positive_credit_units:
                 member_indices = np.flatnonzero(person_tax_unit_ids == tax_unit_id)
-                if member_indices.size == 0 or max_student_credit <= 0:
+                if member_indices.size == 0:
                     continue
 
+                # eCPS rule: if any member already reports positive qualified
+                # tuition, every such member is an AOTC student and the reported
+                # tuition is left untouched (no back-solve, no rewrite).
                 tuition_indices = member_indices[tuition[member_indices] > 0]
-                candidate_groups = []
                 if tuition_indices.size > 0:
-                    candidate_groups.append(tuition_indices)
-                candidate_groups.extend(
-                    (
-                        member_indices[full_time[member_indices]],
-                        member_indices[dependent[member_indices]],
-                        member_indices,
-                    )
-                )
-                ordered_candidates = []
-                seen = set()
-                for group in candidate_groups:
-                    for index in group:
-                        if index not in seen:
-                            ordered_candidates.append(index)
-                            seen.add(index)
+                    aotc_student[tuition_indices] = True
+                    continue
 
-                remaining_credit = float(credit_by_tax_unit[tax_unit_id])
-                for selected in ordered_candidates:
-                    if remaining_credit <= 0:
-                        break
-                    student_credit = min(remaining_credit, max_student_credit)
-                    target_tuition = (
-                        qualifying_expenses_from_american_opportunity_credit(
-                            student_credit,
-                            time_period,
-                        )
-                    )
-                    aotc_student[selected] = True
-                    tuition[selected] = target_tuition
-                    remaining_credit -= student_credit
+                # Otherwise select a single student by the eCPS priority
+                # (full-time college student -> tax-unit dependent -> any
+                # member) and back-solve the minimum qualified tuition that
+                # reproduces the unit's credit under PolicyEngine-US.
+                preferred = member_indices[full_time[member_indices]]
+                if preferred.size == 0:
+                    preferred = member_indices[dependent[member_indices]]
+                if preferred.size == 0:
+                    preferred = member_indices
+                selected = preferred[0]
+                aotc_student[selected] = True
+                tuition[selected] = max(
+                    tuition[selected],
+                    qualifying_expenses_from_american_opportunity_credit(
+                        credit_by_tax_unit[tax_unit_id],
+                        time_period,
+                    ),
+                )
         else:
             aotc_student = tuition > 0
             if not aotc_student.any():

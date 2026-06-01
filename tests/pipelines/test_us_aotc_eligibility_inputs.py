@@ -2,9 +2,9 @@
 
 Exercises ``USMicroplexPipeline._construct_aotc_eligibility_inputs`` (and its
 call site inside ``build_policyengine_entity_tables``), which mirrors the
-enhanced-CPS baseline ``ExtendedCPS._impute_aotc_eligibility_inputs`` at
-``PolicyEngine/policyengine-us-data``
-``policyengine_us_data/datasets/cps/extended_cps.py:1204-1369``.
+enhanced-CPS baseline ``ExtendedCPS._impute_aotc_eligibility_inputs``
+(``PolicyEngine/policyengine-us-data``, unmerged branch
+``codex/fix-aotc-eligibility``).
 """
 
 import pandas as pd
@@ -186,7 +186,8 @@ class TestCreditDrivenConstruction:
             assert bool(by_id.loc[2, column]) is False
         assert int(by_id.loc[2, AOTC_PRIOR_YEARS_COLUMN]) in range(0, 4)
 
-        # $2,500 credit back-solves to $4,000 of qualified expenses.
+        # Person 2 already reports $4,000 tuition; eCPS flags the member and
+        # preserves the reported tuition (no rewrite).
         assert by_id.loc[2, "qualified_tuition_expenses"] == pytest.approx(4_000.0)
 
         # Parent and minor are not students.
@@ -194,10 +195,11 @@ class TestCreditDrivenConstruction:
             for column in AOTC_TRUE_FLAG_COLUMNS:
                 assert bool(by_id.loc[person_id, column]) is False
 
-    def test_partial_credit_backsolves_to_smaller_expenses(self):
+    def test_existing_positive_tuition_is_preserved(self):
         pipeline = _pipeline(2024)
-        # Single filer who is the student; $1,250 credit -> $1,250 expenses
-        # (inside the 100% first-bracket), OVERWRITING the reported $2,000.
+        # Single filer-student who already reports positive tuition. eCPS flags
+        # the member but leaves the reported tuition untouched -- no back-solve,
+        # no overwrite -- even when the credit would imply a smaller base.
         persons = pd.DataFrame(
             {
                 "person_id": [1],
@@ -208,6 +210,63 @@ class TestCreditDrivenConstruction:
                 "is_tax_unit_dependent": [0.0],
                 "is_full_time_college_student": [True],
                 "qualified_tuition_expenses": [2_000.0],
+                "american_opportunity_credit": [1_250.0],
+                "relationship_to_head": [0],
+            }
+        )
+
+        result = pipeline._construct_aotc_eligibility_inputs(persons)
+        row = result.set_index("person_id").loc[1]
+        for column in AOTC_TRUE_FLAG_COLUMNS:
+            assert bool(row[column]) is True
+        # Reported tuition is preserved, not overwritten to the $1,250 the
+        # credit would otherwise back-solve to.
+        assert row["qualified_tuition_expenses"] == pytest.approx(2_000.0)
+
+    def test_all_tuition_positive_members_are_flagged(self):
+        pipeline = _pipeline(2024)
+        # Two members both reporting positive tuition in one credit-positive
+        # tax unit. eCPS flags BOTH (it does not stop after a single student)
+        # and leaves both reported tuition values untouched.
+        persons = pd.DataFrame(
+            {
+                "person_id": [1, 2],
+                "household_id": [10, 10],
+                "tax_unit_id": [100, 100],
+                "age": [20, 22],
+                "income": [0.0, 0.0],
+                "is_tax_unit_dependent": [1.0, 1.0],
+                "is_full_time_college_student": [True, True],
+                "qualified_tuition_expenses": [3_000.0, 3_000.0],
+                "american_opportunity_credit": [2_500.0, 2_500.0],
+                "relationship_to_head": [2, 2],
+            }
+        )
+
+        result = pipeline._construct_aotc_eligibility_inputs(persons)
+        by_id = result.set_index("person_id")
+        for person_id in (1, 2):
+            for column in AOTC_TRUE_FLAG_COLUMNS:
+                assert bool(by_id.loc[person_id, column]) is True
+            assert by_id.loc[
+                person_id, "qualified_tuition_expenses"
+            ] == pytest.approx(3_000.0)
+
+    def test_no_tuition_partial_credit_backsolves_to_smaller_expenses(self):
+        pipeline = _pipeline(2024)
+        # No member reports tuition; a $1,250 credit back-solves to $1,250 of
+        # qualified expenses (inside the 100% first bracket) on the selected
+        # full-time student.
+        persons = pd.DataFrame(
+            {
+                "person_id": [1],
+                "household_id": [10],
+                "tax_unit_id": [100],
+                "age": [28],
+                "income": [30_000.0],
+                "is_tax_unit_dependent": [0.0],
+                "is_full_time_college_student": [True],
+                "qualified_tuition_expenses": [0.0],
                 "american_opportunity_credit": [1_250.0],
                 "relationship_to_head": [0],
             }

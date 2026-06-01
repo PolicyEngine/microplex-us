@@ -275,9 +275,10 @@ SAFE_POLICYENGINE_US_EXPORT_VARIABLES: set[str] = {
     # American Opportunity Tax Credit (AOTC) factual eligibility inputs,
     # populated per tax unit by
     # ``USMicroplexPipeline._construct_aotc_eligibility_inputs`` from the
-    # PUF ``american_opportunity_credit`` signal. Mirrors the enhanced-CPS
-    # tuple ``AOTC_ELIGIBILITY_INPUTS`` at PolicyEngine/policyengine-us-data
-    # ``policyengine_us_data/datasets/cps/extended_cps.py:61-71``.
+    # PUF ``american_opportunity_credit`` signal, matching the enhanced-CPS
+    # baseline ``_impute_aotc_eligibility_inputs``
+    # (PolicyEngine/policyengine-us-data, unmerged branch
+    # ``codex/fix-aotc-eligibility``).
     "is_pursuing_credential_for_american_opportunity_credit",
     "attends_eligible_educational_institution_for_american_opportunity_credit",
     "is_enrolled_at_least_half_time_for_american_opportunity_credit",

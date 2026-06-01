@@ -1,11 +1,12 @@
 """American Opportunity Tax Credit (AOTC) helpers backed by PolicyEngine-US.
 
-Ported logic-for-logic from the enhanced-CPS baseline at
-``PolicyEngine/policyengine-us-data``
-``policyengine_us_data/utils/aotc.py`` so the Microplex AOTC
-eligibility-input construction back-solves per-student qualified expenses
-using the same PolicyEngine-US parameter schedule the enhanced CPS uses.
-These functions read only the published
+Mirrors the credit-to-expenses inverse in the enhanced-CPS baseline (the
+``_aotc_qualifying_expenses_from_credit`` staticmethod of ``ExtendedCPS`` in
+``PolicyEngine/policyengine-us-data``, unmerged branch
+``codex/fix-aotc-eligibility``) so the Microplex AOTC eligibility-input
+construction back-solves per-student qualified expenses the same way. Where
+the enhanced CPS hard-codes the AOTC bracket constants, these functions read
+only the published
 ``gov.irs.credits.education.american_opportunity_credit.amount`` marginal
 schedule, so they stay in lock-step with PolicyEngine-US parameter updates.
 """

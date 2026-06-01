@@ -56,6 +56,7 @@ def build_sound_ecps_replacement_comparison(
     matched_household_count: int | None = None,
     random_seed: int = 20260529,
     matched_sample_method: str = "uniform",
+    matched_top_agi_threshold: float = 1_000_000.0,
     holdout_target_fraction: float = 0.2,
     holdout_target_seed: int = 20260529,
     optimizer_max_iter: int = 200,
@@ -105,6 +106,7 @@ def build_sound_ecps_replacement_comparison(
         household_count=matched_count,
         random_seed=random_seed,
         sample_method=matched_sample_method,
+        top_agi_threshold=matched_top_agi_threshold,
         force=force,
     )
     _write_matched_dataset(
@@ -114,6 +116,7 @@ def build_sound_ecps_replacement_comparison(
         household_count=matched_count,
         random_seed=random_seed + 1,
         sample_method=matched_sample_method,
+        top_agi_threshold=matched_top_agi_threshold,
         force=force,
     )
 
@@ -273,6 +276,12 @@ def build_sound_ecps_replacement_comparison(
             "baseline": _dataset_descriptor(matched_baseline_path),
             "random_seed": int(random_seed),
             "sample_method": matched_sample_method,
+            "top_agi_threshold": (
+                float(matched_top_agi_threshold)
+                if matched_sample_method.lower().replace("-", "_")
+                == "top_agi_preserve"
+                else None
+            ),
         },
         "comparison_contract": {
             "matched_household_count": True,
@@ -383,6 +392,7 @@ def _write_matched_dataset(
     household_count: int,
     random_seed: int,
     sample_method: str,
+    top_agi_threshold: float,
     force: bool,
 ) -> None:
     if output_path.exists() and not force:
@@ -396,6 +406,7 @@ def _write_matched_dataset(
         household_count=household_count,
         random_seed=random_seed,
         sample_method=sample_method,
+        top_agi_threshold=top_agi_threshold,
     )
 
 
@@ -1101,11 +1112,27 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--random-seed", type=int, default=20260529)
     parser.add_argument(
         "--matched-sample-method",
-        choices=("uniform", "weight_proportional", "pps", "largest_weight"),
+        choices=(
+            "uniform",
+            "weight_proportional",
+            "pps",
+            "largest_weight",
+            "top_agi_preserve",
+        ),
         default="uniform",
         help=(
             "Household thinning method used when matching a larger dataset down "
             "to the comparison household count."
+        ),
+    )
+    parser.add_argument(
+        "--matched-top-agi-threshold",
+        type=float,
+        default=1_000_000.0,
+        help=(
+            "When --matched-sample-method=top_agi_preserve, preserve households "
+            "with any tax unit at or above this adjusted gross income before "
+            "filling the remaining matched sample."
         ),
     )
     parser.add_argument("--holdout-target-fraction", type=float, default=0.2)
@@ -1142,6 +1169,7 @@ def main(argv: list[str] | None = None) -> int:
         matched_household_count=args.matched_household_count,
         random_seed=args.random_seed,
         matched_sample_method=args.matched_sample_method,
+        matched_top_agi_threshold=args.matched_top_agi_threshold,
         holdout_target_fraction=args.holdout_target_fraction,
         holdout_target_seed=args.holdout_target_seed,
         optimizer_max_iter=args.optimizer_max_iter,

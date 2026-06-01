@@ -577,6 +577,7 @@ def _write_matched_policyengine_us_baseline_dataset(
     household_count: int,
     random_seed: int,
     sample_method: str = "uniform",
+    top_agi_threshold: float = 1_000_000.0,
 ) -> str:
     period_key = str(period)
     arrays = _load_policyengine_us_period_arrays(
@@ -614,12 +615,20 @@ def _write_matched_policyengine_us_baseline_dataset(
             shutil.copy2(resolved_baseline_path, resolved_output_path)
         return str(resolved_output_path)
 
+    method = sample_method.lower().replace("-", "_")
+    household_priority = (
+        _household_top_tail_income_priority(arrays, household_ids)
+        if method == "top_agi_preserve"
+        else None
+    )
     sampled_household_ids = _sample_matched_household_ids(
         household_ids,
         household_weights,
         household_count=household_count,
         random_seed=random_seed,
         sample_method=sample_method,
+        household_priority=household_priority,
+        priority_threshold=top_agi_threshold,
     )
     household_mask = np.isin(household_ids, sampled_household_ids)
     person_mask = np.isin(
@@ -737,6 +746,8 @@ def _sample_matched_household_ids(
     household_count: int,
     random_seed: int,
     sample_method: str,
+    household_priority: np.ndarray | None = None,
+    priority_threshold: float = 1_000_000.0,
 ) -> np.ndarray:
     """Choose household IDs for a matched-size PE dataset copy."""
 
@@ -778,9 +789,254 @@ def _sample_matched_household_ids(
             .head(household_count)
             .to_numpy()
         )
+    if method == "top_agi_preserve":
+        if household_priority is None:
+            raise ValueError(
+                "top_agi_preserve matched sample requires household AGI priority"
+            )
+        priority = np.asarray(household_priority, dtype=np.float64)
+        if priority.shape[0] != household_ids.shape[0]:
+            raise ValueError(
+                "top_agi_preserve household priority length must match household ids"
+            )
+        priority = np.nan_to_num(priority, nan=-np.inf)
+        frame = pd.DataFrame(
+            {
+                "household_id": household_ids,
+                "priority": priority,
+            }
+        )
+        preserved = frame.loc[frame["priority"] >= float(priority_threshold)]
+        preserved = preserved.sort_values(
+            ["priority", "household_id"],
+            ascending=[False, True],
+            kind="mergesort",
+        )
+        if len(preserved) >= household_count:
+            return preserved["household_id"].head(household_count).to_numpy()
+
+        remaining_n = household_count - len(preserved)
+        remaining = frame.loc[~frame["household_id"].isin(preserved["household_id"])]
+        fill = (
+            remaining["household_id"]
+            .sample(
+                n=remaining_n,
+                replace=False,
+                random_state=random_seed,
+            )
+            .to_numpy()
+        )
+        return np.concatenate((preserved["household_id"].to_numpy(), fill))
     raise ValueError(
         "matched sample_method must be one of: uniform, weight_proportional, "
-        "largest_weight"
+        "largest_weight, top_agi_preserve"
+    )
+
+
+_TOP_TAIL_PRIORITY_INPUTS = (
+    "employment_income_before_lsr",
+    "self_employment_income_before_lsr",
+    "partnership_s_corp_income",
+    "partnership_se_income",
+    "farm_income",
+    "farm_operations_income",
+    "farm_rent_income",
+    "rental_income",
+    "estate_income",
+    "qualified_dividend_income",
+    "non_qualified_dividend_income",
+    "taxable_interest_income",
+    "tax_exempt_interest_income",
+    "long_term_capital_gains_before_response",
+    "short_term_capital_gains",
+    "non_sch_d_capital_gains",
+    "taxable_private_pension_income",
+    "taxable_ira_distributions",
+    "taxable_401k_distributions",
+    "taxable_403b_distributions",
+    "taxable_sep_distributions",
+)
+
+
+def _household_top_tail_income_priority(
+    arrays: dict[str, np.ndarray],
+    household_ids: np.ndarray,
+) -> np.ndarray:
+    """Return a household-level priority for preserving top-tail support."""
+
+    agi = arrays.get("adjusted_gross_income")
+    household_ids = np.asarray(household_ids)
+    if agi is not None:
+        agi = np.asarray(agi, dtype=np.float64)
+        if agi.shape[0] == household_ids.shape[0]:
+            return agi
+        return _tax_unit_values_to_household_max(
+            arrays=arrays,
+            values=agi,
+            household_ids=household_ids,
+            variable_name="adjusted_gross_income",
+        )
+
+    priority = np.zeros(len(household_ids), dtype=np.float64)
+    included_variables: list[str] = []
+    for variable_name in _TOP_TAIL_PRIORITY_INPUTS:
+        values = arrays.get(variable_name)
+        if values is None:
+            continue
+        household_values = _entity_values_to_household_sum(
+            arrays=arrays,
+            values=np.clip(np.asarray(values, dtype=np.float64), 0.0, None),
+            household_ids=household_ids,
+            variable_name=variable_name,
+        )
+        if household_values is None:
+            continue
+        priority += household_values
+        included_variables.append(variable_name)
+
+    if not included_variables:
+        raise ValueError(
+            "top_agi_preserve matched sample requires adjusted_gross_income "
+            "or at least one direct top-tail income input"
+        )
+    return priority
+
+
+def _tax_unit_values_to_household_max(
+    *,
+    arrays: dict[str, np.ndarray],
+    values: np.ndarray,
+    household_ids: np.ndarray,
+    variable_name: str,
+) -> np.ndarray:
+    tax_unit_ids = arrays.get("tax_unit_id")
+    person_tax_unit_ids = arrays.get("person_tax_unit_id")
+    person_household_ids = arrays.get("person_household_id")
+    if (
+        tax_unit_ids is None
+        or person_tax_unit_ids is None
+        or person_household_ids is None
+        or values.shape[0] != np.asarray(tax_unit_ids).shape[0]
+    ):
+        raise ValueError(
+            f"top_agi_preserve {variable_name} must be household-length "
+            "or tax-unit-length with person_tax_unit_id/person_household_id"
+        )
+
+    tax_unit_households = (
+        pd.DataFrame(
+            {
+                "tax_unit_id": np.asarray(person_tax_unit_ids),
+                "household_id": np.asarray(person_household_ids),
+            }
+        )
+        .drop_duplicates("tax_unit_id", keep="first")
+        .set_index("tax_unit_id")["household_id"]
+    )
+    tax_unit_frame = pd.DataFrame(
+        {
+            "tax_unit_id": np.asarray(tax_unit_ids),
+            "value": values,
+        }
+    )
+    tax_unit_frame["household_id"] = tax_unit_frame["tax_unit_id"].map(
+        tax_unit_households
+    )
+    household_values = tax_unit_frame.groupby("household_id", sort=False)[
+        "value"
+    ].max()
+    return (
+        household_values.reindex(household_ids)
+        .fillna(-np.inf)
+        .to_numpy(dtype=np.float64)
+    )
+
+
+def _entity_values_to_household_sum(
+    *,
+    arrays: dict[str, np.ndarray],
+    values: np.ndarray,
+    household_ids: np.ndarray,
+    variable_name: str,
+) -> np.ndarray | None:
+    if values.shape[0] == household_ids.shape[0]:
+        return values
+
+    person_household_ids = arrays.get("person_household_id")
+    if person_household_ids is not None and values.shape[0] == np.asarray(
+        person_household_ids
+    ).shape[0]:
+        household_values = pd.DataFrame(
+            {
+                "household_id": np.asarray(person_household_ids),
+                "value": values,
+            }
+        ).groupby("household_id", sort=False)["value"].sum()
+        return (
+            household_values.reindex(household_ids)
+            .fillna(0.0)
+            .to_numpy(dtype=np.float64)
+        )
+
+    tax_unit_ids = arrays.get("tax_unit_id")
+    if tax_unit_ids is not None and values.shape[0] == np.asarray(tax_unit_ids).shape[0]:
+        return _tax_unit_values_to_household_sum(
+            arrays=arrays,
+            values=values,
+            household_ids=household_ids,
+            variable_name=variable_name,
+        )
+
+    return None
+
+
+def _tax_unit_values_to_household_sum(
+    *,
+    arrays: dict[str, np.ndarray],
+    values: np.ndarray,
+    household_ids: np.ndarray,
+    variable_name: str,
+) -> np.ndarray:
+    tax_unit_ids = arrays.get("tax_unit_id")
+    person_tax_unit_ids = arrays.get("person_tax_unit_id")
+    person_household_ids = arrays.get("person_household_id")
+    if (
+        tax_unit_ids is None
+        or person_tax_unit_ids is None
+        or person_household_ids is None
+        or values.shape[0] != np.asarray(tax_unit_ids).shape[0]
+    ):
+        raise ValueError(
+            f"top_agi_preserve {variable_name} must be household-length "
+            "or tax-unit-length with person_tax_unit_id/person_household_id"
+        )
+
+    tax_unit_households = (
+        pd.DataFrame(
+            {
+                "tax_unit_id": np.asarray(person_tax_unit_ids),
+                "household_id": np.asarray(person_household_ids),
+            }
+        )
+        .drop_duplicates("tax_unit_id", keep="first")
+        .set_index("tax_unit_id")["household_id"]
+    )
+    tax_unit_frame = pd.DataFrame(
+        {
+            "tax_unit_id": np.asarray(tax_unit_ids),
+            "value": values,
+        }
+    )
+    tax_unit_frame["household_id"] = tax_unit_frame["tax_unit_id"].map(
+        tax_unit_households
+    )
+    household_values = tax_unit_frame.groupby("household_id", sort=False)[
+        "value"
+    ].sum()
+    return (
+        household_values.reindex(household_ids)
+        .fillna(0.0)
+        .to_numpy(dtype=np.float64)
     )
 
 

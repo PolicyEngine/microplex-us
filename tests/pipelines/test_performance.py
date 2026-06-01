@@ -736,6 +736,53 @@ def test_sample_matched_household_ids_supports_weighted_methods():
         random_seed=42,
         sample_method="largest_weight",
     ).tolist() == [20, 30]
+    assert (
+        _sample_matched_household_ids(
+            household_ids,
+            np.asarray([1.0, 1.0, 1.0]),
+            household_count=2,
+            random_seed=42,
+            sample_method="top_agi_preserve",
+            household_priority=np.asarray([75_000.0, 2_000_000.0, 125_000.0]),
+            priority_threshold=1_000_000.0,
+        ).tolist()[0]
+        == 20
+    )
+
+
+def test_write_matched_policyengine_us_baseline_dataset_preserves_top_agi_households(
+    tmp_path,
+):
+    baseline_path = tmp_path / "baseline.h5"
+    matched_path = tmp_path / "matched.h5"
+    write_policyengine_us_time_period_dataset(
+        {
+            "household_id": {"2024": [1, 2, 3, 4]},
+            "household_weight": {"2024": [1.0, 1.0, 1.0, 1.0]},
+            "person_id": {"2024": [101, 102, 103, 104, 105, 106]},
+            "person_household_id": {"2024": [1, 2, 2, 3, 4, 4]},
+            "tax_unit_id": {"2024": [11, 22, 23, 33, 44]},
+            "person_tax_unit_id": {"2024": [11, 22, 23, 33, 44, 44]},
+            "tax_unit_weight": {"2024": [1.0, 1.0, 1.0, 1.0, 1.0]},
+            "long_term_capital_gains_before_response": {
+                "2024": [50_000.0, 2_000_000.0, 10_000.0, 125_000.0, 1_000_000.0, 2_000_000.0]
+            },
+        },
+        baseline_path,
+    )
+
+    _write_matched_policyengine_us_baseline_dataset(
+        baseline_path,
+        matched_path,
+        period=2024,
+        household_count=2,
+        random_seed=42,
+        sample_method="top_agi_preserve",
+        top_agi_threshold=1_000_000.0,
+    )
+
+    matched_tables = load_policyengine_us_entity_tables(matched_path, period=2024)
+    assert matched_tables.households["household_id"].tolist() == [2, 4]
 
 
 def test_run_us_microplex_performance_harness_can_write_output_bundle(monkeypatch, tmp_path):

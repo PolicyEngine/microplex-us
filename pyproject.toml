@@ -67,6 +67,7 @@ microplex-us-pe-native-target-diagnostics = "microplex_us.pipelines.pe_native_sc
 microplex-us-r2-archive-artifact = "microplex_us.pipelines.r2_artifacts:main"
 microplex-us-reweight-cd-age-targets = "microplex_us.pipelines.cd_age_reweighting:main"
 microplex-us-score-pe-native-loss = "microplex_us.pipelines.pe_native_scores:main"
+microplex-us-write-transparency-sidecars = "microplex_us.pipelines.transparency_sidecars:main"
 microplex-us-version-bump-benchmark = "microplex_us.pipelines.version_benchmark:main"
 
 [tool.hatch.build.targets.wheel]

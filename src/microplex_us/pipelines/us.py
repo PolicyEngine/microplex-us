@@ -1600,6 +1600,18 @@ class USMicroplexBuildConfig:
     """Normalized Forbes fixed-spine records to append after calibration."""
     forbes_fixed_spine_snapshot_id: str = "forbes-us-top-tail"
     forbes_fixed_spine_replicates_per_unit: int = 10
+    policyengine_assign_block_geography: bool = True
+    """Assign Census block geography to exported households.
+
+    When enabled (default), the PolicyEngine entity-table build draws a real
+    15-digit ``block_geoid`` for each household from the population-weighted
+    block-probabilities crosswalk, then derives ``tract_geoid`` (the 11-char
+    block prefix) and the integer ``congressional_district_geoid``. This mirrors
+    the enhanced-CPS block-assignment method so the export carries the same three
+    GEOID leaves. Silently skipped when the crosswalk data is unavailable.
+    """
+    block_probabilities_path: str | Path | None = None
+    """Optional override path to the block-probabilities crosswalk parquet."""
 
     def __post_init__(self) -> None:
         if (
@@ -6082,7 +6094,66 @@ class USMicroplexPipeline:
             .agg(aggregations)
             .rename(columns={"weight": "household_weight"})
         )
+        households = self._assign_household_block_geography(households)
         return households
+
+    def _assign_household_block_geography(
+        self,
+        households: pd.DataFrame,
+    ) -> pd.DataFrame:
+        """Attach block_geoid/tract_geoid/congressional_district_geoid to households.
+
+        Draws a real Census block per household from the population-weighted
+        crosswalk (partitioned by the household's CPS county when disclosed, then by
+        an existing congressional district, then by state), derives
+        ``tract_geoid = block_geoid[:11]`` and the integer
+        ``congressional_district_geoid``. Mirrors the enhanced-CPS block assignment so
+        the export carries the same GEOID leaves. No-op when disabled or when
+        ``state_fips`` / the crosswalk data is unavailable — geoids are never
+        fabricated.
+        """
+        if not self.config.policyengine_assign_block_geography:
+            return households
+        if "state_fips" not in households.columns or households.empty:
+            return households
+        try:
+            from microplex_us.geography import (
+                BLOCK_GEOID_LEN,
+                BlockGeography,
+                assign_household_block_geography,
+                default_runtime_block_probabilities_path,
+            )
+        except ImportError:
+            return households
+
+        configured_path = self.config.block_probabilities_path
+        crosswalk_path = (
+            Path(configured_path)
+            if configured_path is not None
+            else default_runtime_block_probabilities_path()
+        )
+        if crosswalk_path is None or not Path(crosswalk_path).exists():
+            _emit_us_pipeline_progress(
+                "block_geography_skipped",
+                reason="crosswalk_unavailable",
+                path=str(crosswalk_path) if crosswalk_path is not None else None,
+            )
+            return households
+
+        geography = BlockGeography(crosswalk_path, lazy_load=False)
+        assigned = assign_household_block_geography(
+            households,
+            block_geography=geography,
+            random_state=self.config.random_seed,
+        )
+        _emit_us_pipeline_progress(
+            "block_geography_assigned",
+            households=int(len(assigned)),
+            assigned_blocks=int(
+                assigned["block_geoid"].astype(str).str.len().eq(BLOCK_GEOID_LEN).sum()
+            ),
+        )
+        return assigned
 
     def _build_policyengine_tax_units(
         self,

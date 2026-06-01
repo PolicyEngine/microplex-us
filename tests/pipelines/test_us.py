@@ -3,6 +3,7 @@
 import json
 import logging
 import sqlite3
+from pathlib import Path
 from types import SimpleNamespace
 
 import h5py
@@ -806,6 +807,67 @@ class TestUSMicroplexPipeline:
         assert set(tables.tax_units["filing_status"]).issubset(
             {"SINGLE", "JOINT", "SEPARATE", "HEAD_OF_HOUSEHOLD", "SURVIVING_SPOUSE"}
         )
+
+    def test_build_policyengine_entity_tables_assigns_block_geography(self):
+        from microplex_us.geography import default_runtime_block_probabilities_path
+
+        crosswalk_path = default_runtime_block_probabilities_path()
+        if crosswalk_path is None or not Path(crosswalk_path).exists():
+            pytest.skip("Block probabilities crosswalk not available")
+
+        pipeline = USMicroplexPipeline(USMicroplexBuildConfig())
+        population = pd.DataFrame(
+            {
+                "person_id": [1, 2, 3, 4],
+                "household_id": [10, 10, 20, 30],
+                "weight": [1.0, 1.0, 2.0, 3.0],
+                "age": [45, 12, 70, 33],
+                "income": [60_000.0, 0.0, 25_000.0, 40_000.0],
+                "relationship_to_head": [0, 2, 0, 0],
+                "state_fips": [6, 6, 36, 17],
+                "county_fips": ["06037", "06037", "36061", "17031"],
+            }
+        )
+
+        tables = pipeline.build_policyengine_entity_tables(population)
+        households = tables.households.sort_values("household_id").reset_index(
+            drop=True
+        )
+
+        for leaf in ("block_geoid", "tract_geoid", "congressional_district_geoid"):
+            assert leaf in households.columns
+
+        block = households["block_geoid"].astype(str)
+        tract = households["tract_geoid"].astype(str)
+        # Real 15-digit blocks; tract is the true 11-char prefix.
+        assert (block.str.len() == 15).all()
+        assert (tract == block.str[:11]).all()
+        # County-partitioned draw lands each household in its CPS county.
+        assert (block.str[:5] == households["county_fips"].astype(str)).all()
+        # CD GEOID resolves and is consistent with the household state.
+        cd = households["congressional_district_geoid"]
+        assert cd.notna().all()
+        assert ((cd // 100).astype(int) == households["state_fips"].astype(int)).all()
+
+    def test_build_policyengine_entity_tables_can_disable_block_geography(self):
+        config = USMicroplexBuildConfig(policyengine_assign_block_geography=False)
+        pipeline = USMicroplexPipeline(config)
+        population = pd.DataFrame(
+            {
+                "person_id": [1, 2],
+                "household_id": [10, 20],
+                "weight": [1.0, 2.0],
+                "age": [45, 70],
+                "income": [60_000.0, 25_000.0],
+                "relationship_to_head": [0, 0],
+                "state_fips": [6, 36],
+                "county_fips": ["06037", "36061"],
+            }
+        )
+
+        tables = pipeline.build_policyengine_entity_tables(population)
+        assert "block_geoid" not in tables.households.columns
+        assert "tract_geoid" not in tables.households.columns
 
     def test_build_policyengine_entity_tables_preserves_household_contract_inputs(
         self,

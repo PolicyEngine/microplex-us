@@ -351,6 +351,14 @@ SAFE_POLICYENGINE_US_EXPORT_VARIABLES: set[str] = {
     "tenure_type",
     "state_fips",
     "county_fips",
+    # Census block geography GEOID leaves, mirroring the enhanced-CPS export.
+    # All three are storable INPUT variables in policyengine-us (no formula):
+    # block_geoid/tract_geoid are strings, congressional_district_geoid is the
+    # integer SSDD GEOID. tract_geoid is exported as the true 11-char prefix of
+    # block_geoid; congressional_district_geoid is derived from the block's CD.
+    "block_geoid",
+    "tract_geoid",
+    "congressional_district_geoid",
 } | set(POLICYENGINE_US_TAKEUP_INPUT_VARIABLES)
 
 POLICYENGINE_US_EXPORT_COLUMN_ALIASES: dict[str, str] = {

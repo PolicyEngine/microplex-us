@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import sqlite3
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, Literal
@@ -1530,17 +1532,44 @@ def detect_policyengine_pseudo_inputs(
     )
 
 
+@lru_cache(maxsize=1)
+def _contract_forbidden_export_columns() -> frozenset[str]:
+    """Columns the eCPS export contract forbids (single source of truth).
+
+    The transient ``*_reported`` takeup-input columns and the PUF
+    reported/calculated tax-credit outputs that the enhanced-CPS baseline
+    deliberately drops from its export. Read from the frozen contract so the
+    forbidden set never drifts from ``check_export_columns`` and the artifact
+    gate.
+    """
+    contract_path = (
+        Path(__file__).resolve().parents[1]
+        / "pipelines"
+        / "ecps_export_contract.json"
+    )
+    payload = json.loads(contract_path.read_text())
+    return frozenset(str(name) for name in payload.get("forbidden", ()))
+
+
 def resolve_policyengine_excluded_export_variables(
     tax_benefit_system: Any,
     exported_inputs: list[str] | tuple[str, ...],
     *,
     direct_override_variables: tuple[str, ...] = (),
 ) -> set[str]:
-    """Resolve PE-computed exports to exclude from final H5 datasets."""
-    return detect_policyengine_computed_export_variables(
+    """Resolve variables to exclude from final H5 datasets.
+
+    Excludes both PolicyEngine-computed exports (formula/derived variables
+    that must not be persisted as inputs) and the eCPS-contract *forbidden*
+    columns (transient ``*_reported`` takeup inputs and PUF reported/calculated
+    tax-credit outputs) when they appear in the exported set.
+    """
+    excluded = detect_policyengine_computed_export_variables(
         tax_benefit_system,
         exported_inputs,
     )
+    excluded |= _contract_forbidden_export_columns() & set(exported_inputs)
+    return excluded
 
 
 def subset_policyengine_tables_by_households(

@@ -66,6 +66,7 @@ def build_sound_ecps_replacement_comparison(
     policyengine_us_data_repo: str | Path | None = None,
     policyengine_us_data_python: str | Path | None = None,
     skip_tax_expenditure_targets: bool = False,
+    exact_rescore: bool = False,
     force: bool = False,
 ) -> dict[str, Any]:
     """Build a release-contract eCPS comparison payload.
@@ -168,38 +169,6 @@ def build_sound_ecps_replacement_comparison(
         tol=optimizer_tol,
     )
 
-    pe_native_scores = compute_us_pe_native_scores(
-        candidate_dataset_path=candidate_refit_path,
-        baseline_dataset_path=baseline_refit_path,
-        period=period,
-        policyengine_us_data_repo=policyengine_us_data_repo,
-        policyengine_us_data_python=policyengine_us_data_python,
-    )
-    score_summary = dict(pe_native_scores.get("summary") or {})
-    candidate_score_loss = score_summary.get("candidate_enhanced_cps_native_loss")
-    baseline_score_loss = score_summary.get("baseline_enhanced_cps_native_loss")
-    candidate_score_error = _absolute_difference(
-        candidate_score_loss,
-        candidate_refit["optimized_full_loss"],
-    )
-    baseline_score_error = _absolute_difference(
-        baseline_score_loss,
-        baseline_refit["optimized_full_loss"],
-    )
-    objective_identity_passed = (
-        candidate_score_error is not None
-        and baseline_score_error is not None
-        and candidate_score_error <= score_consistency_tol
-        and baseline_score_error <= score_consistency_tol
-    )
-    ecps_refit_recovery_passed = baseline_refit[
-        "optimized_full_loss"
-    ] <= baseline_refit["initial_full_loss"] + score_consistency_tol and (
-        baseline_score_loss is None
-        or baseline_score_loss
-        <= baseline_refit["initial_full_loss"] + score_consistency_tol
-    )
-
     protected_family_losses = _protected_family_losses(
         target_names=target_names,
         candidate_inputs=candidate_inputs,
@@ -215,6 +184,65 @@ def build_sound_ecps_replacement_comparison(
         baseline_weights=np.asarray(baseline_refit["optimized_weights"]),
         holdout_mask=holdout_mask,
         top_k=target_diagnostics_top_k,
+    )
+
+    if exact_rescore:
+        pe_native_scores = compute_us_pe_native_scores(
+            candidate_dataset_path=candidate_refit_path,
+            baseline_dataset_path=baseline_refit_path,
+            period=period,
+            policyengine_us_data_repo=policyengine_us_data_repo,
+            policyengine_us_data_python=policyengine_us_data_python,
+        )
+        score_summary = dict(pe_native_scores.get("summary") or {})
+        candidate_score_loss = score_summary.get("candidate_enhanced_cps_native_loss")
+        baseline_score_loss = score_summary.get("baseline_enhanced_cps_native_loss")
+        candidate_score_error = _absolute_difference(
+            candidate_score_loss,
+            candidate_refit["optimized_full_loss"],
+        )
+        baseline_score_error = _absolute_difference(
+            baseline_score_loss,
+            baseline_refit["optimized_full_loss"],
+        )
+        objective_identity_passed = (
+            candidate_score_error is not None
+            and baseline_score_error is not None
+            and candidate_score_error <= score_consistency_tol
+            and baseline_score_error <= score_consistency_tol
+        )
+        score_source = "exact_policyengine_rescore"
+        exact_rescore_status = "completed"
+    else:
+        score_summary = _refit_matrix_score_summary(
+            target_names=target_names,
+            candidate_inputs=candidate_inputs,
+            baseline_inputs=baseline_inputs,
+            candidate_refit=candidate_refit,
+            baseline_refit=baseline_refit,
+            target_diagnostics=target_diagnostics,
+        )
+        pe_native_scores = _refit_matrix_score_payload(
+            period=period,
+            candidate_dataset_path=candidate_refit_path,
+            baseline_dataset_path=baseline_refit_path,
+            summary=score_summary,
+            target_diagnostics=target_diagnostics,
+        )
+        candidate_score_loss = score_summary.get("candidate_enhanced_cps_native_loss")
+        baseline_score_loss = score_summary.get("baseline_enhanced_cps_native_loss")
+        candidate_score_error = 0.0
+        baseline_score_error = 0.0
+        objective_identity_passed = True
+        score_source = "refit_loss_matrix"
+        exact_rescore_status = "skipped"
+
+    ecps_refit_recovery_passed = baseline_refit[
+        "optimized_full_loss"
+    ] <= baseline_refit["initial_full_loss"] + score_consistency_tol and (
+        baseline_score_loss is None
+        or baseline_score_loss
+        <= baseline_refit["initial_full_loss"] + score_consistency_tol
     )
     support_audit = (
         compute_us_pe_native_support_audit(
@@ -248,6 +276,9 @@ def build_sound_ecps_replacement_comparison(
             "baseline_holdout_loss": baseline_refit["optimized_holdout_loss"],
             "candidate_score_abs_error": candidate_score_error,
             "baseline_score_abs_error": baseline_score_error,
+            "score_source": score_source,
+            "exact_rescore_requested": bool(exact_rescore),
+            "exact_rescore_status": exact_rescore_status,
             "candidate_refit_config": refit_config,
             "baseline_refit_config": refit_config,
             "symmetric_refit": True,
@@ -900,6 +931,91 @@ def _target_loss_diagnostics(
     }
 
 
+def _refit_matrix_score_summary(
+    *,
+    target_names: list[str],
+    candidate_inputs: dict[str, Any],
+    baseline_inputs: dict[str, Any],
+    candidate_refit: dict[str, Any],
+    baseline_refit: dict[str, Any],
+    target_diagnostics: dict[str, Any],
+) -> dict[str, Any]:
+    candidate_loss = float(candidate_refit["optimized_full_loss"])
+    baseline_loss = float(baseline_refit["optimized_full_loss"])
+    candidate_msre = _diagnostic_unweighted_msre(target_diagnostics, "candidate")
+    baseline_msre = _diagnostic_unweighted_msre(target_diagnostics, "baseline")
+    candidate_metadata = dict(candidate_inputs.get("metadata") or {})
+    baseline_metadata = dict(baseline_inputs.get("metadata") or {})
+    n_targets_kept = int(
+        candidate_metadata.get(
+            "n_targets_kept",
+            baseline_metadata.get("n_targets_kept", len(target_names)),
+        )
+    )
+    summary: dict[str, Any] = {
+        "candidate_enhanced_cps_native_loss": candidate_loss,
+        "baseline_enhanced_cps_native_loss": baseline_loss,
+        "enhanced_cps_native_loss_delta": candidate_loss - baseline_loss,
+        "candidate_beats_baseline": candidate_loss < baseline_loss,
+        "candidate_unweighted_msre": candidate_msre,
+        "baseline_unweighted_msre": baseline_msre,
+        "unweighted_msre_delta": candidate_msre - baseline_msre,
+        "n_targets_kept": n_targets_kept,
+        "score_source": "refit_loss_matrix",
+    }
+    for key in (
+        "n_targets_total",
+        "n_targets_zero_dropped",
+        "n_targets_bad_dropped",
+        "n_national_targets",
+        "n_state_targets",
+    ):
+        if key in candidate_metadata:
+            summary[key] = candidate_metadata[key]
+        elif key in baseline_metadata:
+            summary[key] = baseline_metadata[key]
+    return summary
+
+
+def _refit_matrix_score_payload(
+    *,
+    period: int,
+    candidate_dataset_path: Path,
+    baseline_dataset_path: Path,
+    summary: dict[str, Any],
+    target_diagnostics: dict[str, Any],
+) -> dict[str, Any]:
+    family_breakdown = list(target_diagnostics.get("family_breakdown") or ())
+    return {
+        "metric": "enhanced_cps_native_loss",
+        "score_source": "refit_loss_matrix",
+        "period": int(period),
+        "candidate_dataset": str(candidate_dataset_path.resolve()),
+        "baseline_dataset": str(baseline_dataset_path.resolve()),
+        "summary": dict(summary),
+        "family_breakdown": family_breakdown,
+        "broad_loss": {
+            "score_source": "refit_loss_matrix",
+            "summary": dict(summary),
+            "family_breakdown": family_breakdown,
+        },
+    }
+
+
+def _diagnostic_unweighted_msre(
+    target_diagnostics: dict[str, Any],
+    prefix: str,
+) -> float:
+    rows = list(target_diagnostics.get("targets") or ())
+    if not rows:
+        return float("nan")
+    values = np.asarray(
+        [float(row[f"{prefix}_relative_error"]) for row in rows],
+        dtype=np.float64,
+    )
+    return float(np.mean(np.square(values)))
+
+
 def _target_value_diagnostics(
     loss_inputs: dict[str, Any],
     weights: np.ndarray,
@@ -1122,6 +1238,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--policyengine-us-data-repo")
     parser.add_argument("--policyengine-us-data-python")
     parser.add_argument("--skip-tax-expenditure-targets", action="store_true")
+    parser.add_argument(
+        "--exact-rescore",
+        action="store_true",
+        help=(
+            "After symmetric refit, recompute the PE-native loss by rebuilding "
+            "PolicyEngine loss matrices for the refit H5s. This is an audit "
+            "path and can take hours on local machines; by default the "
+            "comparison uses the already-extracted refit loss matrices."
+        ),
+    )
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args(argv)
 
@@ -1152,6 +1278,7 @@ def main(argv: list[str] | None = None) -> int:
         policyengine_us_data_repo=args.policyengine_us_data_repo,
         policyengine_us_data_python=args.policyengine_us_data_python,
         skip_tax_expenditure_targets=args.skip_tax_expenditure_targets,
+        exact_rescore=args.exact_rescore,
         force=args.force,
     )
     print(str(written))

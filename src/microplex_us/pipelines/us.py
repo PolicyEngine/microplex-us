@@ -73,6 +73,11 @@ from microplex_us.pipelines.pe_l0 import PolicyEngineL0Calibrator
 from microplex_us.pipelines.pe_native_optimization import (
     optimize_policyengine_us_native_loss_dataset,
 )
+from microplex_us.pipelines.stage_run import (
+    USDiagnosticOutput,
+    USSourceLoadingOutputs,
+)
+from microplex_us.pipelines.stage_runtime import USStageRuntimeWriter
 from microplex_us.policyengine.aotc import (
     qualifying_expenses_from_american_opportunity_credit,
 )
@@ -1951,11 +1956,65 @@ class USMicroplexBuildResult:
         return float(self.calibrated_data["weight"].sum())
 
 
+def _source_loading_stage_outputs(
+    frames: list[ObservationFrame],
+) -> USSourceLoadingOutputs:
+    frame_summaries: list[dict[str, Any]] = []
+    relationship_summaries: dict[str, list[dict[str, Any]]] = {}
+    source_names: list[str] = []
+    for frame in frames:
+        source_names.append(frame.source.name)
+        table_rows = {
+            entity.value: int(len(table)) for entity, table in frame.tables.items()
+        }
+        frame_summaries.append(
+            {
+                "source": frame.source.name,
+                "tables": table_rows,
+                "relationship_count": len(frame.relationships),
+            }
+        )
+        relationship_summaries[frame.source.name] = [
+            {
+                "parentEntity": relationship.parent_entity.value,
+                "childEntity": relationship.child_entity.value,
+                "parentKey": relationship.parent_key,
+                "childKey": relationship.child_key,
+                "cardinality": relationship.cardinality,
+            }
+            for relationship in frame.relationships
+        ]
+    return USSourceLoadingOutputs(
+        observation_frame_summary={
+            "source_count": len(frames),
+            "frames": frame_summaries,
+        },
+        source_descriptors=tuple(dict.fromkeys(source_names)),
+        source_relationships=relationship_summaries,
+        diagnostics={
+            "stage_summary": USDiagnosticOutput(
+                key="stage_summary",
+                description="Runtime source-loading summary.",
+                summary={
+                    "source_names": source_names,
+                    "source_count": len(frames),
+                },
+            )
+        },
+    )
+
+
 class USMicroplexPipeline:
     """End-to-end build orchestration for a US microplex dataset."""
 
-    def __init__(self, config: USMicroplexBuildConfig | None = None):
+    def __init__(
+        self,
+        config: USMicroplexBuildConfig | None = None,
+        *,
+        stage_runtime_writer: USStageRuntimeWriter | None = None,
+    ):
         self.config = config or USMicroplexBuildConfig()
+        self.stage_runtime_writer = stage_runtime_writer
 
     def build_from_data_dir(self, data_dir: str | Path) -> USMicroplexBuildResult:
         from microplex_us.data_sources.cps import (
@@ -2005,12 +2064,23 @@ class USMicroplexPipeline:
                 "USMicroplexPipeline requires at least one source provider"
             )
 
+        if self.stage_runtime_writer is not None:
+            self.stage_runtime_writer.start_stage("02_source_loading")
         frames: list[ObservationFrame] = []
-        for provider in providers:
-            frame = provider.load_frame(
-                self._resolve_source_query(provider, queries or {})
+        try:
+            for provider in providers:
+                frame = provider.load_frame(
+                    self._resolve_source_query(provider, queries or {})
+                )
+                frames.append(frame)
+        except Exception as exc:
+            if self.stage_runtime_writer is not None:
+                self.stage_runtime_writer.fail_stage("02_source_loading", exc)
+            raise
+        if self.stage_runtime_writer is not None:
+            self.stage_runtime_writer.complete_stage(
+                _source_loading_stage_outputs(frames)
             )
-            frames.append(frame)
         return self.build_from_frames(frames)
 
     def build_from_frame(self, frame: ObservationFrame) -> USMicroplexBuildResult:

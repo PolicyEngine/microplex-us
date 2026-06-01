@@ -32,6 +32,14 @@ _BASE_STAGE_MANIFEST_FIELDS = {
     "auxiliary_artifacts",
     "metadata",
     "complete",
+    "lifecycle_status",
+    "started_at",
+    "updated_at",
+    "completed_at",
+    "failed_at",
+    "deferred_reason",
+    "failure",
+    "events",
     "stage_id",
 }
 

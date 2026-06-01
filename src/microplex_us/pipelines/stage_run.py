@@ -31,11 +31,16 @@ from microplex_us.pipelines.stage_manifest import (
     write_us_stage_manifest,
     write_us_validation_evidence_manifest,
 )
+from microplex_us.pipelines.stage_manifest_types import (
+    USStageFailureRecord,
+    USStageLifecycleStatus,
+    USStageRuntimeEventRecord,
+)
 from microplex_us.pipelines.stage_readiness import (
     write_us_conditional_readiness_report,
 )
 
-US_STAGE_OUTPUT_MANIFEST_SCHEMA_VERSION = 1
+US_STAGE_OUTPUT_MANIFEST_SCHEMA_VERSION = 2
 
 USArtifactCategory = Literal[
     "required_output",
@@ -188,6 +193,14 @@ class USStageOutputManifest:
     auxiliary_artifacts: Mapping[str, USAuxiliaryArtifact] = field(default_factory=dict)
     metadata: Mapping[str, Any] = field(default_factory=dict)
     complete: bool = True
+    lifecycle_status: USStageLifecycleStatus | None = None
+    started_at: str | None = None
+    updated_at: str | None = None
+    completed_at: str | None = None
+    failed_at: str | None = None
+    deferred_reason: str | None = None
+    failure: USStageFailureRecord | None = None
+    events: tuple[USStageRuntimeEventRecord, ...] = ()
     stage_id: str = field(default="", init=False)
 
     def required_output_keys(self) -> tuple[str, ...]:
@@ -247,6 +260,14 @@ class USStageOutputManifest:
                 "auxiliary_artifacts",
                 "metadata",
                 "complete",
+                "lifecycle_status",
+                "started_at",
+                "updated_at",
+                "completed_at",
+                "failed_at",
+                "deferred_reason",
+                "failure",
+                "events",
                 "stage_id",
             }
         }
@@ -255,6 +276,14 @@ class USStageOutputManifest:
             "contractVersion": self.contract_version,
             "stageId": self.stage_id,
             "complete": self.complete,
+            "lifecycleStatus": self.resolved_lifecycle_status(),
+            "startedAt": self.started_at,
+            "updatedAt": self.updated_at,
+            "completedAt": self.completed_at,
+            "failedAt": self.failed_at,
+            "deferredReason": self.deferred_reason,
+            "failure": self.failure,
+            "events": [_serialize_value(event, artifact_root) for event in self.events],
             "inputStageManifest": input_stage_manifest
             or _optional_str(self.input_stage_manifest),
             "inputOverrides": [
@@ -271,6 +300,13 @@ class USStageOutputManifest:
             "auxiliaryArtifacts": auxiliary,
             "metadata": dict(self.metadata),
         }
+
+    def resolved_lifecycle_status(self) -> USStageLifecycleStatus:
+        """Return explicit lifecycle state or the legacy completion default."""
+
+        if self.lifecycle_status is not None:
+            return self.lifecycle_status
+        return "complete" if self.complete else "pending"
 
 
 @dataclass(frozen=True)
@@ -1019,6 +1055,16 @@ def build_us_stage_output_manifests_from_artifact_manifest(
                 stage_summary=benchmark_summary,
             ),
             complete=bool(has_benchmark),
+            lifecycle_status=(
+                "complete" if has_benchmark else "deferred" if has_dataset else None
+            ),
+            deferred_reason=(
+                None
+                if has_benchmark
+                else "Stage 8 dataset exists, but validation or benchmark evidence is not attached."
+                if has_dataset
+                else None
+            ),
         ),
     )
 
@@ -1455,7 +1501,10 @@ __all__ = [
     "USStageInputOverride",
     "USStageInputValidationSettings",
     "USStageInputValidator",
+    "USStageFailureRecord",
+    "USStageLifecycleStatus",
     "USStageOutputManifest",
+    "USStageRuntimeEventRecord",
     "USStageRunWriter",
     "USValidationBenchmarkingOutputs",
     "build_us_stage_output_manifests_from_artifact_manifest",

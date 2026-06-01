@@ -10,8 +10,8 @@ from microplex_us.pipelines.stage_contracts import (
     StageResumeMode,
 )
 
-US_STAGE_MANIFEST_SCHEMA_VERSION = 2
-SUPPORTED_US_STAGE_MANIFEST_SCHEMA_VERSIONS = frozenset({1, 2})
+US_STAGE_MANIFEST_SCHEMA_VERSION = 3
+SUPPORTED_US_STAGE_MANIFEST_SCHEMA_VERSIONS = frozenset({1, 2, 3})
 US_STAGE_ARTIFACT_ROOT = "stage_artifacts"
 US_POLICYENGINE_ENTITY_STAGE_ID = "06_policyengine_entities"
 US_VALIDATION_STAGE_ID = "09_validation_benchmarking"
@@ -28,6 +28,13 @@ USStageStatus = Literal[
 ]
 
 USStageValidationStatus = Literal["planned", "manual", "implemented"]
+USStageLifecycleStatus = Literal[
+    "pending",
+    "running",
+    "complete",
+    "failed",
+    "deferred",
+]
 
 
 class USStageMetric(TypedDict):
@@ -67,6 +74,22 @@ class USStageValidationRecord(TypedDict):
     status: USStageValidationStatus
 
 
+class USStageFailureRecord(TypedDict, total=False):
+    """Runtime failure details for one stage."""
+
+    errorType: str
+    message: str
+    traceback: str | None
+
+
+class USStageRuntimeEventRecord(TypedDict, total=False):
+    """Compact runtime event included in a stage output manifest."""
+
+    event: str
+    timestamp: str
+    details: dict[str, Any]
+
+
 class USStageResourceRecord(TypedDict):
     """Saved-run view of one structured stage input or output."""
 
@@ -88,6 +111,15 @@ class USStageRecord(TypedDict):
     title: str
     purpose: str
     status: USStageStatus
+    lifecycleStatus: USStageLifecycleStatus
+    outputManifest: str | None
+    startedAt: str | None
+    updatedAt: str | None
+    completedAt: str | None
+    failedAt: str | None
+    deferredReason: str | None
+    failure: USStageFailureRecord | None
+    events: list[USStageRuntimeEventRecord]
     consumes: list[str]
     produces: list[str]
     inputs: list[USStageResourceRecord]
@@ -149,12 +181,15 @@ __all__ = [
     "US_STAGE_MANIFEST_SCHEMA_VERSION",
     "US_VALIDATION_STAGE_ID",
     "USStageArtifactRecord",
+    "USStageFailureRecord",
+    "USStageLifecycleStatus",
     "USStageManifest",
     "USStageMetric",
     "USStageMetricValue",
     "USStageRecord",
     "USStageResourceRecord",
     "USStageResumeRecord",
+    "USStageRuntimeEventRecord",
     "USStageStatus",
     "USStageValidationRecord",
     "USStageValidationStatus",

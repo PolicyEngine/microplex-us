@@ -3,6 +3,7 @@
 import json
 import sqlite3
 from pathlib import Path
+from types import SimpleNamespace
 
 import h5py
 import pandas as pd
@@ -10,6 +11,7 @@ from microplex.core import EntityType
 from microplex.targets import StaticTargetProvider, TargetQuery, TargetSet, TargetSpec
 
 from microplex_us.pipelines.artifacts import (
+    build_and_save_versioned_us_microplex_from_source_providers,
     replay_us_microplex_policyengine_stage_from_artifact,
     save_us_microplex_artifacts,
 )
@@ -26,6 +28,65 @@ from microplex_us.policyengine import (
     compute_policyengine_us_definition_hash,
     write_policyengine_us_time_period_dataset,
 )
+
+
+def test_source_provider_versioned_build_initializes_live_stage_writer(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class FakePipeline:
+        def __init__(self, config, *, stage_runtime_writer=None):
+            captured["config"] = config
+            captured["pipeline_stage_runtime_writer"] = stage_runtime_writer
+
+        def build_from_source_providers(self, providers, queries=None):
+            captured["providers"] = providers
+            captured["queries"] = queries
+            return "build-result"
+
+    def fake_finalize(build_result, **kwargs):
+        captured["build_result"] = build_result
+        captured["finalize_stage_runtime_writer"] = kwargs.get("stage_runtime_writer")
+        captured.update(kwargs)
+        return "finalized"
+
+    monkeypatch.setattr(
+        "microplex_us.pipelines.artifacts.USMicroplexPipeline",
+        FakePipeline,
+    )
+    monkeypatch.setattr(
+        "microplex_us.pipelines.artifacts._finalize_versioned_build_artifacts",
+        fake_finalize,
+    )
+    provider = SimpleNamespace(descriptor=SimpleNamespace(name="unit_source"))
+
+    result = build_and_save_versioned_us_microplex_from_source_providers(
+        [provider],
+        tmp_path,
+        config=USMicroplexBuildConfig(calibration_backend="none"),
+        version_id="runtime-test",
+    )
+
+    output_dir = tmp_path / "runtime-test"
+    stage1_manifest = json.loads(
+        (
+            output_dir / "stage_artifacts" / "manifests" / "01_run_profile.json"
+        ).read_text()
+    )
+
+    assert result == "finalized"
+    assert captured["build_result"] == "build-result"
+    assert captured["preallocated_output_dir"] == output_dir
+    assert (
+        captured["pipeline_stage_runtime_writer"]
+        is captured["finalize_stage_runtime_writer"]
+    )
+    assert stage1_manifest["lifecycleStatus"] == "complete"
+    assert stage1_manifest["outputs"]["provider_query_plan"]["provider_names"] == [
+        "unit_source"
+    ]
 
 
 def test_replay_policyengine_stage_from_artifact_uses_saved_synthetic(
@@ -115,7 +176,11 @@ def test_replay_policyengine_stage_from_artifact_uses_saved_synthetic(
             captured["tables"] = tables
             calibrated = captured["table_input"].copy()
             calibrated["weight"] = calibrated["weight"] * 2.0
-            return "policyengine_tables", calibrated, {"backend": "policyengine_db_none"}
+            return (
+                "policyengine_tables",
+                calibrated,
+                {"backend": "policyengine_db_none"},
+            )
 
     monkeypatch.setattr(
         "microplex_us.pipelines.artifacts.USMicroplexPipeline",
@@ -244,7 +309,9 @@ class TestSaveUSMicroplexArtifacts:
             seed_data=pd.DataFrame({"income": [10.0], "hh_weight": [1.0]}),
             scaffold_seed_data=pd.DataFrame({"income": [10.0], "hh_weight": [1.0]}),
             synthetic_data=pd.DataFrame({"income": [10.0, 20.0], "weight": [1.0, 1.0]}),
-            calibrated_data=pd.DataFrame({"income": [10.0, 20.0], "weight": [0.5, 1.5]}),
+            calibrated_data=pd.DataFrame(
+                {"income": [10.0, 20.0], "weight": [0.5, 1.5]}
+            ),
             targets=USMicroplexTargets(
                 marginal={"state": {"CA": 2.0}},
                 continuous={"income": 30.0},
@@ -351,12 +418,14 @@ class TestSaveUSMicroplexArtifacts:
             for record in artifact_inventory["artifacts"]
         }
         assert inventory_records[("01_run_profile", "manifest")]["exists"] is True
-        assert inventory_records[
-            ("08_dataset_assembly", "policyengine_dataset")
-        ]["classification"] == "post_artifact_evidence"
+        assert (
+            inventory_records[("08_dataset_assembly", "policyengine_dataset")][
+                "classification"
+            ]
+            == "post_artifact_evidence"
+        )
         readiness = {
-            stage["stageId"]: stage
-            for stage in conditional_readiness["stages"]
+            stage["stageId"]: stage for stage in conditional_readiness["stages"]
         }
         assert readiness["09_validation_benchmarking"]["readiness"] == (
             "post_artifact_evidence"
@@ -367,8 +436,7 @@ class TestSaveUSMicroplexArtifacts:
         )
         assert source_diagnostics["summary"]["support_household_weight_share"] == 0.0
         assert (
-            source_diagnostics["summary"]["puf_support_household_weight_share"]
-            == 0.0
+            source_diagnostics["summary"]["puf_support_household_weight_share"] == 0.0
         )
         assert source_diagnostics["summary"]["total_household_weight"] == 2.0
         assert source_diagnostics["summary"]["total_person_weight"] == 2.0
@@ -539,7 +607,9 @@ class TestSaveUSMicroplexArtifacts:
                 ),
                 spm_units=pd.DataFrame({"spm_unit_id": [20], "household_id": [1]}),
                 families=pd.DataFrame({"family_id": [30], "household_id": [1]}),
-                marital_units=pd.DataFrame({"marital_unit_id": [40], "household_id": [1]}),
+                marital_units=pd.DataFrame(
+                    {"marital_unit_id": [40], "household_id": [1]}
+                ),
             ),
         )
         baseline_dataset = _write_baseline_dataset(
@@ -602,7 +672,9 @@ class TestSaveUSMicroplexArtifacts:
             ),
             seed_data=pd.DataFrame({"income": [10.0], "hh_weight": [1.0]}),
             synthetic_data=pd.DataFrame({"income": [10.0, 20.0], "weight": [1.0, 1.0]}),
-            calibrated_data=pd.DataFrame({"income": [10.0, 20.0], "weight": [0.5, 1.5]}),
+            calibrated_data=pd.DataFrame(
+                {"income": [10.0, 20.0], "weight": [0.5, 1.5]}
+            ),
             targets=USMicroplexTargets(
                 marginal={"state": {"CA": 2.0}},
                 continuous={"income": 30.0},
@@ -723,14 +795,21 @@ class TestSaveUSMicroplexArtifacts:
         assert paths.policyengine_harness.exists()
 
         manifest = json.loads(paths.manifest.read_text())
-        assert manifest["artifacts"]["policyengine_harness"] == "policyengine_harness.json"
+        assert (
+            manifest["artifacts"]["policyengine_harness"] == "policyengine_harness.json"
+        )
         assert manifest["policyengine_harness"]["slice_win_rate"] == 1.0
         assert manifest["policyengine_harness"]["target_win_rate"] == 1.0
-        assert manifest["policyengine_harness"]["candidate_composite_parity_loss"] is not None
+        assert (
+            manifest["policyengine_harness"]["candidate_composite_parity_loss"]
+            is not None
+        )
 
         harness_payload = json.loads(paths.policyengine_harness.read_text())
         assert harness_payload["metadata"]["baseline_dataset"] == "baseline.h5"
-        assert harness_payload["metadata"]["policyengine_us_runtime_version"] is not None
+        assert (
+            harness_payload["metadata"]["policyengine_us_runtime_version"] is not None
+        )
         assert harness_payload["summary"]["slice_win_rate"] == 1.0
         assert harness_payload["summary"]["candidate_composite_parity_loss"] is not None
 
@@ -785,7 +864,9 @@ class TestSaveUSMicroplexArtifacts:
             ),
             seed_data=pd.DataFrame({"income": [10.0], "hh_weight": [1.0]}),
             synthetic_data=pd.DataFrame({"income": [10.0, 20.0], "weight": [1.0, 1.0]}),
-            calibrated_data=pd.DataFrame({"income": [10.0, 20.0], "weight": [0.5, 1.5]}),
+            calibrated_data=pd.DataFrame(
+                {"income": [10.0, 20.0], "weight": [0.5, 1.5]}
+            ),
             targets=USMicroplexTargets(
                 marginal={"state": {"CA": 2.0}},
                 continuous={"income": 30.0},
@@ -931,7 +1012,9 @@ class TestSaveUSMicroplexArtifacts:
             ),
             seed_data=pd.DataFrame({"income": [10.0], "hh_weight": [1.0]}),
             synthetic_data=pd.DataFrame({"income": [10.0, 20.0], "weight": [1.0, 1.0]}),
-            calibrated_data=pd.DataFrame({"income": [10.0, 20.0], "weight": [0.5, 1.5]}),
+            calibrated_data=pd.DataFrame(
+                {"income": [10.0, 20.0], "weight": [0.5, 1.5]}
+            ),
             targets=USMicroplexTargets(
                 marginal={"state": {"CA": 2.0}},
                 continuous={"income": 30.0},
@@ -993,10 +1076,16 @@ class TestSaveUSMicroplexArtifacts:
         manifest = json.loads(paths.manifest.read_text())
         assert manifest["policyengine_harness"]["slice_win_rate"] == 1.0
         assert manifest["policyengine_harness"]["target_win_rate"] == 1.0
-        assert manifest["policyengine_harness"]["candidate_composite_parity_loss"] is not None
-        assert manifest["policyengine_harness"]["parity_scorecard"]["overall"][
-            "candidate_beats_baseline"
-        ] is True
+        assert (
+            manifest["policyengine_harness"]["candidate_composite_parity_loss"]
+            is not None
+        )
+        assert (
+            manifest["policyengine_harness"]["parity_scorecard"]["overall"][
+                "candidate_beats_baseline"
+            ]
+            is True
+        )
         assert manifest["run_registry"]["artifact_id"] == "bundle"
         assert manifest["run_registry"]["improved_candidate_frontier"] is True
         assert manifest["run_registry"]["improved_composite_frontier"] is True
@@ -1008,11 +1097,18 @@ class TestSaveUSMicroplexArtifacts:
         harness_payload = json.loads(paths.policyengine_harness.read_text())
         assert harness_payload["metadata"]["baseline_dataset"] == "baseline.h5"
         assert harness_payload["metadata"]["targets_db"] == "policyengine_targets.db"
-        assert harness_payload["metadata"]["harness_suite"] == "policyengine_us_all_targets"
+        assert (
+            harness_payload["metadata"]["harness_suite"]
+            == "policyengine_us_all_targets"
+        )
         assert harness_payload["metadata"]["harness_slice_names"] == ["all_targets"]
         assert harness_payload["metadata"]["target_variables"] == ["household_count"]
-        assert harness_payload["metadata"]["policyengine_us_runtime_version"] is not None
-        assert [slice_payload["name"] for slice_payload in harness_payload["slices"]] == [
+        assert (
+            harness_payload["metadata"]["policyengine_us_runtime_version"] is not None
+        )
+        assert [
+            slice_payload["name"] for slice_payload in harness_payload["slices"]
+        ] == [
             "all_targets",
         ]
         registry_entries = load_us_microplex_run_registry(paths.run_registry)
@@ -1021,7 +1117,9 @@ class TestSaveUSMicroplexArtifacts:
         assert registry_entries[0].policyengine_us_runtime_version is not None
         assert registry_entries[0].supported_target_rate == 1.0
         assert registry_entries[0].candidate_composite_parity_loss is not None
-        assert registry_entries[0].tag_summaries["all_targets"]["target_win_rate"] == 1.0
+        assert (
+            registry_entries[0].tag_summaries["all_targets"]["target_win_rate"] == 1.0
+        )
 
     def test_writes_policyengine_native_scores_when_available(
         self, monkeypatch, tmp_path
@@ -1057,7 +1155,9 @@ class TestSaveUSMicroplexArtifacts:
             ),
             seed_data=pd.DataFrame({"income": [10.0], "hh_weight": [1.0]}),
             synthetic_data=pd.DataFrame({"income": [10.0, 20.0], "weight": [1.0, 1.0]}),
-            calibrated_data=pd.DataFrame({"income": [10.0, 20.0], "weight": [0.5, 1.5]}),
+            calibrated_data=pd.DataFrame(
+                {"income": [10.0, 20.0], "weight": [0.5, 1.5]}
+            ),
             targets=USMicroplexTargets(marginal={}, continuous={"income": 30.0}),
             calibration_summary={"max_error": 0.01, "mean_error": 0.005},
             synthesis_metadata={"backend": "bootstrap"},
@@ -1124,7 +1224,9 @@ class TestSaveUSMicroplexArtifacts:
             manifest["policyengine_native_scores"]["candidate_enhanced_cps_native_loss"]
             == 0.25
         )
-        assert manifest["policyengine_native_scores"]["candidate_beats_baseline"] is True
+        assert (
+            manifest["policyengine_native_scores"]["candidate_beats_baseline"] is True
+        )
         assert (
             manifest["run_registry"]["default_frontier_metric"]
             == "enhanced_cps_native_loss_delta"
@@ -1154,7 +1256,9 @@ class TestSaveUSMicroplexArtifacts:
             ),
             seed_data=pd.DataFrame({"income": [10.0], "hh_weight": [1.0]}),
             synthetic_data=pd.DataFrame({"income": [10.0, 20.0], "weight": [1.0, 1.0]}),
-            calibrated_data=pd.DataFrame({"income": [10.0, 20.0], "weight": [0.5, 1.5]}),
+            calibrated_data=pd.DataFrame(
+                {"income": [10.0, 20.0], "weight": [0.5, 1.5]}
+            ),
             targets=USMicroplexTargets(marginal={}, continuous={"income": 30.0}),
             calibration_summary={"max_error": 0.01, "mean_error": 0.005},
             synthesis_metadata={"backend": "bootstrap"},

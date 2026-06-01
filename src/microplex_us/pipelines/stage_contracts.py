@@ -830,6 +830,11 @@ def default_us_pipeline_stage_contracts() -> tuple[USPipelineStageContract, ...]
                     "Stage-local calibration summary.",
                     stage_id="07_calibration",
                 ),
+                _stage_output_resource(
+                    "target_ledger",
+                    "Structured target-resolution and calibration target ledger.",
+                    stage_id="07_calibration",
+                ),
             ),
             artifacts=(
                 USStageArtifactContract(

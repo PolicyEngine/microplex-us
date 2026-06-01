@@ -10,12 +10,29 @@ file is the machine-readable saved-run overlay for the stage taxonomy. It record
 canonical stages, status for the current run, artifact paths, diagnostics owned
 by each stage, and the current resume posture.
 
+`status` is the saved-artifact readiness view: it reports whether the artifacts
+for that stage are ready, incomplete, missing, metadata-only, or deferred.
+`lifecycleStatus` is the runtime view: it reports whether the stage is pending,
+running, complete, failed, or deferred in the current run. Keeping these fields
+separate lets a failed run say both "Stage 5 failed" and "Stage 4's saved
+artifact is ready for manual replay."
+
 Each saved bundle also includes typed per-stage output manifests at
 `stage_artifacts/manifests/<stage_id>.json`. These manifests are written through
 `USStageRunWriter`, which validates each stage as a whole instead of updating
 individual manifest keys directly. The manifest files live outside each stage's
 payload directory so they do not change the content hash of reloadable stage
 artifacts.
+
+Live runs can use `USStageRuntimeWriter` to write those same per-stage manifests
+incrementally. The writer exposes `start_stage`, `update`, `record_output`,
+`record_diagnostic`, `complete_stage`, `fail_stage`, `defer_stage`, and
+`finalize_from_artifact_manifest`. A stage can start only after the immediately
+previous stage is complete unless explicit stage-input overrides are enabled.
+The canonical multi-source versioned build path reserves the versioned artifact
+directory before loading sources, writes Stage 1 immediately, writes Stage 2 as
+source frames load, then finalizes all stage manifests against the completed
+artifact manifest during save.
 
 The registry exposes two seam layers:
 

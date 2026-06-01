@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, replace
+from collections.abc import Mapping
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
@@ -44,9 +45,13 @@ from microplex_us.pipelines.stage_manifest import (
     write_us_policyengine_entity_stage_artifact,
 )
 from microplex_us.pipelines.stage_run import (
+    USArtifactRef,
+    USDiagnosticOutput,
+    USRunProfileOutputs,
     USStageInputOverride,
     write_us_stage_run_manifests_from_artifact_manifest,
 )
+from microplex_us.pipelines.stage_runtime import USStageRuntimeWriter
 from microplex_us.pipelines.summarize_child_tax_unit_agi_drift import (
     DEFAULT_VARIABLES as DEFAULT_CHILD_TAX_UNIT_AGI_DRIFT_VARIABLES,
 )
@@ -816,6 +821,7 @@ def save_us_microplex_artifacts(
     child_tax_unit_agi_drift_variables: tuple[str, ...] | None = None,
     allow_stage_input_overrides: bool = False,
     stage_input_overrides: tuple[USStageInputOverride, ...] = (),
+    stage_runtime_writer: USStageRuntimeWriter | None = None,
 ) -> USMicroplexArtifactPaths:
     """Persist a build result as a reproducible artifact bundle."""
     output_dir = Path(output_dir)
@@ -1227,12 +1233,15 @@ def save_us_microplex_artifacts(
             "path": str(resolved_run_index_path),
             "artifact_id": recorded_entry.artifact_id,
         }
-    manifest = write_us_stage_run_manifests_from_artifact_manifest(
-        output_dir,
-        manifest,
-        allow_stage_input_overrides=allow_stage_input_overrides,
-        stage_input_overrides=stage_input_overrides,
-    )
+    if stage_runtime_writer is not None:
+        manifest = stage_runtime_writer.finalize_from_artifact_manifest(manifest)
+    else:
+        manifest = write_us_stage_run_manifests_from_artifact_manifest(
+            output_dir,
+            manifest,
+            allow_stage_input_overrides=allow_stage_input_overrides,
+            stage_input_overrides=stage_input_overrides,
+        )
     assert_valid_benchmark_artifact_manifest(
         manifest,
         artifact_dir=output_dir,
@@ -1552,12 +1561,28 @@ def build_and_save_versioned_us_microplex_from_source_providers(
     stage_input_overrides: tuple[USStageInputOverride, ...] = (),
 ) -> USMicroplexVersionedBuildArtifacts:
     """Build from multiple source providers, save a versioned bundle, and report frontier gap."""
-    pipeline = USMicroplexPipeline(config)
+    resolved_config = config or USMicroplexBuildConfig()
+    _resolved_version_id, preallocated_output_dir, stage_runtime_writer = (
+        _initialize_versioned_stage_runtime_writer(
+            output_root,
+            version_id=version_id,
+            config=resolved_config,
+            providers=providers,
+            queries=queries,
+            allow_stage_input_overrides=allow_stage_input_overrides,
+            stage_input_overrides=stage_input_overrides,
+        )
+    )
+    pipeline = USMicroplexPipeline(
+        resolved_config,
+        stage_runtime_writer=stage_runtime_writer,
+    )
     build_result = pipeline.build_from_source_providers(providers, queries=queries)
     return _finalize_versioned_build_artifacts(
         build_result,
         output_root=output_root,
         version_id=version_id,
+        preallocated_output_dir=preallocated_output_dir,
         frontier_metric=frontier_metric,
         policyengine_comparison_cache=policyengine_comparison_cache,
         policyengine_target_provider=policyengine_target_provider,
@@ -1577,6 +1602,7 @@ def build_and_save_versioned_us_microplex_from_source_providers(
         child_tax_unit_agi_drift_variables=child_tax_unit_agi_drift_variables,
         allow_stage_input_overrides=allow_stage_input_overrides,
         stage_input_overrides=stage_input_overrides,
+        stage_runtime_writer=stage_runtime_writer,
     )
 
 
@@ -1642,6 +1668,7 @@ def _finalize_versioned_build_artifacts(
     *,
     output_root: str | Path,
     version_id: str | None,
+    preallocated_output_dir: str | Path | None = None,
     frontier_metric: FrontierMetric,
     policyengine_comparison_cache: PolicyEngineUSComparisonCache | None,
     policyengine_target_provider: TargetProvider | None,
@@ -1663,30 +1690,61 @@ def _finalize_versioned_build_artifacts(
     child_tax_unit_agi_drift_variables: tuple[str, ...] | None = None,
     allow_stage_input_overrides: bool = False,
     stage_input_overrides: tuple[USStageInputOverride, ...] = (),
+    stage_runtime_writer: USStageRuntimeWriter | None = None,
 ) -> USMicroplexVersionedBuildArtifacts:
-    artifact_paths = save_versioned_us_microplex_artifacts(
-        build_result,
-        output_root,
-        version_id=version_id,
-        policyengine_comparison_cache=policyengine_comparison_cache,
-        policyengine_target_provider=policyengine_target_provider,
-        policyengine_baseline_dataset=policyengine_baseline_dataset,
-        policyengine_harness_slices=policyengine_harness_slices,
-        policyengine_harness_metadata=policyengine_harness_metadata,
-        policyengine_us_data_repo=policyengine_us_data_repo,
-        defer_policyengine_harness=defer_policyengine_harness,
-        require_policyengine_native_score=require_policyengine_native_score,
-        defer_policyengine_native_score=defer_policyengine_native_score,
-        precomputed_policyengine_harness_payload=precomputed_policyengine_harness_payload,
-        precomputed_policyengine_native_scores=precomputed_policyengine_native_scores,
-        run_registry_path=run_registry_path,
-        run_index_path=run_index_path,
-        run_registry_metadata=run_registry_metadata,
-        enable_child_tax_unit_agi_drift=enable_child_tax_unit_agi_drift,
-        child_tax_unit_agi_drift_variables=child_tax_unit_agi_drift_variables,
-        allow_stage_input_overrides=allow_stage_input_overrides,
-        stage_input_overrides=stage_input_overrides,
-    )
+    if preallocated_output_dir is not None:
+        output_root_path = Path(output_root)
+        output_dir = Path(preallocated_output_dir)
+        artifact_paths = save_us_microplex_artifacts(
+            build_result,
+            output_dir,
+            policyengine_comparison_cache=policyengine_comparison_cache,
+            policyengine_target_provider=policyengine_target_provider,
+            policyengine_baseline_dataset=policyengine_baseline_dataset,
+            policyengine_harness_slices=policyengine_harness_slices,
+            policyengine_harness_metadata=policyengine_harness_metadata,
+            policyengine_us_data_repo=policyengine_us_data_repo,
+            defer_policyengine_harness=defer_policyengine_harness,
+            require_policyengine_native_score=require_policyengine_native_score,
+            defer_policyengine_native_score=defer_policyengine_native_score,
+            precomputed_policyengine_harness_payload=precomputed_policyengine_harness_payload,
+            precomputed_policyengine_native_scores=precomputed_policyengine_native_scores,
+            run_registry_path=run_registry_path
+            or output_root_path / "run_registry.jsonl",
+            run_index_path=run_index_path or output_root_path,
+            run_registry_metadata=run_registry_metadata,
+            enable_child_tax_unit_agi_drift=enable_child_tax_unit_agi_drift,
+            child_tax_unit_agi_drift_variables=child_tax_unit_agi_drift_variables,
+            allow_stage_input_overrides=allow_stage_input_overrides,
+            stage_input_overrides=stage_input_overrides,
+            stage_runtime_writer=stage_runtime_writer,
+        )
+        artifact_paths = replace(artifact_paths, version_id=output_dir.name)
+    else:
+        artifact_paths = save_versioned_us_microplex_artifacts(
+            build_result,
+            output_root,
+            version_id=version_id,
+            policyengine_comparison_cache=policyengine_comparison_cache,
+            policyengine_target_provider=policyengine_target_provider,
+            policyengine_baseline_dataset=policyengine_baseline_dataset,
+            policyengine_harness_slices=policyengine_harness_slices,
+            policyengine_harness_metadata=policyengine_harness_metadata,
+            policyengine_us_data_repo=policyengine_us_data_repo,
+            defer_policyengine_harness=defer_policyengine_harness,
+            require_policyengine_native_score=require_policyengine_native_score,
+            defer_policyengine_native_score=defer_policyengine_native_score,
+            precomputed_policyengine_harness_payload=precomputed_policyengine_harness_payload,
+            precomputed_policyengine_native_scores=precomputed_policyengine_native_scores,
+            run_registry_path=run_registry_path,
+            run_index_path=run_index_path,
+            run_registry_metadata=run_registry_metadata,
+            enable_child_tax_unit_agi_drift=enable_child_tax_unit_agi_drift,
+            child_tax_unit_agi_drift_variables=child_tax_unit_agi_drift_variables,
+            allow_stage_input_overrides=allow_stage_input_overrides,
+            stage_input_overrides=stage_input_overrides,
+            stage_runtime_writer=stage_runtime_writer,
+        )
     current_entry = None
     frontier_entry = None
     frontier_delta = None
@@ -1828,6 +1886,19 @@ def _allocate_versioned_output_dir(
     version_id: str | None,
     result: USMicroplexBuildResult,
 ) -> tuple[str, Path]:
+    return _allocate_versioned_output_dir_for_config(
+        output_root,
+        version_id=version_id,
+        config=result.config.to_dict(),
+    )
+
+
+def _allocate_versioned_output_dir_for_config(
+    output_root: Path,
+    *,
+    version_id: str | None,
+    config: dict[str, Any],
+) -> tuple[str, Path]:
     if version_id is not None:
         output_dir = output_root / version_id
         if output_dir.exists():
@@ -1836,7 +1907,7 @@ def _allocate_versioned_output_dir(
             )
         return version_id, output_dir
 
-    config_hash = _short_config_hash(result.config.to_dict())
+    config_hash = _short_config_hash(config)
     timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     base_version_id = f"{timestamp}-{config_hash}"
     candidate_version_id = base_version_id
@@ -1855,6 +1926,98 @@ def _short_config_hash(config: dict[str, Any]) -> str:
 
     payload = json.dumps(config, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:8]
+
+
+def _initialize_versioned_stage_runtime_writer(
+    output_root: str | Path,
+    *,
+    version_id: str | None,
+    config: USMicroplexBuildConfig,
+    providers: list[SourceProvider],
+    queries: dict[str, SourceQuery] | None,
+    allow_stage_input_overrides: bool,
+    stage_input_overrides: tuple[USStageInputOverride, ...],
+) -> tuple[str, Path, USStageRuntimeWriter]:
+    root = Path(output_root)
+    root.mkdir(parents=True, exist_ok=True)
+    resolved_version_id, output_dir = _allocate_versioned_output_dir_for_config(
+        root,
+        version_id=version_id,
+        config=config.to_dict(),
+    )
+    provider_query_plan = _provider_query_plan(providers, queries)
+    writer = USStageRuntimeWriter(
+        output_dir,
+        manifest_payload={
+            "created_at": datetime.now(UTC).isoformat(),
+            "config": config.to_dict(),
+            "artifacts": {"manifest": "manifest.json"},
+        },
+        allow_stage_input_overrides=allow_stage_input_overrides,
+        stage_input_overrides=stage_input_overrides,
+    )
+    writer.start_stage(
+        "01_run_profile",
+        metadata={"version_id": resolved_version_id},
+    )
+    writer.complete_stage(
+        USRunProfileOutputs(
+            manifest=USArtifactRef(
+                key="manifest",
+                path="manifest.json",
+                format="json",
+                required=True,
+                assume_exists=True,
+            ),
+            resolved_config=config.to_dict(),
+            provider_query_plan=provider_query_plan,
+            diagnostics={
+                "stage_summary": USDiagnosticOutput(
+                    key="stage_summary",
+                    description="Runtime run-profile summary.",
+                    summary={
+                        "provider_names": provider_query_plan["provider_names"],
+                        "version_id": resolved_version_id,
+                    },
+                )
+            },
+        )
+    )
+    return resolved_version_id, output_dir, writer
+
+
+def _provider_query_plan(
+    providers: list[SourceProvider],
+    queries: dict[str, SourceQuery] | None,
+) -> dict[str, Any]:
+    return {
+        "provider_names": [provider.descriptor.name for provider in providers],
+        "queries": {
+            key: _json_ready_query(query) for key, query in dict(queries or {}).items()
+        },
+    }
+
+
+def _json_ready_query(query: SourceQuery) -> dict[str, Any]:
+    if hasattr(query, "to_dict"):
+        payload = query.to_dict()
+        if isinstance(payload, dict):
+            return payload
+    if hasattr(query, "__dataclass_fields__"):
+        return _json_ready(asdict(query))
+    return _json_ready(vars(query))
+
+
+def _json_ready(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {str(key): _json_ready(item) for key, item in value.items()}
+    if isinstance(value, (tuple, list, set, frozenset)):
+        return [_json_ready(item) for item in value]
+    if isinstance(value, Path):
+        return str(value)
+    if hasattr(value, "value"):
+        return value.value
+    return value
 
 
 def _registry_metric_value(entry: Any | None, metric: FrontierMetric) -> float | None:

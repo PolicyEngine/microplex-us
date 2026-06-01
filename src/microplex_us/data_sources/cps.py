@@ -85,6 +85,10 @@ PERSON_VARIABLES = {
     "SS_VAL": "social_security",
     "SSI_VAL": "ssi",
     "UC_VAL": "unemployment_compensation",
+    # CPS-derived direct income copies (mirror eCPS cps.py:1493-1495).
+    "SRVS_VAL": "survivor_benefits",
+    "ED_VAL": "educational_assistance",
+    "FIN_VAL": "financial_assistance",
     "PTOTVAL": "total_person_income",
     "OI_OFF": "_other_income_code",
     "OI_VAL": "_other_income_value",

@@ -582,6 +582,52 @@ VARIABLE_SEMANTIC_SPECS: dict[str, VariableSemanticSpec] = {
     ),
 }
 
+# SCF net-worth component leaves (G1). Person-entity, zero-inflated positive
+# magnitudes (debt leaves are stored as positive balances; the -1 sign is
+# applied only at net-worth reconciliation, mirroring eCPS
+# NET_WORTH_COMPONENT_SIGNS). Imputed from the SCF donor on SCF_PREDICTORS
+# (age, is_female, cps_race, is_married, own_children_in_household,
+# employment_income, interest_dividend_income, social_security_pension_income).
+SCF_NET_WORTH_COMPONENT_LEAVES: tuple[str, ...] = (
+    "scf_certificates_of_deposit",
+    "scf_savings_bonds",
+    "scf_retirement_assets",
+    "scf_cash_value_life_insurance",
+    "scf_other_managed_assets",
+    "scf_other_financial_assets",
+    "scf_primary_residence_value",
+    "scf_other_residential_real_estate",
+    "scf_nonresidential_real_estate_equity",
+    "scf_business_equity",
+    "scf_other_nonfinancial_assets",
+    "scf_mortgage_debt",
+    "scf_other_residential_debt",
+    "scf_other_lines_of_credit",
+    "scf_credit_card_debt",
+    "scf_vehicle_installment_debt",
+    "scf_student_loan_debt",
+    "scf_other_installment_debt",
+    "scf_other_debt",
+)
+SCF_COMPONENT_PREFERRED_CONDITION_VARS: tuple[str, ...] = (
+    "age",
+    "is_female",
+    "cps_race",
+    "is_married",
+    "own_children_in_household",
+    "employment_income",
+    "interest_dividend_income",
+    "social_security_pension_income",
+)
+for _scf_component_leaf in SCF_NET_WORTH_COMPONENT_LEAVES:
+    VARIABLE_SEMANTIC_SPECS[_scf_component_leaf] = VariableSemanticSpec(
+        native_entity=EntityType.PERSON,
+        support_family=VariableSupportFamily.ZERO_INFLATED_POSITIVE,
+        donor_match_strategy=DonorMatchStrategy.ZERO_INFLATED_POSITIVE,
+        preferred_condition_vars=SCF_COMPONENT_PREFERRED_CONDITION_VARS,
+        notes="SCF balance-sheet component leaf; positive magnitude.",
+    )
+
 DIVIDEND_COMPONENT_COLUMNS = (
     "qualified_dividend_income",
     "non_qualified_dividend_income",

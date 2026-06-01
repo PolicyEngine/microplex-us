@@ -1828,6 +1828,7 @@ def run_policyengine_us_data_rebuild_checkpoint(
     puf_cache_dir: str | Path | None = None,
     puf_path: str | Path | None = None,
     puf_demographics_path: str | Path | None = None,
+    soi_path: str | Path | None = None,
     puf_expand_persons: bool = True,
     include_donor_surveys: bool = True,
     include_acs: bool | None = None,
@@ -1915,6 +1916,7 @@ def run_policyengine_us_data_rebuild_checkpoint(
                 puf_cache_dir=puf_cache_dir,
                 puf_path=puf_path,
                 puf_demographics_path=puf_demographics_path,
+                soi_path=soi_path,
                 puf_expand_persons=puf_expand_persons,
                 include_donor_surveys=include_donor_surveys,
                 include_acs=include_acs,
@@ -2110,6 +2112,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--donor-cache-dir")
     parser.add_argument("--puf-path")
     parser.add_argument("--puf-demographics-path")
+    parser.add_argument("--soi-path")
     parser.add_argument("--cps-sample-n", type=int)
     parser.add_argument("--puf-sample-n", type=int)
     parser.add_argument("--donor-sample-n", type=int)
@@ -2322,6 +2325,7 @@ def main(argv: list[str] | None = None) -> None:
         puf_cache_dir=args.puf_cache_dir,
         puf_path=args.puf_path,
         puf_demographics_path=args.puf_demographics_path,
+        soi_path=args.soi_path,
         puf_expand_persons=not args.no_puf_expand_persons,
         include_donor_surveys=args.include_donor_surveys,
         include_acs=args.include_acs,

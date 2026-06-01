@@ -470,21 +470,28 @@ def _resolve_pe_soi_path(
     soi_path: str | Path | None = None,
 ) -> Path:
     if soi_path is not None:
-        resolved = Path(soi_path)
-    elif policyengine_us_data_repo is not None:
-        resolved = (
-            Path(policyengine_us_data_repo)
-            / "policyengine_us_data"
-            / "storage"
-            / "soi.csv"
-        )
-    else:
+        resolved = Path(soi_path).expanduser()
+        if not resolved.exists():
+            raise FileNotFoundError(f"Could not find PE SOI file at {resolved}")
+        return resolved
+    if policyengine_us_data_repo is None:
         raise ValueError(
             "PE SOI uprating requires soi_path or policyengine_us_data_repo"
         )
-    if not resolved.exists():
-        raise FileNotFoundError(f"Could not find PE SOI file at {resolved}")
-    return resolved
+    storage = (
+        Path(policyengine_us_data_repo).expanduser()
+        / "policyengine_us_data"
+        / "storage"
+    )
+    candidates = (
+        storage / "soi.csv",
+        storage / "calibration_targets" / "soi_targets.csv",
+    )
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    expected = ", ".join(str(candidate) for candidate in candidates)
+    raise FileNotFoundError(f"Could not find PE SOI file at any of: {expected}")
 
 
 def _resolve_pe_uprating_factors_path(

@@ -361,6 +361,31 @@ def test_uprate_raw_puf_pe_style_matches_pe_soi_contract(tmp_path):
     assert result["S006"].tolist() == pytest.approx([110.0, 220.0])
 
 
+def test_uprate_raw_puf_pe_style_falls_back_to_calibration_soi_targets(tmp_path):
+    repo_root = tmp_path / "pe-us-data"
+    storage = repo_root / "policyengine_us_data" / "storage"
+    calibration_targets = storage / "calibration_targets"
+    calibration_targets.mkdir(parents=True)
+    _write_minimal_soi_csv(calibration_targets / "soi_targets.csv")
+
+    raw = pd.DataFrame(
+        {
+            "E00200": [10.0],
+            "S006": [100.0],
+        }
+    )
+
+    result = uprate_raw_puf_pe_style(
+        raw,
+        from_year=2015,
+        to_year=2024,
+        policyengine_us_data_repo=repo_root,
+    )
+
+    assert result["E00200"].tolist() == pytest.approx([15.0])
+    assert result["S006"].tolist() == pytest.approx([110.0])
+
+
 def test_uprate_mapped_puf_with_pe_factors_uses_aliases_and_recomputes(tmp_path):
     repo_root = tmp_path / "pe-us-data"
     storage = repo_root / "policyengine_us_data" / "storage"

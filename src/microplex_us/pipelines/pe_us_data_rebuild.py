@@ -101,6 +101,7 @@ def default_policyengine_us_data_rebuild_source_providers(
     puf_cache_dir: str | Path | None = None,
     puf_path: str | Path | None = None,
     puf_demographics_path: str | Path | None = None,
+    soi_path: str | Path | None = None,
     puf_expand_persons: bool = True,
     include_donor_surveys: bool = True,
     include_acs: bool | None = None,
@@ -141,6 +142,7 @@ def default_policyengine_us_data_rebuild_source_providers(
             cache_dir=puf_cache,
             puf_path=puf_path,
             demographics_path=puf_demographics_path,
+            soi_path=soi_path,
             expand_persons=bool(puf_expand_persons),
             uprating_mode=PUF_UPRATING_MODE_PE_SOI,
             cps_reference_year=(

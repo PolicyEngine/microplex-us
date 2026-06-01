@@ -221,6 +221,19 @@ def test_default_policyengine_us_data_rebuild_queries_assign_sample_sizes_by_pro
         }
 
 
+def test_default_policyengine_us_data_rebuild_source_providers_forwards_soi_path(
+    tmp_path,
+) -> None:
+    soi_path = tmp_path / "soi_targets.csv"
+    providers = default_policyengine_us_data_rebuild_source_providers(
+        include_donor_surveys=False,
+        cps_download=False,
+        soi_path=soi_path,
+    )
+
+    assert getattr(providers[1], "soi_path") == soi_path
+
+
 def test_default_policyengine_us_data_rebuild_queries_derive_donor_sample_size_from_sampled_sources() -> (
     None
 ):

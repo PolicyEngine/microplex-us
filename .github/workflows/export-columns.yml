@@ -1,0 +1,40 @@
+name: Export columns (eCPS parity)
+
+# Fast, first-line contract gate. Compares an export's column set against
+# the frozen eCPS contract in milliseconds, with no H5 build, no GPU, and
+# none of the heavy ML deps (microplex / torch / policyengine-us). This is
+# a standalone workflow on purpose so column drift is caught before the
+# slow artifact-gate and site-snapshot jobs run.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  column-parity:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.14"
+      - name: Install minimal deps
+        # Only what the gate and its tests need; no microplex / torch.
+        run: uv pip install --system pytest h5py numpy
+      - name: Run column-parity tests
+        run: PYTHONPATH=src python -m pytest tests/pipelines/test_check_export_columns.py -q
+      - name: Self-check against committed clean fixture
+        # Run the module as a file (not `-m`) so the package __init__
+        # (which imports microplex/torch) never loads. Proves the gate
+        # exits 0 on a known-good column set, with no data file at all.
+        run: python src/microplex_us/pipelines/check_export_columns.py --columns-json tests/pipelines/fixtures/ecps_clean_columns.json

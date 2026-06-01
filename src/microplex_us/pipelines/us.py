@@ -195,6 +195,46 @@ PUF_SUPPORT_CLONE_IMPUTED_VARIABLES: tuple[str, ...] = (
     "self_employment_income_would_be_qualified",
 )
 
+DEFAULT_SNAP_TAKEUP_RATE = 0.82
+
+
+def _stable_string_hash(value: str) -> np.uint64:
+    """Deterministic string hash matching policyengine-us-data's RNG helper."""
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", "overflow encountered", RuntimeWarning)
+        hashed = np.uint64(0)
+        for byte in value.encode("utf-8"):
+            hashed = hashed * np.uint64(31) + np.uint64(byte)
+        hashed = hashed ^ (hashed >> np.uint64(33))
+        hashed = hashed * np.uint64(0xFF51AFD7ED558CCD)
+        hashed = hashed ^ (hashed >> np.uint64(33))
+    return hashed
+
+
+def _policyengine_us_data_seeded_rng(
+    variable_name: str,
+    *,
+    salt: str | None = None,
+) -> np.random.Generator:
+    key = variable_name if salt is None else f"{variable_name}:{salt}"
+    seed = int(_stable_string_hash(key)) % (2**63)
+    return np.random.default_rng(seed=seed)
+
+
+def _load_policyengine_us_data_takeup_rate(variable_name: str, year: int) -> float:
+    """Load an eCPS take-up rate, with a SNAP fallback for non-PE-data envs."""
+    try:
+        from policyengine_us_data.parameters import load_take_up_rate
+    except ImportError:
+        if variable_name == "snap":
+            return DEFAULT_SNAP_TAKEUP_RATE
+        raise
+    rate = load_take_up_rate(variable_name, year)
+    if isinstance(rate, dict):
+        raise TypeError(f"Expected scalar take-up rate for {variable_name!r}, got dict")
+    return float(rate)
+
+
 PUF_SUPPORT_CLONE_OVERRIDDEN_VARIABLES: tuple[str, ...] = (
     "partnership_s_corp_income",
     "interest_deduction",
@@ -9040,11 +9080,12 @@ class USMicroplexPipeline:
     ) -> pd.DataFrame:
         """Attach observed SPM-unit inputs carried on CPS person rows."""
         if "spm_unit_id" not in persons.columns:
-            return spm_units
+            return self._attach_policyengine_snap_takeup(spm_units)
 
         aggregation_by_column = {
             "receives_housing_assistance": "max",
             "takes_up_housing_assistance_if_eligible": "max",
+            "takes_up_snap_if_eligible": "max",
             "spm_unit_energy_subsidy": "first",
         }
         aggregations = {
@@ -9053,10 +9094,37 @@ class USMicroplexPipeline:
             if column in persons.columns and column not in spm_units.columns
         }
         if not aggregations:
-            return spm_units
+            return self._attach_policyengine_snap_takeup(spm_units)
 
         source_values = persons.groupby("spm_unit_id", as_index=False).agg(aggregations)
-        return spm_units.merge(source_values, on="spm_unit_id", how="left")
+        merged = spm_units.merge(source_values, on="spm_unit_id", how="left")
+        return self._attach_policyengine_snap_takeup(merged)
+
+    def _attach_policyengine_snap_takeup(
+        self,
+        spm_units: pd.DataFrame,
+    ) -> pd.DataFrame:
+        """Attach eCPS-style SNAP take-up input before PE materialization."""
+        result = spm_units.copy()
+        column = "takes_up_snap_if_eligible"
+        if column in result.columns:
+            result[column] = (
+                pd.to_numeric(result[column], errors="coerce")
+                .fillna(0.0)
+                .ne(0.0)
+                .astype(bool)
+            )
+            return result
+
+        year = int(
+            self.config.policyengine_dataset_year
+            or self.config.policyengine_target_period
+            or 2024
+        )
+        rate = _load_policyengine_us_data_takeup_rate("snap", year)
+        rng = _policyengine_us_data_seeded_rng(column)
+        result[column] = rng.random(len(result)) < rate
+        return result
 
     def _normalize_relationship_to_head(self, persons: pd.DataFrame) -> pd.Series:
         family_normalized: pd.Series | None = None

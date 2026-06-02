@@ -5309,7 +5309,11 @@ class USMicroplexPipeline:
             {
                 variable
                 for variable, support_family in support_families.items()
-                if support_family is VariableSupportFamily.ZERO_INFLATED_POSITIVE
+                if support_family
+                in {
+                    VariableSupportFamily.ZERO_INFLATED_POSITIVE,
+                    VariableSupportFamily.ZERO_INFLATED_SIGNED,
+                }
             }
             if backend == "zi_qrf"
             else set()

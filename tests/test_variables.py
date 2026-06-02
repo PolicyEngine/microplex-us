@@ -294,7 +294,10 @@ def test_resolve_variable_semantic_capabilities_marks_redundant_dividend_totals(
 def test_variable_semantics_define_projection_aggregation_for_person_controls():
     from microplex_us.variables import variable_semantic_spec_for
 
-    assert EntityType.RECORD not in variable_semantic_spec_for("age").allowed_condition_entities
+    assert (
+        EntityType.RECORD
+        not in variable_semantic_spec_for("age").allowed_condition_entities
+    )
     assert (
         variable_semantic_spec_for("age").projection_aggregation
         is ProjectionAggregation.MAX
@@ -310,7 +313,9 @@ def test_state_program_proxy_semantics_are_registered():
 
     has_medicaid = variable_semantic_spec_for("has_medicaid")
     assert has_medicaid.support_family is VariableSupportFamily.ZERO_INFLATED_POSITIVE
-    assert has_medicaid.donor_match_strategy is DonorMatchStrategy.ZERO_INFLATED_POSITIVE
+    assert (
+        has_medicaid.donor_match_strategy is DonorMatchStrategy.ZERO_INFLATED_POSITIVE
+    )
     assert has_medicaid.condition_score_mode is ConditionScoreMode.VALUE_AND_SUPPORT
     assert has_medicaid.projection_aggregation is ProjectionAggregation.MAX
 
@@ -340,7 +345,7 @@ def test_partnership_income_semantics_remain_person_native():
 
     spec = variable_semantic_spec_for("partnership_s_corp_income")
     assert spec.native_entity is EntityType.PERSON
-    assert spec.support_family is VariableSupportFamily.ZERO_INFLATED_POSITIVE
+    assert spec.support_family is VariableSupportFamily.ZERO_INFLATED_SIGNED
     assert spec.donor_match_strategy is DonorMatchStrategy.ZERO_INFLATED_POSITIVE
     assert spec.condition_score_mode is ConditionScoreMode.VALUE_AND_SUPPORT
 
@@ -381,23 +386,27 @@ def test_sparse_irs_tax_variables_use_puf_irs_predictors():
 
     assert PUF_IRS_TAX_SUPPLEMENTAL_SHARED_CONDITION_VARS == ()
     assert (
-        variable_semantic_spec_for("taxable_interest_income")
-        .challenger_shared_condition_vars
+        variable_semantic_spec_for(
+            "taxable_interest_income"
+        ).challenger_shared_condition_vars
         == PUF_DIVIDEND_INTEREST_CHALLENGER_SHARED_CONDITION_VARS
     )
     assert (
-        variable_semantic_spec_for("qualified_dividend_income")
-        .challenger_shared_condition_vars
+        variable_semantic_spec_for(
+            "qualified_dividend_income"
+        ).challenger_shared_condition_vars
         == PUF_DIVIDEND_INTEREST_CHALLENGER_SHARED_CONDITION_VARS
     )
     assert (
-        variable_semantic_spec_for("taxable_pension_income")
-        .challenger_shared_condition_vars
+        variable_semantic_spec_for(
+            "taxable_pension_income"
+        ).challenger_shared_condition_vars
         == PUF_PENSION_CHALLENGER_SHARED_CONDITION_VARS
     )
     assert (
-        variable_semantic_spec_for("partnership_s_corp_income")
-        .challenger_shared_condition_vars
+        variable_semantic_spec_for(
+            "partnership_s_corp_income"
+        ).challenger_shared_condition_vars
         == PUF_PARTNERSHIP_CHALLENGER_SHARED_CONDITION_VARS
     )
 
@@ -434,7 +443,9 @@ def test_person_native_irs_semantics_match_current_policyengine_entities():
         "student_loan_interest",
         "self_employment_income",
     ):
-        assert variable_semantic_spec_for(variable_name).native_entity is EntityType.PERSON
+        assert (
+            variable_semantic_spec_for(variable_name).native_entity is EntityType.PERSON
+        )
 
 
 def test_self_employment_income_semantics_preserve_signed_support():
@@ -487,7 +498,11 @@ def test_employment_income_donor_semantics_uses_unclassified_social_security_com
     adjusted = apply_donor_variable_semantics(frame, ("employment_income",))
 
     assert adjusted["social_security_retirement"].tolist() == [0.0, 0.0, 0.0]
-    assert adjusted["social_security_unclassified"].tolist() == [18_000.0, 18_000.0, 0.0]
+    assert adjusted["social_security_unclassified"].tolist() == [
+        18_000.0,
+        18_000.0,
+        0.0,
+    ]
     assert adjusted["employment_income"].tolist() == [0.0, 80_000.0, 80_000.0]
 
 

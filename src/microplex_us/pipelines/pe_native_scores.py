@@ -58,10 +58,62 @@ if REPO_ROOT not in sys.path:
 from policyengine_us import Microsimulation
 from policyengine_us_data.utils.loss import build_loss_matrix
 
+
+def patch_policyengine_us_data_uprating_aliases():
+    import policyengine_us_data.utils.soi as soi_utils
+
+    original = soi_utils.create_policyengine_uprating_factors_table
+
+    def patched_create_policyengine_uprating_factors_table(*args, **kwargs):
+        table = original(*args, **kwargs)
+        if (
+            "employment_income" not in table.index
+            and "employment_income_before_lsr" in table.index
+        ):
+            table.loc["employment_income"] = table.loc[
+                "employment_income_before_lsr"
+            ]
+        return table
+
+    soi_utils.create_policyengine_uprating_factors_table = (
+        patched_create_policyengine_uprating_factors_table
+    )
+
+
+patch_policyengine_us_data_uprating_aliases()
+
+
+def load_microplex_loss_helpers():
+    import importlib.util
+
+    for entry in sys.path:
+        candidate = Path(entry) / "microplex_us" / "pipelines" / "pe_native_loss.py"
+        if not candidate.exists():
+            continue
+        spec = importlib.util.spec_from_file_location(
+            "microplex_us_pe_native_loss_standalone",
+            candidate,
+        )
+        if spec is None or spec.loader is None:
+            continue
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        return module
+    raise ModuleNotFoundError("Could not load microplex_us pe_native_loss helper")
+
+
+_LOSS_HELPERS = load_microplex_loss_helpers()
+PE_NATIVE_ROBUST_LOSS_METRIC = _LOSS_HELPERS.PE_NATIVE_ROBUST_LOSS_METRIC
+build_pe_native_loss_arrays = _LOSS_HELPERS.build_pe_native_loss_arrays
+pe_native_huber_loss_terms = _LOSS_HELPERS.pe_native_huber_loss_terms
+pe_native_relative_error = _LOSS_HELPERS.pe_native_relative_error
+
 BAD_TARGETS = tuple(json.loads(sys.argv[2]))
 PERIOD = int(sys.argv[3])
 CANDIDATE_DATASET = sys.argv[4]
 BASELINE_DATASET = sys.argv[5]
+TARGET_SCOPE_FILTER = sys.argv[6] if len(sys.argv) >= 7 and sys.argv[6] else None
 
 
 def dataset_from_path(dataset_path: str, dataset_name: str):
@@ -73,6 +125,22 @@ def dataset_from_path(dataset_path: str, dataset_name: str):
         time_period = PERIOD
 
     return LocalDataset
+
+
+def scope_keep_mask(target_names):
+    if TARGET_SCOPE_FILTER is None:
+        return np.ones(target_names.shape, dtype=bool)
+    if TARGET_SCOPE_FILTER == "national":
+        return np.asarray(
+            [str(name).startswith("nation/") for name in target_names],
+            dtype=bool,
+        )
+    if TARGET_SCOPE_FILTER == "state":
+        return np.asarray(
+            [not str(name).startswith("nation/") for name in target_names],
+            dtype=bool,
+        )
+    raise ValueError(f"Unsupported target scope filter: {TARGET_SCOPE_FILTER}")
 
 
 def classify_target_family(target_name: str) -> str:
@@ -122,7 +190,6 @@ def build_family_breakdown(target_names, candidate_terms, baseline_terms, candid
     family_rows = []
     target_names = list(target_names)
     unique_families = sorted({classify_target_family(name) for name in target_names})
-    n_targets_total = float(len(target_names))
     for family in unique_families:
         idx = [i for i, name in enumerate(target_names) if classify_target_family(name) == family]
         if not idx:
@@ -135,14 +202,17 @@ def build_family_breakdown(target_names, candidate_terms, baseline_terms, candid
             {
                 "family": family,
                 "n_targets": int(len(idx)),
-                "candidate_loss_contribution": float(candidate_slice.sum() / n_targets_total),
-                "baseline_loss_contribution": float(baseline_slice.sum() / n_targets_total),
-                "loss_contribution_delta": float((candidate_slice.sum() - baseline_slice.sum()) / n_targets_total),
+                "candidate_loss_contribution": float(candidate_slice.sum()),
+                "baseline_loss_contribution": float(baseline_slice.sum()),
+                "loss_contribution_delta": float(candidate_slice.sum() - baseline_slice.sum()),
                 "candidate_mean_weighted_loss": float(candidate_slice.mean()),
                 "baseline_mean_weighted_loss": float(baseline_slice.mean()),
-                "candidate_mean_unweighted_msre": float(candidate_rel_slice.mean()),
-                "baseline_mean_unweighted_msre": float(baseline_rel_slice.mean()),
-                "unweighted_msre_delta": float(candidate_rel_slice.mean() - baseline_rel_slice.mean()),
+                "candidate_mean_unweighted_msre": float(np.mean(np.square(candidate_rel_slice))),
+                "baseline_mean_unweighted_msre": float(np.mean(np.square(baseline_rel_slice))),
+                "unweighted_msre_delta": float(
+                    np.mean(np.square(candidate_rel_slice))
+                    - np.mean(np.square(baseline_rel_slice))
+                ),
             }
         )
     family_rows.sort(key=lambda row: row["loss_contribution_delta"], reverse=True)
@@ -158,24 +228,20 @@ def compute(dataset_path: str) -> dict[str, float | int]:
     target_names = np.asarray(loss_matrix.columns)
     zero_mask = np.isclose(targets_array, 0.0, atol=0.1)
     bad_mask = np.isin(target_names, BAD_TARGETS)
-    keep_mask = ~(zero_mask | bad_mask)
+    keep_mask = ~(zero_mask | bad_mask) & scope_keep_mask(target_names)
 
     filtered = loss_matrix.loc[:, keep_mask]
     filtered_targets = np.asarray(targets_array[keep_mask], dtype=np.float64)
+    if filtered_targets.size == 0:
+        raise ValueError("PE-native broad loss has no targets after filtering")
     is_national = np.asarray(filtered.columns.str.startswith("nation/"), dtype=bool)
     n_national = int(is_national.sum())
     n_state = int((~is_national).sum())
-    if n_national == 0 or n_state == 0:
-        raise ValueError(
-            "PE-native broad loss requires both national and state targets after filtering"
-        )
 
-    normalisation_factor = np.where(
-        is_national,
-        1.0 / n_national,
-        1.0 / n_state,
-    ).astype(np.float64)
-    inv_mean_normalisation = 1.0 / float(np.mean(normalisation_factor))
+    loss_arrays = build_pe_native_loss_arrays(
+        filtered.columns.tolist(),
+        filtered_targets,
+    )
 
     sim = Microsimulation(dataset=dataset_cls)
     sim.default_calculation_period = PERIOD
@@ -186,12 +252,14 @@ def compute(dataset_path: str) -> dict[str, float | int]:
     ).values.astype(np.float64)
 
     estimate = weights @ filtered.to_numpy(dtype=np.float64)
-    rel_error = (((estimate - filtered_targets) + 1.0) / (filtered_targets + 1.0)) ** 2
-    weighted_terms = inv_mean_normalisation * rel_error * normalisation_factor
-    loss_value = float(weighted_terms.mean())
-    unweighted_msre = float(rel_error.mean())
+    rel_error = pe_native_relative_error(estimate, loss_arrays)
+    weighted_terms = pe_native_huber_loss_terms(estimate, loss_arrays)
+    loss_value = float(weighted_terms.sum())
+    unweighted_msre = float(np.mean(np.square(rel_error)))
 
     return {
+        "metric": PE_NATIVE_ROBUST_LOSS_METRIC,
+        "loss_config": loss_arrays.metadata().get("loss_config"),
         "loss": loss_value,
         "unweighted_msre": unweighted_msre,
         "n_targets_total": int(len(target_names)),
@@ -200,10 +268,12 @@ def compute(dataset_path: str) -> dict[str, float | int]:
         "n_targets_bad_dropped": int(bad_mask.sum()),
         "n_national_targets": n_national,
         "n_state_targets": n_state,
+        "target_scope_filter": TARGET_SCOPE_FILTER,
         "weight_sum": float(weights.sum()),
         "target_names": filtered.columns.tolist(),
         "weighted_terms": weighted_terms.tolist(),
         "rel_error": rel_error.tolist(),
+        "target_loss_metadata": loss_arrays.sidecar_rows(),
     }
 
 
@@ -219,7 +289,8 @@ if candidate["target_names"] != baseline["target_names"]:
     raise ValueError("Candidate and baseline produced different target names after filtering")
 
 payload = {
-    "metric": "enhanced_cps_native_loss",
+    "metric": candidate["metric"],
+    "loss_config": candidate.get("loss_config"),
     "period": PERIOD,
     "candidate_dataset": CANDIDATE_DATASET,
     "baseline_dataset": BASELINE_DATASET,
@@ -237,6 +308,7 @@ payload = {
     "n_targets_bad_dropped": candidate["n_targets_bad_dropped"],
     "n_national_targets": candidate["n_national_targets"],
     "n_state_targets": candidate["n_state_targets"],
+    "target_scope_filter": TARGET_SCOPE_FILTER,
     "candidate_weight_sum": candidate["weight_sum"],
     "baseline_weight_sum": baseline["weight_sum"],
     "family_breakdown": build_family_breakdown(
@@ -265,10 +337,62 @@ if REPO_ROOT not in sys.path:
 from policyengine_us import Microsimulation
 from policyengine_us_data.utils.loss import build_loss_matrix
 
+
+def patch_policyengine_us_data_uprating_aliases():
+    import policyengine_us_data.utils.soi as soi_utils
+
+    original = soi_utils.create_policyengine_uprating_factors_table
+
+    def patched_create_policyengine_uprating_factors_table(*args, **kwargs):
+        table = original(*args, **kwargs)
+        if (
+            "employment_income" not in table.index
+            and "employment_income_before_lsr" in table.index
+        ):
+            table.loc["employment_income"] = table.loc[
+                "employment_income_before_lsr"
+            ]
+        return table
+
+    soi_utils.create_policyengine_uprating_factors_table = (
+        patched_create_policyengine_uprating_factors_table
+    )
+
+
+patch_policyengine_us_data_uprating_aliases()
+
+
+def load_microplex_loss_helpers():
+    import importlib.util
+
+    for entry in sys.path:
+        candidate = Path(entry) / "microplex_us" / "pipelines" / "pe_native_loss.py"
+        if not candidate.exists():
+            continue
+        spec = importlib.util.spec_from_file_location(
+            "microplex_us_pe_native_loss_standalone",
+            candidate,
+        )
+        if spec is None or spec.loader is None:
+            continue
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        return module
+    raise ModuleNotFoundError("Could not load microplex_us pe_native_loss helper")
+
+
+_LOSS_HELPERS = load_microplex_loss_helpers()
+PE_NATIVE_ROBUST_LOSS_METRIC = _LOSS_HELPERS.PE_NATIVE_ROBUST_LOSS_METRIC
+build_pe_native_loss_arrays = _LOSS_HELPERS.build_pe_native_loss_arrays
+pe_native_huber_loss_terms = _LOSS_HELPERS.pe_native_huber_loss_terms
+pe_native_relative_error = _LOSS_HELPERS.pe_native_relative_error
+
 BAD_TARGETS = tuple(json.loads(sys.argv[2]))
 PERIOD = int(sys.argv[3])
 BASELINE_DATASET = sys.argv[4]
 CANDIDATE_DATASETS = tuple(json.loads(sys.argv[5]))
+TARGET_SCOPE_FILTER = sys.argv[6] if len(sys.argv) >= 7 and sys.argv[6] else None
 
 
 def dataset_from_path(dataset_path: str, dataset_name: str):
@@ -280,6 +404,22 @@ def dataset_from_path(dataset_path: str, dataset_name: str):
         time_period = PERIOD
 
     return LocalDataset
+
+
+def scope_keep_mask(target_names):
+    if TARGET_SCOPE_FILTER is None:
+        return np.ones(target_names.shape, dtype=bool)
+    if TARGET_SCOPE_FILTER == "national":
+        return np.asarray(
+            [str(name).startswith("nation/") for name in target_names],
+            dtype=bool,
+        )
+    if TARGET_SCOPE_FILTER == "state":
+        return np.asarray(
+            [not str(name).startswith("nation/") for name in target_names],
+            dtype=bool,
+        )
+    raise ValueError(f"Unsupported target scope filter: {TARGET_SCOPE_FILTER}")
 
 
 def classify_target_family(target_name: str) -> str:
@@ -329,7 +469,6 @@ def build_family_breakdown(target_names, candidate_terms, baseline_terms, candid
     family_rows = []
     target_names = list(target_names)
     unique_families = sorted({classify_target_family(name) for name in target_names})
-    n_targets_total = float(len(target_names))
     for family in unique_families:
         idx = [i for i, name in enumerate(target_names) if classify_target_family(name) == family]
         if not idx:
@@ -342,14 +481,17 @@ def build_family_breakdown(target_names, candidate_terms, baseline_terms, candid
             {
                 "family": family,
                 "n_targets": int(len(idx)),
-                "candidate_loss_contribution": float(candidate_slice.sum() / n_targets_total),
-                "baseline_loss_contribution": float(baseline_slice.sum() / n_targets_total),
-                "loss_contribution_delta": float((candidate_slice.sum() - baseline_slice.sum()) / n_targets_total),
+                "candidate_loss_contribution": float(candidate_slice.sum()),
+                "baseline_loss_contribution": float(baseline_slice.sum()),
+                "loss_contribution_delta": float(candidate_slice.sum() - baseline_slice.sum()),
                 "candidate_mean_weighted_loss": float(candidate_slice.mean()),
                 "baseline_mean_weighted_loss": float(baseline_slice.mean()),
-                "candidate_mean_unweighted_msre": float(candidate_rel_slice.mean()),
-                "baseline_mean_unweighted_msre": float(baseline_rel_slice.mean()),
-                "unweighted_msre_delta": float(candidate_rel_slice.mean() - baseline_rel_slice.mean()),
+                "candidate_mean_unweighted_msre": float(np.mean(np.square(candidate_rel_slice))),
+                "baseline_mean_unweighted_msre": float(np.mean(np.square(baseline_rel_slice))),
+                "unweighted_msre_delta": float(
+                    np.mean(np.square(candidate_rel_slice))
+                    - np.mean(np.square(baseline_rel_slice))
+                ),
             }
         )
     family_rows.sort(key=lambda row: row["loss_contribution_delta"], reverse=True)
@@ -365,24 +507,20 @@ def compute(dataset_path: str) -> dict[str, float | int]:
     target_names = np.asarray(loss_matrix.columns)
     zero_mask = np.isclose(targets_array, 0.0, atol=0.1)
     bad_mask = np.isin(target_names, BAD_TARGETS)
-    keep_mask = ~(zero_mask | bad_mask)
+    keep_mask = ~(zero_mask | bad_mask) & scope_keep_mask(target_names)
 
     filtered = loss_matrix.loc[:, keep_mask]
     filtered_targets = np.asarray(targets_array[keep_mask], dtype=np.float64)
+    if filtered_targets.size == 0:
+        raise ValueError("PE-native broad loss has no targets after filtering")
     is_national = np.asarray(filtered.columns.str.startswith("nation/"), dtype=bool)
     n_national = int(is_national.sum())
     n_state = int((~is_national).sum())
-    if n_national == 0 or n_state == 0:
-        raise ValueError(
-            "PE-native broad loss requires both national and state targets after filtering"
-        )
 
-    normalisation_factor = np.where(
-        is_national,
-        1.0 / n_national,
-        1.0 / n_state,
-    ).astype(np.float64)
-    inv_mean_normalisation = 1.0 / float(np.mean(normalisation_factor))
+    loss_arrays = build_pe_native_loss_arrays(
+        filtered.columns.tolist(),
+        filtered_targets,
+    )
 
     sim = Microsimulation(dataset=dataset_cls)
     sim.default_calculation_period = PERIOD
@@ -393,13 +531,15 @@ def compute(dataset_path: str) -> dict[str, float | int]:
     ).values.astype(np.float64)
 
     estimate = weights @ filtered.to_numpy(dtype=np.float64)
-    rel_error = (((estimate - filtered_targets) + 1.0) / (filtered_targets + 1.0)) ** 2
-    weighted_terms = inv_mean_normalisation * rel_error * normalisation_factor
-    loss_value = float(weighted_terms.mean())
-    unweighted_msre = float(rel_error.mean())
+    rel_error = pe_native_relative_error(estimate, loss_arrays)
+    weighted_terms = pe_native_huber_loss_terms(estimate, loss_arrays)
+    loss_value = float(weighted_terms.sum())
+    unweighted_msre = float(np.mean(np.square(rel_error)))
 
     return {
         "dataset": dataset_path,
+        "metric": PE_NATIVE_ROBUST_LOSS_METRIC,
+        "loss_config": loss_arrays.metadata().get("loss_config"),
         "loss": loss_value,
         "unweighted_msre": unweighted_msre,
         "n_targets_total": int(len(target_names)),
@@ -408,10 +548,12 @@ def compute(dataset_path: str) -> dict[str, float | int]:
         "n_targets_bad_dropped": int(bad_mask.sum()),
         "n_national_targets": n_national,
         "n_state_targets": n_state,
+        "target_scope_filter": TARGET_SCOPE_FILTER,
         "weight_sum": float(weights.sum()),
         "target_names": filtered.columns.tolist(),
         "weighted_terms": weighted_terms.tolist(),
         "rel_error": rel_error.tolist(),
+        "target_loss_metadata": loss_arrays.sidecar_rows(),
     }
 
 
@@ -428,7 +570,8 @@ for candidate_dataset in CANDIDATE_DATASETS:
         raise ValueError("Candidate and baseline produced different target names after filtering")
     payload.append(
         {
-            "metric": "enhanced_cps_native_loss",
+            "metric": candidate["metric"],
+            "loss_config": candidate.get("loss_config"),
             "period": PERIOD,
             "candidate_dataset": candidate_dataset,
             "baseline_dataset": BASELINE_DATASET,
@@ -447,6 +590,7 @@ for candidate_dataset in CANDIDATE_DATASETS:
             "n_targets_bad_dropped": candidate["n_targets_bad_dropped"],
             "n_national_targets": candidate["n_national_targets"],
             "n_state_targets": candidate["n_state_targets"],
+            "target_scope_filter": TARGET_SCOPE_FILTER,
             "candidate_weight_sum": candidate["weight_sum"],
             "baseline_weight_sum": baseline["weight_sum"],
             "family_breakdown": build_family_breakdown(
@@ -475,6 +619,57 @@ if REPO_ROOT not in sys.path:
 
 from policyengine_us import Microsimulation
 from policyengine_us_data.utils.loss import build_loss_matrix
+
+
+def patch_policyengine_us_data_uprating_aliases():
+    import policyengine_us_data.utils.soi as soi_utils
+
+    original = soi_utils.create_policyengine_uprating_factors_table
+
+    def patched_create_policyengine_uprating_factors_table(*args, **kwargs):
+        table = original(*args, **kwargs)
+        if (
+            "employment_income" not in table.index
+            and "employment_income_before_lsr" in table.index
+        ):
+            table.loc["employment_income"] = table.loc[
+                "employment_income_before_lsr"
+            ]
+        return table
+
+    soi_utils.create_policyengine_uprating_factors_table = (
+        patched_create_policyengine_uprating_factors_table
+    )
+
+
+patch_policyengine_us_data_uprating_aliases()
+
+
+def load_microplex_loss_helpers():
+    import importlib.util
+
+    for entry in sys.path:
+        candidate = Path(entry) / "microplex_us" / "pipelines" / "pe_native_loss.py"
+        if not candidate.exists():
+            continue
+        spec = importlib.util.spec_from_file_location(
+            "microplex_us_pe_native_loss_standalone",
+            candidate,
+        )
+        if spec is None or spec.loader is None:
+            continue
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        return module
+    raise ModuleNotFoundError("Could not load microplex_us pe_native_loss helper")
+
+
+_LOSS_HELPERS = load_microplex_loss_helpers()
+PE_NATIVE_ROBUST_LOSS_METRIC = _LOSS_HELPERS.PE_NATIVE_ROBUST_LOSS_METRIC
+build_pe_native_loss_arrays = _LOSS_HELPERS.build_pe_native_loss_arrays
+pe_native_huber_loss_terms = _LOSS_HELPERS.pe_native_huber_loss_terms
+pe_native_relative_error = _LOSS_HELPERS.pe_native_relative_error
 
 BAD_TARGETS = tuple(json.loads(sys.argv[2]))
 PERIOD = int(sys.argv[3])
@@ -515,12 +710,10 @@ def compute(dataset_path: str):
             "PE-native broad loss requires both national and state targets after filtering"
         )
 
-    normalisation_factor = np.where(
-        is_national,
-        1.0 / n_national,
-        1.0 / n_state,
-    ).astype(np.float64)
-    inv_mean_normalisation = 1.0 / float(np.mean(normalisation_factor))
+    loss_arrays = build_pe_native_loss_arrays(
+        filtered.columns.tolist(),
+        filtered_targets,
+    )
 
     sim = Microsimulation(dataset=dataset_cls)
     sim.default_calculation_period = PERIOD
@@ -531,8 +724,8 @@ def compute(dataset_path: str):
     ).values.astype(np.float64)
 
     estimate = weights @ filtered.to_numpy(dtype=np.float64)
-    rel_error = (((estimate - filtered_targets) + 1.0) / (filtered_targets + 1.0)) ** 2
-    weighted_terms = inv_mean_normalisation * rel_error * normalisation_factor
+    rel_error = pe_native_relative_error(estimate, loss_arrays)
+    weighted_terms = pe_native_huber_loss_terms(estimate, loss_arrays)
     return {
         "target_names": filtered.columns.tolist(),
         "targets": filtered_targets.tolist(),
@@ -707,6 +900,57 @@ if REPO_ROOT not in sys.path:
 from policyengine_us import Microsimulation
 from policyengine_us_data.utils.loss import build_loss_matrix
 
+
+def patch_policyengine_us_data_uprating_aliases():
+    import policyengine_us_data.utils.soi as soi_utils
+
+    original = soi_utils.create_policyengine_uprating_factors_table
+
+    def patched_create_policyengine_uprating_factors_table(*args, **kwargs):
+        table = original(*args, **kwargs)
+        if (
+            "employment_income" not in table.index
+            and "employment_income_before_lsr" in table.index
+        ):
+            table.loc["employment_income"] = table.loc[
+                "employment_income_before_lsr"
+            ]
+        return table
+
+    soi_utils.create_policyengine_uprating_factors_table = (
+        patched_create_policyengine_uprating_factors_table
+    )
+
+
+patch_policyengine_us_data_uprating_aliases()
+
+
+def load_microplex_loss_helpers():
+    import importlib.util
+
+    for entry in sys.path:
+        candidate = Path(entry) / "microplex_us" / "pipelines" / "pe_native_loss.py"
+        if not candidate.exists():
+            continue
+        spec = importlib.util.spec_from_file_location(
+            "microplex_us_pe_native_loss_standalone",
+            candidate,
+        )
+        if spec is None or spec.loader is None:
+            continue
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        return module
+    raise ModuleNotFoundError("Could not load microplex_us pe_native_loss helper")
+
+
+_LOSS_HELPERS = load_microplex_loss_helpers()
+PE_NATIVE_ROBUST_LOSS_METRIC = _LOSS_HELPERS.PE_NATIVE_ROBUST_LOSS_METRIC
+build_pe_native_loss_arrays = _LOSS_HELPERS.build_pe_native_loss_arrays
+pe_native_huber_loss_terms = _LOSS_HELPERS.pe_native_huber_loss_terms
+pe_native_relative_error = _LOSS_HELPERS.pe_native_relative_error
+
 BAD_TARGETS = tuple(json.loads(sys.argv[2]))
 PERIOD = int(sys.argv[3])
 BASELINE_DATASET = sys.argv[4]
@@ -746,12 +990,10 @@ def compute(dataset_path: str):
             "PE-native broad loss requires both national and state targets after filtering"
         )
 
-    normalisation_factor = np.where(
-        is_national,
-        1.0 / n_national,
-        1.0 / n_state,
-    ).astype(np.float64)
-    inv_mean_normalisation = 1.0 / float(np.mean(normalisation_factor))
+    loss_arrays = build_pe_native_loss_arrays(
+        filtered.columns.tolist(),
+        filtered_targets,
+    )
 
     sim = Microsimulation(dataset=dataset_cls)
     sim.default_calculation_period = PERIOD
@@ -762,8 +1004,8 @@ def compute(dataset_path: str):
     ).values.astype(np.float64)
 
     estimate = weights @ filtered.to_numpy(dtype=np.float64)
-    rel_error = (((estimate - filtered_targets) + 1.0) / (filtered_targets + 1.0)) ** 2
-    weighted_terms = inv_mean_normalisation * rel_error * normalisation_factor
+    rel_error = pe_native_relative_error(estimate, loss_arrays)
+    weighted_terms = pe_native_huber_loss_terms(estimate, loss_arrays)
     return {
         "target_names": filtered.columns.tolist(),
         "targets": filtered_targets.tolist(),
@@ -2043,6 +2285,8 @@ class PolicyEngineUSEnhancedCPSNativeScores:
     candidate_weight_sum: float
     baseline_weight_sum: float
     family_breakdown: tuple[dict[str, Any], ...] = field(default_factory=tuple)
+    loss_config: dict[str, Any] | None = None
+    target_scope_filter: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -2069,10 +2313,14 @@ class PolicyEngineUSEnhancedCPSNativeScores:
             "candidate_weight_sum": self.candidate_weight_sum,
             "baseline_weight_sum": self.baseline_weight_sum,
             "family_breakdown": list(self.family_breakdown),
+            "loss_config": self.loss_config,
+            "target_scope_filter": self.target_scope_filter,
         }
 
     @classmethod
-    def from_dict(cls, payload: dict[str, Any]) -> PolicyEngineUSEnhancedCPSNativeScores:
+    def from_dict(
+        cls, payload: dict[str, Any]
+    ) -> PolicyEngineUSEnhancedCPSNativeScores:
         return cls(
             metric=str(payload["metric"]),
             period=int(payload["period"]),
@@ -2099,6 +2347,8 @@ class PolicyEngineUSEnhancedCPSNativeScores:
             candidate_weight_sum=float(payload["candidate_weight_sum"]),
             baseline_weight_sum=float(payload["baseline_weight_sum"]),
             family_breakdown=tuple(payload.get("family_breakdown", ())),
+            loss_config=payload.get("loss_config"),
+            target_scope_filter=payload.get("target_scope_filter"),
         )
 
 
@@ -2124,8 +2374,7 @@ def resolve_policyengine_us_data_repo_root(
             return resolved
     searched = ", ".join(str(path.expanduser()) for path in candidates)
     raise FileNotFoundError(
-        "Could not resolve policyengine-us-data repo root. "
-        f"Searched: {searched}"
+        f"Could not resolve policyengine-us-data repo root. Searched: {searched}"
     )
 
 
@@ -2169,7 +2418,8 @@ def build_policyengine_us_data_pythonpath(
     """Build the native-scoring PYTHONPATH for local PE-US-data checkouts."""
 
     resolved_repo = resolve_policyengine_us_data_repo_root(repo_root)
-    path_entries: list[str] = [str(resolved_repo)]
+    microplex_src = Path(__file__).resolve().parents[2]
+    path_entries: list[str] = [str(resolved_repo), str(microplex_src)]
 
     sibling_microimpute = resolved_repo.parent / "microimpute"
     if (sibling_microimpute / "microimpute").exists():
@@ -2209,6 +2459,7 @@ def compute_policyengine_us_enhanced_cps_native_scores(
     period: int = 2024,
     policyengine_us_data_python: str | Path | None = None,
     policyengine_us_data_repo: str | Path | None = None,
+    target_scope_filter: str | None = None,
 ) -> PolicyEngineUSEnhancedCPSNativeScores:
     """Score one candidate and baseline under the exact enhanced-CPS loss."""
     resolved_repo = resolve_policyengine_us_data_repo_root(policyengine_us_data_repo)
@@ -2227,6 +2478,7 @@ def compute_policyengine_us_enhanced_cps_native_scores(
             str(int(period)),
             str(Path(candidate_dataset).expanduser().resolve()),
             str(Path(baseline_dataset).expanduser().resolve()),
+            target_scope_filter or "",
         ],
         cwd=resolved_repo,
         env=env,
@@ -2250,6 +2502,7 @@ def score_policyengine_us_native_broad_loss(
     period: int = 2024,
     python_executable: str | Path | None = None,
     repo_root: str | Path | None = None,
+    target_scope_filter: str | None = None,
 ) -> PolicyEngineUSEnhancedCPSNativeScores:
     """Backward-compatible alias for the exact enhanced-CPS loss scorer."""
     return compute_policyengine_us_enhanced_cps_native_scores(
@@ -2258,6 +2511,7 @@ def score_policyengine_us_native_broad_loss(
         period=period,
         policyengine_us_data_python=python_executable,
         policyengine_us_data_repo=repo_root,
+        target_scope_filter=target_scope_filter,
     )
 
 
@@ -2268,6 +2522,7 @@ def compute_us_pe_native_scores(
     period: int = 2024,
     policyengine_us_data_repo: str | Path | None = None,
     policyengine_us_data_python: str | Path | None = None,
+    target_scope_filter: str | None = None,
 ) -> dict[str, Any]:
     """Build the saved manifest payload for PE-native broad scoring."""
 
@@ -2277,6 +2532,7 @@ def compute_us_pe_native_scores(
         period=period,
         policyengine_us_data_python=policyengine_us_data_python,
         policyengine_us_data_repo=policyengine_us_data_repo,
+        target_scope_filter=target_scope_filter,
     )
     return {
         "metric": score.metric,
@@ -2299,6 +2555,8 @@ def compute_us_pe_native_scores(
             "n_targets_bad_dropped": score.n_targets_bad_dropped,
             "n_national_targets": score.n_national_targets,
             "n_state_targets": score.n_state_targets,
+            "loss_config": score.loss_config,
+            "target_scope_filter": score.target_scope_filter,
         },
         "broad_loss": score.to_dict(),
         "family_breakdown": list(score.family_breakdown),
@@ -2312,6 +2570,7 @@ def compute_batch_us_pe_native_scores(
     period: int = 2024,
     policyengine_us_data_repo: str | Path | None = None,
     policyengine_us_data_python: str | Path | None = None,
+    target_scope_filter: str | None = None,
 ) -> list[dict[str, Any]]:
     """Score multiple candidates against one baseline in a single PE-native subprocess."""
 
@@ -2339,6 +2598,7 @@ def compute_batch_us_pe_native_scores(
                     for candidate_path in candidate_dataset_paths
                 ]
             ),
+            target_scope_filter or "",
         ],
         cwd=resolved_repo,
         env=env,
@@ -2358,6 +2618,7 @@ def compute_batch_us_pe_native_scores(
             "metric": item["metric"],
             "period": int(item["period"]),
             "summary": {
+                "loss_config": item.get("loss_config"),
                 "candidate_enhanced_cps_native_loss": float(
                     item["candidate_enhanced_cps_native_loss"]
                 ),
@@ -2367,9 +2628,7 @@ def compute_batch_us_pe_native_scores(
                 "enhanced_cps_native_loss_delta": float(
                     item["enhanced_cps_native_loss_delta"]
                 ),
-                "candidate_beats_baseline": bool(
-                    item["candidate_beats_baseline"]
-                ),
+                "candidate_beats_baseline": bool(item["candidate_beats_baseline"]),
                 "candidate_unweighted_msre": float(item["candidate_unweighted_msre"]),
                 "baseline_unweighted_msre": float(item["baseline_unweighted_msre"]),
                 "unweighted_msre_delta": float(item["unweighted_msre_delta"]),
@@ -2379,9 +2638,11 @@ def compute_batch_us_pe_native_scores(
                 "n_targets_bad_dropped": int(item["n_targets_bad_dropped"]),
                 "n_national_targets": int(item["n_national_targets"]),
                 "n_state_targets": int(item["n_state_targets"]),
+                "target_scope_filter": item.get("target_scope_filter"),
             },
             "broad_loss": {
                 "metric": item["metric"],
+                "loss_config": item.get("loss_config"),
                 "period": int(item["period"]),
                 "candidate_dataset": str(item["candidate_dataset"]),
                 "baseline_dataset": str(item["baseline_dataset"]),
@@ -2394,9 +2655,7 @@ def compute_batch_us_pe_native_scores(
                 "enhanced_cps_native_loss_delta": float(
                     item["enhanced_cps_native_loss_delta"]
                 ),
-                "candidate_beats_baseline": bool(
-                    item["candidate_beats_baseline"]
-                ),
+                "candidate_beats_baseline": bool(item["candidate_beats_baseline"]),
                 "candidate_unweighted_msre": float(item["candidate_unweighted_msre"]),
                 "baseline_unweighted_msre": float(item["baseline_unweighted_msre"]),
                 "unweighted_msre_delta": float(item["unweighted_msre_delta"]),
@@ -2406,6 +2665,7 @@ def compute_batch_us_pe_native_scores(
                 "n_targets_bad_dropped": int(item["n_targets_bad_dropped"]),
                 "n_national_targets": int(item["n_national_targets"]),
                 "n_state_targets": int(item["n_state_targets"]),
+                "target_scope_filter": item.get("target_scope_filter"),
                 "candidate_weight_sum": float(item["candidate_weight_sum"]),
                 "baseline_weight_sum": float(item["baseline_weight_sum"]),
                 "family_breakdown": list(item.get("family_breakdown", [])),
@@ -2662,7 +2922,9 @@ def annotate_pe_native_target_db_matches(
         key = parse_pe_native_target_lookup_key(target_name)
         if key is None:
             annotation: dict[str, Any] = {"policyengine_target_match": "unparsed"}
-        elif resolved_db_path is None or not resolved_db_path.exists() or target_db_error:
+        elif (
+            resolved_db_path is None or not resolved_db_path.exists() or target_db_error
+        ):
             annotation = {
                 "policyengine_target_match": "db_unavailable",
                 "policyengine_target_expected": key.expected_target(),

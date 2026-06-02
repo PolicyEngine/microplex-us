@@ -23,6 +23,8 @@ from microplex_us.pipelines.pe_native_scores import (
     write_us_pe_native_target_diagnostics,
 )
 
+_MICROPLEX_SRC = __import__("microplex_us").__path__[0].rsplit("/microplex_us", 1)[0]
+
 
 def test_compute_us_pe_native_scores_wraps_broad_loss(monkeypatch, tmp_path) -> None:
     candidate = tmp_path / "candidate.h5"
@@ -223,7 +225,10 @@ def test_compute_batch_us_pe_native_scores_wraps_multiple_candidates(
     assert results[1]["summary"]["candidate_beats_baseline"] is False
     assert results[1]["broad_loss"]["enhanced_cps_native_loss_delta"] == 0.25
     assert results[0]["family_breakdown"][0]["family"] == "state_age_distribution"
-    assert results[1]["broad_loss"]["family_breakdown"][0]["family"] == "state_agi_distribution"
+    assert (
+        results[1]["broad_loss"]["family_breakdown"][0]["family"]
+        == "state_agi_distribution"
+    )
     assert results[0]["timing"]["batch_candidate_count"] == 2
     assert results[0]["timing"]["batch_elapsed_seconds"] >= 0.0
 
@@ -243,6 +248,7 @@ def test_build_policyengine_us_data_pythonpath_includes_sibling_microimpute(
 
     assert pythonpath.split(os.pathsep) == [
         str(repo),
+        _MICROPLEX_SRC,
         str(microimpute),
         "/tmp/existing-one",
         "/tmp/existing-two",
@@ -276,6 +282,7 @@ def test_build_policyengine_us_data_subprocess_env_strips_outer_uv_markers(
     assert "UV_RUN_RECURSION_DEPTH" not in env
     assert env["PYTHONPATH"].split(os.pathsep) == [
         str(repo),
+        _MICROPLEX_SRC,
         str(microimpute),
         "/tmp/existing",
     ]
@@ -421,12 +428,8 @@ def test_compare_us_pe_native_target_deltas_wraps_subprocess_payload(
 
 
 def test_parse_pe_native_target_lookup_key_maps_eitc_agi_child_labels() -> None:
-    amount_key = parse_pe_native_target_lookup_key(
-        "nation/irs/eitc/amount/c3_1_1k"
-    )
-    returns_key = parse_pe_native_target_lookup_key(
-        "nation/irs/eitc/returns/c2_1_1k"
-    )
+    amount_key = parse_pe_native_target_lookup_key("nation/irs/eitc/amount/c3_1_1k")
+    returns_key = parse_pe_native_target_lookup_key("nation/irs/eitc/returns/c2_1_1k")
 
     assert amount_key is not None
     assert amount_key.variable == "eitc"
@@ -464,9 +467,7 @@ def test_annotate_pe_native_target_db_matches_marks_matches_and_gaps(
                     "notes": "Table 2.5",
                     "geo_level": "national",
                     "geographic_id": "US",
-                    "domain_variable": (
-                        "adjusted_gross_income,eitc,eitc_child_count"
-                    ),
+                    "domain_variable": ("adjusted_gross_income,eitc,eitc_child_count"),
                     "constraints": [
                         {
                             "variable": "eitc_child_count",
@@ -774,4 +775,7 @@ def test_compute_batch_us_pe_native_support_audits_wraps_multiple_candidates(
     assert len(results) == 2
     assert results[0]["baseline_dataset"] == str(baseline)
     assert results[0]["candidate_dataset"] == str(candidate_a)
-    assert results[1]["comparisons"]["critical_input_support"][0]["weighted_nonzero_delta"] == 2.0
+    assert (
+        results[1]["comparisons"]["critical_input_support"][0]["weighted_nonzero_delta"]
+        == 2.0
+    )

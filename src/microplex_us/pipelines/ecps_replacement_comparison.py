@@ -14,6 +14,14 @@ from typing import Any
 import h5py
 import numpy as np
 
+from microplex_us.pipelines.pe_native_loss import (
+    classify_pe_native_target_family,
+    loss_arrays_from_inputs,
+    pe_native_huber_loss,
+    pe_native_huber_loss_terms,
+    pe_native_relative_error,
+    subset_loss_arrays,
+)
 from microplex_us.pipelines.pe_native_optimization import (
     _PE_NATIVE_BROAD_MATRIX_SCRIPT,
     optimize_pe_native_loss_weights,
@@ -28,9 +36,6 @@ from microplex_us.pipelines.pe_native_scores import (
 )
 from microplex_us.pipelines.performance import (
     _write_matched_policyengine_us_baseline_dataset,
-)
-from microplex_us.pipelines.summarize_pe_native_family_drilldown import (
-    classify_pe_native_target_family,
 )
 
 _PROTECTED_TARGET_PATTERNS: dict[str, tuple[str, ...]] = {
@@ -66,6 +71,7 @@ def build_sound_ecps_replacement_comparison(
     policyengine_us_data_repo: str | Path | None = None,
     policyengine_us_data_python: str | Path | None = None,
     skip_tax_expenditure_targets: bool = False,
+    target_scope: str = "all",
     exact_rescore: bool = False,
     force: bool = False,
 ) -> dict[str, Any]:
@@ -132,7 +138,17 @@ def build_sound_ecps_replacement_comparison(
         policyengine_us_data_python=policyengine_us_data_python,
         skip_tax_expenditure_targets=skip_tax_expenditure_targets,
     )
+    candidate_inputs = _filter_loss_inputs_by_scope(
+        candidate_inputs,
+        target_scope=target_scope,
+    )
+    baseline_inputs = _filter_loss_inputs_by_scope(
+        baseline_inputs,
+        target_scope=target_scope,
+    )
     target_names = _validate_common_targets(candidate_inputs, baseline_inputs)
+    if exact_rescore and target_scope != "all":
+        raise ValueError("exact_rescore is only supported for target_scope='all'")
     holdout_mask = _build_holdout_target_mask(
         target_names,
         fraction=holdout_target_fraction,
@@ -140,7 +156,7 @@ def build_sound_ecps_replacement_comparison(
     )
 
     refit_config = {
-        "method": "deterministic_pe_native_projected_gradient",
+        "method": "monotone_accelerated_projected_gradient",
         "lambda_l0": 0.0,
         "lambda_l2": 0.0,
         "use_gates": False,
@@ -287,6 +303,7 @@ def build_sound_ecps_replacement_comparison(
             "ecps_refit_recovery_passed": ecps_refit_recovery_passed,
             "holdout_target_fraction": float(holdout_target_fraction),
             "holdout_targets": int(holdout_mask.sum()),
+            "target_scope_filter": target_scope,
             "protected_family_losses": protected_family_losses,
             "target_diagnostics": target_diagnostics["summary"],
             "support_audit": support_audit_summary,
@@ -313,6 +330,7 @@ def build_sound_ecps_replacement_comparison(
             "ecps_refit_recovery_passed": ecps_refit_recovery_passed,
             "holdout_target_fraction": float(holdout_target_fraction),
             "holdout_targets": int(holdout_mask.sum()),
+            "target_scope_filter": target_scope,
             "protected_family_losses": protected_family_losses,
         },
         "entity_structure": {
@@ -350,6 +368,7 @@ def build_sound_ecps_replacement_comparison(
         "target_split": {
             "holdout_target_fraction": float(holdout_target_fraction),
             "holdout_target_seed": int(holdout_target_seed),
+            "target_scope_filter": target_scope,
             "train_targets": int((~holdout_mask).sum()),
             "holdout_targets": int(holdout_mask.sum()),
             "holdout_target_names": [
@@ -646,12 +665,108 @@ def _extract_pe_native_loss_inputs(
                 prefix.with_suffix(".target_unscaled.npy")
             ),
             "scaling": _load_optional_array(prefix.with_suffix(".scaling.npy")),
+            "loss_denominator": _load_optional_array(
+                prefix.with_suffix(".loss_denominator.npy")
+            ),
+            "loss_target_weight": _load_optional_array(
+                prefix.with_suffix(".loss_target_weight.npy")
+            ),
+            "loss_bucket": _load_optional_array(
+                prefix.with_suffix(".loss_bucket.npy"),
+                allow_pickle=True,
+            ),
+            "loss_unit": _load_optional_array(
+                prefix.with_suffix(".loss_unit.npy"),
+                allow_pickle=True,
+            ),
+            "loss_scope": _load_optional_array(
+                prefix.with_suffix(".loss_scope.npy"),
+                allow_pickle=True,
+            ),
+            "loss_family": _load_optional_array(
+                prefix.with_suffix(".loss_family.npy"),
+                allow_pickle=True,
+            ),
+            "loss_epsilon": _load_optional_array(
+                prefix.with_suffix(".loss_epsilon.npy")
+            ),
             "metadata": json.loads(prefix.with_suffix(".meta.json").read_text()),
         }
 
 
-def _load_optional_array(path: Path) -> np.ndarray | None:
-    return np.load(path) if path.exists() else None
+def _load_optional_array(
+    path: Path, *, allow_pickle: bool = False
+) -> np.ndarray | None:
+    return np.load(path, allow_pickle=allow_pickle) if path.exists() else None
+
+
+def _filter_loss_inputs_by_scope(
+    loss_inputs: dict[str, Any],
+    *,
+    target_scope: str,
+) -> dict[str, Any]:
+    if target_scope not in {"all", "national", "state"}:
+        raise ValueError("target_scope must be one of all, national, or state")
+    if target_scope == "all":
+        return loss_inputs
+
+    metadata = dict(loss_inputs["metadata"])
+    target_names = np.asarray(metadata.get("target_names", ()), dtype=object)
+    if target_names.size == 0:
+        raise ValueError("PE-native loss inputs do not include target names")
+
+    scope = loss_inputs.get("loss_scope")
+    if scope is not None:
+        keep_mask = np.asarray(scope, dtype=object) == target_scope
+    elif target_scope == "national":
+        keep_mask = np.asarray(
+            [str(name).startswith("nation/") for name in target_names],
+            dtype=bool,
+        )
+    else:
+        keep_mask = np.asarray(
+            [not str(name).startswith("nation/") for name in target_names],
+            dtype=bool,
+        )
+    if not bool(keep_mask.any()):
+        raise ValueError(f"target_scope={target_scope!r} selected no targets")
+
+    filtered = dict(loss_inputs)
+    filtered["scaled_matrix"] = np.asarray(loss_inputs["scaled_matrix"])[:, keep_mask]
+    for key in (
+        "scaled_target",
+        "unscaled_target",
+        "scaling",
+        "loss_denominator",
+        "loss_target_weight",
+        "loss_bucket",
+        "loss_unit",
+        "loss_scope",
+        "loss_family",
+        "loss_epsilon",
+    ):
+        value = loss_inputs.get(key)
+        if value is not None:
+            filtered[key] = np.asarray(value)[keep_mask]
+
+    filtered_names = target_names[keep_mask].tolist()
+    metadata["target_names"] = filtered_names
+    metadata["target_scope_filter"] = target_scope
+    metadata["n_targets_scope_filtered_from"] = int(target_names.size)
+    metadata["n_targets_kept"] = int(len(filtered_names))
+    metadata["n_national_targets"] = int(
+        sum(str(name).startswith("nation/") for name in filtered_names)
+    )
+    metadata["n_state_targets"] = int(
+        len(filtered_names) - metadata["n_national_targets"]
+    )
+    sidecar_rows = metadata.get("target_loss_metadata")
+    if isinstance(sidecar_rows, list) and len(sidecar_rows) == target_names.size:
+        metadata["target_loss_metadata"] = [
+            row for row, keep in zip(sidecar_rows, keep_mask, strict=True) if keep
+        ]
+    filtered["metadata"] = metadata
+    return filtered
 
 
 def _validate_common_targets(
@@ -666,6 +781,24 @@ def _validate_common_targets(
     baseline_target = np.asarray(baseline_inputs["scaled_target"], dtype=np.float64)
     if not np.allclose(candidate_target, baseline_target):
         raise ValueError("candidate and baseline PE-native scaled targets differ")
+    for key in (
+        "loss_denominator",
+        "loss_target_weight",
+        "loss_epsilon",
+    ):
+        left = candidate_inputs.get(key)
+        right = baseline_inputs.get(key)
+        if left is None and right is None:
+            continue
+        if left is None or right is None or not np.allclose(left, right):
+            raise ValueError(f"candidate and baseline PE-native {key} differ")
+    for key in ("loss_bucket", "loss_unit", "loss_scope", "loss_family"):
+        left = candidate_inputs.get(key)
+        right = baseline_inputs.get(key)
+        if left is None and right is None:
+            continue
+        if left is None or right is None or not np.array_equal(left, right):
+            raise ValueError(f"candidate and baseline PE-native {key} differ")
     return candidate_names
 
 
@@ -709,7 +842,16 @@ def _fit_dense_refit(
     matrix = np.asarray(loss_inputs["scaled_matrix"], dtype=np.float64)
     target = np.asarray(loss_inputs["scaled_target"], dtype=np.float64)
     initial_weights = np.asarray(loss_inputs["initial_weights"], dtype=np.float64)
+    loss_arrays = loss_arrays_from_inputs(loss_inputs)
     train_mask = ~holdout_mask
+    train_loss_arrays = (
+        subset_loss_arrays(loss_arrays, train_mask) if loss_arrays is not None else None
+    )
+    holdout_loss_arrays = (
+        subset_loss_arrays(loss_arrays, holdout_mask)
+        if loss_arrays is not None
+        else None
+    )
     loss_curve: list[dict[str, float | int]] = []
 
     def record_loss_curve(
@@ -721,16 +863,23 @@ def _fit_dense_refit(
             {
                 "iteration": int(iteration),
                 "objective_train_loss": float(objective_loss),
-                "full_loss": _objective(matrix, target, weights),
+                "full_loss": _objective(
+                    matrix,
+                    target,
+                    weights,
+                    loss_arrays=loss_arrays,
+                ),
                 "train_loss": _objective(
                     matrix[:, train_mask],
                     target[train_mask],
                     weights,
+                    loss_arrays=train_loss_arrays,
                 ),
                 "holdout_loss": _objective(
                     matrix[:, holdout_mask],
                     target[holdout_mask],
                     weights,
+                    loss_arrays=holdout_loss_arrays,
                 ),
                 "weight_sum": float(weights.sum()),
                 "positive_household_count": int((weights > 1e-9).sum()),
@@ -741,6 +890,7 @@ def _fit_dense_refit(
         scaled_matrix=matrix[:, train_mask],
         scaled_target=target[train_mask],
         initial_weights=initial_weights,
+        loss_arrays=train_loss_arrays,
         budget=None,
         max_iter=max_iter,
         l2_penalty=0.0,
@@ -756,27 +906,41 @@ def _fit_dense_refit(
     return {
         "input_dataset": str(input_dataset_path.resolve()),
         "output_dataset": str(output_dataset_path.resolve()),
-        "initial_full_loss": _objective(matrix, target, initial_weights),
-        "optimized_full_loss": _objective(matrix, target, optimized_weights),
+        "initial_full_loss": _objective(
+            matrix,
+            target,
+            initial_weights,
+            loss_arrays=loss_arrays,
+        ),
+        "optimized_full_loss": _objective(
+            matrix,
+            target,
+            optimized_weights,
+            loss_arrays=loss_arrays,
+        ),
         "initial_train_loss": _objective(
             matrix[:, train_mask],
             target[train_mask],
             initial_weights,
+            loss_arrays=train_loss_arrays,
         ),
         "optimized_train_loss": _objective(
             matrix[:, train_mask],
             target[train_mask],
             optimized_weights,
+            loss_arrays=train_loss_arrays,
         ),
         "initial_holdout_loss": _objective(
             matrix[:, holdout_mask],
             target[holdout_mask],
             initial_weights,
+            loss_arrays=holdout_loss_arrays,
         ),
         "optimized_holdout_loss": _objective(
             matrix[:, holdout_mask],
             target[holdout_mask],
             optimized_weights,
+            loss_arrays=holdout_loss_arrays,
         ),
         "initial_weight_sum": float(initial_weights.sum()),
         "optimized_weight_sum": float(optimized_weights.sum()),
@@ -788,8 +952,17 @@ def _fit_dense_refit(
     }
 
 
-def _objective(matrix: np.ndarray, target: np.ndarray, weights: np.ndarray) -> float:
-    residual = matrix.T @ weights - target
+def _objective(
+    matrix: np.ndarray,
+    target: np.ndarray,
+    weights: np.ndarray,
+    *,
+    loss_arrays: Any | None = None,
+) -> float:
+    estimate = matrix.T @ weights
+    if loss_arrays is not None:
+        return pe_native_huber_loss(estimate, loss_arrays)
+    residual = estimate - target
     return float(np.dot(residual, residual))
 
 
@@ -850,6 +1023,12 @@ def _target_loss_diagnostics(
         raise ValueError("candidate and baseline target diagnostic scales differ")
     if not np.allclose(candidate_values["target"], baseline_values["target"]):
         raise ValueError("candidate and baseline target diagnostic values differ")
+    for key in ("loss_denominator", "loss_target_weight"):
+        if not np.allclose(candidate_values[key], baseline_values[key]):
+            raise ValueError(f"candidate and baseline target diagnostic {key} differ")
+    for key in ("loss_bucket", "loss_unit", "loss_scope"):
+        if not np.array_equal(candidate_values[key], baseline_values[key]):
+            raise ValueError(f"candidate and baseline target diagnostic {key} differ")
     if candidate_terms.shape != baseline_terms.shape:
         raise ValueError("candidate and baseline target loss term shapes differ")
     if len(target_names) != candidate_terms.shape[0]:
@@ -861,6 +1040,8 @@ def _target_loss_diagnostics(
     candidate_wins = 0
     baseline_wins = 0
     ties = 0
+    candidate_loss_total = float(candidate_terms.sum())
+    baseline_loss_total = float(baseline_terms.sum())
     for index, target_name in enumerate(target_names):
         candidate_loss = float(candidate_terms[index])
         baseline_loss = float(baseline_terms[index])
@@ -879,6 +1060,14 @@ def _target_loss_diagnostics(
                 "target_index": int(index),
                 "target_name": str(target_name),
                 "family": classify_pe_native_target_family(target_name),
+                "loss_scope": str(candidate_values["loss_scope"][index]),
+                "loss_unit": str(candidate_values["loss_unit"][index]),
+                "loss_bucket": str(candidate_values["loss_bucket"][index]),
+                "loss_denominator": float(candidate_values["loss_denominator"][index]),
+                "loss_target_weight": float(
+                    candidate_values["loss_target_weight"][index]
+                ),
+                "loss_epsilon": float(candidate_values["loss_epsilon"][index]),
                 "split": "holdout" if bool(holdout_mask[index]) else "train",
                 "value_scale": str(candidate_values["value_scale"][index]),
                 "target_value": float(candidate_values["target"][index]),
@@ -894,6 +1083,16 @@ def _target_loss_diagnostics(
                 ),
                 "candidate_loss_term": candidate_loss,
                 "baseline_loss_term": baseline_loss,
+                "candidate_loss_share": (
+                    candidate_loss / candidate_loss_total
+                    if candidate_loss_total > 0.0
+                    else 0.0
+                ),
+                "baseline_loss_share": (
+                    baseline_loss / baseline_loss_total
+                    if baseline_loss_total > 0.0
+                    else 0.0
+                ),
                 "loss_delta": float(loss_delta),
                 "candidate_abs_scaled_error": float(np.sqrt(candidate_loss)),
                 "baseline_abs_scaled_error": float(np.sqrt(baseline_loss)),
@@ -910,9 +1109,19 @@ def _target_loss_diagnostics(
     improvements = sorted(rows, key=lambda row: float(row["loss_delta"]))[:top_k]
     summary = {
         "n_targets": int(len(rows)),
-        "candidate_loss": float(candidate_terms.sum()),
-        "baseline_loss": float(baseline_terms.sum()),
-        "loss_delta": float(candidate_terms.sum() - baseline_terms.sum()),
+        "candidate_loss": candidate_loss_total,
+        "baseline_loss": baseline_loss_total,
+        "loss_delta": float(candidate_loss_total - baseline_loss_total),
+        "candidate_max_single_target_loss_share": (
+            float(candidate_terms.max() / candidate_loss_total)
+            if candidate_loss_total > 0.0 and candidate_terms.size
+            else 0.0
+        ),
+        "baseline_max_single_target_loss_share": (
+            float(baseline_terms.max() / baseline_loss_total)
+            if baseline_loss_total > 0.0 and baseline_terms.size
+            else 0.0
+        ),
         "candidate_wins": int(candidate_wins),
         "baseline_wins": int(baseline_wins),
         "ties": int(ties),
@@ -925,6 +1134,7 @@ def _target_loss_diagnostics(
         "metric": "sound_ecps_target_loss_diagnostics",
         "summary": summary,
         "family_breakdown": _target_family_breakdown(rows, len(rows)),
+        "bucket_breakdown": _target_bucket_breakdown(rows),
         "top_regressions": regressions,
         "top_improvements": improvements,
         "targets": rows,
@@ -946,6 +1156,12 @@ def _refit_matrix_score_summary(
     baseline_msre = _diagnostic_unweighted_msre(target_diagnostics, "baseline")
     candidate_metadata = dict(candidate_inputs.get("metadata") or {})
     baseline_metadata = dict(baseline_inputs.get("metadata") or {})
+    loss_metric = str(
+        candidate_metadata.get(
+            "loss_metric",
+            baseline_metadata.get("loss_metric", "enhanced_cps_native_loss"),
+        )
+    )
     n_targets_kept = int(
         candidate_metadata.get(
             "n_targets_kept",
@@ -953,6 +1169,11 @@ def _refit_matrix_score_summary(
         )
     )
     summary: dict[str, Any] = {
+        "loss_metric": loss_metric,
+        "loss_config": candidate_metadata.get(
+            "loss_config",
+            baseline_metadata.get("loss_config"),
+        ),
         "candidate_enhanced_cps_native_loss": candidate_loss,
         "baseline_enhanced_cps_native_loss": baseline_loss,
         "enhanced_cps_native_loss_delta": candidate_loss - baseline_loss,
@@ -962,6 +1183,12 @@ def _refit_matrix_score_summary(
         "unweighted_msre_delta": candidate_msre - baseline_msre,
         "n_targets_kept": n_targets_kept,
         "score_source": "refit_loss_matrix",
+        "candidate_max_single_target_loss_share": target_diagnostics["summary"].get(
+            "candidate_max_single_target_loss_share"
+        ),
+        "baseline_max_single_target_loss_share": target_diagnostics["summary"].get(
+            "baseline_max_single_target_loss_share"
+        ),
     }
     for key in (
         "n_targets_total",
@@ -987,7 +1214,7 @@ def _refit_matrix_score_payload(
 ) -> dict[str, Any]:
     family_breakdown = list(target_diagnostics.get("family_breakdown") or ())
     return {
-        "metric": "enhanced_cps_native_loss",
+        "metric": str(summary.get("loss_metric") or "enhanced_cps_native_loss"),
         "score_source": "refit_loss_matrix",
         "period": int(period),
         "candidate_dataset": str(candidate_dataset_path.resolve()),
@@ -1023,6 +1250,25 @@ def _target_value_diagnostics(
     matrix = np.asarray(loss_inputs["scaled_matrix"], dtype=np.float64)
     scaled_target = np.asarray(loss_inputs["scaled_target"], dtype=np.float64)
     scaled_estimate = matrix.T @ weights
+    loss_arrays = loss_arrays_from_inputs(loss_inputs)
+    if loss_arrays is not None:
+        target = loss_arrays.target_values.astype(np.float64, copy=True)
+        estimate = scaled_estimate.astype(np.float64, copy=True)
+        error = estimate - loss_arrays.objective_target
+        return {
+            "value_scale": np.full(target.shape, "native", dtype=object),
+            "target": target,
+            "estimate": estimate,
+            "error": error,
+            "relative_error": pe_native_relative_error(estimate, loss_arrays),
+            "loss_denominator": loss_arrays.denominator,
+            "loss_target_weight": loss_arrays.target_weight,
+            "loss_bucket": loss_arrays.bucket_keys,
+            "loss_unit": loss_arrays.unit_keys,
+            "loss_scope": loss_arrays.scope_keys,
+            "loss_family": loss_arrays.family_keys,
+            "loss_epsilon": loss_arrays.epsilon,
+        }
     unscaled_target = loss_inputs.get("unscaled_target")
     scaling = loss_inputs.get("scaling")
     target = scaled_target.astype(np.float64, copy=True)
@@ -1051,6 +1297,13 @@ def _target_value_diagnostics(
         "estimate": estimate,
         "error": error,
         "relative_error": relative_error,
+        "loss_denominator": np.abs(target) + 1.0,
+        "loss_target_weight": np.ones(target.shape, dtype=np.float64),
+        "loss_bucket": np.full(target.shape, "legacy", dtype=object),
+        "loss_unit": np.full(target.shape, "legacy", dtype=object),
+        "loss_scope": np.full(target.shape, "legacy", dtype=object),
+        "loss_family": np.full(target.shape, "legacy", dtype=object),
+        "loss_epsilon": np.ones(target.shape, dtype=np.float64),
     }
 
 
@@ -1083,6 +1336,37 @@ def _target_family_breakdown(
                     sum(1 for row in rows if row["winner"] == "baseline")
                 ),
                 "ties": int(sum(1 for row in rows if row["winner"] == "tie")),
+            }
+        )
+    return sorted(
+        breakdown, key=lambda row: abs(float(row["loss_delta"])), reverse=True
+    )
+
+
+def _target_bucket_breakdown(target_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    buckets: dict[str, list[dict[str, Any]]] = {}
+    for row in target_rows:
+        buckets.setdefault(str(row["loss_bucket"]), []).append(row)
+    breakdown = []
+    for bucket, rows in sorted(buckets.items()):
+        candidate_loss = sum(float(row["candidate_loss_term"]) for row in rows)
+        baseline_loss = sum(float(row["baseline_loss_term"]) for row in rows)
+        breakdown.append(
+            {
+                "bucket": bucket,
+                "scope": str(rows[0]["loss_scope"]),
+                "unit": str(rows[0]["loss_unit"]),
+                "n_targets": int(len(rows)),
+                "train_targets": int(sum(1 for row in rows if row["split"] == "train")),
+                "holdout_targets": int(
+                    sum(1 for row in rows if row["split"] == "holdout")
+                ),
+                "candidate_loss_contribution": float(candidate_loss),
+                "baseline_loss_contribution": float(baseline_loss),
+                "loss_delta": float(candidate_loss - baseline_loss),
+                "candidate_target_weight_sum": float(
+                    sum(float(row["loss_target_weight"]) for row in rows)
+                ),
             }
         )
     return sorted(
@@ -1143,7 +1427,11 @@ def _sort_rows_by_abs_delta(
 def _loss_terms(loss_inputs: dict[str, Any], weights: np.ndarray) -> np.ndarray:
     matrix = np.asarray(loss_inputs["scaled_matrix"], dtype=np.float64)
     target = np.asarray(loss_inputs["scaled_target"], dtype=np.float64)
-    residual = matrix.T @ weights - target
+    estimate = matrix.T @ weights
+    loss_arrays = loss_arrays_from_inputs(loss_inputs)
+    if loss_arrays is not None:
+        return pe_native_huber_loss_terms(estimate, loss_arrays)
+    residual = estimate - target
     return np.square(residual)
 
 
@@ -1239,6 +1527,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--policyengine-us-data-python")
     parser.add_argument("--skip-tax-expenditure-targets", action="store_true")
     parser.add_argument(
+        "--target-scope",
+        choices=("all", "national", "state"),
+        default="all",
+        help="Restrict the PE-native refit/scoring surface by target scope.",
+    )
+    parser.add_argument(
         "--exact-rescore",
         action="store_true",
         help=(
@@ -1278,6 +1572,7 @@ def main(argv: list[str] | None = None) -> int:
         policyengine_us_data_repo=args.policyengine_us_data_repo,
         policyengine_us_data_python=args.policyengine_us_data_python,
         skip_tax_expenditure_targets=args.skip_tax_expenditure_targets,
+        target_scope=args.target_scope,
         exact_rescore=args.exact_rescore,
         force=args.force,
     )

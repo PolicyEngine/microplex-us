@@ -16,6 +16,7 @@ from microplex_us.pipelines import ecps_replacement_comparison as ecps
 from microplex_us.pipelines.mp300k_artifact_gates import (
     write_mp300k_artifact_gate_report,
 )
+from microplex_us.pipelines.pe_native_loss import build_pe_native_loss_arrays
 from microplex_us.policyengine.us import write_policyengine_us_time_period_dataset
 
 _TARGET_NAMES = [
@@ -256,6 +257,42 @@ def test_target_loss_diagnostics_family_breakdown_uses_total_loss_scale():
     assert sum(
         row["candidate_loss_contribution"] for row in diagnostics["family_breakdown"]
     ) == pytest.approx(diagnostics["summary"]["candidate_loss"])
+
+
+def test_robust_loss_terms_match_objective() -> None:
+    target_names = [
+        "nation/irs/example income/total/AGI in 0_1/taxable/All",
+        "nation/irs/example count/count/AGI in 0_1/taxable/All",
+    ]
+    targets = np.asarray([100.0, 10.0])
+    loss_arrays = build_pe_native_loss_arrays(target_names, targets)
+    matrix = np.asarray([[90.0, 20.0], [5.0, 0.0]])
+    weights = np.asarray([1.0, 1.0])
+    loss_inputs = {
+        "scaled_matrix": matrix,
+        "scaled_target": loss_arrays.objective_target,
+        "unscaled_target": targets,
+        "loss_denominator": loss_arrays.denominator,
+        "loss_target_weight": loss_arrays.target_weight,
+        "loss_bucket": loss_arrays.bucket_keys,
+        "loss_unit": loss_arrays.unit_keys,
+        "loss_scope": loss_arrays.scope_keys,
+        "loss_family": loss_arrays.family_keys,
+        "loss_epsilon": loss_arrays.epsilon,
+        "metadata": {
+            **loss_arrays.metadata(),
+            "target_names": target_names,
+        },
+    }
+
+    assert ecps._loss_terms(loss_inputs, weights).sum() == pytest.approx(
+        ecps._objective(
+            matrix,
+            loss_arrays.objective_target,
+            weights,
+            loss_arrays=loss_arrays,
+        )
+    )
 
 
 def _artifact_manifest(artifact_dir: Path, baseline_dataset: Path) -> None:

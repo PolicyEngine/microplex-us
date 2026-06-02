@@ -281,7 +281,11 @@ PUF_SUPPORT_CLONE_CPS_REFRESH_VARIABLES: tuple[str, ...] = (
 PUF_SUPPORT_CLONE_TOP_TAIL_ROUGH_AGI_CAP = 78_999_999.0
 PUF_SUPPORT_CLONE_TOP_TAIL_ROUGH_AGI_VARIABLES: tuple[str, ...] = (
     "employment_income",
+    "employment_income_before_lsr",
+    "tip_income",
+    "fsla_overtime_premium",
     "self_employment_income",
+    "self_employment_income_before_lsr",
     "taxable_interest_income",
     "tax_exempt_interest_income",
     "capital_gains",
@@ -296,11 +300,22 @@ PUF_SUPPORT_CLONE_TOP_TAIL_ROUGH_AGI_VARIABLES: tuple[str, ...] = (
     "partnership_s_corp_income",
     "rental_income",
     "farm_income",
+    "farm_operations_income",
+    "farm_rent_income",
     "ira_distributions",
     "taxable_pension_income",
+    "taxable_private_pension_income",
+    "taxable_ira_distributions",
+    "taxable_401k_distributions",
+    "taxable_403b_distributions",
+    "taxable_sep_distributions",
     "total_pension_income",
     "taxable_social_security",
     "social_security",
+    "social_security_retirement",
+    "social_security_disability",
+    "social_security_survivors",
+    "social_security_dependents",
 )
 PUF_SUPPORT_CLONE_TOP_TAIL_SCALE_VARIABLES: tuple[str, ...] = (
     "capital_gains",
@@ -5801,17 +5816,31 @@ class USMicroplexPipeline:
             variables.append(variable)
             return True
 
+        def add_first(*variables: str) -> bool:
+            return any(add(variable) for variable in variables)
+
+        def add_all(*variables: str) -> bool:
+            added = False
+            for variable in variables:
+                added = add(variable) or added
+            return added
+
+        add_first("employment_income", "employment_income_before_lsr")
+        if "employment_income" not in variables:
+            add_all("tip_income", "fsla_overtime_premium")
+
+        add_first("self_employment_income", "self_employment_income_before_lsr")
+
         for variable in (
-            "employment_income",
-            "self_employment_income",
             "taxable_interest_income",
             "tax_exempt_interest_income",
             "partnership_s_corp_income",
             "rental_income",
-            "farm_income",
-            "ira_distributions",
         ):
             add(variable)
+
+        if not add("farm_income"):
+            add_all("farm_operations_income", "farm_rent_income")
 
         added_capital_gain_components = False
         if add("long_term_capital_gains_before_response"):
@@ -5828,10 +5857,22 @@ class USMicroplexPipeline:
             add("qualified_dividend_income")
             add("non_qualified_dividend_income")
 
-        if not add("taxable_pension_income"):
-            add("total_pension_income")
-        if not add("taxable_social_security"):
-            add("social_security")
+        if not add("taxable_pension_income") and not add("total_pension_income"):
+            add_all(
+                "ira_distributions",
+                "taxable_private_pension_income",
+                "taxable_ira_distributions",
+                "taxable_401k_distributions",
+                "taxable_403b_distributions",
+                "taxable_sep_distributions",
+            )
+        if not add("taxable_social_security") and not add("social_security"):
+            add_all(
+                "social_security_retirement",
+                "social_security_disability",
+                "social_security_survivors",
+                "social_security_dependents",
+            )
 
         if not components:
             return pd.Series(0.0, index=clone.index, dtype=float), []

@@ -14,38 +14,13 @@ from typing import TYPE_CHECKING, Any
 import h5py
 import numpy as np
 import pandas as pd
-from microplex.core import (
-    EntityObservation,
-    EntityType,
-    ObservationFrame,
-    SourceDescriptor,
-    SourceQuery,
-)
-from microplex.targets import assert_valid_benchmark_artifact_manifest
 
-from microplex_us.pipelines.artifacts import (
-    USMicroplexArtifactPaths,
-    USMicroplexVersionedBuildArtifacts,
-    build_and_save_versioned_us_microplex_from_source_providers,
-)
-from microplex_us.pipelines.imputation_ablation import (
-    ImputationAblationSliceSpec,
-    ImputationAblationVariant,
-    score_imputation_ablation_variants,
-)
 from microplex_us.pipelines.index_db import append_us_microplex_run_index_entry
 from microplex_us.pipelines.pe_us_data_rebuild import (
     PEUSDataRebuildProgram,
     default_policyengine_us_data_rebuild_config,
     default_policyengine_us_data_rebuild_program,
     default_policyengine_us_data_rebuild_source_providers,
-)
-from microplex_us.pipelines.pe_us_data_rebuild_audit import (
-    build_policyengine_us_data_rebuild_native_audit,
-)
-from microplex_us.pipelines.pe_us_data_rebuild_parity import (
-    build_policyengine_us_data_rebuild_parity_artifact,
-    write_policyengine_us_data_rebuild_parity_artifact,
 )
 from microplex_us.pipelines.registry import (
     append_us_microplex_run_registry_entry,
@@ -58,18 +33,26 @@ from microplex_us.pipelines.stage_contracts import (
     resolve_us_stage_artifact_contract_path,
 )
 from microplex_us.pipelines.stage_metrics import stage_metrics
-from microplex_us.pipelines.stage_run import (
-    USStageInputOverride,
-    parse_us_stage_input_override,
-    write_us_stage_run_manifests_from_artifact_manifest,
-)
-from microplex_us.variables import prune_redundant_variables
 
 if TYPE_CHECKING:
-    from microplex.core import SourceProvider
+    from microplex.core import (
+        EntityObservation,
+        ObservationFrame,
+        SourceDescriptor,
+        SourceProvider,
+        SourceQuery,
+    )
     from microplex.targets import TargetProvider
 
+    from microplex_us.pipelines.artifacts import (
+        USMicroplexVersionedBuildArtifacts,
+    )
+    from microplex_us.pipelines.imputation_ablation import (
+        ImputationAblationSliceSpec,
+        ImputationAblationVariant,
+    )
     from microplex_us.pipelines.registry import FrontierMetric
+    from microplex_us.pipelines.stage_run import USStageInputOverride
     from microplex_us.pipelines.us import USMicroplexBuildConfig
     from microplex_us.policyengine.harness import (
         PolicyEngineUSComparisonCache,
@@ -80,6 +63,96 @@ if TYPE_CHECKING:
 DEFAULT_CHECKPOINT_IMPUTATION_ABLATION_EVAL_FRACTION = 0.25
 MIN_CHECKPOINT_IMPUTATION_ABLATION_HOUSEHOLDS = 8
 LOGGER = logging.getLogger(__name__)
+
+
+def assert_valid_benchmark_artifact_manifest(*args: Any, **kwargs: Any) -> Any:
+    from microplex.targets import (
+        assert_valid_benchmark_artifact_manifest as _assert_valid,
+    )
+
+    return _assert_valid(*args, **kwargs)
+
+
+def build_and_save_versioned_us_microplex_from_source_providers(
+    *args: Any,
+    **kwargs: Any,
+) -> Any:
+    from microplex_us.pipelines.artifacts import (
+        build_and_save_versioned_us_microplex_from_source_providers as _build,
+    )
+
+    return _build(
+        *args,
+        **kwargs,
+    )
+
+
+def score_imputation_ablation_variants(*args: Any, **kwargs: Any) -> Any:
+    from microplex_us.pipelines.imputation_ablation import (
+        score_imputation_ablation_variants as _score_imputation_ablation_variants,
+    )
+
+    return _score_imputation_ablation_variants(*args, **kwargs)
+
+
+def build_policyengine_us_data_rebuild_native_audit(
+    *args: Any,
+    **kwargs: Any,
+) -> Any:
+    from microplex_us.pipelines.pe_us_data_rebuild_audit import (
+        build_policyengine_us_data_rebuild_native_audit as _build_audit,
+    )
+
+    return _build_audit(*args, **kwargs)
+
+
+def build_policyengine_us_data_rebuild_parity_artifact(
+    *args: Any,
+    **kwargs: Any,
+) -> Any:
+    from microplex_us.pipelines.pe_us_data_rebuild_parity import (
+        build_policyengine_us_data_rebuild_parity_artifact as _build_parity,
+    )
+
+    return _build_parity(*args, **kwargs)
+
+
+def write_policyengine_us_data_rebuild_parity_artifact(
+    *args: Any,
+    **kwargs: Any,
+) -> Any:
+    from microplex_us.pipelines.pe_us_data_rebuild_parity import (
+        write_policyengine_us_data_rebuild_parity_artifact as _write_parity,
+    )
+
+    return _write_parity(*args, **kwargs)
+
+
+def parse_us_stage_input_override(*args: Any, **kwargs: Any) -> Any:
+    from microplex_us.pipelines.stage_run import (
+        parse_us_stage_input_override as _parse_us_stage_input_override,
+    )
+
+    return _parse_us_stage_input_override(*args, **kwargs)
+
+
+def write_us_stage_run_manifests_from_artifact_manifest(
+    *args: Any,
+    **kwargs: Any,
+) -> Any:
+    from microplex_us.pipelines.stage_run import (
+        write_us_stage_run_manifests_from_artifact_manifest as _write_manifests,
+    )
+
+    return _write_manifests(*args, **kwargs)
+
+
+def prune_redundant_variables(*args: Any, **kwargs: Any) -> Any:
+    from microplex_us.variables import (
+        prune_redundant_variables as _prune_redundant_variables,
+    )
+
+    return _prune_redundant_variables(*args, **kwargs)
 
 
 def _root_logger_has_handlers() -> bool:
@@ -303,6 +376,8 @@ def _infer_policyengine_baseline_household_weight_sum(
 
 
 def _checkpoint_imputation_ablation_variants() -> tuple[ImputationAblationVariant, ...]:
+    from microplex_us.pipelines.imputation_ablation import ImputationAblationVariant
+
     return (
         ImputationAblationVariant(
             name="broad_common_qrf",
@@ -325,6 +400,8 @@ def _checkpoint_imputation_ablation_variants() -> tuple[ImputationAblationVarian
 def _checkpoint_imputation_ablation_slice_specs() -> tuple[
     ImputationAblationSliceSpec, ...
 ]:
+    from microplex_us.pipelines.imputation_ablation import ImputationAblationSliceSpec
+
     return (
         ImputationAblationSliceSpec(
             name="state_by_age",
@@ -397,6 +474,8 @@ def _build_checkpoint_source_descriptor(
     person_variables: set[str] | None = None,
     name: str | None = None,
 ) -> SourceDescriptor | None:
+    from microplex.core import EntityObservation, EntityType, SourceDescriptor
+
     def _build_observation(
         entity: EntityType,
         table: pd.DataFrame,
@@ -463,6 +542,8 @@ def _build_checkpoint_source_descriptor(
 
 
 def _household_person_relationship(frame: ObservationFrame) -> Any:
+    from microplex.core import EntityType
+
     relationship = next(
         (
             candidate
@@ -506,6 +587,8 @@ def _subset_checkpoint_frame_to_households(
     *,
     source: SourceDescriptor,
 ) -> ObservationFrame | None:
+    from microplex.core import EntityType, ObservationFrame
+
     relationship = _household_person_relationship(frame)
     households = frame.tables[EntityType.HOUSEHOLD]
     persons = frame.tables[EntityType.PERSON]
@@ -548,6 +631,8 @@ def _split_checkpoint_household_ids(
     eval_fraction: float,
     random_seed: int,
 ) -> tuple[tuple[Any, ...], tuple[Any, ...]] | None:
+    from microplex.core import EntityType
+
     relationship = _household_person_relationship(frame)
     household_ids = (
         frame.tables[EntityType.HOUSEHOLD][relationship.parent_key]
@@ -573,6 +658,8 @@ def _build_checkpoint_holdout_scaffold_source(
     *,
     masked_target_variables: set[str] | None = None,
 ) -> SourceDescriptor | None:
+    from microplex.core import EntityType
+
     excluded_variables = set(masked_target_variables or ())
     return _build_checkpoint_source_descriptor(
         base_source=scaffold_source,
@@ -593,6 +680,8 @@ def _resolve_checkpoint_imputation_targets(
     donor_input: Any,
     current_seed: pd.DataFrame,
 ) -> tuple[list[str], list[str]]:
+    from microplex.core import EntityType
+
     scaffold_observed = prune_redundant_variables(
         scaffold_input.fusion_plan.variables_for(EntityType.HOUSEHOLD)
         | scaffold_input.fusion_plan.variables_for(EntityType.PERSON)
@@ -829,6 +918,8 @@ def _build_checkpoint_imputation_ablation_payload(
 ) -> dict[str, Any] | None:
     if build_result.source_frame is None or not build_result.source_frames:
         return None
+
+    from microplex.core import EntityType
 
     from microplex_us.pipelines.us import USMicroplexPipeline
 
@@ -1235,6 +1326,11 @@ def _load_checkpoint_versioned_artifacts(
     artifact_root: Path,
     frontier_metric: FrontierMetric,
 ) -> USMicroplexVersionedBuildArtifacts:
+    from microplex_us.pipelines.artifacts import (
+        USMicroplexArtifactPaths,
+        USMicroplexVersionedBuildArtifacts,
+    )
+
     manifest_path = artifact_root / "manifest.json"
     manifest = json.loads(manifest_path.read_text())
     artifacts = dict(manifest.get("artifacts", {}))
@@ -1906,6 +2002,8 @@ def default_policyengine_us_data_rebuild_queries(
 ) -> dict[str, SourceQuery]:
     """Return default provider queries for a rebuild checkpoint smoke run."""
 
+    from microplex.core import SourceQuery
+
     from microplex_us.data_sources.cps import CPSASECSourceProvider
     from microplex_us.data_sources.donor_surveys import DonorSurveySourceProvider
     from microplex_us.data_sources.puf import PUFSourceProvider
@@ -2232,9 +2330,8 @@ def run_policyengine_us_data_rebuild_checkpoint(
     )
 
 
-def main(argv: list[str] | None = None) -> None:
-    """CLI entry point for one PE-US-data rebuild checkpoint."""
-
+def build_policyengine_us_data_rebuild_checkpoint_parser() -> argparse.ArgumentParser:
+    """Build the PE-US-data rebuild checkpoint parser without runtime imports."""
     parser = argparse.ArgumentParser(
         description="Run a versioned PE-US-data rebuild checkpoint in microplex-us."
     )
@@ -2405,7 +2502,15 @@ def main(argv: list[str] | None = None) -> None:
         metavar="STAGE_ID.KEY=PATH",
         help=("Explicit stage input override. Requires --allow-stage-input-overrides."),
     )
+    return parser
+
+
+def main(argv: list[str] | None = None) -> None:
+    """CLI entry point for one PE-US-data rebuild checkpoint."""
+
+    parser = build_policyengine_us_data_rebuild_checkpoint_parser()
     args = parser.parse_args(argv)
+
     stage_input_overrides = tuple(
         parse_us_stage_input_override(value) for value in args.stage_input_override
     )

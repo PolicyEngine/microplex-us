@@ -138,6 +138,7 @@ def test_default_policyengine_us_data_rebuild_source_providers_use_pe_style_bund
         SOCIAL_SECURITY_SPLIT_STRATEGY_PE_QRF
     )
     assert isinstance(providers[2], ACSSourceProvider)
+    assert providers[2].year == 2024
     assert isinstance(providers[3], SIPPSourceProvider)
     assert providers[3].block == "tips"
     assert isinstance(providers[4], SIPPSourceProvider)

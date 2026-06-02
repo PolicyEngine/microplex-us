@@ -107,7 +107,7 @@ def default_policyengine_us_data_rebuild_source_providers(
     include_donor_surveys: bool = True,
     include_sipp: bool | None = None,
     include_scf: bool | None = None,
-    acs_year: int = 2022,
+    acs_year: int = 2024,
     sipp_year: int = 2023,
     scf_year: int = 2022,
     donor_cache_dir: str | Path | None = None,

@@ -966,6 +966,34 @@ def test_attach_policyengine_us_data_rebuild_checkpoint_evidence_updates_manifes
     )
     native_audit_payload = {
         "artifactId": "artifact",
+        "period": 2024,
+        "targetDelta": {
+            "metric": "enhanced_cps_native_loss_target_delta",
+            "period": 2024,
+            "from_dataset": "/tmp/enhanced_cps_2024.h5",
+            "to_dataset": "/tmp/policyengine_us.h5",
+            "summary": {"n_targets": 1, "to_win_rate": 1.0},
+            "family_summaries": [{"target_family": "national_irs_other"}],
+            "scope_summaries": [{"target_scope": "national"}],
+            "targets": [
+                {
+                    "target_name": "nation/irs/example",
+                    "target_family": "national_irs_other",
+                    "target_scope": "national",
+                    "winner": "to",
+                    "weighted_term_delta": -1.0,
+                    "from_weighted_term": 2.0,
+                    "to_weighted_term": 1.0,
+                    "target_value": 100.0,
+                    "from_estimate": 90.0,
+                    "to_estimate": 95.0,
+                    "from_rel_error": 0.2,
+                    "to_rel_error": 0.1,
+                }
+            ],
+            "top_regressions": [],
+            "top_improvements": [],
+        },
         "verdictHints": {
             "productionImputationVariantIsMaeWinner": True,
             "productionImputationVariantIsSupportWinner": True,
@@ -1004,11 +1032,22 @@ def test_attach_policyengine_us_data_rebuild_checkpoint_evidence_updates_manifes
         result.native_audit_path
         == artifact_dir / "pe_us_data_rebuild_native_audit.json"
     )
+    assert (
+        result.native_target_diagnostics_path
+        == artifact_dir / "pe_native_target_diagnostics.json"
+    )
     assert result.native_audit_payload == native_audit_payload
+    assert result.native_target_diagnostics_payload is not None
     assert result.imputation_ablation_path == artifact_dir / "imputation_ablation.json"
     written_native_audit = json.loads(
         (artifact_dir / "pe_us_data_rebuild_native_audit.json").read_text()
     )
+    written_target_diagnostics = json.loads(
+        (artifact_dir / "pe_native_target_diagnostics.json").read_text()
+    )
+    assert written_target_diagnostics["artifact_id"] == "artifact"
+    assert written_target_diagnostics["run_id"] == "artifact"
+    assert written_target_diagnostics["targets"][0]["artifact_id"] == "artifact"
     assert (
         written_manifest["artifacts"]["policyengine_harness"]
         == "policyengine_harness.json"
@@ -1020,6 +1059,10 @@ def test_attach_policyengine_us_data_rebuild_checkpoint_evidence_updates_manifes
     assert (
         written_manifest["artifacts"]["policyengine_native_audit"]
         == "pe_us_data_rebuild_native_audit.json"
+    )
+    assert (
+        written_manifest["artifacts"]["policyengine_native_target_diagnostics"]
+        == "pe_native_target_diagnostics.json"
     )
     assert (
         written_manifest["artifacts"]["imputation_ablation"]
@@ -1049,6 +1092,16 @@ def test_attach_policyengine_us_data_rebuild_checkpoint_evidence_updates_manifes
         written_native_audit["verdictHints"]["productionImputationVariantIsMaeWinner"]
         is True
     )
+    assert written_target_diagnostics["diagnostic_schema_version"] == 1
+    assert written_target_diagnostics["dataset_labels"] == {
+        "from": "policyengine-us-data",
+        "to": "microplex-us",
+    }
+    first_target = written_target_diagnostics["targets"][0]
+    assert first_target["target_id"] == "nation/irs/example"
+    assert first_target["us_data_absolute_error"] == 10.0
+    assert first_target["microplex_absolute_error"] == 5.0
+    assert first_target["delta_absolute_error"] == -5.0
     assert written_manifest["run_registry"]["artifact_id"] == "artifact"
     assert written_manifest["run_index"]["artifact_id"] == "artifact"
     assert (tmp_path / "run_index.duckdb").exists()
@@ -1063,6 +1116,7 @@ def test_attach_policyengine_us_data_rebuild_checkpoint_evidence_updates_manifes
         "policyengine_native_scores.json",
         "imputation_ablation.json",
         "pe_us_data_rebuild_native_audit.json",
+        "pe_native_target_diagnostics.json",
     ]
     assert {metric["label"]: metric["value"] for metric in benchmark_stage["metrics"]}[
         "Capped full oracle loss"

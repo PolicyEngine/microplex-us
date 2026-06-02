@@ -292,6 +292,11 @@ class USMicroplexExperimentResult:
                     if self.artifact_paths.policyengine_native_audit is not None
                     else None
                 ),
+                "policyengine_native_target_diagnostics": (
+                    str(self.artifact_paths.policyengine_native_target_diagnostics)
+                    if self.artifact_paths.policyengine_native_target_diagnostics is not None
+                    else None
+                ),
                 "capital_gains_lots": (
                     str(self.artifact_paths.capital_gains_lots)
                     if self.artifact_paths.capital_gains_lots is not None
@@ -378,6 +383,12 @@ class USMicroplexExperimentResult:
                 policyengine_native_audit=(
                     Path(artifact_paths["policyengine_native_audit"])
                     if artifact_paths.get("policyengine_native_audit") is not None
+                    else None
+                ),
+                policyengine_native_target_diagnostics=(
+                    Path(artifact_paths["policyengine_native_target_diagnostics"])
+                    if artifact_paths.get("policyengine_native_target_diagnostics")
+                    is not None
                     else None
                 ),
                 capital_gains_lots=(
@@ -818,6 +829,10 @@ def _refresh_experiment_artifact_paths(
         policyengine_native_audit=_resolve_optional_result_artifact_path(
             artifact_root,
             artifacts.get("policyengine_native_audit"),
+        ),
+        policyengine_native_target_diagnostics=_resolve_optional_result_artifact_path(
+            artifact_root,
+            artifacts.get("policyengine_native_target_diagnostics"),
         ),
         run_registry=Path(run_registry_path),
         run_index_db=run_index_path,

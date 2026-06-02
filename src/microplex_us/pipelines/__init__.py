@@ -120,6 +120,7 @@ _EXPORT_MODULES: dict[str, str] = {
         "microplex_us.pipelines.pe_native_scores",
         (
             "PolicyEngineUSEnhancedCPSNativeScores",
+            "build_us_pe_native_target_diagnostics_payload",
             "compare_us_pe_native_target_deltas",
             "compute_batch_us_pe_native_scores",
             "compute_policyengine_us_enhanced_cps_native_scores",

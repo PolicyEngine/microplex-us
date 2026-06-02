@@ -2940,6 +2940,8 @@ def annotate_pe_native_target_db_matches(
                     "policyengine_target_period": match["period"],
                     "policyengine_target_value": match["value"],
                     "policyengine_target_source": match["source"],
+                    "policyengine_target_geo_level": match["geo_level"],
+                    "policyengine_target_geographic_id": match["geographic_id"],
                     "policyengine_target_domain_variable": match["domain_variable"],
                     "policyengine_target_constraints": match["constraints"],
                 }
@@ -3210,22 +3212,84 @@ def write_us_pe_native_target_diagnostics(
     policyengine_us_data_repo: str | Path | None = None,
     policyengine_us_data_python: str | Path | None = None,
     policyengine_targets_db_path: str | Path | None = None,
+    artifact_id: str | None = None,
+    run_id: str | None = None,
 ) -> Path:
     """Write the full PE-native per-target diagnostic dataset to disk."""
 
-    payload = compare_us_pe_native_target_deltas(
+    payload = build_us_pe_native_target_diagnostics_payload(
         from_dataset_path=from_dataset_path,
         to_dataset_path=to_dataset_path,
         period=period,
         top_k=top_k,
+        from_label=from_label,
+        to_label=to_label,
         policyengine_us_data_repo=policyengine_us_data_repo,
         policyengine_us_data_python=policyengine_us_data_python,
+        policyengine_targets_db_path=policyengine_targets_db_path,
+        artifact_id=artifact_id,
+        run_id=run_id,
+    )
+    destination = Path(output_path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(json.dumps(payload, indent=2, sort_keys=True))
+    return destination
+
+
+def build_us_pe_native_target_diagnostics_payload(
+    *,
+    from_dataset_path: str | Path | None = None,
+    to_dataset_path: str | Path | None = None,
+    period: int = 2024,
+    top_k: int = 50,
+    from_label: str = "policyengine-us-data",
+    to_label: str = "microplex-us",
+    policyengine_us_data_repo: str | Path | None = None,
+    policyengine_us_data_python: str | Path | None = None,
+    policyengine_targets_db_path: str | Path | None = None,
+    target_delta_payload: dict[str, Any] | None = None,
+    artifact_id: str | None = None,
+    run_id: str | None = None,
+) -> dict[str, Any]:
+    """Build the full PE-native per-target diagnostic payload.
+
+    When ``target_delta_payload`` is supplied, the caller is responsible for
+    ensuring it compares the same baseline/candidate datasets and period.
+    """
+
+    payload = (
+        dict(target_delta_payload)
+        if target_delta_payload is not None
+        else compare_us_pe_native_target_deltas(
+            from_dataset_path=_required_dataset_path(
+                from_dataset_path,
+                label="from_dataset_path",
+            ),
+            to_dataset_path=_required_dataset_path(
+                to_dataset_path,
+                label="to_dataset_path",
+            ),
+            period=period,
+            top_k=top_k,
+            policyengine_us_data_repo=policyengine_us_data_repo,
+            policyengine_us_data_python=policyengine_us_data_python,
+        )
     )
     payload["diagnostic_schema_version"] = 1
     payload["dataset_labels"] = {
         "from": from_label,
         "to": to_label,
     }
+    resolved_artifact_id = _first_present(
+        artifact_id,
+        payload.get("artifact_id"),
+        payload.get("artifactId"),
+    )
+    resolved_run_id = _first_present(run_id, payload.get("run_id"), payload.get("runId"))
+    payload.setdefault("artifact_id", resolved_artifact_id)
+    payload.setdefault("run_id", resolved_run_id)
+    payload.setdefault("baseline_dataset", payload.get("from_dataset"))
+    payload.setdefault("candidate_dataset", payload.get("to_dataset"))
     target_db_path = (
         Path(policyengine_targets_db_path).expanduser()
         if policyengine_targets_db_path is not None
@@ -3236,10 +3300,406 @@ def write_us_pe_native_target_diagnostics(
         target_db_path=target_db_path,
         period=period,
     )
-    destination = Path(output_path)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text(json.dumps(payload, indent=2, sort_keys=True))
-    return destination
+    _add_policyengine_target_diagnostic_aliases(payload)
+    return payload
+
+
+def _required_dataset_path(value: str | Path | None, *, label: str) -> str | Path:
+    if value is None:
+        raise ValueError(
+            f"{label} is required when target_delta_payload is not supplied"
+        )
+    return value
+
+
+def _add_policyengine_target_diagnostic_aliases(payload: dict[str, Any]) -> None:
+    """Add dashboard-friendly aliases while preserving the native delta schema."""
+
+    context = _PolicyEngineTargetDiagnosticAliasContext.from_payload(payload)
+    targets_by_name: dict[str, dict[str, Any]] = {}
+    for row in payload.get("targets", ()):
+        if not isinstance(row, dict):
+            continue
+        _add_policyengine_target_diagnostic_aliases_to_row(row, context)
+        target_name = row.get("target_name")
+        if target_name is not None:
+            targets_by_name[str(target_name)] = row
+
+    for list_name in ("top_improvements", "top_regressions"):
+        for row in payload.get(list_name) or []:
+            if not isinstance(row, dict):
+                continue
+            full_row = targets_by_name.get(str(row.get("target_name", "")))
+            if full_row is not None:
+                for key, value in full_row.items():
+                    row.setdefault(key, value)
+            _add_policyengine_target_diagnostic_aliases_to_row(row, context)
+
+
+@dataclass(frozen=True)
+class _PolicyEngineTargetDiagnosticAliasContext:
+    baseline_dataset: Any
+    candidate_dataset: Any
+    baseline_label: Any
+    candidate_label: Any
+    period: Any
+    artifact_id: Any
+    run_id: Any
+
+    @classmethod
+    def from_payload(
+        cls,
+        payload: dict[str, Any],
+    ) -> _PolicyEngineTargetDiagnosticAliasContext:
+        return cls(
+            baseline_dataset=payload.get("from_dataset"),
+            candidate_dataset=payload.get("to_dataset"),
+            baseline_label=payload.get("dataset_labels", {}).get("from"),
+            candidate_label=payload.get("dataset_labels", {}).get("to"),
+            period=payload.get("period"),
+            artifact_id=payload.get("artifact_id") or payload.get("artifactId"),
+            run_id=payload.get("run_id") or payload.get("runId"),
+        )
+
+
+def _add_policyengine_target_diagnostic_aliases_to_row(
+    row: dict[str, Any],
+    context: _PolicyEngineTargetDiagnosticAliasContext,
+) -> None:
+    expected_target = _expected_policyengine_target(row)
+    target_name = str(row.get("target_name") or "")
+    target_value = row.get("target_value")
+    from_estimate = row.get("from_estimate")
+    to_estimate = row.get("to_estimate")
+    from_absolute_error = _absolute_error_or_none(from_estimate, target_value)
+    to_absolute_error = _absolute_error_or_none(to_estimate, target_value)
+    row.setdefault(
+        "target_id",
+        row.get("policyengine_target_id") or row.get("target_name"),
+    )
+    row.setdefault(
+        "period",
+        _first_present(row.get("policyengine_target_period"), context.period),
+    )
+    row.setdefault(
+        "variable",
+        _first_present(
+            row.get("policyengine_target_variable"),
+            expected_target.get("variable"),
+            _infer_target_variable(target_name, row),
+        ),
+    )
+    row.setdefault(
+        "geo_level",
+        _first_present(
+            row.get("policyengine_target_geo_level"),
+            expected_target.get("geo_level"),
+            _infer_target_geo_level(target_name, row),
+        ),
+    )
+    row.setdefault(
+        "geography",
+        _first_present(
+            row.get("policyengine_target_geographic_id"),
+            expected_target.get("geographic_id"),
+            _infer_target_geography(target_name, row),
+        ),
+    )
+    row.setdefault("state", _infer_target_state(target_name, row))
+    row.setdefault(
+        "entity",
+        _infer_policyengine_target_entity(target_name, row, expected_target),
+    )
+    row.setdefault("artifact_id", context.artifact_id)
+    row.setdefault("run_id", context.run_id)
+    row.setdefault("baseline_dataset", context.baseline_dataset)
+    row.setdefault("candidate_dataset", context.candidate_dataset)
+    row.setdefault("baseline_label", context.baseline_label)
+    row.setdefault("candidate_label", context.candidate_label)
+    row.setdefault("us_data_aggregate", from_estimate)
+    row.setdefault("microplex_aggregate", to_estimate)
+    row.setdefault("us_data_absolute_error", from_absolute_error)
+    row.setdefault("microplex_absolute_error", to_absolute_error)
+    row.setdefault("us_data_relative_error", row.get("from_rel_error"))
+    row.setdefault("microplex_relative_error", row.get("to_rel_error"))
+    if from_absolute_error is not None and to_absolute_error is not None:
+        row.setdefault(
+            "delta_absolute_error",
+            to_absolute_error - from_absolute_error,
+        )
+    row.setdefault(
+        "delta_relative_error",
+        _delta_or_none(row.get("to_rel_error"), row.get("from_rel_error")),
+    )
+    row.setdefault("us_data_loss_contribution", row.get("from_weighted_term"))
+    row.setdefault(
+        "policyengine_us_data_loss_contribution",
+        row.get("from_weighted_term"),
+    )
+    row.setdefault("baseline_loss_contribution", row.get("from_weighted_term"))
+    row.setdefault("microplex_loss_contribution", row.get("to_weighted_term"))
+    row.setdefault("candidate_loss_contribution", row.get("to_weighted_term"))
+    row.setdefault("loss_contribution", row.get("to_weighted_term"))
+    row.setdefault("loss_contribution_delta", row.get("weighted_term_delta"))
+    row.setdefault("family", _infer_target_family(target_name, row))
+    row.setdefault("in_loss", True)
+    row.setdefault("supported_by_microplex", True)
+
+
+def _expected_policyengine_target(row: dict[str, Any]) -> dict[str, Any]:
+    expected = row.get("policyengine_target_expected")
+    return expected if isinstance(expected, dict) else {}
+
+
+def _first_present(*values: Any) -> Any:
+    for value in values:
+        if value is not None:
+            return value
+    return None
+
+
+def _target_name_parts(target_name: str) -> list[str]:
+    return [part for part in target_name.split("/") if part]
+
+
+def _infer_target_variable(target_name: str, row: dict[str, Any]) -> str | None:
+    parts = _target_name_parts(target_name)
+    if not parts:
+        return None
+
+    if target_name.endswith("/snap-cost"):
+        return "snap_cost"
+    if target_name.endswith("/snap-hhs"):
+        return "snap_households"
+
+    if parts[0] == "nation":
+        return _infer_national_target_variable(parts)
+    if parts[0] == "state":
+        return _infer_state_target_variable(parts)
+
+    family = row.get("target_family")
+    return str(family) if family not in {None, "other"} else None
+
+
+def _infer_target_family(target_name: str, row: dict[str, Any]) -> str | None:
+    family = row.get("target_family")
+    if family not in {None, "other"}:
+        return str(family)
+    if target_name.startswith("state/irs/aca_spending/"):
+        return "state_aca_spending"
+    if target_name.startswith("state/irs/aca_enrollment/"):
+        return "state_aca_enrollment"
+    if target_name.endswith("/snap-cost"):
+        return "state_snap_cost"
+    if target_name.endswith("/snap-hhs"):
+        return "state_snap_households"
+    return str(family) if family is not None else None
+
+
+def _infer_national_target_variable(parts: list[str]) -> str | None:
+    if len(parts) < 2:
+        return None
+    source = parts[1]
+    if source == "irs" and len(parts) >= 3:
+        metric = parts[2]
+        if metric == "adjusted gross income":
+            return "adjusted_gross_income"
+        if metric == "count":
+            return "tax_unit_count"
+        return _slugify_target_token(metric)
+    if source == "census" and len(parts) >= 3:
+        metric = parts[2]
+        if metric.startswith("agi_in_spm_threshold_decile_"):
+            return "agi_in_spm_threshold_decile"
+        if metric.startswith("count_in_spm_threshold_decile_"):
+            return "count_in_spm_threshold_decile"
+        if metric == "population_by_age":
+            return "population"
+        return _slugify_target_token(metric)
+    if source == "gov" and len(parts) >= 3:
+        return _slugify_target_token(parts[2])
+    if source == "cbo" and len(parts) >= 3:
+        if parts[2] == "income_by_source" and len(parts) >= 4:
+            return _slugify_target_token(parts[3])
+        return _slugify_target_token(parts[2])
+    if source in {"soi", "hhs"} and len(parts) >= 3:
+        return _slugify_target_token(parts[2])
+    if source in {"jct", "net_worth", "ssa"}:
+        return source
+    return _slugify_target_token(source)
+
+
+def _infer_state_target_variable(parts: list[str]) -> str | None:
+    if len(parts) < 2:
+        return None
+    source_or_state = parts[1]
+    if source_or_state == "irs" and len(parts) >= 3:
+        return _slugify_target_token(parts[2])
+    if source_or_state == "census" and len(parts) >= 3:
+        metric = parts[2]
+        if metric == "population_by_state":
+            return "population"
+        if metric == "population_under_5_by_state":
+            return "population_under_5"
+        return _slugify_target_token(metric)
+    if source_or_state == "real_estate_taxes":
+        return "real_estate_taxes"
+    if _looks_like_state_code(source_or_state) and len(parts) >= 3:
+        return _slugify_target_token(parts[2])
+    return _slugify_target_token(source_or_state)
+
+
+def _slugify_target_token(value: str) -> str:
+    return (
+        value.strip()
+        .lower()
+        .replace(" ", "_")
+        .replace("-", "_")
+        .replace("/", "_")
+    )
+
+
+def _infer_target_geo_level(target_name: str, row: dict[str, Any]) -> str | None:
+    scope = row.get("target_scope")
+    if scope in {"national", "state"}:
+        return str(scope)
+    parts = _target_name_parts(target_name)
+    if not parts:
+        return None
+    if parts[0] == "nation":
+        return "national"
+    if parts[0] == "state":
+        return "state"
+    return None
+
+
+def _infer_target_geography(target_name: str, row: dict[str, Any]) -> str | None:
+    geo_level = _infer_target_geo_level(target_name, row)
+    if geo_level == "national":
+        return "US"
+    state = _infer_target_state(target_name, row)
+    return state
+
+
+def _infer_target_state(target_name: str, row: dict[str, Any]) -> str | None:
+    geography = _first_present(
+        row.get("policyengine_target_geographic_id"),
+        _expected_policyengine_target(row).get("geographic_id"),
+    )
+    if isinstance(geography, str) and geography != "US":
+        return _normalize_state_code(geography)
+    parts = _target_name_parts(target_name)
+    if parts and parts[0] == "state":
+        for token in parts[1:]:
+            if _looks_like_state_code(token):
+                return _normalize_state_code(token)
+    if parts and _looks_like_state_fips_id(parts[0]):
+        return parts[0]
+    return None
+
+
+def _looks_like_state_code(value: str) -> bool:
+    return len(value) == 2 and value.isalpha()
+
+
+def _looks_like_state_fips_id(value: str) -> bool:
+    return len(value) == 4 and value.startswith("US") and value[2:].isdigit()
+
+
+def _normalize_state_code(value: str) -> str:
+    return value.upper() if _looks_like_state_code(value) else value
+
+
+def _infer_policyengine_target_entity(
+    target_name: str,
+    row: dict[str, Any],
+    expected_target: dict[str, Any],
+) -> str | None:
+    variable = _first_present(
+        row.get("policyengine_target_variable"),
+        expected_target.get("variable"),
+        row.get("variable"),
+    )
+    domain_variable = _first_present(
+        row.get("policyengine_target_domain_variable"),
+        expected_target.get("domain_variable"),
+    )
+    if _contains_entity_hint("tax_unit", variable, domain_variable):
+        return "tax_unit"
+    if _contains_entity_hint("spm_unit", variable, domain_variable):
+        return "spm_unit"
+    if _contains_entity_hint("household", variable, domain_variable):
+        return "household"
+
+    parts = _target_name_parts(target_name)
+    if "irs" in parts or "jct" in parts:
+        return "tax_unit"
+    if "soi" in parts:
+        return "tax_unit"
+    if "cbo" in parts:
+        if "snap" in parts:
+            return "household"
+        if "ssi" in parts or "social_security" in parts:
+            return "person"
+        return "tax_unit"
+    if "hhs" in parts:
+        return "person"
+    if "census" in parts:
+        return "person"
+    family = row.get("target_family")
+    if family in {
+        "state_agi_distribution",
+        "national_irs_other",
+        "national_tax_expenditures",
+        "state_aca_enrollment",
+        "state_aca_spending",
+    }:
+        return "tax_unit"
+    if family in {
+        "state_age_distribution",
+        "state_population",
+        "state_population_under_5",
+        "national_population_by_age",
+        "national_infants",
+        "national_census_other",
+        "national_ssa",
+    }:
+        return "person"
+    if family in {
+        "national_spm_threshold_agi",
+        "national_spm_threshold_count",
+    }:
+        return "spm_unit"
+    if family in {
+        "state_real_estate_taxes",
+        "national_net_worth",
+    }:
+        return "household"
+    if "snap-hhs" in target_name:
+        return "household"
+    if "snap-cost" in target_name:
+        return "household"
+    if _contains_entity_hint("aca", variable, target_name):
+        return "tax_unit"
+    if "spm-unit" in target_name:
+        return "spm_unit"
+    return None
+
+
+def _contains_entity_hint(entity: str, *values: Any) -> bool:
+    return any(entity in str(value) for value in values if value is not None)
+
+
+def _absolute_error_or_none(value: Any, target: Any) -> float | None:
+    if value is None or target is None:
+        return None
+    return abs(float(value) - float(target))
+
+
+def _delta_or_none(value: Any, baseline: Any) -> float | None:
+    if value is None or baseline is None:
+        return None
+    return float(value) - float(baseline)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -3285,6 +3745,8 @@ def main_target_diagnostics(argv: list[str] | None = None) -> int:
     parser.add_argument("--policyengine-us-data-python")
     parser.add_argument("--policyengine-us-data-repo")
     parser.add_argument("--policyengine-targets-db")
+    parser.add_argument("--artifact-id")
+    parser.add_argument("--run-id")
     args = parser.parse_args(argv)
 
     path = write_us_pe_native_target_diagnostics(
@@ -3298,6 +3760,8 @@ def main_target_diagnostics(argv: list[str] | None = None) -> int:
         policyengine_us_data_python=args.policyengine_us_data_python,
         policyengine_us_data_repo=args.policyengine_us_data_repo,
         policyengine_targets_db_path=args.policyengine_targets_db,
+        artifact_id=args.artifact_id,
+        run_id=args.run_id,
     )
     print(str(path))
     return 0

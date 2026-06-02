@@ -3386,6 +3386,57 @@ class TestUSMicroplexPipeline:
             200.0,
         }
 
+    def test_signed_zero_inflated_donor_vars_are_not_clamped(self, monkeypatch):
+        captured: dict[str, dict[str, object]] = {}
+
+        class FakeRegimeAwareDonorImputer:
+            def __init__(self, **kwargs):
+                captured["regime_aware"] = kwargs
+
+        class FakeQRFImputer:
+            def __init__(self, **kwargs):
+                captured["zi_qrf"] = kwargs
+
+        monkeypatch.setattr(
+            "microplex_us.pipelines.us.RegimeAwareDonorImputer",
+            FakeRegimeAwareDonorImputer,
+        )
+        monkeypatch.setattr(
+            "microplex_us.pipelines.us.ColumnwiseQRFDonorImputer",
+            FakeQRFImputer,
+        )
+
+        target_vars = ("partnership_s_corp_income", "public_assistance")
+
+        regime_pipeline = USMicroplexPipeline(
+            USMicroplexBuildConfig(
+                n_synthetic=4,
+                donor_imputer_backend="regime_aware",
+            )
+        )
+        regime_pipeline._build_donor_imputer(
+            condition_vars=["age"],
+            target_vars=target_vars,
+        )
+
+        qrf_pipeline = USMicroplexPipeline(
+            USMicroplexBuildConfig(
+                n_synthetic=4,
+                donor_imputer_backend="zi_qrf",
+            )
+        )
+        qrf_pipeline._build_donor_imputer(
+            condition_vars=["age"],
+            target_vars=target_vars,
+        )
+
+        assert captured["regime_aware"]["nonnegative_vars"] == {"public_assistance"}
+        assert captured["zi_qrf"]["nonnegative_vars"] == {"public_assistance"}
+        assert captured["zi_qrf"]["zero_inflated_vars"] == {
+            "partnership_s_corp_income",
+            "public_assistance",
+        }
+
     def test_integrate_donor_sources_preserves_informative_scaffold_values(
         self, monkeypatch
     ):

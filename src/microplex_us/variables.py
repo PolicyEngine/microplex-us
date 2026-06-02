@@ -43,6 +43,7 @@ class VariableSupportFamily(Enum):
 
     CONTINUOUS = "continuous"
     ZERO_INFLATED_POSITIVE = "zero_inflated_positive"
+    ZERO_INFLATED_SIGNED = "zero_inflated_signed"
     BOUNDED_SHARE = "bounded_share"
 
 
@@ -155,7 +156,10 @@ class VariableSemanticSpec:
 
     @property
     def condition_score_mode(self) -> ConditionScoreMode:
-        if self.support_family is VariableSupportFamily.ZERO_INFLATED_POSITIVE:
+        if self.support_family in {
+            VariableSupportFamily.ZERO_INFLATED_POSITIVE,
+            VariableSupportFamily.ZERO_INFLATED_SIGNED,
+        }:
             return ConditionScoreMode.VALUE_AND_SUPPORT
         return ConditionScoreMode.VALUE_ONLY
 
@@ -165,9 +169,7 @@ class VariableSemanticSpec:
             return self.condition_entities
         if self.native_entity is EntityType.PERSON:
             record_entity = getattr(EntityType, "RECORD", None)
-            return tuple(
-                entity for entity in EntityType if entity is not record_entity
-            )
+            return tuple(entity for entity in EntityType if entity is not record_entity)
         return (EntityType.HOUSEHOLD, self.native_entity)
 
 
@@ -457,7 +459,7 @@ VARIABLE_SEMANTIC_SPECS: dict[str, VariableSemanticSpec] = {
             EntityType.HOUSEHOLD,
             EntityType.TAX_UNIT,
         ),
-        support_family=VariableSupportFamily.ZERO_INFLATED_POSITIVE,
+        support_family=VariableSupportFamily.ZERO_INFLATED_SIGNED,
         donor_match_strategy=DonorMatchStrategy.ZERO_INFLATED_POSITIVE,
         preferred_condition_vars=PUF_IRS_TAX_PREFERRED_CONDITION_VARS,
         supplemental_shared_condition_vars=PUF_IRS_TAX_SUPPLEMENTAL_SHARED_CONDITION_VARS,
@@ -541,7 +543,7 @@ VARIABLE_SEMANTIC_SPECS: dict[str, VariableSemanticSpec] = {
             EntityType.HOUSEHOLD,
             EntityType.TAX_UNIT,
         ),
-        support_family=VariableSupportFamily.ZERO_INFLATED_POSITIVE,
+        support_family=VariableSupportFamily.ZERO_INFLATED_SIGNED,
         donor_match_strategy=DonorMatchStrategy.ZERO_INFLATED_POSITIVE,
         preferred_condition_vars=PUF_IRS_TAX_PREFERRED_CONDITION_VARS,
         supplemental_shared_condition_vars=PUF_IRS_TAX_SUPPLEMENTAL_SHARED_CONDITION_VARS,
@@ -683,7 +685,9 @@ def normalize_dividend_columns(frame: pd.DataFrame) -> pd.DataFrame:
         component_total = qualified + non_qualified
         normalized_total = component_total.where(component_total.ne(0.0), total)
     elif has_qualified:
-        normalized_total = np.maximum(total.to_numpy(dtype=float), qualified.to_numpy(dtype=float))
+        normalized_total = np.maximum(
+            total.to_numpy(dtype=float), qualified.to_numpy(dtype=float)
+        )
         non_qualified = pd.Series(
             normalized_total - qualified.to_numpy(dtype=float),
             index=result.index,
@@ -724,8 +728,12 @@ def normalize_social_security_columns(frame: pd.DataFrame) -> pd.DataFrame:
         column: _nonnegative_series(result, column)
         for column in SOCIAL_SECURITY_COMPONENT_COLUMNS
     }
-    component_sum = sum(component_series.values(), start=pd.Series(0.0, index=result.index))
-    existing_unclassified = _nonnegative_series(result, SOCIAL_SECURITY_UNCLASSIFIED_COLUMN)
+    component_sum = sum(
+        component_series.values(), start=pd.Series(0.0, index=result.index)
+    )
+    existing_unclassified = _nonnegative_series(
+        result, SOCIAL_SECURITY_UNCLASSIFIED_COLUMN
+    )
 
     if "social_security" in result.columns:
         observed_total = _nonnegative_series(result, "social_security")
@@ -741,7 +749,8 @@ def normalize_social_security_columns(frame: pd.DataFrame) -> pd.DataFrame:
     )
     unclassified = pd.Series(
         np.maximum(
-            normalized_total.to_numpy(dtype=float) - component_sum.to_numpy(dtype=float),
+            normalized_total.to_numpy(dtype=float)
+            - component_sum.to_numpy(dtype=float),
             0.0,
         ),
         index=result.index,
@@ -832,6 +841,7 @@ DIVIDEND_DONOR_BLOCK_SPEC = DonorImputationBlockSpec(
     restore_frame=restore_dividend_components_from_composition,
 )
 
+
 def variable_semantic_spec_for(variable_name: str) -> VariableSemanticSpec:
     """Return semantic metadata for one variable."""
     return VARIABLE_SEMANTIC_SPECS.get(variable_name, VariableSemanticSpec())
@@ -915,9 +925,7 @@ def resolve_condition_entities_for_targets(
         shared &= set(allowed_entities)
     if not shared:
         return (EntityType.HOUSEHOLD,)
-    return tuple(
-        entity for entity in allowed_by_target[0] if entity in shared
-    )
+    return tuple(entity for entity in allowed_by_target[0] if entity in shared)
 
 
 def is_condition_var_compatible_with_targets(
@@ -942,15 +950,12 @@ def is_projected_condition_var_compatible(
     condition_entity = variable_semantic_spec_for(condition_variable).native_entity
     record_entity = getattr(EntityType, "RECORD", None)
     allowed_entities = {
-        entity
-        for entity in allowed_condition_entities
-        if entity is not record_entity
+        entity for entity in allowed_condition_entities if entity is not record_entity
     }
     if condition_entity in allowed_entities:
         return True
     return (
-        condition_entity is EntityType.PERSON
-        and projected_entity in allowed_entities
+        condition_entity is EntityType.PERSON and projected_entity in allowed_entities
     )
 
 
@@ -971,9 +976,7 @@ def donor_imputation_block_specs(
                 condition_entities=resolve_condition_entities_for_targets((variable,)),
                 model_variables=(variable,),
                 restored_variables=(variable,),
-                match_strategies={
-                    variable: spec.donor_match_strategy
-                },
+                match_strategies={variable: spec.donor_match_strategy},
             )
         )
     return tuple(block_specs)

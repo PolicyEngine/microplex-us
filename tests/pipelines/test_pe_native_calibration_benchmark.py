@@ -65,7 +65,8 @@ def test_build_policyengine_us_native_calibration_benchmark_scores_variants(
     existing_dataset = _write_dataset(tmp_path / "current_weight_diff.h5", [1.2, 0.8])
     output_dir = tmp_path / "benchmark"
 
-    def fake_extract(**_kwargs):
+    def fake_extract(**kwargs):
+        assert kwargs["target_scope_filter"] == "national"
         return {
             "scaled_matrix": np.eye(2),
             "scaled_target": np.asarray([1.0, 0.0]),
@@ -103,6 +104,7 @@ def test_build_policyengine_us_native_calibration_benchmark_scores_variants(
         return output_path.resolve()
 
     def fake_scores(**kwargs):
+        assert kwargs["target_scope_filter"] == "national"
         results = []
         for candidate_path in kwargs["candidate_dataset_paths"]:
             path = Path(candidate_path).resolve()
@@ -192,9 +194,11 @@ def test_build_policyengine_us_native_calibration_benchmark_scores_variants(
         target_total_weight_source="baseline",
         existing_candidates={"current_weight_diff": existing_dataset},
         skip_tax_expenditure_targets=True,
+        target_scope_filter="national",
     )
 
     assert payload["variant_count"] == 4
+    assert payload["target_scope_filter"] == "national"
     assert payload["target_total_weight"] == 4.0
     assert payload["target_total_weight_resolved_from"] == "baseline"
     assert payload["best_variant_label"] == "pe_native_unconstrained_baseline_total"

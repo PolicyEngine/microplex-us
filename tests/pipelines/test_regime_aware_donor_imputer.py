@@ -39,9 +39,7 @@ pytest.importorskip("microimpute")
 pytest.importorskip("microimpute.models.zero_inflated")
 
 
-def _three_sign_frame_with_gap(
-    n: int = 1500, seed: int = 0
-) -> pd.DataFrame:
+def _three_sign_frame_with_gap(n: int = 1500, seed: int = 0) -> pd.DataFrame:
     """Fixture with a hard gap between positive and negative training values.
 
     Positives live in [100, ∞), negatives in (-∞, -100], zeros exactly
@@ -201,9 +199,15 @@ class TestRegimeAwareFitGenerate:
         )
         imputer.fit(train)
 
-        first = imputer.generate(conditions, seed=123)["short_term_capital_gains"].to_numpy()
-        second = imputer.generate(conditions, seed=123)["short_term_capital_gains"].to_numpy()
-        third = imputer.generate(conditions, seed=999)["short_term_capital_gains"].to_numpy()
+        first = imputer.generate(conditions, seed=123)[
+            "short_term_capital_gains"
+        ].to_numpy()
+        second = imputer.generate(conditions, seed=123)[
+            "short_term_capital_gains"
+        ].to_numpy()
+        third = imputer.generate(conditions, seed=999)[
+            "short_term_capital_gains"
+        ].to_numpy()
 
         np.testing.assert_array_equal(first, second)
         assert not np.array_equal(first, third)
@@ -226,5 +230,9 @@ class TestRegimeAwareFitGenerate:
         third = imputer.generate(conditions, seed=654)
 
         for column in ("short_term_capital_gains", "rental_income"):
-            np.testing.assert_array_equal(first[column].to_numpy(), second[column].to_numpy())
-            assert not np.array_equal(first[column].to_numpy(), third[column].to_numpy())
+            np.testing.assert_array_equal(
+                first[column].to_numpy(), second[column].to_numpy()
+            )
+            assert not np.array_equal(
+                first[column].to_numpy(), third[column].to_numpy()
+            )

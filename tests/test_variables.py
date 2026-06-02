@@ -45,6 +45,24 @@ def test_normalize_dividend_columns_prefers_atomic_components_over_totals():
     assert normalized["dividend_income"].tolist() == [42.0]
 
 
+def test_normalize_dividend_columns_coalesces_sparse_total_aliases_by_row():
+    frame = pd.DataFrame(
+        {
+            "ordinary_dividend_income": [0.0, 30.0, 0.0],
+            "dividend_income": [80.0, 999.0, 0.0],
+            "qualified_dividend_income": [0.0, 5.0, 0.0],
+            "non_qualified_dividend_income": [0.0, 25.0, 0.0],
+        }
+    )
+
+    normalized = normalize_dividend_columns(frame)
+
+    assert normalized["qualified_dividend_income"].tolist() == [0.0, 5.0, 0.0]
+    assert normalized["non_qualified_dividend_income"].tolist() == [80.0, 25.0, 0.0]
+    assert normalized["ordinary_dividend_income"].tolist() == [80.0, 30.0, 0.0]
+    assert normalized["dividend_income"].tolist() == [80.0, 30.0, 0.0]
+
+
 def test_normalize_social_security_columns_tracks_unclassified_residual():
     frame = pd.DataFrame(
         {
@@ -142,10 +160,7 @@ def test_donor_imputation_block_specs_include_match_strategies_and_restored_vari
         "qualified_dividend_income",
         "non_qualified_dividend_income",
     )
-    assert (
-        specs[0].strategy_for("dividend_income")
-        is DonorMatchStrategy.ZERO_INFLATED_POSITIVE
-    )
+    assert specs[0].strategy_for("dividend_income") is DonorMatchStrategy.RANK
     assert specs[0].native_entity is EntityType.PERSON
     assert specs[0].condition_entities == (
         EntityType.PERSON,
@@ -160,10 +175,7 @@ def test_donor_imputation_block_specs_include_match_strategies_and_restored_vari
         EntityType.HOUSEHOLD,
         EntityType.TAX_UNIT,
     )
-    assert (
-        specs[1].strategy_for("taxable_interest_income")
-        is DonorMatchStrategy.ZERO_INFLATED_POSITIVE
-    )
+    assert specs[1].strategy_for("taxable_interest_income") is DonorMatchStrategy.RANK
 
 
 def test_donor_imputation_block_specs_use_zero_inflated_matching_for_sparse_irs_amounts():
@@ -190,14 +202,14 @@ def test_donor_imputation_block_specs_use_zero_inflated_matching_for_sparse_irs_
         )
         assert (
             by_variable[variable_name].strategy_for(variable_name)
-            is DonorMatchStrategy.ZERO_INFLATED_POSITIVE
+            is DonorMatchStrategy.RANK
         )
     assert by_variable["partnership_s_corp_income"].native_entity is EntityType.PERSON
     assert (
         by_variable["partnership_s_corp_income"].strategy_for(
             "partnership_s_corp_income"
         )
-        is DonorMatchStrategy.ZERO_INFLATED_POSITIVE
+        is DonorMatchStrategy.RANK
     )
 
 
@@ -276,7 +288,10 @@ def test_resolve_variable_semantic_capabilities_marks_redundant_dividend_totals(
 def test_variable_semantics_define_projection_aggregation_for_person_controls():
     from microplex_us.variables import variable_semantic_spec_for
 
-    assert EntityType.RECORD not in variable_semantic_spec_for("age").allowed_condition_entities
+    assert (
+        EntityType.RECORD
+        not in variable_semantic_spec_for("age").allowed_condition_entities
+    )
     assert (
         variable_semantic_spec_for("age").projection_aggregation
         is ProjectionAggregation.MAX
@@ -291,15 +306,15 @@ def test_state_program_proxy_semantics_are_registered():
     from microplex_us.variables import variable_semantic_spec_for
 
     has_medicaid = variable_semantic_spec_for("has_medicaid")
-    assert has_medicaid.support_family is VariableSupportFamily.ZERO_INFLATED_POSITIVE
-    assert has_medicaid.donor_match_strategy is DonorMatchStrategy.ZERO_INFLATED_POSITIVE
+    assert has_medicaid.support_family is VariableSupportFamily.SUPPORT_SENSITIVE
+    assert has_medicaid.donor_match_strategy is DonorMatchStrategy.RANK
     assert has_medicaid.condition_score_mode is ConditionScoreMode.VALUE_AND_SUPPORT
     assert has_medicaid.projection_aggregation is ProjectionAggregation.MAX
 
     for variable_name in ("public_assistance", "ssi", "social_security"):
         spec = variable_semantic_spec_for(variable_name)
-        assert spec.support_family is VariableSupportFamily.ZERO_INFLATED_POSITIVE
-        assert spec.donor_match_strategy is DonorMatchStrategy.ZERO_INFLATED_POSITIVE
+        assert spec.support_family is VariableSupportFamily.SUPPORT_SENSITIVE
+        assert spec.donor_match_strategy is DonorMatchStrategy.RANK
 
 
 def test_sparse_irs_ald_semantics_are_registered():
@@ -312,8 +327,8 @@ def test_sparse_irs_ald_semantics_are_registered():
     ):
         spec = variable_semantic_spec_for(variable_name)
         assert spec.native_entity is EntityType.PERSON
-        assert spec.support_family is VariableSupportFamily.ZERO_INFLATED_POSITIVE
-        assert spec.donor_match_strategy is DonorMatchStrategy.ZERO_INFLATED_POSITIVE
+        assert spec.support_family is VariableSupportFamily.SUPPORT_SENSITIVE
+        assert spec.donor_match_strategy is DonorMatchStrategy.RANK
         assert spec.condition_score_mode is ConditionScoreMode.VALUE_AND_SUPPORT
 
 
@@ -322,8 +337,8 @@ def test_partnership_income_semantics_remain_person_native():
 
     spec = variable_semantic_spec_for("partnership_s_corp_income")
     assert spec.native_entity is EntityType.PERSON
-    assert spec.support_family is VariableSupportFamily.ZERO_INFLATED_POSITIVE
-    assert spec.donor_match_strategy is DonorMatchStrategy.ZERO_INFLATED_POSITIVE
+    assert spec.support_family is VariableSupportFamily.SUPPORT_SENSITIVE
+    assert spec.donor_match_strategy is DonorMatchStrategy.RANK
     assert spec.condition_score_mode is ConditionScoreMode.VALUE_AND_SUPPORT
 
 
@@ -363,23 +378,27 @@ def test_sparse_irs_tax_variables_use_puf_irs_predictors():
 
     assert PUF_IRS_TAX_SUPPLEMENTAL_SHARED_CONDITION_VARS == ()
     assert (
-        variable_semantic_spec_for("taxable_interest_income")
-        .challenger_shared_condition_vars
+        variable_semantic_spec_for(
+            "taxable_interest_income"
+        ).challenger_shared_condition_vars
         == PUF_DIVIDEND_INTEREST_CHALLENGER_SHARED_CONDITION_VARS
     )
     assert (
-        variable_semantic_spec_for("qualified_dividend_income")
-        .challenger_shared_condition_vars
+        variable_semantic_spec_for(
+            "qualified_dividend_income"
+        ).challenger_shared_condition_vars
         == PUF_DIVIDEND_INTEREST_CHALLENGER_SHARED_CONDITION_VARS
     )
     assert (
-        variable_semantic_spec_for("taxable_pension_income")
-        .challenger_shared_condition_vars
+        variable_semantic_spec_for(
+            "taxable_pension_income"
+        ).challenger_shared_condition_vars
         == PUF_PENSION_CHALLENGER_SHARED_CONDITION_VARS
     )
     assert (
-        variable_semantic_spec_for("partnership_s_corp_income")
-        .challenger_shared_condition_vars
+        variable_semantic_spec_for(
+            "partnership_s_corp_income"
+        ).challenger_shared_condition_vars
         == PUF_PARTNERSHIP_CHALLENGER_SHARED_CONDITION_VARS
     )
 
@@ -392,8 +411,8 @@ def test_rental_income_components_use_sparse_asset_conditioning():
 
     for variable_name in ("rental_income_positive", "rental_income_negative"):
         spec = variable_semantic_spec_for(variable_name)
-        assert spec.support_family is VariableSupportFamily.ZERO_INFLATED_POSITIVE
-        assert spec.donor_match_strategy is DonorMatchStrategy.ZERO_INFLATED_POSITIVE
+        assert spec.support_family is VariableSupportFamily.SUPPORT_SENSITIVE
+        assert spec.donor_match_strategy is DonorMatchStrategy.RANK
         assert spec.condition_score_mode is ConditionScoreMode.VALUE_AND_SUPPORT
         assert (
             spec.preferred_condition_vars
@@ -416,7 +435,9 @@ def test_person_native_irs_semantics_match_current_policyengine_entities():
         "student_loan_interest",
         "self_employment_income",
     ):
-        assert variable_semantic_spec_for(variable_name).native_entity is EntityType.PERSON
+        assert (
+            variable_semantic_spec_for(variable_name).native_entity is EntityType.PERSON
+        )
 
 
 def test_self_employment_income_semantics_preserve_signed_support():
@@ -469,7 +490,11 @@ def test_employment_income_donor_semantics_uses_unclassified_social_security_com
     adjusted = apply_donor_variable_semantics(frame, ("employment_income",))
 
     assert adjusted["social_security_retirement"].tolist() == [0.0, 0.0, 0.0]
-    assert adjusted["social_security_unclassified"].tolist() == [18_000.0, 18_000.0, 0.0]
+    assert adjusted["social_security_unclassified"].tolist() == [
+        18_000.0,
+        18_000.0,
+        0.0,
+    ]
     assert adjusted["employment_income"].tolist() == [0.0, 80_000.0, 80_000.0]
 
 

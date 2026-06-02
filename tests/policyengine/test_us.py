@@ -2189,6 +2189,7 @@ class TestPolicyEngineUSProjection:
         )
         spm_unit_contract_inputs = (
             "receives_housing_assistance",
+            "spm_unit_pre_subsidy_childcare_expenses",
             "spm_unit_tenure_type",
         )
         legacy_spm_unit_contract_inputs = (
@@ -2246,6 +2247,7 @@ class TestPolicyEngineUSProjection:
                     "spm_unit_id": [1000],
                     "household_id": [10],
                     "receives_housing_assistance": [True],
+                    "spm_unit_pre_subsidy_childcare_expenses": [1500.0],
                     "spm_unit_tenure_type": ["RENTER"],
                     **{name: [1.0] for name in legacy_spm_unit_contract_inputs},
                 }

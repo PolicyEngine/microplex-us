@@ -384,6 +384,7 @@ class USValidationBenchmarkingOutputs(USStageOutputManifest):
     policyengine_harness: USArtifactRef | None = None
     policyengine_native_scores: USArtifactRef | None = None
     policyengine_native_audit: USArtifactRef | None = None
+    policyengine_native_target_diagnostics: USArtifactRef | None = None
     imputation_ablation: USArtifactRef | None = None
     child_tax_unit_agi_drift: USArtifactRef | None = None
 
@@ -1054,6 +1055,13 @@ def build_us_stage_output_manifests_from_artifact_manifest(
                 "09_validation_benchmarking",
                 category="diagnostic",
             ),
+            policyengine_native_target_diagnostics=_artifact_ref(
+                root,
+                artifacts,
+                "policyengine_native_target_diagnostics",
+                "09_validation_benchmarking",
+                category="diagnostic",
+            ),
             imputation_ablation=_artifact_ref(
                 root,
                 artifacts,
@@ -1392,6 +1400,7 @@ def _manifest_benchmark_summary(manifest: Mapping[str, Any]) -> dict[str, Any]:
         "policyengine_harness",
         "policyengine_native_scores",
         "policyengine_native_audit",
+        "policyengine_native_target_diagnostics",
         "imputation_ablation",
     ):
         value = manifest.get(key)

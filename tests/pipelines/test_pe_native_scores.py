@@ -11,6 +11,7 @@ from microplex_us.pipelines.pe_native_scores import (
     annotate_pe_native_target_db_matches,
     build_policyengine_us_data_pythonpath,
     build_policyengine_us_data_subprocess_env,
+    build_us_pe_native_target_diagnostics_payload,
     compare_us_pe_native_target_deltas,
     compute_batch_us_pe_native_scores,
     compute_batch_us_pe_native_support_audits,
@@ -22,6 +23,8 @@ from microplex_us.pipelines.pe_native_scores import (
     write_us_pe_native_scores,
     write_us_pe_native_target_diagnostics,
 )
+
+_MICROPLEX_SRC = __import__("microplex_us").__path__[0].rsplit("/microplex_us", 1)[0]
 
 
 def test_compute_us_pe_native_scores_wraps_broad_loss(monkeypatch, tmp_path) -> None:
@@ -223,7 +226,10 @@ def test_compute_batch_us_pe_native_scores_wraps_multiple_candidates(
     assert results[1]["summary"]["candidate_beats_baseline"] is False
     assert results[1]["broad_loss"]["enhanced_cps_native_loss_delta"] == 0.25
     assert results[0]["family_breakdown"][0]["family"] == "state_age_distribution"
-    assert results[1]["broad_loss"]["family_breakdown"][0]["family"] == "state_agi_distribution"
+    assert (
+        results[1]["broad_loss"]["family_breakdown"][0]["family"]
+        == "state_agi_distribution"
+    )
     assert results[0]["timing"]["batch_candidate_count"] == 2
     assert results[0]["timing"]["batch_elapsed_seconds"] >= 0.0
 
@@ -243,6 +249,7 @@ def test_build_policyengine_us_data_pythonpath_includes_sibling_microimpute(
 
     assert pythonpath.split(os.pathsep) == [
         str(repo),
+        _MICROPLEX_SRC,
         str(microimpute),
         "/tmp/existing-one",
         "/tmp/existing-two",
@@ -276,6 +283,7 @@ def test_build_policyengine_us_data_subprocess_env_strips_outer_uv_markers(
     assert "UV_RUN_RECURSION_DEPTH" not in env
     assert env["PYTHONPATH"].split(os.pathsep) == [
         str(repo),
+        _MICROPLEX_SRC,
         str(microimpute),
         "/tmp/existing",
     ]
@@ -421,12 +429,8 @@ def test_compare_us_pe_native_target_deltas_wraps_subprocess_payload(
 
 
 def test_parse_pe_native_target_lookup_key_maps_eitc_agi_child_labels() -> None:
-    amount_key = parse_pe_native_target_lookup_key(
-        "nation/irs/eitc/amount/c3_1_1k"
-    )
-    returns_key = parse_pe_native_target_lookup_key(
-        "nation/irs/eitc/returns/c2_1_1k"
-    )
+    amount_key = parse_pe_native_target_lookup_key("nation/irs/eitc/amount/c3_1_1k")
+    returns_key = parse_pe_native_target_lookup_key("nation/irs/eitc/returns/c2_1_1k")
 
     assert amount_key is not None
     assert amount_key.variable == "eitc"
@@ -464,9 +468,7 @@ def test_annotate_pe_native_target_db_matches_marks_matches_and_gaps(
                     "notes": "Table 2.5",
                     "geo_level": "national",
                     "geographic_id": "US",
-                    "domain_variable": (
-                        "adjusted_gross_income,eitc,eitc_child_count"
-                    ),
+                    "domain_variable": ("adjusted_gross_income,eitc,eitc_child_count"),
                     "constraints": [
                         {
                             "variable": "eitc_child_count",
@@ -496,6 +498,8 @@ def test_annotate_pe_native_target_db_matches_marks_matches_and_gaps(
 
     assert payload["targets"][0]["policyengine_target_match"] == "matched"
     assert payload["targets"][0]["policyengine_target_id"] == 123
+    assert payload["targets"][0]["policyengine_target_geo_level"] == "national"
+    assert payload["targets"][0]["policyengine_target_geographic_id"] == "US"
     assert payload["targets"][1]["policyengine_target_match"] == "legacy_only"
     assert payload["targets"][1]["policyengine_target_expected"]["variable"] == (
         "tax_unit_count"
@@ -557,6 +561,148 @@ def test_write_us_pe_native_target_diagnostics_persists_full_payload(
     assert payload["targets"][0]["target_name"] == "nation/irs/example"
     assert payload["targets"][0]["policyengine_target_match"] == "unparsed"
     assert payload["target_db_summary"]["unparsed"] == 1
+
+
+def test_build_us_pe_native_target_diagnostics_payload_adds_public_aliases(
+    tmp_path,
+) -> None:
+    payload = build_us_pe_native_target_diagnostics_payload(
+        target_delta_payload={
+            "metric": "enhanced_cps_native_loss_target_delta",
+            "period": 2024,
+            "from_dataset": "/tmp/enhanced_cps_2024.h5",
+            "to_dataset": "/tmp/policyengine_us.h5",
+            "summary": {"n_targets": 1},
+            "targets": [
+                {
+                    "target_name": "nation/irs/eitc/returns/c2_0_1k",
+                    "target_family": "national_irs_other",
+                    "target_scope": "national",
+                    "winner": "to",
+                    "weighted_term_delta": -1.0,
+                    "from_weighted_term": 2.0,
+                    "to_weighted_term": 1.0,
+                    "target_value": 100.0,
+                    "from_estimate": 90.0,
+                    "to_estimate": 95.0,
+                    "from_rel_error": 0.2,
+                    "to_rel_error": 0.1,
+                }
+            ],
+            "top_regressions": [
+                {
+                    "target_name": "nation/irs/eitc/returns/c2_0_1k",
+                    "weighted_term_delta": -1.0,
+                }
+            ],
+            "top_improvements": [],
+        },
+        from_label="policyengine-us-data",
+        to_label="microplex-us",
+        policyengine_targets_db_path=tmp_path / "missing.db",
+        artifact_id="artifact-1",
+        run_id="run-1",
+    )
+
+    row = payload["targets"][0]
+    assert payload["diagnostic_schema_version"] == 1
+    assert payload["baseline_dataset"] == "/tmp/enhanced_cps_2024.h5"
+    assert payload["candidate_dataset"] == "/tmp/policyengine_us.h5"
+    assert row["target_id"] == "nation/irs/eitc/returns/c2_0_1k"
+    assert row["period"] == 2024
+    assert row["variable"] == "tax_unit_count"
+    assert row["geo_level"] == "national"
+    assert row["geography"] == "US"
+    assert row["state"] is None
+    assert row["entity"] == "tax_unit"
+    assert row["artifact_id"] == "artifact-1"
+    assert row["run_id"] == "run-1"
+    assert row["us_data_aggregate"] == 90.0
+    assert row["microplex_aggregate"] == 95.0
+    assert row["us_data_absolute_error"] == 10.0
+    assert row["microplex_absolute_error"] == 5.0
+    assert row["delta_absolute_error"] == -5.0
+    assert round(row["delta_relative_error"], 10) == -0.1
+    assert row["loss_contribution"] == 1.0
+    assert row["microplex_loss_contribution"] == 1.0
+    assert row["candidate_loss_contribution"] == 1.0
+    assert row["us_data_loss_contribution"] == 2.0
+    assert row["policyengine_us_data_loss_contribution"] == 2.0
+    assert row["baseline_loss_contribution"] == 2.0
+    assert row["loss_contribution_delta"] == -1.0
+    assert row["family"] == "national_irs_other"
+    assert row["in_loss"] is True
+    assert row["supported_by_microplex"] is True
+    top_row = payload["top_regressions"][0]
+    assert top_row["microplex_aggregate"] == 95.0
+    assert top_row["artifact_id"] == "artifact-1"
+
+
+def test_build_us_pe_native_target_diagnostics_payload_infers_legacy_metadata(
+    tmp_path,
+) -> None:
+    def row(target_name: str, family: str, scope: str = "state") -> dict[str, object]:
+        return {
+            "target_name": target_name,
+            "target_family": family,
+            "target_scope": scope,
+            "winner": "to",
+            "weighted_term_delta": -1.0,
+            "from_weighted_term": 2.0,
+            "to_weighted_term": 1.0,
+            "target_value": 100.0,
+            "from_estimate": 90.0,
+            "to_estimate": 95.0,
+            "from_rel_error": 0.2,
+            "to_rel_error": 0.1,
+        }
+
+    payload = build_us_pe_native_target_diagnostics_payload(
+        target_delta_payload={
+            "metric": "enhanced_cps_native_loss_target_delta",
+            "period": 2024,
+            "from_dataset": "/tmp/enhanced_cps_2024.h5",
+            "to_dataset": "/tmp/policyengine_us.h5",
+            "summary": {"n_targets": 3},
+            "targets": [
+                row("state/irs/aca_spending/ak", "other"),
+                row("US39/snap-hhs", "state_snap_households"),
+                row("nation/irs/count/count/AGI in 20k-25k/taxable/All", "national_irs_other", "national"),
+                row("state/census/age/AZ/75-79", "state_age_distribution"),
+                row("nation/cbo/income_by_source/qualified_dividend_income", "other", "national"),
+                row("nation/soi/filer_count/agi_1m_2m", "other", "national"),
+                row("nation/hhs/medicaid_enrollment", "other", "national"),
+            ],
+            "top_regressions": [],
+            "top_improvements": [],
+        },
+        policyengine_targets_db_path=tmp_path / "missing.db",
+    )
+
+    aca, snap, irs_count, state_age, cbo_income, soi_count, hhs_medicaid = payload[
+        "targets"
+    ]
+    assert aca["variable"] == "aca_spending"
+    assert aca["geography"] == "AK"
+    assert aca["state"] == "AK"
+    assert aca["entity"] == "tax_unit"
+    assert aca["family"] == "state_aca_spending"
+    assert snap["variable"] == "snap_households"
+    assert snap["geography"] == "US39"
+    assert snap["state"] == "US39"
+    assert snap["entity"] == "household"
+    assert irs_count["variable"] == "tax_unit_count"
+    assert irs_count["geography"] == "US"
+    assert irs_count["entity"] == "tax_unit"
+    assert state_age["variable"] == "age"
+    assert state_age["geography"] == "AZ"
+    assert state_age["entity"] == "person"
+    assert cbo_income["variable"] == "qualified_dividend_income"
+    assert cbo_income["entity"] == "tax_unit"
+    assert soi_count["variable"] == "filer_count"
+    assert soi_count["entity"] == "tax_unit"
+    assert hhs_medicaid["variable"] == "medicaid_enrollment"
+    assert hhs_medicaid["entity"] == "person"
 
 
 def test_compute_batch_us_pe_native_target_deltas_wraps_multiple_candidates(
@@ -774,4 +920,7 @@ def test_compute_batch_us_pe_native_support_audits_wraps_multiple_candidates(
     assert len(results) == 2
     assert results[0]["baseline_dataset"] == str(baseline)
     assert results[0]["candidate_dataset"] == str(candidate_a)
-    assert results[1]["comparisons"]["critical_input_support"][0]["weighted_nonzero_delta"] == 2.0
+    assert (
+        results[1]["comparisons"]["critical_input_support"][0]["weighted_nonzero_delta"]
+        == 2.0
+    )

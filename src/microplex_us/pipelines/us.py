@@ -142,6 +142,353 @@ from microplex_us.variables import (
 
 LOGGER = logging.getLogger(__name__)
 
+PUF_SUPPORT_CLONE_FLAG_COLUMN = "person_is_puf_clone"
+
+PUF_SUPPORT_CLONE_IMPUTED_VARIABLES: tuple[str, ...] = (
+    "employment_income",
+    "partnership_s_corp_income",
+    "social_security",
+    "taxable_pension_income",
+    "interest_deduction",
+    "tax_exempt_pension_income",
+    "long_term_capital_gains",
+    "unreimbursed_business_employee_expenses",
+    "pre_tax_contributions",
+    "taxable_ira_distributions",
+    "self_employment_income",
+    "w2_wages_from_qualified_business",
+    "unadjusted_basis_qualified_property",
+    "business_is_sstb",
+    "short_term_capital_gains",
+    "qualified_dividend_income",
+    "charitable_cash_donations",
+    "self_employed_pension_contribution_ald",
+    "unrecaptured_section_1250_gain",
+    "taxable_unemployment_compensation",
+    "taxable_interest_income",
+    "domestic_production_ald",
+    "self_employed_health_insurance_ald",
+    "rental_income",
+    "non_qualified_dividend_income",
+    "cdcc_relevant_expenses",
+    "tax_exempt_interest_income",
+    "salt_refund_income",
+    "foreign_tax_credit",
+    "estate_income",
+    "charitable_non_cash_donations",
+    "american_opportunity_credit",
+    "miscellaneous_income",
+    "alimony_expense",
+    "farm_income",
+    "partnership_se_income",
+    "alimony_income",
+    "health_savings_account_ald",
+    "non_sch_d_capital_gains",
+    "general_business_credit",
+    "energy_efficient_home_improvement_credit",
+    "traditional_ira_contributions",
+    "amt_foreign_tax_credit",
+    "excess_withheld_payroll_tax",
+    "savers_credit",
+    "student_loan_interest",
+    "investment_income_elected_form_4952",
+    "early_withdrawal_penalty",
+    "prior_year_minimum_tax_credit",
+    "farm_rent_income",
+    "qualified_tuition_expenses",
+    "educator_expense",
+    "long_term_capital_gains_on_collectibles",
+    "other_credits",
+    "casualty_loss",
+    "unreported_payroll_tax",
+    "recapture_of_investment_credit",
+    "deductible_mortgage_interest",
+    "qualified_reit_and_ptp_income",
+    "qualified_bdc_income",
+    "farm_operations_income",
+    "estate_income_would_be_qualified",
+    "farm_operations_income_would_be_qualified",
+    "farm_rent_income_would_be_qualified",
+    "partnership_s_corp_income_would_be_qualified",
+    "rental_income_would_be_qualified",
+    "self_employment_income_would_be_qualified",
+)
+
+PUF_SUPPORT_CLONE_CPS_REFRESH_CONDITION_VARIABLES: tuple[str, ...] = (
+    "age",
+    "is_male",
+    "state_fips",
+    "tax_unit_is_joint",
+    "tax_unit_count_dependents",
+    "is_tax_unit_head",
+    "is_tax_unit_spouse",
+    "is_tax_unit_dependent",
+    "employment_income",
+    "self_employment_income",
+    "social_security",
+)
+
+PUF_SUPPORT_CLONE_CPS_REFRESH_INCOME_VARIABLES: frozenset[str] = frozenset(
+    {
+        "employment_income",
+        "self_employment_income",
+        "social_security",
+    }
+)
+
+# Refresh categorical/status fields against the PUF income surface, but never
+# overwrite amount fields here. PUF and CPS income amounts must come from donor
+# imputation/calibration, not from post-hoc bucket or nearest-neighbor surgery.
+PUF_SUPPORT_CLONE_CPS_REFRESH_VARIABLES: tuple[str, ...] = (
+    "is_male",
+    "cps_race",
+    "is_hispanic",
+    "detailed_occupation_recode",
+    "treasury_tipped_occupation_code",
+    "is_disabled",
+    "difficulty_seeing",
+    "difficulty_hearing",
+    "difficulty_walking_or_climbing_stairs",
+    "difficulty_dressing_or_bathing",
+    "difficulty_doing_errands",
+    "difficulty_remembering_or_making_decisions",
+    "meets_ssi_disability_criteria",
+    "receives_wic",
+    "receives_housing_assistance",
+    "is_paid_hourly",
+    "is_union_member_or_covered",
+)
+
+DEFAULT_ACA_TAKEUP_RATE = 0.672
+DEFAULT_DC_PTC_TAKEUP_RATE = 0.32
+DEFAULT_EARLY_HEAD_START_TAKEUP_RATE = 0.09
+DEFAULT_EITC_TAKEUP_RATES_BY_CHILDREN = {0: 0.65, 1: 0.86, 2: 0.85, 3: 0.85}
+DEFAULT_HEAD_START_TAKEUP_RATE = 0.30
+DEFAULT_MEDICAID_TAKEUP_RATE = 0.93
+DEFAULT_MEDICAID_TAKEUP_RATES_BY_STATE = {
+    "AK": 0.88,
+    "AL": 0.92,
+    "AR": 0.79,
+    "AZ": 0.95,
+    "CA": 0.78,
+    "CO": 0.99,
+    "CT": 0.89,
+    "DC": 0.99,
+    "DE": 0.86,
+    "FL": 0.98,
+    "GA": 0.73,
+    "HI": 0.88,
+    "IA": 0.84,
+    "ID": 0.78,
+    "IL": 0.85,
+    "IN": 0.99,
+    "KS": 0.92,
+    "KY": 0.87,
+    "LA": 0.79,
+    "MA": 0.94,
+    "MD": 0.95,
+    "ME": 0.92,
+    "MI": 0.91,
+    "MN": 0.89,
+    "MO": 0.89,
+    "MS": 0.75,
+    "MT": 0.83,
+    "NC": 0.94,
+    "ND": 0.91,
+    "NE": 0.79,
+    "NH": 0.84,
+    "NJ": 0.74,
+    "NM": 0.84,
+    "NV": 0.93,
+    "NY": 0.86,
+    "OH": 0.82,
+    "OK": 0.77,
+    "OR": 0.92,
+    "PA": 0.64,
+    "RI": 0.94,
+    "SC": 0.93,
+    "SD": 0.88,
+    "TN": 0.92,
+    "TX": 0.76,
+    "UT": 0.53,
+    "VA": 0.82,
+    "VT": 0.93,
+    "WA": 0.98,
+    "WI": 0.91,
+    "WV": 0.83,
+    "WY": 0.70,
+}
+DEFAULT_SNAP_TAKEUP_RATE = 0.82
+DEFAULT_TANF_TAKEUP_RATE = 0.22
+DEFAULT_VOLUNTARY_FILING_RATE = 0.05
+DEFAULT_VOLUNTARY_FILING_RATES = {
+    "no_children": {
+        "zero": {"under_65": 0.20, "age_65_plus": 0.05},
+        "low": {"under_65": 0.24, "age_65_plus": 0.04},
+        "medium": {"under_65": 0.0, "age_65_plus": 0.0},
+        "high": {"under_65": 0.0, "age_65_plus": 0.005},
+    },
+    "with_children": {
+        "zero": {"under_65": 0.50, "age_65_plus": 0.075},
+        "low": {"under_65": 0.60, "age_65_plus": 0.06},
+        "medium": {"under_65": 0.0, "age_65_plus": 0.0},
+        "high": {"under_65": 0.025, "age_65_plus": 0.0037},
+    },
+}
+WIC_TAKEUP_CATEGORY_PREGNANT = "PREGNANT"
+WIC_TAKEUP_CATEGORY_POSTPARTUM = "POSTPARTUM"
+WIC_TAKEUP_CATEGORY_BREASTFEEDING = "BREASTFEEDING"
+WIC_TAKEUP_CATEGORY_INFANT = "INFANT"
+WIC_TAKEUP_CATEGORY_CHILD = "CHILD"
+WIC_TAKEUP_CATEGORY_NONE = "NONE"
+DEFAULT_WIC_TAKEUP_RATES = {
+    WIC_TAKEUP_CATEGORY_PREGNANT: 0.456,
+    WIC_TAKEUP_CATEGORY_POSTPARTUM: 0.689,
+    WIC_TAKEUP_CATEGORY_BREASTFEEDING: 0.663,
+    WIC_TAKEUP_CATEGORY_INFANT: 0.784,
+    WIC_TAKEUP_CATEGORY_CHILD: 0.460,
+    WIC_TAKEUP_CATEGORY_NONE: 0.0,
+}
+DEFAULT_WIC_NUTRITIONAL_RISK_RATES = {
+    WIC_TAKEUP_CATEGORY_PREGNANT: 0.913,
+    WIC_TAKEUP_CATEGORY_POSTPARTUM: 0.933,
+    WIC_TAKEUP_CATEGORY_BREASTFEEDING: 0.889,
+    WIC_TAKEUP_CATEGORY_INFANT: 0.950,
+    WIC_TAKEUP_CATEGORY_CHILD: 0.752,
+    WIC_TAKEUP_CATEGORY_NONE: 0.0,
+}
+EITC_TAKEUP_CHILD_COUNT_HELPER_COLUMN = "_mp_eitc_child_count_for_takeup"
+VOLUNTARY_FILING_AGE_HEAD_HELPER_COLUMN = "_mp_voluntary_filing_age_head"
+VOLUNTARY_FILING_WAGE_INCOME_HELPER_COLUMN = "_mp_voluntary_filing_wage_income"
+
+
+def _stable_string_hash(value: str) -> np.uint64:
+    """Deterministic string hash for reproducible MP stochastic inputs."""
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", "overflow encountered", RuntimeWarning)
+        hashed = np.uint64(0)
+        for byte in value.encode("utf-8"):
+            hashed = hashed * np.uint64(31) + np.uint64(byte)
+        hashed = hashed ^ (hashed >> np.uint64(33))
+        hashed = hashed * np.uint64(0xFF51AFD7ED558CCD)
+        hashed = hashed ^ (hashed >> np.uint64(33))
+    return hashed
+
+
+def _microplex_seeded_rng(
+    variable_name: str,
+    *,
+    salt: str | None = None,
+) -> np.random.Generator:
+    key = variable_name if salt is None else f"{variable_name}:{salt}"
+    seed = int(_stable_string_hash(key)) % (2**63)
+    return np.random.default_rng(seed=seed)
+
+
+def _load_microplex_takeup_rate(variable_name: str, year: int) -> float:
+    """Load MP-owned scalar take-up assumptions for PE dataset inputs."""
+    if variable_name == "aca":
+        return DEFAULT_ACA_TAKEUP_RATE
+    if variable_name == "dc_ptc":
+        return DEFAULT_DC_PTC_TAKEUP_RATE
+    if variable_name == "early_head_start":
+        return DEFAULT_EARLY_HEAD_START_TAKEUP_RATE
+    if variable_name == "head_start":
+        return 0.40 if year <= 2020 else DEFAULT_HEAD_START_TAKEUP_RATE
+    if variable_name == "snap":
+        return DEFAULT_SNAP_TAKEUP_RATE
+    if variable_name == "tanf":
+        return DEFAULT_TANF_TAKEUP_RATE
+    raise KeyError(f"Unknown Microplex take-up rate: {variable_name!r}")
+
+
+def _load_microplex_medicaid_takeup_rates(year: int) -> dict[str, float]:
+    """Load MP-owned Medicaid take-up rates by state abbreviation."""
+    _ = year
+    return dict(DEFAULT_MEDICAID_TAKEUP_RATES_BY_STATE)
+
+
+def _load_microplex_eitc_takeup_rates(year: int) -> dict[int, float]:
+    """Load MP-owned EITC take-up rates by capped qualifying-child count."""
+    _ = year
+    return dict(DEFAULT_EITC_TAKEUP_RATES_BY_CHILDREN)
+
+
+def _load_microplex_voluntary_filing_rates(year: int) -> dict:
+    """Load MP-owned voluntary filing rate table."""
+    _ = year
+    return {
+        children: {wage: dict(age_rates) for wage, age_rates in wage_rates.items()}
+        for children, wage_rates in DEFAULT_VOLUNTARY_FILING_RATES.items()
+    }
+
+
+def _load_microplex_wic_takeup_rates(year: int) -> dict[str, float]:
+    """Load MP-owned WIC take-up rates by demographic category."""
+    _ = year
+    return dict(DEFAULT_WIC_TAKEUP_RATES)
+
+
+def _load_microplex_wic_nutritional_risk_rates(year: int) -> dict[str, float]:
+    """Load MP-owned WIC nutritional-risk rates by demographic category."""
+    _ = year
+    return dict(DEFAULT_WIC_NUTRITIONAL_RISK_RATES)
+
+
+PUF_SUPPORT_CLONE_OVERRIDDEN_VARIABLES: tuple[str, ...] = (
+    "partnership_s_corp_income",
+    "interest_deduction",
+    "unreimbursed_business_employee_expenses",
+    "pre_tax_contributions",
+    "w2_wages_from_qualified_business",
+    "unadjusted_basis_qualified_property",
+    "business_is_sstb",
+    "charitable_cash_donations",
+    "self_employed_pension_contribution_ald",
+    "unrecaptured_section_1250_gain",
+    "taxable_unemployment_compensation",
+    "domestic_production_ald",
+    "self_employed_health_insurance_ald",
+    "cdcc_relevant_expenses",
+    "salt_refund_income",
+    "foreign_tax_credit",
+    "estate_income",
+    "charitable_non_cash_donations",
+    "american_opportunity_credit",
+    "miscellaneous_income",
+    "alimony_expense",
+    "health_savings_account_ald",
+    "non_sch_d_capital_gains",
+    "general_business_credit",
+    "energy_efficient_home_improvement_credit",
+    "amt_foreign_tax_credit",
+    "excess_withheld_payroll_tax",
+    "savers_credit",
+    "student_loan_interest",
+    "investment_income_elected_form_4952",
+    "early_withdrawal_penalty",
+    "prior_year_minimum_tax_credit",
+    "farm_rent_income",
+    "qualified_tuition_expenses",
+    "educator_expense",
+    "long_term_capital_gains_on_collectibles",
+    "other_credits",
+    "casualty_loss",
+    "unreported_payroll_tax",
+    "recapture_of_investment_credit",
+    "deductible_mortgage_interest",
+    "qualified_reit_and_ptp_income",
+    "qualified_bdc_income",
+    "farm_operations_income",
+    "estate_income_would_be_qualified",
+    "farm_operations_income_would_be_qualified",
+    "farm_rent_income_would_be_qualified",
+    "partnership_s_corp_income_would_be_qualified",
+    "rental_income_would_be_qualified",
+)
+
+PUF_SUPPORT_CLONE_SPECIAL_VARIABLES: tuple[str, ...] = ("weeks_unemployed",)
+
 
 @lru_cache(maxsize=1)
 def _default_block_geography() -> BlockGeography:
@@ -1703,6 +2050,26 @@ class USMicroplexBuildConfig:
     donor_imputer_max_condition_vars: int | None = 8
     donor_imputer_excluded_variables: tuple[str, ...] = ("filing_status_code",)
     donor_imputer_authoritative_override_variables: tuple[str, ...] = ()
+    puf_support_clone_enabled: bool = False
+    puf_support_clone_source_prefixes: tuple[str, ...] = ("irs_soi_puf",)
+    puf_support_clone_zero_initial_weight: bool = True
+    puf_support_clone_flag_column: str = PUF_SUPPORT_CLONE_FLAG_COLUMN
+    puf_support_clone_prior_weight_share: float = 0.05
+    puf_support_clone_overlap_variables: tuple[str, ...] = (
+        PUF_SUPPORT_CLONE_IMPUTED_VARIABLES
+        + PUF_SUPPORT_CLONE_SPECIAL_VARIABLES
+        + ("wage_income", "dividend_income", "capital_gains")
+    )
+    puf_support_clone_both_halves_override_variables: tuple[str, ...] = (
+        PUF_SUPPORT_CLONE_OVERRIDDEN_VARIABLES
+    )
+    puf_support_clone_refresh_cps_only_fields: bool = True
+    puf_support_clone_cps_refresh_variables: tuple[str, ...] = (
+        PUF_SUPPORT_CLONE_CPS_REFRESH_VARIABLES
+    )
+    puf_support_clone_cps_refresh_condition_variables: tuple[str, ...] = (
+        PUF_SUPPORT_CLONE_CPS_REFRESH_CONDITION_VARIABLES
+    )
     dependent_tax_leaf_soft_cap_multiplier: float | None = None
     dependent_tax_leaf_soft_cap_base_variables: tuple[str, ...] = (
         "employment_income",
@@ -1817,6 +2184,27 @@ class USMicroplexBuildConfig:
     forbes_fixed_spine_replicates_per_unit: int = 10
 
     def __post_init__(self) -> None:
+        if self.puf_support_clone_enabled:
+            if self.synthesis_backend != "seed":
+                raise ValueError(
+                    "puf_support_clone_enabled requires synthesis_backend='seed' "
+                    "until post-synthesis clone construction is implemented"
+                )
+            if self.policyengine_selection_household_budget is not None:
+                raise ValueError(
+                    "puf_support_clone_enabled cannot be combined with "
+                    "policyengine_selection_household_budget until selector "
+                    "clone activation is implemented"
+                )
+            if not self.puf_support_clone_source_prefixes:
+                raise ValueError(
+                    "puf_support_clone_source_prefixes must not be empty when "
+                    "puf_support_clone_enabled is true"
+                )
+            if not (0.0 <= self.puf_support_clone_prior_weight_share < 1.0):
+                raise ValueError(
+                    "puf_support_clone_prior_weight_share must be in [0, 1)"
+                )
         if (
             self.policyengine_calibration_rescale_to_input_weight_sum
             and self.policyengine_calibration_rescale_to_target_total_weight
@@ -2427,6 +2815,13 @@ class USMicroplexPipeline:
                 "donor_conditioning_diagnostics": donor_integration.get(
                     "conditioning_diagnostics", []
                 ),
+                "processed_donor_source_order": donor_integration.get(
+                    "processed_donor_source_order", []
+                ),
+                "puf_clone_source_order": donor_integration.get(
+                    "puf_clone_source_order", []
+                ),
+                "puf_support_clone": donor_integration.get("puf_support_clone_summary"),
                 "donor_excluded_variables": list(
                     self.config.donor_imputer_excluded_variables
                 ),
@@ -3675,6 +4070,127 @@ class USMicroplexPipeline:
             )
         return kwargs
 
+    def _puf_clone_household_summary(
+        self,
+        tables: PolicyEngineUSEntityTableBundle,
+    ) -> dict[str, Any]:
+        flag_column = self.config.puf_support_clone_flag_column
+        if tables.persons is None or flag_column not in tables.persons.columns:
+            return {
+                "available": False,
+                "clone_household_count": 0,
+                "mixed_flag_household_count": 0,
+            }
+        persons = tables.persons
+        if "household_id" not in persons.columns:
+            return {
+                "available": False,
+                "reason": "missing_person_household_id",
+                "clone_household_count": 0,
+                "mixed_flag_household_count": 0,
+            }
+        flags = pd.to_numeric(persons[flag_column], errors="coerce").fillna(0.0)
+        grouped = flags.groupby(persons["household_id"], sort=False)
+        flag_min = grouped.min()
+        flag_max = grouped.max()
+        clone_household_ids = flag_min.index[(flag_min > 0.5) & (flag_max > 0.5)]
+        mixed_household_ids = flag_min.index[(flag_min <= 0.5) & (flag_max > 0.5)]
+        activated_count = 0
+        weight_sum = 0.0
+        weight_share = 0.0
+        if "household_id" in tables.households.columns:
+            households = tables.households
+            weights = pd.to_numeric(
+                households.get("household_weight", 0.0),
+                errors="coerce",
+            ).fillna(0.0)
+            household_weights = pd.Series(
+                weights.to_numpy(dtype=float),
+                index=households["household_id"].to_numpy(),
+                dtype=float,
+            )
+            clone_weights = household_weights.reindex(clone_household_ids).fillna(0.0)
+            activated_count = int((clone_weights > 0.0).sum())
+            weight_sum = float(clone_weights.sum())
+            total_weight = float(weights.sum())
+            weight_share = float(weight_sum / total_weight) if total_weight else 0.0
+        clone_household_id_values = [
+            value.item() if hasattr(value, "item") else value
+            for value in clone_household_ids.to_list()
+        ]
+        return {
+            "available": True,
+            "flag_column": flag_column,
+            "clone_household_count": int(len(clone_household_ids)),
+            "mixed_flag_household_count": int(len(mixed_household_ids)),
+            "activated_household_count": activated_count,
+            "household_weight_sum": weight_sum,
+            "household_weight_share": weight_share,
+            "clone_household_ids": clone_household_id_values,
+        }
+
+    def _initialize_puf_clone_calibration_weights(
+        self,
+        tables: PolicyEngineUSEntityTableBundle,
+    ) -> tuple[PolicyEngineUSEntityTableBundle, dict[str, Any]]:
+        if not self.config.puf_support_clone_enabled:
+            return tables, {"applied": False}
+        summary = self._puf_clone_household_summary(tables)
+        if not summary.get("available"):
+            return tables, {"applied": False, **summary}
+        if summary.get("mixed_flag_household_count", 0):
+            raise ValueError(
+                "PUF support clone household diagnostics found mixed original/clone "
+                "person flags within a household"
+            )
+        if self.config.calibration_backend == "none":
+            return tables, {
+                "applied": False,
+                "reason": "calibration_backend_none",
+                **summary,
+            }
+        clone_household_ids = set(summary.get("clone_household_ids", []))
+        if not clone_household_ids or "household_id" not in tables.households.columns:
+            return tables, {"applied": False, **summary}
+        households = tables.households.copy()
+        weights = pd.to_numeric(
+            households["household_weight"],
+            errors="coerce",
+        ).fillna(0.0)
+        clone_mask = households["household_id"].isin(clone_household_ids)
+        share = float(self.config.puf_support_clone_prior_weight_share)
+        clone_count = int(clone_mask.sum())
+        original_weight_sum = float(weights.loc[~clone_mask].sum())
+        clone_prior_total = (
+            original_weight_sum * share / (1.0 - share)
+            if share > 0.0 and original_weight_sum > 0.0 and clone_count
+            else 0.0
+        )
+        clone_prior_weight = (
+            clone_prior_total / clone_count
+            if clone_count and clone_prior_total
+            else 0.0
+        )
+        if clone_prior_weight > 0.0:
+            households.loc[clone_mask, "household_weight"] = clone_prior_weight
+        updated_tables = PolicyEngineUSEntityTableBundle(
+            households=households,
+            persons=tables.persons,
+            tax_units=tables.tax_units,
+            spm_units=tables.spm_units,
+            families=tables.families,
+            marital_units=tables.marital_units,
+        )
+        return updated_tables, {
+            "applied": bool(clone_prior_weight > 0.0),
+            "clone_prior_weight_share": share,
+            "clone_prior_total_weight": clone_prior_total,
+            "clone_prior_household_weight": clone_prior_weight,
+            "clone_household_count": clone_count,
+            "pre_clone_weight_sum": float(weights.loc[clone_mask].sum()),
+            "pre_clone_original_weight_sum": original_weight_sum,
+        }
+
     def calibrate_policyengine_tables(
         self,
         tables: PolicyEngineUSEntityTableBundle,
@@ -3722,6 +4238,9 @@ class USMicroplexPipeline:
                 "US microplex build: post-microsim checkpoint saved",
                 path=str(self.config.pipeline_checkpoint_save_post_microsim_path),
             )
+        tables, puf_clone_calibration_initialization = (
+            self._initialize_puf_clone_calibration_weights(tables)
+        )
         preselection_supported_targets = list(supported_targets)
         target_planning_household_count = len(tables.households)
         if not supported_targets:
@@ -4370,6 +4889,13 @@ class USMicroplexPipeline:
             "active_solve_capped_mean_abs_relative_error": oracle_loss["active_solve"][
                 "capped_mean_abs_relative_error"
             ],
+            "puf_support_clone": {
+                "enabled": bool(self.config.puf_support_clone_enabled),
+                "calibration_initialization": puf_clone_calibration_initialization,
+                "final_household_diagnostics": self._puf_clone_household_summary(
+                    updated_tables
+                ),
+            },
         }
         if selection_summary is not None:
             summary["selection"] = selection_summary
@@ -4886,11 +5412,14 @@ class USMicroplexPipeline:
         persons = self._augment_policyengine_person_inputs(persons)
         persons["relationship_to_head"] = self._normalize_relationship_to_head(persons)
         persons = self._assign_policyengine_household_head_flag(persons)
+        persons = self._attach_policyengine_person_takeup_inputs(persons)
 
         households = self._build_policyengine_households(persons)
         tax_units, persons = self._build_policyengine_tax_units(persons)
+        tax_units = self._attach_policyengine_tax_unit_takeup_inputs(tax_units)
         persons = self._construct_aotc_eligibility_inputs(persons)
         persons = self._assign_family_and_spm_units(persons)
+        persons = self._attach_policyengine_wic_inputs(persons)
         families = self._collapse_group_table(persons, "family_id")
         spm_units = self._collapse_group_table(persons, "spm_unit_id")
         spm_units = self._attach_spm_unit_source_columns(persons, spm_units)
@@ -5239,25 +5768,23 @@ class USMicroplexPipeline:
         nonnegative_vars = {
             variable
             for variable, support_family in support_families.items()
-            if support_family
-            in {
-                VariableSupportFamily.ZERO_INFLATED_POSITIVE,
-                VariableSupportFamily.BOUNDED_SHARE,
-            }
+            if support_family is VariableSupportFamily.BOUNDED_SHARE
         }
         if backend == "regime_aware":
             return RegimeAwareDonorImputer(
                 condition_vars=condition_vars,
                 target_vars=list(target_vars),
                 n_estimators=self.config.donor_imputer_qrf_n_estimators,
-                nonnegative_vars=nonnegative_vars,
                 seed=self.config.random_seed,
             )
         zero_inflated_vars = (
             {
                 variable
                 for variable, support_family in support_families.items()
-                if support_family is VariableSupportFamily.ZERO_INFLATED_POSITIVE
+                if support_family
+                in {
+                    VariableSupportFamily.SUPPORT_SENSITIVE,
+                }
             }
             if backend == "zi_qrf"
             else set()
@@ -5403,6 +5930,15 @@ class USMicroplexPipeline:
                 household_rows,
             )
 
+        if self.config.puf_support_clone_enabled:
+            cps_candidates = [
+                source
+                for source in candidates
+                if self._is_cps_asec_scaffold_source(source.frame.source.name)
+            ]
+            if cps_candidates:
+                return max(cps_candidates, key=score)
+
         return max(candidates, key=score)
 
     def _household_geography_coverage(
@@ -5415,6 +5951,334 @@ class USMicroplexPipeline:
         state_fips = pd.to_numeric(households["state_fips"], errors="coerce").fillna(0)
         return int((state_fips > 0).sum())
 
+    def _is_puf_support_clone_source(self, source_name: str) -> bool:
+        return any(
+            source_name.startswith(prefix)
+            for prefix in self.config.puf_support_clone_source_prefixes
+        )
+
+    def _is_cps_asec_scaffold_source(self, source_name: str) -> bool:
+        return source_name.startswith(("cps", "cps_asec"))
+
+    def _ordered_donor_inputs_for_puf_support_clone(
+        self,
+        *,
+        scaffold_input: USMicroplexSourceInput,
+        donor_inputs: list[USMicroplexSourceInput],
+    ) -> tuple[list[USMicroplexSourceInput], list[str], list[str]]:
+        """Return PUF-first donor inputs and clone source order for clone mode."""
+        input_order = [donor.frame.source.name for donor in donor_inputs]
+        if not self.config.puf_support_clone_enabled:
+            return donor_inputs, input_order, []
+
+        scaffold_name = scaffold_input.frame.source.name
+        if self._is_puf_support_clone_source(scaffold_name):
+            raise ValueError(
+                "puf_support_clone_enabled requires the PUF source to be a donor, "
+                f"but selected scaffold source is {scaffold_name!r}"
+            )
+        if not self._is_cps_asec_scaffold_source(scaffold_name):
+            raise ValueError(
+                "puf_support_clone_enabled requires a CPS/ASEC-shaped scaffold; "
+                f"selected scaffold source is {scaffold_name!r}"
+            )
+
+        puf_donors = [
+            donor
+            for donor in donor_inputs
+            if self._is_puf_support_clone_source(donor.frame.source.name)
+        ]
+        if not puf_donors:
+            raise ValueError(
+                "puf_support_clone_enabled requires exactly one PUF donor source, "
+                "but none matched puf_support_clone_source_prefixes"
+            )
+        if len(puf_donors) > 1:
+            raise ValueError(
+                "puf_support_clone_enabled requires an unambiguous PUF donor source; "
+                "matched " + ", ".join(donor.frame.source.name for donor in puf_donors)
+            )
+
+        non_puf_donors = [
+            donor
+            for donor in donor_inputs
+            if not self._is_puf_support_clone_source(donor.frame.source.name)
+        ]
+        ordered = [*puf_donors, *non_puf_donors]
+        return (
+            ordered,
+            [donor.frame.source.name for donor in ordered],
+            [donor.frame.source.name for donor in puf_donors],
+        )
+
+    def _prepare_puf_support_clone_frame(self, original: pd.DataFrame) -> pd.DataFrame:
+        """Create a zero-stored-weight PUF clone frame from CPS support rows."""
+        clone = original.copy()
+        structural_id_columns = {"person_id", *ENTITY_ID_COLUMNS.values()}
+        for column in sorted(structural_id_columns & set(clone.columns)):
+            series = clone[column]
+            if pd.api.types.is_numeric_dtype(series):
+                numeric = pd.to_numeric(series, errors="coerce")
+                finite = numeric[np.isfinite(numeric)]
+                offset = int(finite.max()) + 1 if not finite.empty else len(clone)
+                clone[column] = numeric.fillna(-1).astype(np.int64) + int(offset)
+            else:
+                clone[column] = series.astype(str) + "__puf_clone"
+        if self.config.puf_support_clone_zero_initial_weight:
+            for column in clone.columns:
+                if column == "weight" or "_weight" in column:
+                    clone[column] = 0.0
+        clone[self.config.puf_support_clone_flag_column] = 1.0
+        return clone
+
+    def _refresh_puf_support_clone_cps_only_fields(
+        self,
+        *,
+        original: pd.DataFrame,
+        clone: pd.DataFrame,
+        integrated_variables: Iterable[str],
+        preclone_columns: set[str],
+    ) -> tuple[pd.DataFrame, dict[str, Any]]:
+        """Refresh copied CPS-only clone fields after PUF income is grafted on.
+
+        PUF support clones start as literal CPS copies, then receive PUF tax and
+        income fields. Any remaining copied CPS-only fields can become
+        incoherent with the clone's new income surface. Re-match those fields
+        from CPS donors using demographic predictors plus PUF-imputed income.
+        """
+        summary: dict[str, Any] = {
+            "enabled": bool(self.config.puf_support_clone_refresh_cps_only_fields),
+            "condition_variables": [],
+            "refreshed_variables": [],
+            "social_security_reconciled_variables": [],
+            "matched_source_row_count": 0,
+        }
+        if not self.config.puf_support_clone_refresh_cps_only_fields:
+            return clone, summary
+        if original.empty or clone.empty:
+            return clone, summary
+
+        integrated_set = set(integrated_variables)
+        condition_vars = [
+            variable
+            for variable in self.config.puf_support_clone_cps_refresh_condition_variables
+            if variable in original.columns
+            and variable in clone.columns
+            and pd.api.types.is_numeric_dtype(original[variable])
+            and pd.api.types.is_numeric_dtype(clone[variable])
+            and self._is_compatible_donor_condition(
+                clone[variable],
+                original[variable],
+            )
+        ]
+        if not condition_vars:
+            return clone, summary
+
+        refresh_variables = [
+            variable
+            for variable in self.config.puf_support_clone_cps_refresh_variables
+            if variable in preclone_columns
+            and variable not in integrated_set
+            and variable in original.columns
+            and variable in clone.columns
+        ]
+        if not refresh_variables:
+            return clone, summary
+
+        train = original.loc[:, condition_vars].apply(
+            lambda series: pd.to_numeric(series, errors="coerce").fillna(0.0)
+        )
+        test = clone.loc[:, condition_vars].apply(
+            lambda series: pd.to_numeric(series, errors="coerce").fillna(0.0)
+        )
+        for variable in (
+            set(condition_vars) & PUF_SUPPORT_CLONE_CPS_REFRESH_INCOME_VARIABLES
+        ):
+            train[variable] = np.arcsinh(train[variable])
+            test[variable] = np.arcsinh(test[variable])
+        scale = train.std(ddof=0).replace(0.0, 1.0)
+        center = train.mean()
+        train_values = ((train - center) / scale).to_numpy(dtype=float)
+        test_values = ((test - center) / scale).to_numpy(dtype=float)
+
+        from sklearn.neighbors import NearestNeighbors
+
+        matcher = NearestNeighbors(n_neighbors=1)
+        matcher.fit(train_values)
+        matched = matcher.kneighbors(test_values, return_distance=False).reshape(-1)
+
+        refreshed = clone.copy()
+        for variable in refresh_variables:
+            refreshed[variable] = original[variable].to_numpy(copy=True)[matched]
+
+        reconciled_variables = self._reconcile_puf_support_clone_social_security(
+            refreshed
+        )
+        summary["condition_variables"] = condition_vars
+        summary["refreshed_variables"] = refresh_variables
+        summary["social_security_reconciled_variables"] = reconciled_variables
+        summary["matched_source_row_count"] = int(np.unique(matched).size)
+        return refreshed, summary
+
+    def _reconcile_puf_support_clone_social_security(
+        self,
+        clone: pd.DataFrame,
+    ) -> list[str]:
+        """Scale cloned Social Security components to the PUF-imputed total."""
+        if "social_security" not in clone.columns:
+            return []
+        subcomponents = [
+            variable
+            for variable in (
+                "social_security_retirement",
+                "social_security_disability",
+                "social_security_survivors",
+                "social_security_dependents",
+            )
+            if variable in clone.columns
+        ]
+        if not subcomponents:
+            return []
+
+        total = pd.to_numeric(clone["social_security"], errors="coerce").fillna(0.0)
+        sub_values = {
+            variable: pd.to_numeric(clone[variable], errors="coerce").fillna(0.0)
+            for variable in subcomponents
+        }
+        sub_sum = sum(sub_values.values())
+        positive_total = total.gt(0.0)
+        positive_sub_sum = sub_sum.gt(0.0)
+        scale_mask = positive_total & positive_sub_sum
+        zero_mask = ~positive_total
+
+        for variable, values in sub_values.items():
+            adjusted = values.copy()
+            adjusted.loc[zero_mask] = 0.0
+            adjusted.loc[scale_mask] = (
+                values.loc[scale_mask] * total.loc[scale_mask] / sub_sum.loc[scale_mask]
+            )
+            clone[variable] = adjusted
+
+        fallback_mask = positive_total & ~positive_sub_sum
+        if fallback_mask.any():
+            age = pd.to_numeric(clone.get("age", 0.0), errors="coerce").fillna(0.0)
+            if "social_security_retirement" in subcomponents:
+                clone.loc[
+                    fallback_mask & age.ge(62),
+                    "social_security_retirement",
+                ] = total.loc[fallback_mask & age.ge(62)]
+            if "social_security_disability" in subcomponents:
+                clone.loc[
+                    fallback_mask & age.lt(62),
+                    "social_security_disability",
+                ] = total.loc[fallback_mask & age.lt(62)]
+        return subcomponents
+
+    def _finalize_puf_support_clone_frame(
+        self,
+        *,
+        original: pd.DataFrame,
+        imputed_clone: pd.DataFrame,
+        donor_source_name: str,
+        integrated_variables: list[str],
+        preclone_columns: set[str],
+        donor_seed_columns: set[str],
+        donor_observed: set[str],
+    ) -> tuple[pd.DataFrame, dict[str, Any]]:
+        """Concatenate original CPS support and its PUF-imputed support clone."""
+        flag_column = self.config.puf_support_clone_flag_column
+        original = original.copy()
+        clone = imputed_clone.copy()
+        original[flag_column] = 0.0
+        clone[flag_column] = 1.0
+
+        integrated_set = set(integrated_variables)
+        both_halves_override = (
+            integrated_set
+            & set(self.config.puf_support_clone_both_halves_override_variables)
+            & preclone_columns
+        )
+        for variable in sorted(both_halves_override):
+            if variable in original.columns and variable in clone.columns:
+                original[variable] = clone[variable].to_numpy(copy=True)
+
+        clone, cps_refresh_summary = self._refresh_puf_support_clone_cps_only_fields(
+            original=original,
+            clone=clone,
+            integrated_variables=integrated_variables,
+            preclone_columns=preclone_columns,
+        )
+
+        generated_entity_id_columns = sorted(
+            set(ENTITY_ID_COLUMNS.values()) & (set(clone.columns) - preclone_columns)
+        )
+        if generated_entity_id_columns:
+            clone = clone.drop(columns=generated_entity_id_columns)
+
+        for column in sorted(set(clone.columns) - set(original.columns)):
+            original[column] = 0.0
+        for column in sorted(set(original.columns) - set(clone.columns)):
+            clone[column] = original[column].to_numpy(copy=True)
+        original = original.loc[:, clone.columns]
+
+        combined = pd.concat([original, clone], ignore_index=True, sort=False)
+        combined = combined.reset_index(drop=True)
+
+        overlap_variables = sorted(integrated_set & preclone_columns)
+        donor_only_variables = sorted(integrated_set - preclone_columns)
+        ecps_surface = (
+            set(PUF_SUPPORT_CLONE_IMPUTED_VARIABLES)
+            | set(PUF_SUPPORT_CLONE_OVERRIDDEN_VARIABLES)
+            | set(PUF_SUPPORT_CLONE_SPECIAL_VARIABLES)
+        )
+        included_surface = sorted(ecps_surface & integrated_set)
+        excluded_surface: dict[str, str] = {}
+        for variable in sorted(ecps_surface - set(included_surface)):
+            if variable not in donor_observed and variable not in donor_seed_columns:
+                reason = "missing_puf_source_column"
+            elif variable in self.config.donor_imputer_excluded_variables:
+                reason = "excluded_by_config"
+            elif variable not in preclone_columns:
+                reason = "not_present_before_clone"
+            else:
+                reason = "not_selected_for_imputation"
+            excluded_surface[variable] = reason
+
+        clone_weight_sum = 0.0
+        for column in ("household_weight", "hh_weight", "weight"):
+            if column in clone.columns:
+                clone_weight_sum = float(
+                    pd.to_numeric(clone[column], errors="coerce").fillna(0.0).sum()
+                )
+                break
+
+        summary = {
+            "enabled": True,
+            "donor_source_name": donor_source_name,
+            "original_row_count": int(len(original)),
+            "clone_row_count": int(len(clone)),
+            "final_row_count": int(len(combined)),
+            "clone_initial_weight_sum": clone_weight_sum,
+            "integrated_variable_count": int(len(integrated_set)),
+            "clone_overlap_variable_count": int(len(overlap_variables)),
+            "clone_donor_only_variable_count": int(len(donor_only_variables)),
+            "overlap_variables": overlap_variables,
+            "donor_only_variables": donor_only_variables,
+            "both_halves_override_variables": sorted(both_halves_override),
+            "cps_only_refresh": cps_refresh_summary,
+            "dropped_generated_entity_id_columns": generated_entity_id_columns,
+            "variable_surface": {
+                "ecps_imputed_variables": list(PUF_SUPPORT_CLONE_IMPUTED_VARIABLES),
+                "ecps_overridden_variables": list(
+                    PUF_SUPPORT_CLONE_OVERRIDDEN_VARIABLES
+                ),
+                "ecps_special_variables": list(PUF_SUPPORT_CLONE_SPECIAL_VARIABLES),
+                "included_variables": included_surface,
+                "excluded_variables": excluded_surface,
+            },
+        }
+        return combined, summary
+
     def _integrate_donor_sources(
         self,
         seed_data: pd.DataFrame,
@@ -5425,6 +6289,13 @@ class USMicroplexPipeline:
         current = seed_data.copy()
         integrated_variables: list[str] = []
         conditioning_diagnostics: list[dict[str, Any]] = []
+        donor_inputs, processed_donor_source_order, puf_clone_source_order = (
+            self._ordered_donor_inputs_for_puf_support_clone(
+                scaffold_input=scaffold_input,
+                donor_inputs=donor_inputs,
+            )
+        )
+        puf_support_clone_summary: dict[str, Any] | None = None
         scaffold_observed = prune_redundant_variables(
             scaffold_input.fusion_plan.variables_for(EntityType.HOUSEHOLD)
             | scaffold_input.fusion_plan.variables_for(EntityType.PERSON)
@@ -5452,10 +6323,27 @@ class USMicroplexPipeline:
             donor_sources=len(donor_inputs),
             seed_rows=len(current),
             condition_selection=self.config.donor_imputer_condition_selection,
+            puf_support_clone_enabled=self.config.puf_support_clone_enabled,
         )
 
         for donor_input in donor_inputs:
             donor_source_name = donor_input.frame.source.name
+            is_puf_support_clone_source = (
+                self.config.puf_support_clone_enabled
+                and self._is_puf_support_clone_source(donor_source_name)
+            )
+            source_original_current: pd.DataFrame | None = None
+            source_preclone_columns: set[str] = set(current.columns)
+            source_integrated_variables: list[str] = []
+            if is_puf_support_clone_source:
+                source_original_current = current.copy()
+                current = self._prepare_puf_support_clone_frame(source_original_current)
+                _emit_us_pipeline_progress(
+                    "US microplex donor integration: puf support clone prepared",
+                    donor_source=donor_source_name,
+                    original_rows=len(source_original_current),
+                    clone_rows=len(current),
+                )
             _emit_us_pipeline_progress(
                 "US microplex donor integration: source start",
                 donor_source=donor_source_name,
@@ -5517,8 +6405,32 @@ class USMicroplexPipeline:
                 and donor_input.frame.source.is_authoritative_for(variable)
                 and self._is_compatible_donor_target(donor_seed[variable])
             )
+            if is_puf_support_clone_source:
+                puf_clone_overlap_vars = sorted(
+                    variable
+                    for variable in set(self.config.puf_support_clone_overlap_variables)
+                    if variable not in excluded
+                    and variable not in self.config.donor_imputer_excluded_variables
+                    and variable in scaffold_observed
+                    and variable in donor_observed
+                    and variable in current.columns
+                    and variable in donor_seed.columns
+                    and variable in numeric_current
+                    and variable in numeric_donor
+                    and donor_input.frame.source.is_authoritative_for(variable)
+                    and self._is_compatible_donor_target(donor_seed[variable])
+                )
+                donor_override_vars = sorted(
+                    set(donor_override_vars) | set(puf_clone_overlap_vars)
+                )
             donor_target_vars = sorted(set(donor_only_vars) | set(donor_override_vars))
             if not shared_vars or not donor_target_vars:
+                if is_puf_support_clone_source:
+                    raise ValueError(
+                        "PUF support clone donor produced no imputation targets; "
+                        f"shared_vars={len(shared_vars)}, "
+                        f"donor_target_vars={len(donor_target_vars)}"
+                    )
                 _emit_us_pipeline_progress(
                     "US microplex donor integration: source skipped",
                     donor_source=donor_source_name,
@@ -5794,6 +6706,7 @@ class USMicroplexPipeline:
                         )
                         current = result.updated_frame
                         integrated_variables.extend(result.integrated_variables)
+                        source_integrated_variables.extend(result.integrated_variables)
                         _emit_us_pipeline_progress(
                             "US microplex donor integration: block complete",
                             donor_source=donor_source_name,
@@ -5943,6 +6856,7 @@ class USMicroplexPipeline:
                     )
                     current = result.updated_frame
                     integrated_variables.extend(result.integrated_variables)
+                    source_integrated_variables.extend(result.integrated_variables)
                     _emit_us_pipeline_progress(
                         "US microplex donor integration: block complete",
                         donor_source=donor_source_name,
@@ -5950,10 +6864,34 @@ class USMicroplexPipeline:
                         integrated_vars=len(result.integrated_variables),
                     )
 
+            if is_puf_support_clone_source:
+                if source_original_current is None:
+                    raise AssertionError("PUF support clone original frame missing")
+                current, puf_support_clone_summary = (
+                    self._finalize_puf_support_clone_frame(
+                        original=source_original_current,
+                        imputed_clone=current,
+                        donor_source_name=donor_source_name,
+                        integrated_variables=source_integrated_variables,
+                        preclone_columns=source_preclone_columns,
+                        donor_seed_columns=set(donor_seed.columns),
+                        donor_observed=donor_observed,
+                    )
+                )
+                _emit_us_pipeline_progress(
+                    "US microplex donor integration: puf support clone complete",
+                    donor_source=donor_source_name,
+                    rows=len(current),
+                    integrated_vars=len(source_integrated_variables),
+                )
+
         return {
             "seed_data": current,
             "integrated_variables": sorted(set(integrated_variables)),
             "conditioning_diagnostics": conditioning_diagnostics,
+            "processed_donor_source_order": processed_donor_source_order,
+            "puf_clone_source_order": puf_clone_source_order,
+            "puf_support_clone_summary": puf_support_clone_summary,
         }
 
     def _apply_dependent_tax_leaf_soft_caps(
@@ -6689,7 +7627,7 @@ class USMicroplexPipeline:
             donor_weight_array = donor_weights.to_numpy(dtype=float)
             donor_weight_array = np.clip(donor_weight_array, a_min=0.0, a_max=None)
 
-        if strategy is DonorMatchStrategy.ZERO_INFLATED_POSITIVE or (
+        if (
             strategy is DonorMatchStrategy.RANK
             and self._is_zero_inflated_positive_distribution(donor_array)
         ):
@@ -8319,43 +9257,500 @@ class USMicroplexPipeline:
                 aggregated[column] = float(nonzero_values.iloc[0])
                 continue
             aggregated[column] = float(values.sum())
-        aca_takeup = self._infer_policyengine_aca_takeup_for_tax_unit(unit_persons)
-        if aca_takeup is not None:
-            aggregated["takes_up_aca_if_eligible"] = aca_takeup
+        for child_count_column in ("eitc_children", "eitc_child_count"):
+            if child_count_column not in unit_persons.columns:
+                continue
+            values = pd.to_numeric(
+                unit_persons[child_count_column], errors="coerce"
+            ).fillna(0.0)
+            aggregated[EITC_TAKEUP_CHILD_COUNT_HELPER_COLUMN] = float(values.max())
+            break
+        employment_income = pd.to_numeric(
+            unit_persons.get("employment_income", 0.0), errors="coerce"
+        )
+        if isinstance(employment_income, pd.Series):
+            aggregated[VOLUNTARY_FILING_WAGE_INCOME_HELPER_COLUMN] = float(
+                employment_income.fillna(0.0).clip(lower=0.0).sum()
+            )
+        age = pd.to_numeric(unit_persons.get("age", 0.0), errors="coerce").fillna(0.0)
+        head_mask = self._normal_bool_series(
+            unit_persons.get("is_tax_unit_head", False),
+            index=unit_persons.index,
+        )
+        if not bool(head_mask.any()) and "relationship_to_head" in unit_persons.columns:
+            head_mask = (
+                pd.to_numeric(unit_persons["relationship_to_head"], errors="coerce")
+                .fillna(-1)
+                .eq(0)
+            )
+        head_age = age.loc[head_mask].iloc[0] if bool(head_mask.any()) else age.iloc[0]
+        aggregated[VOLUNTARY_FILING_AGE_HEAD_HELPER_COLUMN] = float(head_age)
+        for boolean_column in (
+            "takes_up_aca_if_eligible",
+            "takes_up_dc_ptc",
+            "takes_up_eitc",
+            "would_file_taxes_voluntarily",
+        ):
+            value = self._infer_policyengine_bool_for_group(
+                unit_persons, boolean_column
+            )
+            if value is not None:
+                aggregated[boolean_column] = value
         return aggregated
 
-    def _infer_policyengine_aca_takeup_for_tax_unit(
+    def _infer_policyengine_bool_for_group(
         self,
-        unit_persons: pd.DataFrame,
+        group_rows: pd.DataFrame,
+        column: str,
     ) -> bool | None:
-        if "takes_up_aca_if_eligible" in unit_persons.columns:
+        if column in group_rows.columns:
             return bool(
-                pd.to_numeric(
-                    unit_persons["takes_up_aca_if_eligible"],
-                    errors="coerce",
-                )
+                self._normal_bool_series(
+                    group_rows[column], index=group_rows.index
+                ).any()
+            )
+        return None
+
+    def _attach_policyengine_aca_takeup(
+        self,
+        tax_units: pd.DataFrame,
+    ) -> pd.DataFrame:
+        """Attach eCPS-style ACA take-up input before PE materialization."""
+        result = tax_units.copy()
+        column = "takes_up_aca_if_eligible"
+        if column in result.columns:
+            result[column] = (
+                pd.to_numeric(result[column], errors="coerce")
                 .fillna(0.0)
                 .ne(0.0)
-                .any()
+                .astype(bool)
             )
-        marketplace_columns = (
-            "has_marketplace_health_coverage",
-            "has_marketplace_health_coverage_at_interview",
-            "reported_has_marketplace_health_coverage_at_interview",
-            "reported_has_subsidized_marketplace_health_coverage_at_interview",
-            "reported_has_unsubsidized_marketplace_health_coverage_at_interview",
+            return result
+
+        year = int(
+            self.config.policyengine_dataset_year
+            or self.config.policyengine_target_period
+            or 2024
         )
-        observed = [
-            column for column in marketplace_columns if column in unit_persons.columns
-        ]
-        if not observed:
-            return None
-        marketplace = pd.Series(False, index=unit_persons.index, dtype=bool)
-        for column in observed:
-            marketplace |= (
-                pd.to_numeric(unit_persons[column], errors="coerce").fillna(0.0).ne(0.0)
+        rate = _load_microplex_takeup_rate("aca", year)
+        rng = _microplex_seeded_rng(column)
+        result[column] = rng.random(len(result)) < rate
+        return result
+
+    def _attach_policyengine_tax_unit_takeup_inputs(
+        self,
+        tax_units: pd.DataFrame,
+    ) -> pd.DataFrame:
+        """Attach eCPS-style tax-unit stochastic inputs before materialization."""
+        result = self._attach_policyengine_aca_takeup(tax_units)
+        result = self._attach_policyengine_simple_tax_unit_takeup(
+            result,
+            column="takes_up_dc_ptc",
+            rate_key="dc_ptc",
+        )
+        result = self._attach_policyengine_eitc_takeup(result)
+        return self._attach_policyengine_voluntary_filing(result)
+
+    def _attach_policyengine_simple_tax_unit_takeup(
+        self,
+        tax_units: pd.DataFrame,
+        *,
+        column: str,
+        rate_key: str,
+    ) -> pd.DataFrame:
+        result = tax_units.copy()
+        if column in result.columns:
+            result[column] = self._normal_bool_series(
+                result[column], index=result.index
             )
-        return bool(marketplace.any())
+            return result
+
+        year = self._policyengine_takeup_year()
+        rate = _load_microplex_takeup_rate(rate_key, year)
+        rng = _microplex_seeded_rng(column)
+        result[column] = rng.random(len(result)) < rate
+        return result
+
+    def _attach_policyengine_eitc_takeup(
+        self,
+        tax_units: pd.DataFrame,
+    ) -> pd.DataFrame:
+        result = tax_units.copy()
+        column = "takes_up_eitc"
+        if column in result.columns:
+            result[column] = self._normal_bool_series(
+                result[column], index=result.index
+            )
+            return result
+
+        year = self._policyengine_takeup_year()
+        rates = _load_microplex_eitc_takeup_rates(year)
+        child_count_column = (
+            EITC_TAKEUP_CHILD_COUNT_HELPER_COLUMN
+            if EITC_TAKEUP_CHILD_COUNT_HELPER_COLUMN in result.columns
+            else "n_dependents"
+        )
+        raw_dependent_count = (
+            result[child_count_column]
+            if child_count_column in result.columns
+            else pd.Series(0, index=result.index)
+        )
+        dependent_count = (
+            pd.to_numeric(raw_dependent_count, errors="coerce")
+            .fillna(0)
+            .clip(lower=0, upper=3)
+            .astype(int)
+        )
+        takeup_rate = dependent_count.map(lambda count: rates.get(int(count), 0.85))
+        rng = _microplex_seeded_rng(column)
+        result[column] = rng.random(len(result)) < takeup_rate.to_numpy(dtype=float)
+        return result
+
+    def _attach_policyengine_voluntary_filing(
+        self,
+        tax_units: pd.DataFrame,
+    ) -> pd.DataFrame:
+        result = tax_units.copy()
+        column = "would_file_taxes_voluntarily"
+        if column in result.columns:
+            result[column] = self._normal_bool_series(
+                result[column], index=result.index
+            )
+            return result.drop(
+                columns=[
+                    EITC_TAKEUP_CHILD_COUNT_HELPER_COLUMN,
+                    VOLUNTARY_FILING_AGE_HEAD_HELPER_COLUMN,
+                    VOLUNTARY_FILING_WAGE_INCOME_HELPER_COLUMN,
+                ],
+                errors="ignore",
+            )
+
+        year = self._policyengine_takeup_year()
+        rates = _load_microplex_voluntary_filing_rates(year)
+        takes_up_eitc = self._normal_bool_series(
+            result.get("takes_up_eitc", False),
+            index=result.index,
+        )
+        child_count = self._tax_unit_child_count_for_takeup(result)
+        wage_income = pd.to_numeric(
+            result.get(
+                VOLUNTARY_FILING_WAGE_INCOME_HELPER_COLUMN,
+                pd.Series(0.0, index=result.index),
+            ),
+            errors="coerce",
+        ).fillna(0.0)
+        age_head = pd.to_numeric(
+            result.get(
+                VOLUNTARY_FILING_AGE_HEAD_HELPER_COLUMN,
+                pd.Series(0.0, index=result.index),
+            ),
+            errors="coerce",
+        ).fillna(0.0)
+        takeup_rate = self._voluntary_filing_rate_by_tax_unit(
+            rates,
+            child_count=child_count,
+            wage_income=wage_income,
+            age_head=age_head,
+        )
+        rng = _microplex_seeded_rng(column)
+        result[column] = (~takes_up_eitc.to_numpy(dtype=bool)) & (
+            rng.random(len(result)) < takeup_rate.to_numpy(dtype=float)
+        )
+        result = result.drop(
+            columns=[
+                EITC_TAKEUP_CHILD_COUNT_HELPER_COLUMN,
+                VOLUNTARY_FILING_AGE_HEAD_HELPER_COLUMN,
+                VOLUNTARY_FILING_WAGE_INCOME_HELPER_COLUMN,
+            ],
+            errors="ignore",
+        )
+        return result
+
+    def _tax_unit_child_count_for_takeup(self, tax_units: pd.DataFrame) -> pd.Series:
+        child_count_column = (
+            EITC_TAKEUP_CHILD_COUNT_HELPER_COLUMN
+            if EITC_TAKEUP_CHILD_COUNT_HELPER_COLUMN in tax_units.columns
+            else "n_dependents"
+        )
+        raw_child_count = (
+            tax_units[child_count_column]
+            if child_count_column in tax_units.columns
+            else pd.Series(0, index=tax_units.index)
+        )
+        return (
+            pd.to_numeric(raw_child_count, errors="coerce")
+            .fillna(0)
+            .clip(lower=0, upper=3)
+            .astype(int)
+        )
+
+    @staticmethod
+    def _voluntary_filing_rate_by_tax_unit(
+        rates: dict,
+        *,
+        child_count: pd.Series,
+        wage_income: pd.Series,
+        age_head: pd.Series,
+    ) -> pd.Series:
+        children_bin = np.where(
+            child_count.to_numpy(dtype=int) > 0, "with_children", "no_children"
+        )
+        wage_values = wage_income.to_numpy(dtype=float)
+        wage_bin = np.select(
+            [wage_values <= 0.0, wage_values < 15_000.0, wage_values < 30_000.0],
+            ["zero", "low", "medium"],
+            default="high",
+        )
+        age_bin = np.where(
+            age_head.to_numpy(dtype=float) >= 65.0, "age_65_plus", "under_65"
+        )
+        values = [
+            rates.get(children, {})
+            .get(wage, {})
+            .get(age, DEFAULT_VOLUNTARY_FILING_RATE)
+            for children, wage, age in zip(children_bin, wage_bin, age_bin, strict=True)
+        ]
+        return pd.Series(values, index=child_count.index, dtype=float)
+
+    def _attach_policyengine_person_takeup_inputs(
+        self,
+        persons: pd.DataFrame,
+    ) -> pd.DataFrame:
+        """Attach eCPS-style person stochastic inputs before materialization."""
+        result = self._attach_policyengine_medicaid_takeup(persons)
+        for column, rate_key in (
+            ("takes_up_head_start_if_eligible", "head_start"),
+            ("takes_up_early_head_start_if_eligible", "early_head_start"),
+        ):
+            result = self._attach_policyengine_simple_person_takeup(
+                result,
+                column=column,
+                rate_key=rate_key,
+            )
+        return result
+
+    def _attach_policyengine_simple_person_takeup(
+        self,
+        persons: pd.DataFrame,
+        *,
+        column: str,
+        rate_key: str,
+    ) -> pd.DataFrame:
+        result = persons.copy()
+        if column in result.columns:
+            result[column] = self._normal_bool_series(
+                result[column], index=result.index
+            )
+            return result
+
+        year = self._policyengine_takeup_year()
+        rate = _load_microplex_takeup_rate(rate_key, year)
+        rng = _microplex_seeded_rng(column)
+        result[column] = rng.random(len(result)) < rate
+        return result
+
+    def _attach_policyengine_medicaid_takeup(
+        self,
+        persons: pd.DataFrame,
+    ) -> pd.DataFrame:
+        result = persons.copy()
+        column = "takes_up_medicaid_if_eligible"
+        if column in result.columns:
+            result[column] = self._normal_bool_series(
+                result[column], index=result.index
+            )
+            return result
+
+        year = self._policyengine_takeup_year()
+        rates = _load_microplex_medicaid_takeup_rates(year)
+        states = self._person_state_abbreviation(result)
+        takeup_rate = states.map(
+            lambda state: rates.get(state, DEFAULT_MEDICAID_TAKEUP_RATE)
+        )
+        rng = _microplex_seeded_rng(column)
+        result[column] = rng.random(len(result)) < takeup_rate.to_numpy(dtype=float)
+        return result
+
+    def _attach_policyengine_wic_inputs(
+        self,
+        persons: pd.DataFrame,
+    ) -> pd.DataFrame:
+        result = persons.copy()
+        category = self._policyengine_wic_category_for_takeup(result)
+        year = self._policyengine_takeup_year()
+
+        claim_column = "would_claim_wic"
+        if claim_column in result.columns:
+            result[claim_column] = self._normal_bool_series(
+                result[claim_column],
+                index=result.index,
+            )
+        else:
+            claim_rates = _load_microplex_wic_takeup_rates(year)
+            claim_rate = category.map(
+                lambda value: claim_rates.get(str(value), 0.0)
+            ).fillna(0.0)
+            rng = _microplex_seeded_rng(claim_column)
+            result[claim_column] = rng.random(len(result)) < claim_rate.to_numpy(
+                dtype=float
+            )
+
+        risk_column = "is_wic_at_nutritional_risk"
+        if risk_column in result.columns:
+            result[risk_column] = self._normal_bool_series(
+                result[risk_column],
+                index=result.index,
+            )
+        else:
+            risk_rates = _load_microplex_wic_nutritional_risk_rates(year)
+            risk_rate = category.map(
+                lambda value: risk_rates.get(str(value), 0.0)
+            ).fillna(0.0)
+            receives_wic = self._normal_bool_series(
+                result.get("receives_wic", False),
+                index=result.index,
+            )
+            rng = _microplex_seeded_rng(risk_column)
+            result[risk_column] = receives_wic | (
+                rng.random(len(result)) < risk_rate.to_numpy(dtype=float)
+            )
+        return result
+
+    def _policyengine_wic_category_for_takeup(
+        self,
+        persons: pd.DataFrame,
+    ) -> pd.Series:
+        index = persons.index
+        age = pd.to_numeric(
+            persons.get("age", pd.Series(0.0, index=index)),
+            errors="coerce",
+        ).fillna(0.0)
+        pregnant = self._normal_bool_series(
+            persons.get("is_pregnant", False),
+            index=index,
+        )
+        breastfeeding = self._normal_bool_series(
+            persons.get("is_breastfeeding", False),
+            index=index,
+        )
+        if "is_female" in persons.columns:
+            female = self._normal_bool_series(persons["is_female"], index=index)
+        elif "sex" in persons.columns:
+            female = (
+                pd.to_numeric(persons["sex"], errors="coerce")
+                .fillna(0)
+                .astype(int)
+                .eq(2)
+            )
+        else:
+            female = pd.Series(False, index=index)
+
+        own_children = pd.to_numeric(
+            persons.get("own_children_in_household", pd.Series(0, index=index)),
+            errors="coerce",
+        ).fillna(0.0)
+        mother = breastfeeding | (female & own_children.gt(0))
+
+        group_column = next(
+            (
+                column
+                for column in ("family_id", "spm_unit_id", "household_id")
+                if column in persons.columns
+            ),
+            None,
+        )
+        if group_column is None:
+            min_age_group = age
+        else:
+            group_keys = persons[group_column].where(
+                persons[group_column].notna(),
+                pd.Series(np.arange(len(persons)), index=index),
+            )
+            min_age_group = age.groupby(group_keys, sort=False).transform("min")
+
+        category = np.select(
+            [
+                pregnant.to_numpy(dtype=bool),
+                (
+                    mother.to_numpy(dtype=bool)
+                    & breastfeeding.to_numpy(dtype=bool)
+                    & min_age_group.lt(1.0).to_numpy(dtype=bool)
+                ),
+                (
+                    mother.to_numpy(dtype=bool)
+                    & min_age_group.lt(0.5).to_numpy(dtype=bool)
+                ),
+                age.lt(1.0).to_numpy(dtype=bool),
+                age.lt(5.0).to_numpy(dtype=bool),
+            ],
+            [
+                WIC_TAKEUP_CATEGORY_PREGNANT,
+                WIC_TAKEUP_CATEGORY_BREASTFEEDING,
+                WIC_TAKEUP_CATEGORY_POSTPARTUM,
+                WIC_TAKEUP_CATEGORY_INFANT,
+                WIC_TAKEUP_CATEGORY_CHILD,
+            ],
+            default=WIC_TAKEUP_CATEGORY_NONE,
+        )
+        return pd.Series(category, index=index, dtype="string")
+
+    def _person_state_abbreviation(self, persons: pd.DataFrame) -> pd.Series:
+        if "state" in persons.columns:
+            state = persons["state"].astype("string").str.upper()
+            known = set(STATE_FIPS.values())
+            return state.where(state.isin(known), "CA").fillna("CA")
+        if "state_code_str" in persons.columns:
+            state = persons["state_code_str"].astype("string").str.upper()
+            known = set(STATE_FIPS.values())
+            return state.where(state.isin(known), "CA").fillna("CA")
+        if "state_fips" in persons.columns:
+            state_fips = (
+                pd.to_numeric(persons["state_fips"], errors="coerce")
+                .fillna(6)
+                .astype(int)
+            )
+            return state_fips.map(lambda value: STATE_FIPS.get(int(value), "CA"))
+        return pd.Series("CA", index=persons.index, dtype="string")
+
+    def _attach_policyengine_spm_takeup_inputs(
+        self,
+        spm_units: pd.DataFrame,
+    ) -> pd.DataFrame:
+        result = self._attach_policyengine_snap_takeup(spm_units)
+        return self._attach_policyengine_tanf_takeup(result)
+
+    def _attach_policyengine_tanf_takeup(
+        self,
+        spm_units: pd.DataFrame,
+    ) -> pd.DataFrame:
+        result = spm_units.copy()
+        column = "takes_up_tanf_if_eligible"
+        if column in result.columns:
+            result[column] = self._normal_bool_series(
+                result[column], index=result.index
+            )
+            return result
+
+        year = self._policyengine_takeup_year()
+        rate = _load_microplex_takeup_rate("tanf", year)
+        rng = _microplex_seeded_rng(column)
+        result[column] = rng.random(len(result)) < rate
+        return result
+
+    def _policyengine_takeup_year(self) -> int:
+        return int(
+            self.config.policyengine_dataset_year
+            or self.config.policyengine_target_period
+            or 2024
+        )
+
+    @staticmethod
+    def _normal_bool_series(value: Any, *, index: pd.Index) -> pd.Series:
+        if isinstance(value, pd.Series):
+            series = value.reindex(index)
+        else:
+            series = pd.Series(value, index=index)
+        return pd.to_numeric(series, errors="coerce").fillna(0.0).ne(0.0).astype(bool)
 
     def _split_preserved_tax_unit_members(
         self,
@@ -8968,12 +10363,15 @@ class USMicroplexPipeline:
     ) -> pd.DataFrame:
         """Attach observed SPM-unit inputs carried on CPS person rows."""
         if "spm_unit_id" not in persons.columns:
-            return spm_units
+            return self._attach_policyengine_spm_takeup_inputs(spm_units)
 
         aggregation_by_column = {
             "receives_housing_assistance": "max",
             "takes_up_housing_assistance_if_eligible": "max",
+            "takes_up_snap_if_eligible": "max",
+            "takes_up_tanf_if_eligible": "max",
             "spm_unit_energy_subsidy": "first",
+            "spm_unit_pre_subsidy_childcare_expenses": "first",
         }
         aggregations = {
             column: aggregation
@@ -8981,10 +10379,37 @@ class USMicroplexPipeline:
             if column in persons.columns and column not in spm_units.columns
         }
         if not aggregations:
-            return spm_units
+            return self._attach_policyengine_spm_takeup_inputs(spm_units)
 
         source_values = persons.groupby("spm_unit_id", as_index=False).agg(aggregations)
-        return spm_units.merge(source_values, on="spm_unit_id", how="left")
+        merged = spm_units.merge(source_values, on="spm_unit_id", how="left")
+        return self._attach_policyengine_spm_takeup_inputs(merged)
+
+    def _attach_policyengine_snap_takeup(
+        self,
+        spm_units: pd.DataFrame,
+    ) -> pd.DataFrame:
+        """Attach eCPS-style SNAP take-up input before PE materialization."""
+        result = spm_units.copy()
+        column = "takes_up_snap_if_eligible"
+        if column in result.columns:
+            result[column] = (
+                pd.to_numeric(result[column], errors="coerce")
+                .fillna(0.0)
+                .ne(0.0)
+                .astype(bool)
+            )
+            return result
+
+        year = int(
+            self.config.policyengine_dataset_year
+            or self.config.policyengine_target_period
+            or 2024
+        )
+        rate = _load_microplex_takeup_rate("snap", year)
+        rng = _microplex_seeded_rng(column)
+        result[column] = rng.random(len(result)) < rate
+        return result
 
     def _normalize_relationship_to_head(self, persons: pd.DataFrame) -> pd.Series:
         family_normalized: pd.Series | None = None
@@ -9211,6 +10636,27 @@ class USMicroplexPipeline:
                     )
             return zero.copy()
 
+        def first_nonzero_or_present(*columns: str) -> pd.Series:
+            values = zero.copy()
+            found = False
+            for column in columns:
+                if column not in result.columns:
+                    continue
+                candidate = (
+                    pd.to_numeric(
+                        result[column],
+                        errors="coerce",
+                    )
+                    .fillna(0.0)
+                    .astype(float)
+                )
+                if not found:
+                    values = candidate.copy()
+                    found = True
+                    continue
+                values = values.where(values.ne(0.0), candidate)
+            return values if found else zero.copy()
+
         def has_any(*columns: str) -> bool:
             return any(column in result.columns for column in columns)
 
@@ -9332,14 +10778,17 @@ class USMicroplexPipeline:
             result["takes_up_ssi_if_eligible"] = first_present("ssi").gt(0.0)
 
         known_nonemployment = (
-            first_present("self_employment_income")
-            + first_present("taxable_interest_income", "interest_income")
-            + first_present("ordinary_dividend_income", "dividend_income")
+            first_nonzero_or_present(
+                "self_employment_income_before_lsr",
+                "self_employment_income",
+            )
+            + first_nonzero_or_present("taxable_interest_income", "interest_income")
+            + first_nonzero_or_present("ordinary_dividend_income", "dividend_income")
             + first_present("rental_income")
             + first_present("gross_social_security", "social_security")
             + first_present("ssi")
             + first_present("public_assistance")
-            + first_present("taxable_pension_income", "pension_income")
+            + first_nonzero_or_present("taxable_pension_income", "pension_income")
             + first_present("unemployment_compensation")
         )
         fallback_employment_income = (
@@ -9350,7 +10799,7 @@ class USMicroplexPipeline:
         ).clip(lower=0.0)
 
         result["employment_income_before_lsr"] = (
-            first_present(
+            first_nonzero_or_present(
                 "employment_income_before_lsr", "employment_income", "wage_income"
             )
             if has_any(
@@ -9358,11 +10807,11 @@ class USMicroplexPipeline:
             )
             else fallback_employment_income
         )
-        result["self_employment_income_before_lsr"] = first_present(
+        result["self_employment_income_before_lsr"] = first_nonzero_or_present(
             "self_employment_income_before_lsr",
             "self_employment_income",
         )
-        result["taxable_interest_income"] = first_present(
+        result["taxable_interest_income"] = first_nonzero_or_present(
             "taxable_interest_income",
             "interest_income",
         )
@@ -9375,17 +10824,21 @@ class USMicroplexPipeline:
         result["non_qualified_dividend_income"] = first_present(
             "non_qualified_dividend_income",
         ).clip(lower=0.0)
-        result["ordinary_dividend_income"] = first_present(
+        dividend_alias = first_nonzero_or_present(
             "ordinary_dividend_income",
             "dividend_income",
         ).clip(lower=0.0)
+        result["ordinary_dividend_income"] = dividend_alias
         if has_any("qualified_dividend_income", "non_qualified_dividend_income"):
             dividend_total = (
                 result["qualified_dividend_income"]
                 + result["non_qualified_dividend_income"]
             ).clip(lower=0.0)
-            result["ordinary_dividend_income"] = dividend_total
-            result["dividend_income"] = dividend_total
+            result["ordinary_dividend_income"] = dividend_total.where(
+                dividend_total.ne(0.0),
+                dividend_alias,
+            )
+            result["dividend_income"] = result["ordinary_dividend_income"]
         else:
             result = normalize_dividend_columns(result)
 
@@ -9395,15 +10848,17 @@ class USMicroplexPipeline:
             "capital_gains_distributions",
         )
         result["long_term_capital_gains_before_response"] = (
-            first_present(
+            first_nonzero_or_present(
                 "long_term_capital_gains_before_response",
                 "long_term_capital_gains",
+                "capital_gains",
             )
             if has_any(
                 "long_term_capital_gains_before_response",
                 "long_term_capital_gains",
+                "capital_gains",
             )
-            else first_present("capital_gains")
+            else zero.copy()
         )
         result["partnership_s_corp_income"] = first_present("partnership_s_corp_income")
         result["partnership_se_income"] = first_present("partnership_se_income")

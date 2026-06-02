@@ -1124,8 +1124,8 @@ wheels = [
 
 [[package]]
 name = "microimpute"
-version = "1.15.1"
-source = { registry = "https://pypi.org/simple" }
+version = "2.1.1"
+source = { git = "https://github.com/PolicyEngine/microimpute.git?rev=27d23090dcf04c2c30ae369b0a209e27eb3659f0#27d23090dcf04c2c30ae369b0a209e27eb3659f0" }
 dependencies = [
     { name = "joblib" },
     { name = "numpy" },
@@ -1140,10 +1140,6 @@ dependencies = [
     { name = "scipy" },
     { name = "statsmodels" },
     { name = "tqdm" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/97/17/d621d4ed40e0afac6f1a2c4dea423783576613820d1460ae30d65c48309e/microimpute-1.15.1.tar.gz", hash = "sha256:af409525d475efeb8c8526e9630834c4f16563e15cd42665117d2a1397fcf404", size = 128669, upload-time = "2026-03-09T15:59:33.885Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/42/f1/1d80dbb8cc9e85962524a4233cfe42ac1a78e6f2cc0ca479ed1817f6d8ae/microimpute-1.15.1-py3-none-any.whl", hash = "sha256:f5f2de91eeedea28ddae42d42757b558d6eb85c1a1fd6a9097b53e309f19369c", size = 111313, upload-time = "2026-03-09T15:59:32.553Z" },
 ]
 
 [[package]]
@@ -1207,7 +1203,7 @@ requires-dist = [
     { name = "duckdb", specifier = ">=1.2" },
     { name = "h5py", specifier = ">=3.10" },
     { name = "jupyter-book", marker = "extra == 'docs'", specifier = ">=0.15,<0.16" },
-    { name = "microimpute", marker = "python_full_version >= '3.12' and python_full_version < '3.15' and extra == 'policyengine'", specifier = "==1.15.1" },
+    { name = "microimpute", marker = "python_full_version >= '3.12' and python_full_version < '3.15' and extra == 'policyengine'", git = "https://github.com/PolicyEngine/microimpute.git?rev=27d23090dcf04c2c30ae369b0a209e27eb3659f0" },
     { name = "microplex", extras = ["calibrate"], git = "https://github.com/PolicyEngine/microplex.git?rev=1e0627182f9df40aacd7043c96956c2895bf9d30" },
     { name = "microunit", marker = "extra == 'policyengine'", specifier = ">=0.1.0" },
     { name = "policyengine-us", marker = "python_full_version >= '3.11' and python_full_version < '3.15' and extra == 'policyengine'", specifier = "==1.715.2" },

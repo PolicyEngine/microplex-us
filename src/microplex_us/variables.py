@@ -35,14 +35,13 @@ class DonorMatchStrategy(Enum):
     """How donor-generated scores should be mapped back onto donor support."""
 
     RANK = "rank"
-    ZERO_INFLATED_POSITIVE = "zero_inflated_positive"
 
 
 class VariableSupportFamily(Enum):
     """Statistical support family for one variable."""
 
     CONTINUOUS = "continuous"
-    ZERO_INFLATED_POSITIVE = "zero_inflated_positive"
+    SUPPORT_SENSITIVE = "support_sensitive"
     BOUNDED_SHARE = "bounded_share"
 
 
@@ -155,7 +154,7 @@ class VariableSemanticSpec:
 
     @property
     def condition_score_mode(self) -> ConditionScoreMode:
-        if self.support_family is VariableSupportFamily.ZERO_INFLATED_POSITIVE:
+        if self.support_family is VariableSupportFamily.SUPPORT_SENSITIVE:
             return ConditionScoreMode.VALUE_AND_SUPPORT
         return ConditionScoreMode.VALUE_ONLY
 
@@ -165,9 +164,7 @@ class VariableSemanticSpec:
             return self.condition_entities
         if self.native_entity is EntityType.PERSON:
             record_entity = getattr(EntityType, "RECORD", None)
-            return tuple(
-                entity for entity in EntityType if entity is not record_entity
-            )
+            return tuple(entity for entity in EntityType if entity is not record_entity)
         return (EntityType.HOUSEHOLD, self.native_entity)
 
 
@@ -256,12 +253,11 @@ VARIABLE_SEMANTIC_SPECS: dict[str, VariableSemanticSpec] = {
             EntityType.HOUSEHOLD,
             EntityType.TAX_UNIT,
         ),
-        support_family=VariableSupportFamily.ZERO_INFLATED_POSITIVE,
+        support_family=VariableSupportFamily.SUPPORT_SENSITIVE,
         derived_from=(
             "qualified_dividend_income",
             "non_qualified_dividend_income",
         ),
-        donor_match_strategy=DonorMatchStrategy.ZERO_INFLATED_POSITIVE,
         preferred_condition_vars=PUF_IRS_TAX_PREFERRED_CONDITION_VARS,
         supplemental_shared_condition_vars=PUF_IRS_TAX_SUPPLEMENTAL_SHARED_CONDITION_VARS,
         challenger_shared_condition_vars=(
@@ -276,12 +272,11 @@ VARIABLE_SEMANTIC_SPECS: dict[str, VariableSemanticSpec] = {
             EntityType.HOUSEHOLD,
             EntityType.TAX_UNIT,
         ),
-        support_family=VariableSupportFamily.ZERO_INFLATED_POSITIVE,
+        support_family=VariableSupportFamily.SUPPORT_SENSITIVE,
         derived_from=(
             "qualified_dividend_income",
             "non_qualified_dividend_income",
         ),
-        donor_match_strategy=DonorMatchStrategy.ZERO_INFLATED_POSITIVE,
         notes="Ordinary dividend totals are derived from the qualified and non-qualified atomic basis.",
     ),
     "qualified_dividend_income": VariableSemanticSpec(
@@ -291,8 +286,7 @@ VARIABLE_SEMANTIC_SPECS: dict[str, VariableSemanticSpec] = {
             EntityType.HOUSEHOLD,
             EntityType.TAX_UNIT,
         ),
-        support_family=VariableSupportFamily.ZERO_INFLATED_POSITIVE,
-        donor_match_strategy=DonorMatchStrategy.ZERO_INFLATED_POSITIVE,
+        support_family=VariableSupportFamily.SUPPORT_SENSITIVE,
         preferred_condition_vars=PUF_IRS_TAX_PREFERRED_CONDITION_VARS,
         supplemental_shared_condition_vars=PUF_IRS_TAX_SUPPLEMENTAL_SHARED_CONDITION_VARS,
         challenger_shared_condition_vars=(
@@ -306,8 +300,7 @@ VARIABLE_SEMANTIC_SPECS: dict[str, VariableSemanticSpec] = {
             EntityType.HOUSEHOLD,
             EntityType.TAX_UNIT,
         ),
-        support_family=VariableSupportFamily.ZERO_INFLATED_POSITIVE,
-        donor_match_strategy=DonorMatchStrategy.ZERO_INFLATED_POSITIVE,
+        support_family=VariableSupportFamily.SUPPORT_SENSITIVE,
         preferred_condition_vars=PUF_IRS_TAX_PREFERRED_CONDITION_VARS,
         supplemental_shared_condition_vars=PUF_IRS_TAX_SUPPLEMENTAL_SHARED_CONDITION_VARS,
         challenger_shared_condition_vars=(
@@ -321,8 +314,7 @@ VARIABLE_SEMANTIC_SPECS: dict[str, VariableSemanticSpec] = {
             EntityType.HOUSEHOLD,
             EntityType.TAX_UNIT,
         ),
-        support_family=VariableSupportFamily.ZERO_INFLATED_POSITIVE,
-        donor_match_strategy=DonorMatchStrategy.ZERO_INFLATED_POSITIVE,
+        support_family=VariableSupportFamily.SUPPORT_SENSITIVE,
         preferred_condition_vars=PUF_IRS_TAX_PREFERRED_CONDITION_VARS,
         supplemental_shared_condition_vars=PUF_IRS_TAX_SUPPLEMENTAL_SHARED_CONDITION_VARS,
         challenger_shared_condition_vars=(
@@ -336,8 +328,7 @@ VARIABLE_SEMANTIC_SPECS: dict[str, VariableSemanticSpec] = {
             EntityType.HOUSEHOLD,
             EntityType.TAX_UNIT,
         ),
-        support_family=VariableSupportFamily.ZERO_INFLATED_POSITIVE,
-        donor_match_strategy=DonorMatchStrategy.ZERO_INFLATED_POSITIVE,
+        support_family=VariableSupportFamily.SUPPORT_SENSITIVE,
         preferred_condition_vars=PUF_IRS_TAX_PREFERRED_CONDITION_VARS,
         supplemental_shared_condition_vars=PUF_IRS_TAX_SUPPLEMENTAL_SHARED_CONDITION_VARS,
     ),
@@ -348,8 +339,7 @@ VARIABLE_SEMANTIC_SPECS: dict[str, VariableSemanticSpec] = {
             EntityType.HOUSEHOLD,
             EntityType.TAX_UNIT,
         ),
-        support_family=VariableSupportFamily.ZERO_INFLATED_POSITIVE,
-        donor_match_strategy=DonorMatchStrategy.ZERO_INFLATED_POSITIVE,
+        support_family=VariableSupportFamily.SUPPORT_SENSITIVE,
         preferred_condition_vars=PUF_IRS_TAX_PREFERRED_CONDITION_VARS,
         supplemental_shared_condition_vars=PUF_IRS_TAX_SUPPLEMENTAL_SHARED_CONDITION_VARS,
         challenger_shared_condition_vars=PUF_PENSION_CHALLENGER_SHARED_CONDITION_VARS,
@@ -361,39 +351,33 @@ VARIABLE_SEMANTIC_SPECS: dict[str, VariableSemanticSpec] = {
             EntityType.HOUSEHOLD,
             EntityType.TAX_UNIT,
         ),
-        support_family=VariableSupportFamily.ZERO_INFLATED_POSITIVE,
-        donor_match_strategy=DonorMatchStrategy.ZERO_INFLATED_POSITIVE,
+        support_family=VariableSupportFamily.SUPPORT_SENSITIVE,
         preferred_condition_vars=PUF_IRS_TAX_PREFERRED_CONDITION_VARS,
     ),
     "state_income_tax_paid": VariableSemanticSpec(
         native_entity=EntityType.TAX_UNIT,
         condition_entities=(EntityType.HOUSEHOLD, EntityType.TAX_UNIT),
-        support_family=VariableSupportFamily.ZERO_INFLATED_POSITIVE,
-        donor_match_strategy=DonorMatchStrategy.ZERO_INFLATED_POSITIVE,
+        support_family=VariableSupportFamily.SUPPORT_SENSITIVE,
     ),
     "real_estate_tax_paid": VariableSemanticSpec(
         native_entity=EntityType.TAX_UNIT,
         condition_entities=(EntityType.HOUSEHOLD, EntityType.TAX_UNIT),
-        support_family=VariableSupportFamily.ZERO_INFLATED_POSITIVE,
-        donor_match_strategy=DonorMatchStrategy.ZERO_INFLATED_POSITIVE,
+        support_family=VariableSupportFamily.SUPPORT_SENSITIVE,
     ),
     "mortgage_interest_paid": VariableSemanticSpec(
         native_entity=EntityType.TAX_UNIT,
         condition_entities=(EntityType.HOUSEHOLD, EntityType.TAX_UNIT),
-        support_family=VariableSupportFamily.ZERO_INFLATED_POSITIVE,
-        donor_match_strategy=DonorMatchStrategy.ZERO_INFLATED_POSITIVE,
+        support_family=VariableSupportFamily.SUPPORT_SENSITIVE,
     ),
     "charitable_cash": VariableSemanticSpec(
         native_entity=EntityType.TAX_UNIT,
         condition_entities=(EntityType.HOUSEHOLD, EntityType.TAX_UNIT),
-        support_family=VariableSupportFamily.ZERO_INFLATED_POSITIVE,
-        donor_match_strategy=DonorMatchStrategy.ZERO_INFLATED_POSITIVE,
+        support_family=VariableSupportFamily.SUPPORT_SENSITIVE,
     ),
     "charitable_noncash": VariableSemanticSpec(
         native_entity=EntityType.TAX_UNIT,
         condition_entities=(EntityType.HOUSEHOLD, EntityType.TAX_UNIT),
-        support_family=VariableSupportFamily.ZERO_INFLATED_POSITIVE,
-        donor_match_strategy=DonorMatchStrategy.ZERO_INFLATED_POSITIVE,
+        support_family=VariableSupportFamily.SUPPORT_SENSITIVE,
     ),
     "student_loan_interest": VariableSemanticSpec(
         native_entity=EntityType.PERSON,
@@ -402,15 +386,13 @@ VARIABLE_SEMANTIC_SPECS: dict[str, VariableSemanticSpec] = {
             EntityType.HOUSEHOLD,
             EntityType.TAX_UNIT,
         ),
-        support_family=VariableSupportFamily.ZERO_INFLATED_POSITIVE,
-        donor_match_strategy=DonorMatchStrategy.ZERO_INFLATED_POSITIVE,
+        support_family=VariableSupportFamily.SUPPORT_SENSITIVE,
         preferred_condition_vars=PUF_IRS_TAX_PREFERRED_CONDITION_VARS,
     ),
     "ira_deduction": VariableSemanticSpec(
         native_entity=EntityType.TAX_UNIT,
         condition_entities=(EntityType.HOUSEHOLD, EntityType.TAX_UNIT),
-        support_family=VariableSupportFamily.ZERO_INFLATED_POSITIVE,
-        donor_match_strategy=DonorMatchStrategy.ZERO_INFLATED_POSITIVE,
+        support_family=VariableSupportFamily.SUPPORT_SENSITIVE,
     ),
     "health_savings_account_ald": VariableSemanticSpec(
         native_entity=EntityType.PERSON,
@@ -419,8 +401,7 @@ VARIABLE_SEMANTIC_SPECS: dict[str, VariableSemanticSpec] = {
             EntityType.HOUSEHOLD,
             EntityType.TAX_UNIT,
         ),
-        support_family=VariableSupportFamily.ZERO_INFLATED_POSITIVE,
-        donor_match_strategy=DonorMatchStrategy.ZERO_INFLATED_POSITIVE,
+        support_family=VariableSupportFamily.SUPPORT_SENSITIVE,
         preferred_condition_vars=PUF_IRS_TAX_PREFERRED_CONDITION_VARS,
     ),
     "self_employed_health_insurance_ald": VariableSemanticSpec(
@@ -430,8 +411,7 @@ VARIABLE_SEMANTIC_SPECS: dict[str, VariableSemanticSpec] = {
             EntityType.HOUSEHOLD,
             EntityType.TAX_UNIT,
         ),
-        support_family=VariableSupportFamily.ZERO_INFLATED_POSITIVE,
-        donor_match_strategy=DonorMatchStrategy.ZERO_INFLATED_POSITIVE,
+        support_family=VariableSupportFamily.SUPPORT_SENSITIVE,
         preferred_condition_vars=PUF_IRS_TAX_PREFERRED_CONDITION_VARS,
     ),
     "self_employed_pension_contribution_ald": VariableSemanticSpec(
@@ -441,8 +421,7 @@ VARIABLE_SEMANTIC_SPECS: dict[str, VariableSemanticSpec] = {
             EntityType.HOUSEHOLD,
             EntityType.TAX_UNIT,
         ),
-        support_family=VariableSupportFamily.ZERO_INFLATED_POSITIVE,
-        donor_match_strategy=DonorMatchStrategy.ZERO_INFLATED_POSITIVE,
+        support_family=VariableSupportFamily.SUPPORT_SENSITIVE,
         preferred_condition_vars=PUF_IRS_TAX_PREFERRED_CONDITION_VARS,
     ),
     "qualified_dividend_share": VariableSemanticSpec(
@@ -457,8 +436,7 @@ VARIABLE_SEMANTIC_SPECS: dict[str, VariableSemanticSpec] = {
             EntityType.HOUSEHOLD,
             EntityType.TAX_UNIT,
         ),
-        support_family=VariableSupportFamily.ZERO_INFLATED_POSITIVE,
-        donor_match_strategy=DonorMatchStrategy.ZERO_INFLATED_POSITIVE,
+        support_family=VariableSupportFamily.SUPPORT_SENSITIVE,
         preferred_condition_vars=PUF_IRS_TAX_PREFERRED_CONDITION_VARS,
         supplemental_shared_condition_vars=PUF_IRS_TAX_SUPPLEMENTAL_SHARED_CONDITION_VARS,
         challenger_shared_condition_vars=(
@@ -511,8 +489,7 @@ VARIABLE_SEMANTIC_SPECS: dict[str, VariableSemanticSpec] = {
             EntityType.HOUSEHOLD,
             EntityType.TAX_UNIT,
         ),
-        support_family=VariableSupportFamily.ZERO_INFLATED_POSITIVE,
-        donor_match_strategy=DonorMatchStrategy.ZERO_INFLATED_POSITIVE,
+        support_family=VariableSupportFamily.SUPPORT_SENSITIVE,
         preferred_condition_vars=RENTAL_INCOME_COMPONENT_PREFERRED_CONDITION_VARS,
         notes=(
             "Positive rental-income support should track geography and property-like "
@@ -526,8 +503,7 @@ VARIABLE_SEMANTIC_SPECS: dict[str, VariableSemanticSpec] = {
             EntityType.HOUSEHOLD,
             EntityType.TAX_UNIT,
         ),
-        support_family=VariableSupportFamily.ZERO_INFLATED_POSITIVE,
-        donor_match_strategy=DonorMatchStrategy.ZERO_INFLATED_POSITIVE,
+        support_family=VariableSupportFamily.SUPPORT_SENSITIVE,
         preferred_condition_vars=RENTAL_INCOME_COMPONENT_PREFERRED_CONDITION_VARS,
         notes=(
             "Rental-loss support should track geography and property-like "
@@ -541,8 +517,7 @@ VARIABLE_SEMANTIC_SPECS: dict[str, VariableSemanticSpec] = {
             EntityType.HOUSEHOLD,
             EntityType.TAX_UNIT,
         ),
-        support_family=VariableSupportFamily.ZERO_INFLATED_POSITIVE,
-        donor_match_strategy=DonorMatchStrategy.ZERO_INFLATED_POSITIVE,
+        support_family=VariableSupportFamily.SUPPORT_SENSITIVE,
         preferred_condition_vars=PUF_IRS_TAX_PREFERRED_CONDITION_VARS,
         supplemental_shared_condition_vars=PUF_IRS_TAX_SUPPLEMENTAL_SHARED_CONDITION_VARS,
         challenger_shared_condition_vars=(
@@ -551,23 +526,19 @@ VARIABLE_SEMANTIC_SPECS: dict[str, VariableSemanticSpec] = {
     ),
     "has_medicaid": VariableSemanticSpec(
         projection_aggregation=ProjectionAggregation.MAX,
-        support_family=VariableSupportFamily.ZERO_INFLATED_POSITIVE,
-        donor_match_strategy=DonorMatchStrategy.ZERO_INFLATED_POSITIVE,
+        support_family=VariableSupportFamily.SUPPORT_SENSITIVE,
         notes="Binary proxy for Medicaid participation on the CPS scaffold.",
     ),
     "public_assistance": VariableSemanticSpec(
-        support_family=VariableSupportFamily.ZERO_INFLATED_POSITIVE,
-        donor_match_strategy=DonorMatchStrategy.ZERO_INFLATED_POSITIVE,
+        support_family=VariableSupportFamily.SUPPORT_SENSITIVE,
         notes="Public assistance amounts are sparse and should preserve support.",
     ),
     "ssi": VariableSemanticSpec(
-        support_family=VariableSupportFamily.ZERO_INFLATED_POSITIVE,
-        donor_match_strategy=DonorMatchStrategy.ZERO_INFLATED_POSITIVE,
+        support_family=VariableSupportFamily.SUPPORT_SENSITIVE,
         notes="SSI amounts are sparse and should preserve support.",
     ),
     "social_security": VariableSemanticSpec(
-        support_family=VariableSupportFamily.ZERO_INFLATED_POSITIVE,
-        donor_match_strategy=DonorMatchStrategy.ZERO_INFLATED_POSITIVE,
+        support_family=VariableSupportFamily.SUPPORT_SENSITIVE,
         notes="Reported Social Security amounts are sparse and support-sensitive.",
     ),
     "snap": VariableSemanticSpec(
@@ -577,8 +548,7 @@ VARIABLE_SEMANTIC_SPECS: dict[str, VariableSemanticSpec] = {
             EntityType.HOUSEHOLD,
             EntityType.SPM_UNIT,
         ),
-        support_family=VariableSupportFamily.ZERO_INFLATED_POSITIVE,
-        donor_match_strategy=DonorMatchStrategy.ZERO_INFLATED_POSITIVE,
+        support_family=VariableSupportFamily.SUPPORT_SENSITIVE,
     ),
 }
 
@@ -622,8 +592,7 @@ SCF_COMPONENT_PREFERRED_CONDITION_VARS: tuple[str, ...] = (
 for _scf_component_leaf in SCF_NET_WORTH_COMPONENT_LEAVES:
     VARIABLE_SEMANTIC_SPECS[_scf_component_leaf] = VariableSemanticSpec(
         native_entity=EntityType.PERSON,
-        support_family=VariableSupportFamily.ZERO_INFLATED_POSITIVE,
-        donor_match_strategy=DonorMatchStrategy.ZERO_INFLATED_POSITIVE,
+        support_family=VariableSupportFamily.SUPPORT_SENSITIVE,
         preferred_condition_vars=SCF_COMPONENT_PREFERRED_CONDITION_VARS,
         notes="SCF balance-sheet component leaf; positive magnitude.",
     )
@@ -666,19 +635,26 @@ def normalize_dividend_columns(frame: pd.DataFrame) -> pd.DataFrame:
     result = frame.copy()
     qualified = _nonnegative_series(result, "qualified_dividend_income")
     non_qualified = _nonnegative_series(result, "non_qualified_dividend_income")
-    total = (
-        _nonnegative_series(result, "ordinary_dividend_income")
-        if "ordinary_dividend_income" in result.columns
-        else _nonnegative_series(result, "dividend_income")
-    )
+    ordinary_total = _nonnegative_series(result, "ordinary_dividend_income")
+    dividend_total = _nonnegative_series(result, "dividend_income")
+    if "ordinary_dividend_income" in result.columns:
+        total = ordinary_total.where(ordinary_total.ne(0.0), dividend_total)
+    else:
+        total = dividend_total
 
     has_qualified = "qualified_dividend_income" in result.columns
     has_non_qualified = "non_qualified_dividend_income" in result.columns
 
     if has_qualified and has_non_qualified:
-        normalized_total = qualified + non_qualified
+        component_total = qualified + non_qualified
+        total_only = component_total.eq(0.0) & total.gt(0.0)
+        non_qualified = non_qualified.where(~total_only, total)
+        component_total = qualified + non_qualified
+        normalized_total = component_total.where(component_total.ne(0.0), total)
     elif has_qualified:
-        normalized_total = np.maximum(total.to_numpy(dtype=float), qualified.to_numpy(dtype=float))
+        normalized_total = np.maximum(
+            total.to_numpy(dtype=float), qualified.to_numpy(dtype=float)
+        )
         non_qualified = pd.Series(
             normalized_total - qualified.to_numpy(dtype=float),
             index=result.index,
@@ -719,8 +695,12 @@ def normalize_social_security_columns(frame: pd.DataFrame) -> pd.DataFrame:
         column: _nonnegative_series(result, column)
         for column in SOCIAL_SECURITY_COMPONENT_COLUMNS
     }
-    component_sum = sum(component_series.values(), start=pd.Series(0.0, index=result.index))
-    existing_unclassified = _nonnegative_series(result, SOCIAL_SECURITY_UNCLASSIFIED_COLUMN)
+    component_sum = sum(
+        component_series.values(), start=pd.Series(0.0, index=result.index)
+    )
+    existing_unclassified = _nonnegative_series(
+        result, SOCIAL_SECURITY_UNCLASSIFIED_COLUMN
+    )
 
     if "social_security" in result.columns:
         observed_total = _nonnegative_series(result, "social_security")
@@ -736,7 +716,8 @@ def normalize_social_security_columns(frame: pd.DataFrame) -> pd.DataFrame:
     )
     unclassified = pd.Series(
         np.maximum(
-            normalized_total.to_numpy(dtype=float) - component_sum.to_numpy(dtype=float),
+            normalized_total.to_numpy(dtype=float)
+            - component_sum.to_numpy(dtype=float),
             0.0,
         ),
         index=result.index,
@@ -819,13 +800,11 @@ DIVIDEND_DONOR_BLOCK_SPEC = DonorImputationBlockSpec(
     ),
     model_variables=DIVIDEND_COMPOSITION_MODEL_COLUMNS,
     restored_variables=DIVIDEND_COMPONENT_COLUMNS,
-    match_strategies={
-        "dividend_income": DonorMatchStrategy.ZERO_INFLATED_POSITIVE,
-        DIVIDEND_SHARE_COLUMN: DonorMatchStrategy.RANK,
-    },
+    match_strategies={DIVIDEND_SHARE_COLUMN: DonorMatchStrategy.RANK},
     prepare_frame=add_dividend_composition_features,
     restore_frame=restore_dividend_components_from_composition,
 )
+
 
 def variable_semantic_spec_for(variable_name: str) -> VariableSemanticSpec:
     """Return semantic metadata for one variable."""
@@ -869,7 +848,7 @@ def score_donor_condition_var(
 
         if not include_support:
             continue
-        support = (aligned["target"] > 0).astype(float)
+        support = (aligned["target"].abs() > 0).astype(float)
         if 0.0 < float(support.mean()) < 1.0:
             support_correlation = aligned["condition"].corr(
                 support,
@@ -910,9 +889,7 @@ def resolve_condition_entities_for_targets(
         shared &= set(allowed_entities)
     if not shared:
         return (EntityType.HOUSEHOLD,)
-    return tuple(
-        entity for entity in allowed_by_target[0] if entity in shared
-    )
+    return tuple(entity for entity in allowed_by_target[0] if entity in shared)
 
 
 def is_condition_var_compatible_with_targets(
@@ -937,15 +914,12 @@ def is_projected_condition_var_compatible(
     condition_entity = variable_semantic_spec_for(condition_variable).native_entity
     record_entity = getattr(EntityType, "RECORD", None)
     allowed_entities = {
-        entity
-        for entity in allowed_condition_entities
-        if entity is not record_entity
+        entity for entity in allowed_condition_entities if entity is not record_entity
     }
     if condition_entity in allowed_entities:
         return True
     return (
-        condition_entity is EntityType.PERSON
-        and projected_entity in allowed_entities
+        condition_entity is EntityType.PERSON and projected_entity in allowed_entities
     )
 
 
@@ -966,9 +940,7 @@ def donor_imputation_block_specs(
                 condition_entities=resolve_condition_entities_for_targets((variable,)),
                 model_variables=(variable,),
                 restored_variables=(variable,),
-                match_strategies={
-                    variable: spec.donor_match_strategy
-                },
+                match_strategies={variable: spec.donor_match_strategy},
             )
         )
     return tuple(block_specs)

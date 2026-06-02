@@ -1090,6 +1090,12 @@ def default_us_pipeline_stage_contracts() -> tuple[USPipelineStageContract, ...]
                     stage_id="09_validation_benchmarking",
                     required=False,
                 ),
+                _artifact_resource(
+                    "policyengine_native_target_diagnostics",
+                    "Full PE-US-data native per-target diagnostics payload.",
+                    stage_id="09_validation_benchmarking",
+                    required=False,
+                ),
             ),
             artifacts=(
                 USStageArtifactContract(
@@ -1112,6 +1118,14 @@ def default_us_pipeline_stage_contracts() -> tuple[USPipelineStageContract, ...]
                     key="policyengine_native_audit",
                     description="PE-US-data native score audit payload.",
                     path_hint="pe_us_data_rebuild_native_audit.json",
+                    resume_role="diagnostic",
+                    format="json",
+                    hash_mode="file_sha256",
+                ),
+                USStageArtifactContract(
+                    key="policyengine_native_target_diagnostics",
+                    description="Full PE-US-data native per-target diagnostics payload.",
+                    path_hint="pe_native_target_diagnostics.json",
                     resume_role="diagnostic",
                     format="json",
                     hash_mode="file_sha256",

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import shutil
 import subprocess
 from collections.abc import Callable
@@ -14,6 +15,12 @@ from typing import Any
 import h5py
 import numpy as np
 
+from microplex_us.pipelines.pe_native_loss import (
+    PENativeLossArrays,
+    loss_arrays_from_inputs,
+    pe_native_huber_gradient_factor,
+    pe_native_huber_loss,
+)
 from microplex_us.pipelines.pe_native_scores import (
     _ENHANCED_CPS_BAD_TARGETS,
     build_policyengine_us_data_subprocess_env,
@@ -35,10 +42,65 @@ if REPO_ROOT not in sys.path:
 from policyengine_us import Microsimulation
 from policyengine_us_data.utils.loss import build_loss_matrix
 
+
+def patch_policyengine_us_data_uprating_aliases():
+    import policyengine_us_data.utils.soi as soi_utils
+
+    original = soi_utils.create_policyengine_uprating_factors_table
+
+    def patched_create_policyengine_uprating_factors_table(*args, **kwargs):
+        table = original(*args, **kwargs)
+        if (
+            "employment_income" not in table.index
+            and "employment_income_before_lsr" in table.index
+        ):
+            table.loc["employment_income"] = table.loc[
+                "employment_income_before_lsr"
+            ]
+        return table
+
+    soi_utils.create_policyengine_uprating_factors_table = (
+        patched_create_policyengine_uprating_factors_table
+    )
+
+
+patch_policyengine_us_data_uprating_aliases()
+
+
+def load_microplex_loss_helpers():
+    import importlib.util
+
+    for entry in sys.path:
+        candidate = Path(entry) / "microplex_us" / "pipelines" / "pe_native_loss.py"
+        if not candidate.exists():
+            continue
+        spec = importlib.util.spec_from_file_location(
+            "microplex_us_pe_native_loss_standalone",
+            candidate,
+        )
+        if spec is None or spec.loader is None:
+            continue
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        return module
+    raise ModuleNotFoundError("Could not load microplex_us pe_native_loss helper")
+
+
+_LOSS_HELPERS = load_microplex_loss_helpers()
+build_pe_native_loss_arrays = _LOSS_HELPERS.build_pe_native_loss_arrays
+pe_native_huber_loss = _LOSS_HELPERS.pe_native_huber_loss
+
 BAD_TARGETS = tuple(json.loads(sys.argv[2]))
 PERIOD = int(sys.argv[3])
 DATASET_PATH = sys.argv[4]
-OUTPUT_PREFIX = Path(sys.argv[5])
+if len(sys.argv) >= 7:
+    SKIP_TAX_EXPENDITURE_TARGETS = sys.argv[5] == "1"
+    OUTPUT_PREFIX = Path(sys.argv[6])
+else:
+    SKIP_TAX_EXPENDITURE_TARGETS = False
+    OUTPUT_PREFIX = Path(sys.argv[5])
+TARGET_SCOPE_FILTER = sys.argv[7] if len(sys.argv) >= 8 and sys.argv[7] else None
 
 
 def dataset_from_path(dataset_path: str, dataset_name: str):
@@ -52,6 +114,22 @@ def dataset_from_path(dataset_path: str, dataset_name: str):
     return LocalDataset
 
 
+def scope_keep_mask(target_names):
+    if TARGET_SCOPE_FILTER is None:
+        return np.ones(target_names.shape, dtype=bool)
+    if TARGET_SCOPE_FILTER == "national":
+        return np.asarray(
+            [str(name).startswith("nation/") for name in target_names],
+            dtype=bool,
+        )
+    if TARGET_SCOPE_FILTER == "state":
+        return np.asarray(
+            [not str(name).startswith("nation/") for name in target_names],
+            dtype=bool,
+        )
+    raise ValueError(f"Unsupported target scope filter: {TARGET_SCOPE_FILTER}")
+
+
 dataset_cls = dataset_from_path(
     DATASET_PATH,
     Path(DATASET_PATH).stem.replace("-", "_"),
@@ -60,31 +138,22 @@ loss_matrix, targets_array = build_loss_matrix(dataset_cls, PERIOD)
 target_names = np.asarray(loss_matrix.columns)
 zero_mask = np.isclose(targets_array, 0.0, atol=0.1)
 bad_mask = np.isin(target_names, BAD_TARGETS)
-keep_mask = ~(zero_mask | bad_mask)
+keep_mask = ~(zero_mask | bad_mask) & scope_keep_mask(target_names)
 
 filtered = loss_matrix.loc[:, keep_mask]
 filtered_targets = np.asarray(targets_array[keep_mask], dtype=np.float64)
+if filtered_targets.size == 0:
+    raise ValueError("PE-native loss matrix has no targets after filtering")
 is_national = np.asarray(filtered.columns.str.startswith("nation/"), dtype=bool)
 n_national = int(is_national.sum())
 n_state = int((~is_national).sum())
-if n_national == 0 or n_state == 0:
-    raise ValueError(
-        "PE-native broad loss requires both national and state targets after filtering"
-    )
 
-normalisation_factor = np.where(
-    is_national,
-    1.0 / n_national,
-    1.0 / n_state,
-).astype(np.float64)
-inv_mean_normalisation = 1.0 / float(np.mean(normalisation_factor))
-per_target_weight = (
-    inv_mean_normalisation * normalisation_factor / float(len(filtered_targets))
-).astype(np.float64)
-denominator = (filtered_targets + 1.0).astype(np.float64)
-scaling = np.sqrt(per_target_weight) / denominator
-scaled_matrix = filtered.to_numpy(dtype=np.float64) * scaling[np.newaxis, :]
-scaled_target = (filtered_targets - 1.0) * scaling
+loss_arrays = build_pe_native_loss_arrays(
+    filtered.columns.tolist(),
+    filtered_targets,
+)
+matrix = filtered.to_numpy(dtype=np.float64)
+target = loss_arrays.objective_target
 
 sim = Microsimulation(dataset=dataset_cls)
 sim.default_calculation_period = PERIOD
@@ -94,24 +163,33 @@ weights = sim.calculate(
     period=PERIOD,
 ).values.astype(np.float64)
 
-np.save(OUTPUT_PREFIX.with_suffix(".matrix.npy"), scaled_matrix)
-np.save(OUTPUT_PREFIX.with_suffix(".target.npy"), scaled_target)
+np.save(OUTPUT_PREFIX.with_suffix(".matrix.npy"), matrix)
+np.save(OUTPUT_PREFIX.with_suffix(".target.npy"), target)
 np.save(OUTPUT_PREFIX.with_suffix(".weights.npy"), weights)
 np.save(OUTPUT_PREFIX.with_suffix(".target_unscaled.npy"), filtered_targets)
-np.save(OUTPUT_PREFIX.with_suffix(".scaling.npy"), scaling)
+np.save(OUTPUT_PREFIX.with_suffix(".loss_denominator.npy"), loss_arrays.denominator)
+np.save(OUTPUT_PREFIX.with_suffix(".loss_target_weight.npy"), loss_arrays.target_weight)
+np.save(OUTPUT_PREFIX.with_suffix(".loss_bucket.npy"), loss_arrays.bucket_keys)
+np.save(OUTPUT_PREFIX.with_suffix(".loss_unit.npy"), loss_arrays.unit_keys)
+np.save(OUTPUT_PREFIX.with_suffix(".loss_scope.npy"), loss_arrays.scope_keys)
+np.save(OUTPUT_PREFIX.with_suffix(".loss_family.npy"), loss_arrays.family_keys)
+np.save(OUTPUT_PREFIX.with_suffix(".loss_epsilon.npy"), loss_arrays.epsilon)
 with open(OUTPUT_PREFIX.with_suffix(".meta.json"), "w") as handle:
     json.dump(
         {
+            **loss_arrays.metadata(),
             "target_names": filtered.columns.tolist(),
+            "target_loss_metadata": loss_arrays.sidecar_rows(),
             "n_targets_total": int(len(target_names)),
             "n_targets_kept": int(keep_mask.sum()),
             "n_targets_zero_dropped": int(zero_mask.sum()),
             "n_targets_bad_dropped": int(bad_mask.sum()),
             "n_national_targets": n_national,
             "n_state_targets": n_state,
+            "target_scope_filter": TARGET_SCOPE_FILTER,
             "weight_sum": float(weights.sum()),
             "candidate_loss_before": float(
-                np.square(scaled_matrix.T @ weights - scaled_target).sum()
+                pe_native_huber_loss(matrix.T @ weights, loss_arrays)
             ),
         },
         handle,
@@ -166,7 +244,7 @@ def _project_to_simplex(values: np.ndarray, total: float) -> np.ndarray:
         return values.copy()
     clipped = np.maximum(values.astype(np.float64, copy=False), 0.0)
     current_sum = float(clipped.sum())
-    if np.isclose(current_sum, total):
+    if np.isclose(current_sum, total, rtol=0.0, atol=1e-6):
         return clipped
     if total <= 0.0:
         return np.zeros_like(clipped)
@@ -220,6 +298,7 @@ def optimize_pe_native_loss_weights(
     scaled_matrix: np.ndarray,
     scaled_target: np.ndarray,
     initial_weights: np.ndarray,
+    loss_arrays: PENativeLossArrays | None = None,
     budget: int | None = None,
     max_iter: int = 200,
     l2_penalty: float = 0.0,
@@ -243,19 +322,35 @@ def optimize_pe_native_loss_weights(
         raise ValueError("scaled_target must match scaled_matrix target dimension")
     if weights0.ndim != 1 or weights0.shape[0] != matrix.shape[0]:
         raise ValueError("initial_weights must match scaled_matrix household dimension")
+    if (
+        loss_arrays is not None
+        and loss_arrays.objective_target.shape[0] != matrix.shape[1]
+    ):
+        raise ValueError("loss_arrays target dimension must match scaled_matrix")
 
     initial_weight_sum = float(weights0.sum())
     total_weight = (
-        float(target_total_weight) if target_total_weight is not None else initial_weight_sum
+        float(target_total_weight)
+        if target_total_weight is not None
+        else initial_weight_sum
     )
     weights = _project_to_budget_simplex(weights0, total_weight, budget)
     initial_reference = weights.copy()
-    lipschitz = _estimate_quadratic_lipschitz(matrix, l2_penalty)
+    if loss_arrays is None:
+        lipschitz_matrix = matrix
+    else:
+        lipschitz_scale = np.sqrt(loss_arrays.target_weight) / loss_arrays.denominator
+        lipschitz_matrix = matrix * lipschitz_scale[np.newaxis, :]
+    lipschitz = _estimate_quadratic_lipschitz(lipschitz_matrix, l2_penalty)
     step_size = 1.0 / lipschitz
 
     def objective(candidate: np.ndarray) -> float:
-        residual = matrix.T @ candidate - target
-        base = float(np.dot(residual, residual))
+        estimate = matrix.T @ candidate
+        if loss_arrays is None:
+            residual = estimate - target
+            base = float(np.dot(residual, residual))
+        else:
+            base = pe_native_huber_loss(estimate, loss_arrays)
         if l2_penalty > 0.0:
             delta = candidate - initial_reference
             base += float(l2_penalty * np.dot(delta, delta))
@@ -275,44 +370,97 @@ def optimize_pe_native_loss_weights(
     converged = False
     completed_iter = 0
     total_backtracking_steps = 0
-    for iteration in range(1, max_iter + 1):
-        residual = matrix.T @ weights - target
-        gradient = 2.0 * (matrix @ residual)
+    momentum = 1.0
+    search_weights = weights.copy()
+    min_step_size = step_size * 1e-12
+    max_step_size = step_size * 1e8
+
+    def gradient_at(candidate: np.ndarray) -> np.ndarray:
+        estimate = matrix.T @ candidate
+        if loss_arrays is None:
+            residual = estimate - target
+            gradient = 2.0 * (matrix @ residual)
+        else:
+            gradient = matrix @ pe_native_huber_gradient_factor(
+                estimate,
+                loss_arrays,
+            )
         if l2_penalty > 0.0:
-            gradient += 2.0 * l2_penalty * (weights - initial_reference)
+            gradient += 2.0 * l2_penalty * (candidate - initial_reference)
+        return gradient
+
+    for iteration in range(1, max_iter + 1):
+        gradient = gradient_at(search_weights)
         completed_iter = iteration
 
         candidate = weights
         candidate_loss = current_loss
         accepted_descent_step = False
         iteration_step_size = step_size
-        for backtrack in range(30):
-            trial = _project_to_budget_simplex(
-                weights - iteration_step_size * gradient,
-                total_weight,
-                budget,
-            )
-            trial_loss = objective(trial)
-            if trial_loss <= current_loss:
-                candidate = trial
-                candidate_loss = trial_loss
-                accepted_descent_step = True
-                total_backtracking_steps += backtrack
+        accepted_backtrack = 0
+
+        for start, start_gradient in (
+            (search_weights, gradient),
+            (weights, None),
+        ):
+            if accepted_descent_step:
                 break
-            iteration_step_size *= 0.5
+            if start_gradient is None:
+                start_gradient = gradient_at(start)
+                iteration_step_size = step_size
+            for backtrack in range(40):
+                trial = _project_to_budget_simplex(
+                    start - iteration_step_size * start_gradient,
+                    total_weight,
+                    budget,
+                )
+                trial_loss = objective(trial)
+                if trial_loss <= current_loss:
+                    candidate = trial
+                    candidate_loss = trial_loss
+                    accepted_descent_step = True
+                    accepted_backtrack = backtrack
+                    total_backtracking_steps += backtrack
+                    break
+                iteration_step_size *= 0.5
+                if iteration_step_size < min_step_size:
+                    break
+            if not accepted_descent_step:
+                momentum = 1.0
+                search_weights = weights.copy()
         if not accepted_descent_step:
             converged = True
             break
 
         improvement = current_loss - candidate_loss
+        previous_weights = weights
         weights = candidate
         current_loss = candidate_loss
+        if accepted_backtrack == 0:
+            step_size = min(iteration_step_size * 1.25, max_step_size)
+        else:
+            step_size = iteration_step_size
+        next_momentum = 0.5 * (1.0 + math.sqrt(1.0 + 4.0 * momentum**2))
+        extrapolated = weights + ((momentum - 1.0) / next_momentum) * (
+            weights - previous_weights
+        )
+        search_weights = _project_to_budget_simplex(
+            extrapolated,
+            total_weight,
+            budget,
+        )
+        if float(np.dot(weights - previous_weights, search_weights - weights)) > 0.0:
+            next_momentum = 1.0
+            search_weights = weights.copy()
+        momentum = next_momentum
         loss_history.append(
             {
                 "iteration": int(iteration),
                 "objective_loss": float(current_loss),
                 "weight_sum": float(weights.sum()),
                 "positive_household_count": int((weights > 1e-9).sum()),
+                "step_size": float(step_size),
+                "backtracking_steps": int(accepted_backtrack),
             }
         )
         if history_callback is not None:
@@ -333,7 +481,9 @@ def optimize_pe_native_loss_weights(
         "budget": None if budget is None else int(budget),
         "iterations": int(completed_iter),
         "converged": bool(converged),
+        "method": "monotone_accelerated_projected_gradient",
         "step_size": float(step_size),
+        "initial_step_size": float(1.0 / lipschitz),
         "line_search_backtracking_steps": int(total_backtracking_steps),
         "loss_history": loss_history,
     }
@@ -358,7 +508,9 @@ def rewrite_policyengine_us_dataset_weights(
     with h5py.File(output, "r+") as handle:
         household_ids = handle["household_id"][period_key][:]
         if len(household_ids) != len(weights):
-            raise ValueError("household_weights length does not match household_id array")
+            raise ValueError(
+                "household_weights length does not match household_id array"
+            )
         household_map = {
             int(household_id): float(weight)
             for household_id, weight in zip(household_ids, weights, strict=True)
@@ -368,7 +520,10 @@ def rewrite_policyengine_us_dataset_weights(
         if "person_weight" in handle and "person_household_id" in handle:
             person_households = handle["person_household_id"][period_key][:]
             person_weights = np.array(
-                [household_map[int(household_id)] for household_id in person_households],
+                [
+                    household_map[int(household_id)]
+                    for household_id in person_households
+                ],
                 dtype=np.float32,
             )
             handle["person_weight"][period_key][...] = person_weights
@@ -448,8 +603,10 @@ def optimize_policyengine_us_native_loss_dataset(
             check=False,
         )
         if completed.returncode != 0:
-            detail = completed.stderr.strip() or completed.stdout.strip() or str(
-                completed.returncode
+            detail = (
+                completed.stderr.strip()
+                or completed.stdout.strip()
+                or str(completed.returncode)
             )
             raise RuntimeError(f"PE-native loss-matrix extraction failed: {detail}")
 
@@ -457,11 +614,37 @@ def optimize_policyengine_us_native_loss_dataset(
         scaled_target = np.load(prefix.with_suffix(".target.npy"))
         initial_weights = np.load(prefix.with_suffix(".weights.npy"))
         metadata = json.loads(prefix.with_suffix(".meta.json").read_text())
+        loss_inputs = {
+            "scaled_matrix": scaled_matrix,
+            "scaled_target": scaled_target,
+            "initial_weights": initial_weights,
+            "unscaled_target": np.load(prefix.with_suffix(".target_unscaled.npy")),
+            "loss_denominator": np.load(prefix.with_suffix(".loss_denominator.npy")),
+            "loss_target_weight": np.load(
+                prefix.with_suffix(".loss_target_weight.npy")
+            ),
+            "loss_bucket": np.load(
+                prefix.with_suffix(".loss_bucket.npy"), allow_pickle=True
+            ),
+            "loss_unit": np.load(
+                prefix.with_suffix(".loss_unit.npy"), allow_pickle=True
+            ),
+            "loss_scope": np.load(
+                prefix.with_suffix(".loss_scope.npy"), allow_pickle=True
+            ),
+            "loss_family": np.load(
+                prefix.with_suffix(".loss_family.npy"), allow_pickle=True
+            ),
+            "loss_epsilon": np.load(prefix.with_suffix(".loss_epsilon.npy")),
+            "metadata": metadata,
+        }
+        loss_arrays = loss_arrays_from_inputs(loss_inputs)
 
         optimized_weights, summary = optimize_pe_native_loss_weights(
             scaled_matrix=scaled_matrix,
             scaled_target=scaled_target,
             initial_weights=initial_weights,
+            loss_arrays=loss_arrays,
             budget=budget,
             max_iter=max_iter,
             l2_penalty=l2_penalty,
@@ -475,7 +658,12 @@ def optimize_policyengine_us_native_loss_dataset(
             period=period,
         )
         return PolicyEngineUSNativeWeightOptimizationResult(
-            metric="enhanced_cps_native_loss_weight_optimization",
+            metric=str(
+                metadata.get(
+                    "loss_metric",
+                    "enhanced_cps_native_loss_weight_optimization",
+                )
+            ),
             period=int(period),
             input_dataset=str(Path(input_dataset_path).expanduser().resolve()),
             output_dataset=str(rewritten),

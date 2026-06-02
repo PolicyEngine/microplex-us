@@ -16,6 +16,7 @@ from microplex_us.pipelines import ecps_replacement_comparison as ecps
 from microplex_us.pipelines.mp300k_artifact_gates import (
     write_mp300k_artifact_gate_report,
 )
+from microplex_us.pipelines.pe_native_loss import build_pe_native_loss_arrays
 from microplex_us.policyengine.us import write_policyengine_us_time_period_dataset
 
 _TARGET_NAMES = [
@@ -29,6 +30,10 @@ _TARGET_NAMES = [
     "nation/irs/pension_income",
     "nation/irs/disability_income",
     "nation/irs/household_net_income",
+    "state/CA/adjusted_gross_income/amount/0_1",
+    "state/census/age/CA/65",
+    "nation/ssa/retirement",
+    "nation/irs/aca_spending/CA",
 ]
 
 
@@ -50,9 +55,7 @@ def _write_minimal_policyengine_dataset(
         "family_id": {str(period): np.asarray([1000, 2000])},
         "person_family_id": {str(period): np.asarray([1000, 1000, 2000])},
         "marital_unit_id": {str(period): np.asarray([10000, 10001, 20000])},
-        "person_marital_unit_id": {
-            str(period): np.asarray([10000, 10001, 20000])
-        },
+        "person_marital_unit_id": {str(period): np.asarray([10000, 10001, 20000])},
     }
     return write_policyengine_us_time_period_dataset(arrays, path)
 
@@ -214,6 +217,82 @@ def test_protected_family_losses_match_pe_native_labels_with_spaces():
     assert rows["wages"]["n_targets"] == 1
     assert rows["capital_gains"]["n_targets"] == 1
     assert rows["household_net_income"]["n_targets"] == 1
+    assert rows["wages"]["candidate_loss"] == pytest.approx(1.0)
+    assert rows["wages"]["baseline_loss"] == pytest.approx(0.0)
+    assert rows["capital_gains"]["loss_delta"] == pytest.approx(1.0)
+
+
+def test_target_loss_diagnostics_family_breakdown_uses_total_loss_scale():
+    target_names = [
+        "nation/irs/capital gains gross/total/AGI in 1m-inf/taxable/All",
+        "state/census/age/CA/65",
+    ]
+    candidate_inputs = {
+        "scaled_matrix": np.asarray([[2.0, 3.0]]),
+        "scaled_target": np.ones(len(target_names), dtype=np.float64),
+    }
+    baseline_inputs = {
+        "scaled_matrix": np.asarray([[1.0, 1.0]]),
+        "scaled_target": np.ones(len(target_names), dtype=np.float64),
+    }
+
+    diagnostics = ecps._target_loss_diagnostics(
+        target_names=target_names,
+        candidate_inputs=candidate_inputs,
+        baseline_inputs=baseline_inputs,
+        candidate_weights=np.asarray([1.0]),
+        baseline_weights=np.asarray([1.0]),
+        holdout_mask=np.asarray([False, True]),
+        top_k=2,
+    )
+
+    assert diagnostics["summary"]["candidate_loss"] == pytest.approx(5.0)
+    breakdown = {row["family"]: row for row in diagnostics["family_breakdown"]}
+    assert breakdown["national_irs_other"][
+        "candidate_loss_contribution"
+    ] == pytest.approx(1.0)
+    assert breakdown["state_age_distribution"][
+        "candidate_loss_contribution"
+    ] == pytest.approx(4.0)
+    assert sum(
+        row["candidate_loss_contribution"] for row in diagnostics["family_breakdown"]
+    ) == pytest.approx(diagnostics["summary"]["candidate_loss"])
+
+
+def test_robust_loss_terms_match_objective() -> None:
+    target_names = [
+        "nation/irs/example income/total/AGI in 0_1/taxable/All",
+        "nation/irs/example count/count/AGI in 0_1/taxable/All",
+    ]
+    targets = np.asarray([100.0, 10.0])
+    loss_arrays = build_pe_native_loss_arrays(target_names, targets)
+    matrix = np.asarray([[90.0, 20.0], [5.0, 0.0]])
+    weights = np.asarray([1.0, 1.0])
+    loss_inputs = {
+        "scaled_matrix": matrix,
+        "scaled_target": loss_arrays.objective_target,
+        "unscaled_target": targets,
+        "loss_denominator": loss_arrays.denominator,
+        "loss_target_weight": loss_arrays.target_weight,
+        "loss_bucket": loss_arrays.bucket_keys,
+        "loss_unit": loss_arrays.unit_keys,
+        "loss_scope": loss_arrays.scope_keys,
+        "loss_family": loss_arrays.family_keys,
+        "loss_epsilon": loss_arrays.epsilon,
+        "metadata": {
+            **loss_arrays.metadata(),
+            "target_names": target_names,
+        },
+    }
+
+    assert ecps._loss_terms(loss_inputs, weights).sum() == pytest.approx(
+        ecps._objective(
+            matrix,
+            loss_arrays.objective_target,
+            weights,
+            loss_arrays=loss_arrays,
+        )
+    )
 
 
 def _artifact_manifest(artifact_dir: Path, baseline_dataset: Path) -> None:
@@ -312,11 +391,14 @@ def test_sound_ecps_replacement_comparison_satisfies_gate_contract(
     assert payload["matched_datasets"]["sample_method"] == "uniform"
     assert summary["symmetric_refit"] is True
     assert summary["score_candidate_only"] is False
+    assert summary["score_source"] == "refit_loss_matrix"
+    assert summary["exact_rescore_status"] == "skipped"
     assert summary["refit_objective_matches_scoring"] is True
     assert summary["ecps_refit_recovery_passed"] is True
-    assert summary["candidate_enhanced_cps_native_loss"] < summary[
-        "baseline_enhanced_cps_native_loss"
-    ]
+    assert (
+        summary["candidate_enhanced_cps_native_loss"]
+        < summary["baseline_enhanced_cps_native_loss"]
+    )
     assert summary["holdout_targets"] > 0
     assert set(summary["protected_family_losses"]) == {
         "ssi",
@@ -333,12 +415,9 @@ def test_sound_ecps_replacement_comparison_satisfies_gate_contract(
     assert summary["protected_family_losses"]["wages"]["n_targets"] == 1
     target_diagnostics = payload["target_diagnostics"]
     assert target_diagnostics["summary"]["n_targets"] == len(_TARGET_NAMES)
-    assert (
-        target_diagnostics["summary"]["candidate_wins"]
-        + target_diagnostics["summary"]["baseline_wins"]
-        + target_diagnostics["summary"]["ties"]
-        == len(_TARGET_NAMES)
-    )
+    assert target_diagnostics["summary"]["candidate_wins"] + target_diagnostics[
+        "summary"
+    ]["baseline_wins"] + target_diagnostics["summary"]["ties"] == len(_TARGET_NAMES)
     assert target_diagnostics["summary"]["train_targets"] > 0
     assert target_diagnostics["summary"]["holdout_targets"] > 0
     assert target_diagnostics["top_regressions"]
@@ -351,9 +430,10 @@ def test_sound_ecps_replacement_comparison_satisfies_gate_contract(
     assert "baseline_estimate" in first_target
     assert "candidate_relative_error" in first_target
     assert "baseline_relative_error" in first_target
-    assert {
-        row["split"] for row in target_diagnostics["targets"]
-    } == {"train", "holdout"}
+    assert {row["split"] for row in target_diagnostics["targets"]} == {
+        "train",
+        "holdout",
+    }
     assert target_diagnostics["family_breakdown"]
     support_summary = payload["summary"]["support_audit"]
     assert support_summary["top_filing_status_gaps"][0]["filing_status"] == (
@@ -415,6 +495,33 @@ def test_sound_ecps_replacement_comparison_satisfies_gate_contract(
     assert gate_report["gates"]["ecps_comparison"]["status"] == "pass"
 
 
+def test_sound_ecps_replacement_comparison_skips_exact_rescore_by_default(
+    monkeypatch,
+    tmp_path,
+):
+    candidate = _write_minimal_policyengine_dataset(tmp_path / "candidate.h5")
+    baseline = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    monkeypatch.setattr(ecps, "_extract_pe_native_loss_inputs", _fake_loss_inputs)
+    monkeypatch.setattr(ecps, "compute_us_pe_native_support_audit", _fake_support_audit)
+
+    def fail_exact_rescore(**_kwargs):
+        raise AssertionError("exact PE-native rescore should be opt-in")
+
+    monkeypatch.setattr(ecps, "compute_us_pe_native_scores", fail_exact_rescore)
+
+    payload = ecps.build_sound_ecps_replacement_comparison(
+        candidate_dataset_path=candidate,
+        baseline_dataset_path=baseline,
+        output_dir=tmp_path / "comparison",
+        optimizer_max_iter=50,
+    )
+
+    assert payload["summary"]["score_source"] == "refit_loss_matrix"
+    assert payload["summary"]["exact_rescore_requested"] is False
+    assert payload["summary"]["exact_rescore_status"] == "skipped"
+    assert payload["score"]["score_source"] == "refit_loss_matrix"
+
+
 def test_sound_ecps_replacement_comparison_writes_target_diagnostics_sidecar(
     monkeypatch,
     tmp_path,
@@ -474,6 +581,7 @@ def test_sound_ecps_replacement_comparison_flags_score_mismatch(
         baseline_dataset_path=baseline,
         output_dir=tmp_path / "comparison",
         optimizer_max_iter=50,
+        exact_rescore=True,
     )
 
     assert payload["summary"]["refit_objective_matches_scoring"] is False

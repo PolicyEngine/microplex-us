@@ -93,6 +93,7 @@ def stage_status(
             "policyengine_harness",
             "policyengine_native_scores",
             "policyengine_native_audit",
+            "policyengine_native_target_diagnostics",
             "imputation_ablation",
         )
         evidence_index_keys = ("validation_evidence",)

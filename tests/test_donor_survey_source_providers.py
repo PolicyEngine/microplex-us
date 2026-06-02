@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import h5py
 import pandas as pd
+import pytest
 from microplex.core import EntityType
 
 import microplex_us.data_sources.donor_surveys as donor_surveys
@@ -163,7 +165,9 @@ def test_sample_households_and_persons_falls_back_when_weighted_sampling_errors(
     )
 
     assert len(sampled_households) == 2
-    assert set(sampled_persons["household_id"]) == set(sampled_households["household_id"])
+    assert set(sampled_persons["household_id"]) == set(
+        sampled_households["household_id"]
+    )
 
 
 def test_sample_households_and_persons_state_floor_preserves_states() -> None:
@@ -191,10 +195,14 @@ def test_sample_households_and_persons_state_floor_preserves_states() -> None:
 
     assert len(sampled_households) == 3
     assert sampled_households["state_fips"].nunique() == 3
-    assert set(sampled_persons["household_id"]) == set(sampled_households["household_id"])
+    assert set(sampled_persons["household_id"]) == set(
+        sampled_households["household_id"]
+    )
 
 
-def test_sample_households_and_persons_state_age_floor_preserves_age_band_coverage() -> None:
+def test_sample_households_and_persons_state_age_floor_preserves_age_band_coverage() -> (
+    None
+):
     households = pd.DataFrame(
         {
             "household_id": ["h1", "h2", "h3", "h4"],
@@ -268,6 +276,25 @@ def _scf_tables(**_kwargs) -> DonorSurveyTables:
     return DonorSurveyTables(households=households, persons=persons)
 
 
+def _write_uprating_factors(
+    repo_root,
+    rows: dict[str, tuple[float, float, float]],
+) -> None:
+    storage_dir = repo_root / "policyengine_us_data" / "storage"
+    storage_dir.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "Variable": variable,
+                "2022": values[0],
+                "2023": values[1],
+                "2024": values[2],
+            }
+            for variable, values in rows.items()
+        ]
+    ).to_csv(storage_dir / "uprating_factors.csv", index=False)
+
+
 def test_acs_source_provider_builds_observation_frame_from_injected_loader() -> None:
     provider = ACSSourceProvider(loader=_acs_tables)
 
@@ -284,7 +311,9 @@ def test_acs_source_provider_uses_manifest_backed_dataset_loader(
 ) -> None:
     captured: dict[str, object] = {}
 
-    def _fake_loader(*, spec, year, sample_n, random_seed, **_kwargs) -> DonorSurveyTables:
+    def _fake_loader(
+        *, spec, year, sample_n, random_seed, **_kwargs
+    ) -> DonorSurveyTables:
         captured["spec"] = spec
         captured["year"] = year
         captured["sample_n"] = sample_n
@@ -305,6 +334,47 @@ def test_acs_source_provider_uses_manifest_backed_dataset_loader(
     assert captured["year"] == 2022
     assert captured["sample_n"] is None
     assert captured["random_seed"] == 0
+
+
+def test_acs_source_provider_can_load_newer_storage_h5(
+    tmp_path,
+) -> None:
+    storage_dir = tmp_path / "policyengine_us_data" / "storage"
+    storage_dir.mkdir(parents=True)
+    h5_path = storage_dir / "acs_2024.h5"
+    with h5py.File(h5_path, "w") as h5:
+        h5.create_dataset("household_id", data=[1, 2])
+        h5.create_dataset("person_household_id", data=[1, 1, 2])
+        h5.create_dataset("person_id", data=[11, 12, 21])
+        h5.create_dataset("age", data=[45, 12, 68])
+        h5.create_dataset("is_male", data=[True, False, False])
+        h5.create_dataset("is_household_head", data=[True, False, True])
+        h5.create_dataset("state_fips", data=[6, 36])
+        h5.create_dataset(
+            "tenure_type",
+            data=[b"OWNED_WITH_MORTGAGE", b"RENTED"],
+        )
+        h5.create_dataset("employment_income", data=[50_000.0, 0.0, 12_000.0])
+        h5.create_dataset("self_employment_income", data=[5_000.0, 0.0, 0.0])
+        h5.create_dataset("social_security", data=[0.0, 0.0, 20_000.0])
+        h5.create_dataset(
+            "taxable_private_pension_income",
+            data=[0.0, 0.0, 15_000.0],
+        )
+        h5.create_dataset("rent", data=[1_200.0, 0.0, 950.0])
+        h5.create_dataset("real_estate_taxes", data=[3_000.0, 0.0, 0.0])
+        h5.create_dataset("household_weight", data=[100.0, 120.0])
+
+    frame = ACSSourceProvider(
+        year=2024, policyengine_us_data_repo=tmp_path
+    ).load_frame()
+
+    assert frame.source.name == "acs_2024"
+    households = frame.tables[EntityType.HOUSEHOLD]
+    persons = frame.tables[EntityType.PERSON]
+    assert households["household_weight"].tolist() == [100.0, 120.0]
+    assert persons["rent"].tolist() == [1_200.0, 0.0, 950.0]
+    assert persons["tenure"].tolist() == [1, 1, 2]
 
 
 def test_acs_source_provider_forwards_state_age_floor_query_filter() -> None:
@@ -333,7 +403,9 @@ def test_acs_source_provider_forwards_state_age_floor_query_filter() -> None:
 def test_acs_source_provider_deduplicates_households_from_dataset_loader(
     monkeypatch,
 ) -> None:
-    def _fake_loader(*, spec, year, sample_n, random_seed, **_kwargs) -> DonorSurveyTables:
+    def _fake_loader(
+        *, spec, year, sample_n, random_seed, **_kwargs
+    ) -> DonorSurveyTables:
         households = pd.DataFrame(
             {
                 "household_id": [1, 1, 2],
@@ -380,7 +452,9 @@ def test_acs_source_provider_deduplicates_households_from_dataset_loader(
 def test_acs_source_provider_makes_duplicate_person_ids_household_scoped(
     monkeypatch,
 ) -> None:
-    def _fake_loader(*, spec, year, sample_n, random_seed, **_kwargs) -> DonorSurveyTables:
+    def _fake_loader(
+        *, spec, year, sample_n, random_seed, **_kwargs
+    ) -> DonorSurveyTables:
         households = pd.DataFrame(
             {
                 "household_id": [1, 2],
@@ -443,12 +517,108 @@ def test_sipp_and_scf_provider_fillers_are_not_usable_as_conditions() -> None:
     assert scf_frame.source.observes("net_worth", EntityType.PERSON)
 
 
+def test_sipp_provider_uprates_amounts_to_target_year(tmp_path) -> None:
+    _write_uprating_factors(
+        tmp_path,
+        {
+            "employment_income_before_lsr": (1.0, 1.0, 1.1),
+            "tip_income": (1.0, 1.0, 1.25),
+        },
+    )
+
+    provider = SIPPSourceProvider(
+        block="tips",
+        loader=_sipp_tips_tables,
+        policyengine_us_data_repo=tmp_path,
+        target_year=2024,
+    )
+
+    frame = provider.load_frame()
+    households = frame.tables[EntityType.HOUSEHOLD]
+    persons = frame.tables[EntityType.PERSON]
+
+    assert frame.source.name == "sipp_tips_2023"
+    assert households["year"].tolist() == [2024, 2024]
+    assert persons["year"].tolist() == [2024, 2024, 2024]
+    assert persons["employment_income"].tolist() == pytest.approx(
+        [44_000.0, 0.0, 27_500.0]
+    )
+    assert persons["income"].tolist() == pytest.approx([44_000.0, 0.0, 27_500.0])
+    assert persons["tip_income"].tolist() == [1_125.0, 0.0, 312.5]
+    assert persons["weight"].tolist() == [80.0, 80.0, 90.0]
+
+
+def test_sipp_asset_provider_uprates_liquid_assets_to_target_year(tmp_path) -> None:
+    _write_uprating_factors(
+        tmp_path,
+        {
+            "employment_income_before_lsr": (1.0, 1.0, 1.1),
+            "bank_account_assets": (1.0, 1.0, 1.2),
+            "stock_assets": (1.0, 1.0, 1.3),
+            "bond_assets": (1.0, 1.0, 1.4),
+        },
+    )
+
+    provider = SIPPSourceProvider(
+        block="assets",
+        loader=_sipp_assets_tables,
+        policyengine_us_data_repo=tmp_path,
+        target_year=2024,
+    )
+
+    persons = provider.load_frame().tables[EntityType.PERSON]
+
+    assert persons["employment_income"].tolist() == pytest.approx([44_000.0, 27_500.0])
+    assert persons["income"].tolist() == pytest.approx([44_000.0, 27_500.0])
+    assert persons["bank_account_assets"].tolist() == [3_000.0, 12_000.0]
+    assert persons["stock_assets"].tolist() == [0.0, 5_200.0]
+    assert persons["bond_assets"].tolist() == [0.0, 2_100.0]
+
+
+def test_scf_provider_uprates_amounts_to_target_year(tmp_path) -> None:
+    _write_uprating_factors(
+        tmp_path,
+        {
+            "employment_income_before_lsr": (1.0, 1.0, 1.1),
+            "taxable_interest_income": (1.0, 1.0, 2.0),
+            "social_security_retirement": (1.0, 1.0, 1.5),
+            "net_worth": (1.0, 1.0, 1.2),
+            "auto_loan_balance": (1.0, 1.0, 1.3),
+            "auto_loan_interest": (1.0, 1.0, 1.4),
+        },
+    )
+
+    provider = SCFSourceProvider(
+        loader=_scf_tables,
+        policyengine_us_data_repo=tmp_path,
+        target_year=2024,
+    )
+
+    frame = provider.load_frame()
+    households = frame.tables[EntityType.HOUSEHOLD]
+    persons = frame.tables[EntityType.PERSON]
+
+    assert frame.source.name == "scf_2022"
+    assert households["year"].tolist() == [2024, 2024]
+    assert persons["year"].tolist() == [2024, 2024]
+    assert persons["employment_income"].tolist() == [82_500.0, 0.0]
+    assert persons["income"].tolist() == [82_500.0, 0.0]
+    assert persons["interest_dividend_income"].tolist() == [2_400.0, 800.0]
+    assert persons["social_security_pension_income"].tolist() == [0.0, 27_000.0]
+    assert persons["net_worth"].tolist() == [420_000.0, 216_000.0]
+    assert persons["auto_loan_balance"].tolist() == [10_400.0, 0.0]
+    assert persons["auto_loan_interest"].tolist() == [770.0, 0.0]
+    assert persons["weight"].tolist() == [10.0, 12.0]
+
+
 def test_scf_source_provider_uses_manifest_backed_dataset_loader(
     monkeypatch,
 ) -> None:
     captured: dict[str, object] = {}
 
-    def _fake_loader(*, spec, year, sample_n, random_seed, **_kwargs) -> DonorSurveyTables:
+    def _fake_loader(
+        *, spec, year, sample_n, random_seed, **_kwargs
+    ) -> DonorSurveyTables:
         captured["spec"] = spec
         captured["year"] = year
         captured["sample_n"] = sample_n

@@ -54,8 +54,10 @@ from microplex_us.pipelines.registry import (
     select_us_microplex_frontier_entry,
 )
 from microplex_us.pipelines.stage_contracts import (
+    canonicalize_us_pipeline_stage_id,
     resolve_us_stage_artifact_contract_path,
 )
+from microplex_us.pipelines.stage_metrics import stage_metrics
 from microplex_us.pipelines.stage_run import (
     USStageInputOverride,
     parse_us_stage_input_override,
@@ -114,6 +116,8 @@ class PEUSDataRebuildCheckpointResult:
     parity_payload: dict[str, Any]
     native_audit_path: Path | None = None
     native_audit_payload: dict[str, Any] | None = None
+    native_target_diagnostics_path: Path | None = None
+    native_target_diagnostics_payload: dict[str, Any] | None = None
     imputation_ablation_path: Path | None = None
     imputation_ablation_payload: dict[str, Any] | None = None
 
@@ -130,6 +134,8 @@ class PEUSDataRebuildCheckpointEvidenceResult:
     parity_payload: dict[str, Any]
     native_audit_path: Path | None = None
     native_audit_payload: dict[str, Any] | None = None
+    native_target_diagnostics_path: Path | None = None
+    native_target_diagnostics_payload: dict[str, Any] | None = None
     imputation_ablation_path: Path | None = None
     imputation_ablation_payload: dict[str, Any] | None = None
 
@@ -1016,10 +1022,20 @@ def _refresh_checkpoint_data_flow_snapshot(
             "checkpoint_extra_outputs",
             list(extra_outputs),
         )
-    updated_manifest = write_us_stage_run_manifests_from_artifact_manifest(
-        artifact_root,
-        manifest,
-    )
+    try:
+        updated_manifest = write_us_stage_run_manifests_from_artifact_manifest(
+            artifact_root,
+            manifest,
+        )
+    except ValueError as exc:
+        manifest.setdefault("diagnostics", {})["checkpoint_stage_refresh_error"] = (
+            f"{type(exc).__name__}: {exc}"
+        )
+        return _patch_checkpoint_data_flow_snapshot_outputs(
+            artifact_root,
+            manifest=manifest,
+            extra_outputs=extra_outputs,
+        )
     manifest.clear()
     manifest.update(updated_manifest)
     snapshot_path = resolve_us_stage_artifact_contract_path(
@@ -1027,7 +1043,87 @@ def _refresh_checkpoint_data_flow_snapshot(
         "08_dataset_assembly",
         "data_flow_snapshot",
     )
+    if extra_outputs:
+        return _patch_checkpoint_data_flow_snapshot_outputs(
+            artifact_root,
+            manifest=manifest,
+            extra_outputs=extra_outputs,
+        )
     return snapshot_path if snapshot_path.exists() else None
+
+
+def _patch_checkpoint_data_flow_snapshot_outputs(
+    artifact_root: Path,
+    *,
+    manifest: dict[str, Any],
+    extra_outputs: tuple[str, ...],
+) -> Path | None:
+    snapshot_path = resolve_us_stage_artifact_contract_path(
+        artifact_root,
+        "08_dataset_assembly",
+        "data_flow_snapshot",
+    )
+    if not snapshot_path.exists():
+        return None
+    snapshot = json.loads(snapshot_path.read_text())
+    stages = snapshot.get("stages")
+    if not isinstance(stages, list):
+        return snapshot_path
+    validation_stage = None
+    for stage in stages:
+        if not isinstance(stage, dict):
+            continue
+        stage_id = str(stage.get("id", ""))
+        if canonicalize_us_pipeline_stage_id(stage_id) == "09_validation_benchmarking":
+            validation_stage = stage
+            stage["id"] = "09_validation_benchmarking"
+            break
+    if validation_stage is None:
+        validation_stage = {
+            "id": "09_validation_benchmarking",
+            "outputs": [],
+            "metrics": [],
+            "status": "ready",
+        }
+        stages.append(validation_stage)
+    existing_outputs = list(validation_stage.get("outputs") or ())
+    validation_stage["outputs"] = list(
+        dict.fromkeys(
+            [
+                *existing_outputs,
+                *_checkpoint_validation_output_names(manifest),
+                *extra_outputs,
+            ]
+        )
+    )
+    if not validation_stage.get("metrics"):
+        validation_stage["metrics"] = stage_metrics(
+            "09_validation_benchmarking",
+            manifest=manifest,
+        )
+    if extra_outputs:
+        validation_stage["status"] = "ready"
+    else:
+        validation_stage.setdefault("status", "ready")
+    _write_json_atomically(snapshot_path, snapshot)
+    return snapshot_path
+
+
+def _checkpoint_validation_output_names(manifest: dict[str, Any]) -> tuple[str, ...]:
+    artifacts = dict(manifest.get("artifacts", {}))
+    ordered_keys = (
+        "policyengine_harness",
+        "policyengine_native_scores",
+        "imputation_ablation",
+        "policyengine_native_audit",
+        "policyengine_native_target_diagnostics",
+        "child_tax_unit_agi_drift",
+    )
+    return tuple(
+        str(artifacts[key])
+        for key in ordered_keys
+        if isinstance(artifacts.get(key), str)
+    )
 
 
 def _attach_checkpoint_registry_and_index(
@@ -1250,6 +1346,12 @@ def _load_checkpoint_versioned_artifacts(
             "policyengine_native_audit",
             stage_id="09_validation_benchmarking",
         ),
+        policyengine_native_target_diagnostics=_resolve_saved_stage_artifact_path(
+            artifact_root,
+            artifacts,
+            "policyengine_native_target_diagnostics",
+            stage_id="09_validation_benchmarking",
+        ),
         child_tax_unit_agi_drift=_resolve_saved_stage_artifact_path(
             artifact_root,
             artifacts,
@@ -1432,7 +1534,10 @@ def attach_policyengine_us_data_rebuild_checkpoint_evidence(
 ) -> PEUSDataRebuildCheckpointEvidenceResult:
     """Attach PE comparison evidence to an already-saved rebuild artifact."""
 
-    from microplex_us.pipelines.pe_native_scores import compute_us_pe_native_scores
+    from microplex_us.pipelines.pe_native_scores import (
+        build_us_pe_native_target_diagnostics_payload,
+        compute_us_pe_native_scores,
+    )
     from microplex_us.policyengine.harness import evaluate_policyengine_us_harness
     from microplex_us.policyengine.us import load_policyengine_us_entity_tables
 
@@ -1636,6 +1741,8 @@ def attach_policyengine_us_data_rebuild_checkpoint_evidence(
     )
     native_audit_path: Path | None = None
     native_audit_payload: dict[str, Any] | None = None
+    native_target_diagnostics_path: Path | None = None
+    native_target_diagnostics_payload: dict[str, Any] | None = None
     if compute_native_audit and artifacts.get("policyengine_native_scores") is not None:
         native_audit_payload = build_policyengine_us_data_rebuild_native_audit(
             artifact_root,
@@ -1655,13 +1762,53 @@ def attach_policyengine_us_data_rebuild_checkpoint_evidence(
         manifest["policyengine_native_audit"] = dict(
             native_audit_payload.get("verdictHints", {})
         )
+        target_delta_payload = native_audit_payload.get("targetDelta")
+        if isinstance(target_delta_payload, dict):
+            native_target_diagnostics_payload = (
+                build_us_pe_native_target_diagnostics_payload(
+                    period=(
+                        config.get("policyengine_dataset_year")
+                        or config.get("policyengine_target_period")
+                        or 2024
+                    ),
+                    from_label="policyengine-us-data",
+                    to_label="microplex-us",
+                    policyengine_us_data_repo=policyengine_us_data_repo,
+                    policyengine_us_data_python=policyengine_us_data_python,
+                    policyengine_targets_db_path=config.get("policyengine_targets_db"),
+                    target_delta_payload=target_delta_payload,
+                    artifact_id=str(
+                        native_audit_payload.get("artifactId") or artifact_root.name
+                    ),
+                    run_id=str(
+                        native_audit_payload.get("artifactId") or artifact_root.name
+                    ),
+                )
+            )
+            native_target_diagnostics_path = resolve_us_stage_artifact_contract_path(
+                artifact_root,
+                "09_validation_benchmarking",
+                "policyengine_native_target_diagnostics",
+            )
+            _write_json_atomically(
+                native_target_diagnostics_path,
+                native_target_diagnostics_payload,
+            )
+            artifacts["policyengine_native_target_diagnostics"] = (
+                native_target_diagnostics_path.name
+            )
     manifest["artifacts"] = artifacts
     _refresh_checkpoint_data_flow_snapshot(
         artifact_root,
         manifest,
-        extra_outputs=(native_audit_path.name,)
-        if native_audit_path is not None
-        else (),
+        extra_outputs=tuple(
+            path.name
+            for path in (
+                native_audit_path,
+                native_target_diagnostics_path,
+            )
+            if path is not None
+        ),
     )
     _write_json_atomically(manifest_path, manifest)
     return PEUSDataRebuildCheckpointEvidenceResult(
@@ -1673,6 +1820,8 @@ def attach_policyengine_us_data_rebuild_checkpoint_evidence(
         parity_payload=parity_payload,
         native_audit_path=native_audit_path,
         native_audit_payload=native_audit_payload,
+        native_target_diagnostics_path=native_target_diagnostics_path,
+        native_target_diagnostics_payload=native_target_diagnostics_payload,
         imputation_ablation_path=imputation_ablation_path,
         imputation_ablation_payload=imputation_ablation_payload,
     )
@@ -1830,10 +1979,9 @@ def run_policyengine_us_data_rebuild_checkpoint(
     puf_demographics_path: str | Path | None = None,
     puf_expand_persons: bool = True,
     include_donor_surveys: bool = True,
-    include_acs: bool | None = None,
     include_sipp: bool | None = None,
     include_scf: bool | None = None,
-    acs_year: int = 2022,
+    acs_year: int = 2024,
     sipp_year: int = 2023,
     scf_year: int = 2022,
     donor_cache_dir: str | Path | None = None,
@@ -1917,7 +2065,6 @@ def run_policyengine_us_data_rebuild_checkpoint(
                 puf_demographics_path=puf_demographics_path,
                 puf_expand_persons=puf_expand_persons,
                 include_donor_surveys=include_donor_surveys,
-                include_acs=include_acs,
                 include_sipp=include_sipp,
                 include_scf=include_scf,
                 acs_year=acs_year,
@@ -2045,6 +2192,11 @@ def run_policyengine_us_data_rebuild_checkpoint(
         "PE-US-data rebuild checkpoint: evidence complete",
         parity_path=evidence.parity_path,
         native_audit_path=evidence.native_audit_path,
+        native_target_diagnostics_path=getattr(
+            evidence,
+            "native_target_diagnostics_path",
+            None,
+        ),
         imputation_ablation_path=evidence.imputation_ablation_path,
     )
     refreshed_artifacts = _load_checkpoint_versioned_artifacts(
@@ -2065,6 +2217,16 @@ def run_policyengine_us_data_rebuild_checkpoint(
         parity_payload=evidence.parity_payload,
         native_audit_path=evidence.native_audit_path,
         native_audit_payload=evidence.native_audit_payload,
+        native_target_diagnostics_path=getattr(
+            evidence,
+            "native_target_diagnostics_path",
+            None,
+        ),
+        native_target_diagnostics_payload=getattr(
+            evidence,
+            "native_target_diagnostics_payload",
+            None,
+        ),
         imputation_ablation_path=evidence.imputation_ablation_path,
         imputation_ablation_payload=evidence.imputation_ablation_payload,
     )
@@ -2102,7 +2264,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--cps-source-year", type=int, default=2023)
     parser.add_argument("--puf-target-year", type=int)
     parser.add_argument("--puf-cps-reference-year", type=int)
-    parser.add_argument("--acs-year", type=int, default=2022)
+    parser.add_argument("--acs-year", type=int, default=2024)
     parser.add_argument("--sipp-year", type=int, default=2023)
     parser.add_argument("--scf-year", type=int, default=2022)
     parser.add_argument("--cps-cache-dir")
@@ -2124,15 +2286,6 @@ def main(argv: list[str] | None = None) -> None:
         "--include-donor-surveys",
         action=argparse.BooleanOptionalAction,
         default=True,
-    )
-    parser.add_argument(
-        "--include-acs",
-        action=argparse.BooleanOptionalAction,
-        default=None,
-        help=(
-            "Include the ACS donor provider. Defaults to --include-donor-surveys; "
-            "use --no-include-acs for an eCPS-shaped run that keeps SIPP/SCF."
-        ),
     )
     parser.add_argument(
         "--include-sipp",
@@ -2324,7 +2477,6 @@ def main(argv: list[str] | None = None) -> None:
         puf_demographics_path=args.puf_demographics_path,
         puf_expand_persons=not args.no_puf_expand_persons,
         include_donor_surveys=args.include_donor_surveys,
-        include_acs=args.include_acs,
         include_sipp=args.include_sipp,
         include_scf=args.include_scf,
         acs_year=args.acs_year,

@@ -108,6 +108,7 @@ class USMicroplexArtifactPaths:
     policyengine_harness: Path | None = None
     policyengine_native_scores: Path | None = None
     policyengine_native_audit: Path | None = None
+    policyengine_native_target_diagnostics: Path | None = None
     child_tax_unit_agi_drift: Path | None = None
     capital_gains_lots: Path | None = None
     source_weight_diagnostics: Path | None = None
@@ -1566,6 +1567,7 @@ def save_us_microplex_artifacts(
         policyengine_harness=policyengine_harness_path,
         policyengine_native_scores=policyengine_native_scores_path,
         policyengine_native_audit=None,
+        policyengine_native_target_diagnostics=None,
         child_tax_unit_agi_drift=child_tax_unit_agi_drift_path,
         capital_gains_lots=capital_gains_lots_path,
         source_weight_diagnostics=source_weight_diagnostics_path,

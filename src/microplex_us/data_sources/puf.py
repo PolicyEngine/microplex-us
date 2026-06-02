@@ -6,15 +6,11 @@ and maps to common variable schema for multi-survey fusion.
 
 from __future__ import annotations
 
-import pickle
-import subprocess
-import sys
-import tempfile
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from functools import cache, lru_cache
 from pathlib import Path
-from textwrap import dedent
 from typing import Any
 
 import numpy as np
@@ -39,8 +35,6 @@ from microplex_us.data_sources.share_imputation import (
     predict_grouped_component_shares,
 )
 from microplex_us.pipelines.pe_native_scores import (
-    build_policyengine_us_data_subprocess_env,
-    resolve_policyengine_us_data_python,
     resolve_policyengine_us_data_repo_root,
 )
 from microplex_us.source_manifests import load_us_source_manifest
@@ -49,6 +43,7 @@ from microplex_us.variables import normalize_dividend_columns
 
 try:
     from huggingface_hub import hf_hub_download
+
     HF_AVAILABLE = True
 except ImportError:
     HF_AVAILABLE = False
@@ -98,6 +93,32 @@ PE_SOI_TO_PUF_NEG_ONLY_RENAMES = {
     "capital_gains_losses": "E01000",
     "partnership_and_s_corp_losses": "E26270",
 }
+PUF_AGGREGATE_RECIDS = (999996, 999997, 999998, 999999)
+PUF_SYNTHETIC_RECID_START = 1_000_000
+PUF_AGGREGATE_SCREENED_FIELDS = (
+    "E00200",  # Wages
+    "P23250",  # Long-term capital gains
+    "P22250",  # Short-term capital gains
+    "E00650",  # Qualified dividends
+    "E00300",  # Taxable interest
+    "E26270",  # Partnership / S-corp
+    "E00900",  # Business income
+    "E02100",  # Farm income
+    "E00400",  # Tax-exempt interest
+    "E00600",  # Ordinary dividends
+)
+PUF_AGGREGATE_BUCKET_BOUNDS = {
+    999996: (-np.inf, 0.0),
+    999997: (0.0, 10_000_000.0),
+    999998: (10_000_000.0, 100_000_000.0),
+    999999: (100_000_000.0, np.inf),
+}
+PUF_AGGREGATE_STRUCTURAL_COLUMNS = ("MARS", "XTOT", "DSI", "EIC")
+_PUF_AMOUNT_COLUMN_PATTERN = re.compile(r"^(?:[EPT]\d+|S\d{5})$")
+_PUF_AGGREGATE_AGI_CAP_100M_PLUS = 1_250_000_000.0
+_PUF_AGGREGATE_MAX_AGI_DOMINANCE = 0.20
+_PUF_AGGREGATE_SELECTION_POWER = 24
+_PUF_NUMERIC_TOL = 1e-9
 PE_PUF_REMAINING_RAW_COLUMNS = (
     "E03500",
     "E00800",
@@ -308,45 +329,6 @@ class PEStyleQRFImputationModel:
     fitted_model: Any
 
 
-@dataclass(frozen=True)
-class PEStyleSubprocessImputationPredictor:
-    """Run PE-style QRF imputation in the PE-US-data environment."""
-
-    policyengine_us_data_repo: str | Path
-    policyengine_us_data_python: str | Path | None = None
-
-    def predict(self, X_test: pd.DataFrame) -> pd.DataFrame:
-        resolved_repo = resolve_policyengine_us_data_repo_root(
-            self.policyengine_us_data_repo
-        )
-        resolved_python = resolve_policyengine_us_data_python(
-            self.policyengine_us_data_python,
-            repo_root=resolved_repo,
-        )
-        env = build_policyengine_us_data_subprocess_env(resolved_repo)
-        with tempfile.TemporaryDirectory(prefix="microplex-us-puf-pretax-") as tempdir:
-            predictors_path = Path(tempdir) / "predictors.pkl"
-            predictions_path = Path(tempdir) / "predictions.pkl"
-            with predictors_path.open("wb") as handle:
-                pickle.dump(pd.DataFrame(X_test), handle)
-            subprocess.run(
-                [
-                    str(resolved_python),
-                    "-c",
-                    _build_pe_style_puf_pre_tax_subprocess_script(),
-                    str(resolved_repo),
-                    str(predictors_path),
-                    str(predictions_path),
-                ],
-                check=True,
-                cwd=resolved_repo,
-                env=env,
-            )
-            with predictions_path.open("rb") as handle:
-                predictions = pickle.load(handle)
-        return pd.DataFrame(predictions)
-
-
 PUF_DEMOGRAPHIC_VARIABLES = (
     "AGEDP1",
     "AGEDP2",
@@ -363,6 +345,7 @@ PUF_DEMOGRAPHIC_PREDICTORS = (
     "EIC",
     "XTOT",
 )
+
 
 def download_puf(cache_dir: Path | None = None) -> Path:
     """Download PUF from HuggingFace.
@@ -420,10 +403,369 @@ def _resolve_policyengine_repo_local_puf_paths(
         puf_path = candidate_dir / "puf_2015.csv"
         demographics_path = candidate_dir / "demographics_2015.csv"
         if puf_path.exists():
-            return puf_path, (
-                demographics_path if demographics_path.exists() else None
-            )
+            return puf_path, (demographics_path if demographics_path.exists() else None)
     return None
+
+
+def _puf_aggregate_amount_columns(columns: pd.Index | list[str]) -> list[str]:
+    return [column for column in columns if _PUF_AMOUNT_COLUMN_PATTERN.match(column)]
+
+
+def _puf_aggregate_bucket_mask(df: pd.DataFrame, recid: int) -> pd.Series:
+    if "E00100" not in df.columns:
+        return pd.Series(True, index=df.index)
+    agi = pd.to_numeric(df["E00100"], errors="coerce").fillna(0.0)
+    lower, upper = PUF_AGGREGATE_BUCKET_BOUNDS.get(recid, (-np.inf, np.inf))
+    return agi.ge(lower) & agi.lt(upper)
+
+
+def _puf_aggregate_eligibility_scores(
+    df: pd.DataFrame,
+    reference: pd.DataFrame | None = None,
+) -> pd.Series:
+    reference_frame = df if reference is None else reference
+    present_fields = [
+        field
+        for field in PUF_AGGREGATE_SCREENED_FIELDS
+        if field in df.columns and field in reference_frame.columns
+    ]
+    if not present_fields:
+        return pd.Series(0.0, index=df.index, dtype=float)
+
+    scores = np.zeros(len(df), dtype=float)
+    for raw_field in present_fields:
+        values = pd.to_numeric(df[raw_field], errors="coerce").fillna(0.0)
+        reference_values = pd.to_numeric(
+            reference_frame[raw_field], errors="coerce"
+        ).fillna(0.0)
+        field_scores = np.zeros(len(df), dtype=float)
+
+        positive_mask = values.gt(0)
+        reference_positive = np.sort(
+            reference_values[reference_values.gt(0)].to_numpy()
+        )
+        if bool(positive_mask.any()) and len(reference_positive) > 0:
+            field_scores[positive_mask.to_numpy()] = np.searchsorted(
+                reference_positive,
+                values[positive_mask].to_numpy(),
+                side="right",
+            ) / len(reference_positive)
+
+        negative_mask = values.lt(0)
+        reference_negative = np.sort(
+            (-reference_values[reference_values.lt(0)]).to_numpy()
+        )
+        if bool(negative_mask.any()) and len(reference_negative) > 0:
+            negative_scores = np.searchsorted(
+                reference_negative,
+                (-values[negative_mask]).to_numpy(),
+                side="right",
+            ) / len(reference_negative)
+            field_scores[negative_mask.to_numpy()] = np.maximum(
+                field_scores[negative_mask.to_numpy()],
+                negative_scores,
+            )
+
+        scores = np.maximum(scores, field_scores)
+    return pd.Series(scores, index=df.index, dtype=float)
+
+
+def _choose_puf_aggregate_synthetic_count(pop_weight: float) -> int:
+    total_weight = max(1, int(round(pop_weight)))
+    target_count = max(20, round(pop_weight / 10))
+    return int(min(40, total_weight, target_count))
+
+
+def _assign_puf_aggregate_weights(
+    pop_weight: float,
+    n_records: int,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    total_weight = max(1, int(round(pop_weight)))
+    n_records = max(1, min(int(n_records), total_weight))
+    weights = np.ones(n_records, dtype=int)
+    remainder = total_weight - n_records
+    if remainder > 0:
+        base_extra = remainder // n_records
+        weights += base_extra
+        leftover = remainder - base_extra * n_records
+        if leftover:
+            weights[rng.choice(n_records, size=leftover, replace=False)] += 1
+    return weights
+
+
+def _project_puf_weighted_sum_to_bounds(
+    values: np.ndarray,
+    weights: np.ndarray,
+    target_total: float,
+    lower: np.ndarray,
+    upper: np.ndarray,
+    max_iter: int = 50,
+) -> np.ndarray:
+    projected = np.clip(values.astype(float), lower, upper)
+
+    for _ in range(max_iter):
+        residual = float(target_total - np.dot(projected, weights))
+        if abs(residual) <= 1e-6:
+            return projected
+
+        slack = upper - projected if residual > 0 else projected - lower
+        free = slack > _PUF_NUMERIC_TOL
+        if not bool(free.any()):
+            break
+
+        basis = np.abs(projected[free])
+        if basis.sum() <= _PUF_NUMERIC_TOL:
+            basis = np.ones(free.sum(), dtype=float)
+        denom = float(np.dot(weights[free], basis))
+        if denom <= _PUF_NUMERIC_TOL:
+            basis = np.ones(free.sum(), dtype=float)
+            denom = float(weights[free].sum())
+
+        delta = residual * basis / denom
+        if residual > 0:
+            delta = np.minimum(delta, slack[free])
+        else:
+            delta = -np.minimum(-delta, slack[free])
+        projected[free] += delta
+        projected = np.clip(projected, lower, upper)
+
+    return projected
+
+
+def _allocate_puf_weighted_values(
+    base_values: np.ndarray,
+    weights: np.ndarray,
+    target_total: float,
+    lower: np.ndarray | float | None = None,
+    upper: np.ndarray | float | None = None,
+) -> np.ndarray:
+    base_values = np.asarray(base_values, dtype=float)
+    weights = np.asarray(weights, dtype=float)
+    n = len(base_values)
+    if abs(target_total) <= 1e-6:
+        return np.zeros(n, dtype=float)
+
+    if target_total > 0 and np.any(base_values > 0):
+        active = base_values > 0
+    elif target_total < 0 and np.any(base_values < 0):
+        active = base_values < 0
+    elif np.any(np.abs(base_values) > _PUF_NUMERIC_TOL):
+        active = np.abs(base_values) > _PUF_NUMERIC_TOL
+    else:
+        active = np.ones(n, dtype=bool)
+
+    allocated = np.zeros(n, dtype=float)
+    magnitudes = np.abs(base_values[active])
+    if magnitudes.sum() <= _PUF_NUMERIC_TOL:
+        magnitudes = np.ones(active.sum(), dtype=float)
+    denom = float(np.dot(weights[active], magnitudes))
+    if denom <= _PUF_NUMERIC_TOL:
+        magnitudes = np.ones(active.sum(), dtype=float)
+        denom = float(weights[active].sum())
+
+    allocated[active] = np.sign(target_total) * magnitudes * abs(target_total) / denom
+    if lower is None and upper is None:
+        return allocated
+
+    if lower is None:
+        lower_array = np.full(n, -np.inf, dtype=float)
+    elif np.isscalar(lower):
+        lower_array = np.full(n, float(lower), dtype=float)
+    else:
+        lower_array = np.asarray(lower, dtype=float)
+
+    if upper is None:
+        upper_array = np.full(n, np.inf, dtype=float)
+    elif np.isscalar(upper):
+        upper_array = np.full(n, float(upper), dtype=float)
+    else:
+        upper_array = np.asarray(upper, dtype=float)
+
+    return _project_puf_weighted_sum_to_bounds(
+        allocated,
+        weights,
+        target_total,
+        lower_array,
+        upper_array,
+    )
+
+
+def _allocate_puf_aggregate_agi(
+    donor_agi: np.ndarray,
+    weights: np.ndarray,
+    recid: int,
+    target_total: float,
+) -> np.ndarray:
+    donor_agi = np.asarray(donor_agi, dtype=float)
+    weights = np.asarray(weights, dtype=float)
+    dominance_cap = _PUF_AGGREGATE_MAX_AGI_DOMINANCE * abs(target_total) / weights
+    n = len(donor_agi)
+
+    if recid == 999996:
+        lower = -dominance_cap
+        upper = np.zeros(n, dtype=float)
+    else:
+        bucket_lower, bucket_upper = PUF_AGGREGATE_BUCKET_BOUNDS[recid]
+        if np.isinf(bucket_upper):
+            bucket_upper = _PUF_AGGREGATE_AGI_CAP_100M_PLUS
+        lower = np.full(n, max(float(bucket_lower), 0.0), dtype=float)
+        upper = np.minimum(np.full(n, float(bucket_upper), dtype=float), dominance_cap)
+
+    return _allocate_puf_weighted_values(
+        base_values=np.abs(donor_agi),
+        weights=weights,
+        target_total=target_total,
+        lower=lower,
+        upper=upper,
+    )
+
+
+def _sample_puf_aggregate_donors(
+    donor_bucket: pd.DataFrame,
+    donor_scores: pd.Series,
+    target_mean_agi: float,
+    n_records: int,
+    rng: np.random.Generator,
+) -> pd.DataFrame:
+    scores = donor_scores.loc[donor_bucket.index].to_numpy(dtype=float)
+    score_mass = np.clip(scores, 1e-6, None) ** _PUF_AGGREGATE_SELECTION_POWER
+    donor_abs_agi = np.abs(donor_bucket["E00100"].to_numpy(dtype=float))
+    target_abs_agi = max(abs(float(target_mean_agi)), 1.0)
+    agi_distance = np.abs(np.log1p(donor_abs_agi) - np.log1p(target_abs_agi))
+    probabilities = score_mass * np.sqrt(1.0 / (1.0 + agi_distance))
+    if not np.isfinite(probabilities).all() or probabilities.sum() <= 0:
+        probabilities = np.ones(len(donor_bucket), dtype=float)
+    probabilities = probabilities / probabilities.sum()
+
+    selected_index = rng.choice(
+        donor_bucket.index.to_numpy(),
+        size=n_records,
+        replace=len(donor_bucket) < n_records,
+        p=probabilities,
+    )
+    return donor_bucket.loc[selected_index].reset_index(drop=True).copy()
+
+
+def _disaggregate_puf_aggregate_bucket(
+    recid: int,
+    row: pd.Series,
+    regular: pd.DataFrame,
+    amount_columns: list[str],
+    donor_scores: pd.Series,
+    next_recid: int,
+    rng: np.random.Generator,
+) -> pd.DataFrame:
+    pop_weight = float(row["S006"]) / 100.0
+    target_mean_agi = float(row["E00100"])
+    target_total_agi = pop_weight * target_mean_agi
+    donor_bucket = regular[_puf_aggregate_bucket_mask(regular, recid)].copy()
+    if donor_bucket.empty:
+        donor_bucket = regular.copy()
+
+    total_weight = max(1, int(round(pop_weight)))
+    n_records = min(_choose_puf_aggregate_synthetic_count(pop_weight), total_weight)
+    synthetic_weights = _assign_puf_aggregate_weights(
+        pop_weight, n_records, rng
+    ).astype(float)
+    selected = _sample_puf_aggregate_donors(
+        donor_bucket=donor_bucket,
+        donor_scores=donor_scores,
+        target_mean_agi=target_mean_agi,
+        n_records=n_records,
+        rng=rng,
+    )
+    selected = selected.astype(
+        {column: float for column in amount_columns if column in selected.columns}
+    )
+
+    synthetic = selected.copy()
+    synthetic["RECID"] = np.arange(next_recid, next_recid + n_records, dtype=int)
+    synthetic["S006"] = (synthetic_weights.astype(int) * 100).astype(int)
+
+    for column in PUF_AGGREGATE_STRUCTURAL_COLUMNS:
+        if column in synthetic.columns:
+            synthetic[column] = selected[column].round().astype(int)
+    if "MARS" in synthetic.columns and "XTOT" in synthetic.columns:
+        joint_mask = synthetic["MARS"] == 2
+        synthetic.loc[joint_mask, "XTOT"] = np.maximum(
+            synthetic.loc[joint_mask, "XTOT"],
+            2,
+        )
+        synthetic["XTOT"] = synthetic["XTOT"].clip(lower=0, upper=5).astype(int)
+
+    synthetic["E00100"] = _allocate_puf_aggregate_agi(
+        donor_agi=selected["E00100"].to_numpy(dtype=float),
+        weights=synthetic_weights,
+        recid=recid,
+        target_total=target_total_agi,
+    )
+    for column in amount_columns:
+        if column == "E00100":
+            continue
+        target_value = float(row.get(column, 0.0))
+        if not np.isfinite(target_value):
+            target_value = 0.0
+        synthetic[column] = _allocate_puf_weighted_values(
+            base_values=selected[column].to_numpy(dtype=float),
+            weights=synthetic_weights,
+            target_total=pop_weight * target_value,
+        )
+    return synthetic
+
+
+def disaggregate_puf_aggregate_records(
+    puf: pd.DataFrame,
+    *,
+    seed: int = 42,
+) -> pd.DataFrame:
+    """Replace IRS aggregate PUF rows with calibrated synthetic donor records."""
+    if not {"RECID", "MARS", "S006", "E00100"}.issubset(puf.columns):
+        return puf
+
+    recid = pd.to_numeric(puf["RECID"], errors="coerce").astype("Int64")
+    aggregate_mask = recid.isin(PUF_AGGREGATE_RECIDS) | pd.to_numeric(
+        puf["MARS"], errors="coerce"
+    ).eq(0)
+    if not bool(aggregate_mask.any()):
+        return puf
+
+    regular = puf.loc[~aggregate_mask].copy()
+    if regular.empty:
+        return puf.loc[~pd.to_numeric(puf["MARS"], errors="coerce").eq(0)].copy()
+
+    aggregate_rows = puf.loc[aggregate_mask].copy()
+    amount_columns = _puf_aggregate_amount_columns(puf.columns)
+    donor_scores = _puf_aggregate_eligibility_scores(regular)
+    rng = np.random.default_rng(seed)
+    next_recid = PUF_SYNTHETIC_RECID_START
+    synthetic_rows: list[pd.DataFrame] = []
+
+    for _, row in aggregate_rows.sort_values("RECID").iterrows():
+        row_recid = int(row["RECID"])
+        if row_recid not in PUF_AGGREGATE_BUCKET_BOUNDS:
+            continue
+        synthetic = _disaggregate_puf_aggregate_bucket(
+            recid=row_recid,
+            row=row,
+            regular=regular,
+            amount_columns=amount_columns,
+            donor_scores=donor_scores,
+            next_recid=next_recid,
+            rng=rng,
+        )
+        next_recid += len(synthetic)
+        synthetic_rows.append(synthetic[puf.columns])
+
+    if not synthetic_rows:
+        return regular.reset_index(drop=True)
+
+    synthetic_frame = pd.concat(synthetic_rows, ignore_index=True)
+    print(
+        f"Disaggregated {int(aggregate_mask.sum())} aggregate PUF records into "
+        f"{len(synthetic_frame)} synthetic records"
+    )
+    return pd.concat([regular, synthetic_frame], ignore_index=True)
 
 
 def load_puf_raw(puf_path: Path, demographics_path: Path | None = None) -> pd.DataFrame:
@@ -431,8 +773,7 @@ def load_puf_raw(puf_path: Path, demographics_path: Path | None = None) -> pd.Da
     print(f"Loading PUF from {puf_path}...")
     puf = pd.read_csv(puf_path)
 
-    # Filter out aggregate records (MARS=0)
-    puf = puf[puf["MARS"] != 0].copy()
+    puf = disaggregate_puf_aggregate_records(puf)
 
     print(f"  Raw records: {len(puf):,}")
 
@@ -458,8 +799,7 @@ def _normalize_puf_uprating_mode(mode: str | None) -> str:
     }
     if resolved not in allowed:
         raise ValueError(
-            "puf uprating mode must be one of "
-            f"{sorted(allowed)}; got {mode!r}"
+            f"puf uprating mode must be one of {sorted(allowed)}; got {mode!r}"
         )
     return resolved
 
@@ -492,9 +832,7 @@ def _resolve_pe_uprating_factors_path(
     policyengine_us_data_repo: str | Path | None = None,
 ) -> Path:
     if policyengine_us_data_repo is None:
-        raise ValueError(
-            "PE forward uprating requires policyengine_us_data_repo"
-        )
+        raise ValueError("PE forward uprating requires policyengine_us_data_repo")
     resolved = (
         Path(policyengine_us_data_repo)
         / "policyengine_us_data"
@@ -523,7 +861,9 @@ def _get_pe_soi_aggregate(
     *,
     is_count: bool,
 ) -> float:
-    lookup_variable = "count" if variable == "adjusted_gross_income" and is_count else variable
+    lookup_variable = (
+        "count" if variable == "adjusted_gross_income" and is_count else variable
+    )
     rows = soi_table[
         (soi_table["Variable"] == lookup_variable)
         & (soi_table["Year"] == year)
@@ -668,9 +1008,7 @@ def uprate_mapped_puf_with_pe_factors(
     start_column = str(from_year)
     end_column = str(to_year)
     if start_column not in factors.columns or end_column not in factors.columns:
-        raise ValueError(
-            f"PE uprating factors do not cover {from_year} -> {to_year}"
-        )
+        raise ValueError(f"PE uprating factors do not cover {from_year} -> {to_year}")
     factor_lookup = factors.set_index("Variable")
     result = puf.copy()
     for column in result.columns:
@@ -686,18 +1024,16 @@ def uprate_mapped_puf_with_pe_factors(
         "qualified_dividend_income",
         "non_qualified_dividend_income",
     }.issubset(result.columns):
-        result["ordinary_dividend_income"] = (
-            result["qualified_dividend_income"].fillna(0.0)
-            + result["non_qualified_dividend_income"].fillna(0.0)
-        )
+        result["ordinary_dividend_income"] = result["qualified_dividend_income"].fillna(
+            0.0
+        ) + result["non_qualified_dividend_income"].fillna(0.0)
     if {
         "taxable_pension_income",
         "tax_exempt_pension_income",
     }.issubset(result.columns):
-        result["total_pension_income"] = (
-            result["taxable_pension_income"].fillna(0.0)
-            + result["tax_exempt_pension_income"].fillna(0.0)
-        )
+        result["total_pension_income"] = result["taxable_pension_income"].fillna(
+            0.0
+        ) + result["tax_exempt_pension_income"].fillna(0.0)
     return result
 
 
@@ -719,7 +1055,9 @@ def _impute_missing_puf_demographics(puf: pd.DataFrame) -> pd.DataFrame:
         return puf
 
     train = (
-        puf.loc[observed_mask, [*PUF_DEMOGRAPHIC_PREDICTORS, *PUF_DEMOGRAPHIC_VARIABLES]]
+        puf.loc[
+            observed_mask, [*PUF_DEMOGRAPHIC_PREDICTORS, *PUF_DEMOGRAPHIC_VARIABLES]
+        ]
         .copy()
         .fillna(0)
     )
@@ -785,14 +1123,13 @@ def map_puf_variables(
 
     # Preserve rental losses as negative values so downstream PE targets can
     # recover rent-and-royalty loss cells.
-    result["rental_income"] = (
-        result.get("rental_income_positive", 0).fillna(0) +
-        -result.get("rental_income_negative", 0).fillna(0)
-    )
+    result["rental_income"] = result.get("rental_income_positive", 0).fillna(
+        0
+    ) + -result.get("rental_income_negative", 0).fillna(0)
     if {"E00600", "E00650"}.issubset(set(puf.columns)):
-        result["non_qualified_dividend_income"] = (
-            puf["E00600"].fillna(0) - puf["E00650"].fillna(0)
-        )
+        result["non_qualified_dividend_income"] = puf["E00600"].fillna(0) - puf[
+            "E00650"
+        ].fillna(0)
     if {"E26190", "E26180", "E25980", "E25960"}.issubset(set(puf.columns)):
         s_corp_income = puf["E26190"].fillna(0) - puf["E26180"].fillna(0)
         partnership_income = puf["E25980"].fillna(0) - puf["E25960"].fillna(0)
@@ -827,9 +1164,9 @@ def map_puf_variables(
     if {"E26390", "E26400"}.issubset(set(puf.columns)):
         result["estate_income"] = puf["E26390"].fillna(0) - puf["E26400"].fillna(0)
     if {"E01500", "E01700"}.issubset(set(puf.columns)):
-        result["tax_exempt_pension_income"] = (
-            puf["E01500"].fillna(0) - puf["E01700"].fillna(0)
-        )
+        result["tax_exempt_pension_income"] = puf["E01500"].fillna(0) - puf[
+            "E01700"
+        ].fillna(0)
     medical_expense_floor = result.get("medical_expense_agi_floor")
     if medical_expense_floor is not None:
         for variable, fraction in MEDICAL_EXPENSE_CATEGORY_BREAKDOWNS.items():
@@ -843,8 +1180,14 @@ def map_puf_variables(
         4: "HEAD_OF_HOUSEHOLD",
         5: "SURVIVING_SPOUSE",
     }
-    result["filing_status"] = result["filing_status_code"].map(filing_status_map).fillna("UNKNOWN")
-    filing_status_code = pd.to_numeric(result["filing_status_code"], errors="coerce").fillna(0).astype(int)
+    result["filing_status"] = (
+        result["filing_status_code"].map(filing_status_map).fillna("UNKNOWN")
+    )
+    filing_status_code = (
+        pd.to_numeric(result["filing_status_code"], errors="coerce")
+        .fillna(0)
+        .astype(int)
+    )
     result["is_surviving_spouse"] = filing_status_code.eq(5)
 
     # Add age from demographics if available
@@ -901,7 +1244,11 @@ def map_puf_variables(
             )
             try:
                 predictions = model.fitted_model.predict(X_test=predictor_frame)
-            except (FileNotFoundError, ImportError, ValueError, subprocess.CalledProcessError):
+            except (
+                FileNotFoundError,
+                ImportError,
+                ValueError,
+            ):
                 if require_pre_tax_contribution_model:
                     raise
                 model = None
@@ -985,9 +1332,11 @@ def _decode_puf_filer_age(
     if lower is None:
         return int(resolved_fallback)
     if upper is None or upper <= lower:
+        if age_code == 7:
+            if rng is not None:
+                return int(rng.integers(low=lower, high=90, endpoint=False))
+            return int(lower + (90 - lower) / 2)
         return int(lower)
-    if rng is not None:
-        return int(rng.integers(low=lower, high=upper, endpoint=False))
     return int(lower + (upper - lower) / 2)
 
 
@@ -1079,7 +1428,9 @@ def _is_puf_numeric_split_column(df: pd.DataFrame, column: str) -> bool:
     return pd.api.types.is_numeric_dtype(df[column])
 
 
-def uprate_puf(df: pd.DataFrame, from_year: int = 2015, to_year: int = 2024) -> pd.DataFrame:
+def uprate_puf(
+    df: pd.DataFrame, from_year: int = 2015, to_year: int = 2024
+) -> pd.DataFrame:
     """Uprate PUF income variables from one year to another.
 
     Uses SOI-based growth factors.
@@ -1124,7 +1475,9 @@ def _social_security_age_bucket(ages: pd.Series) -> pd.Series:
 
 
 def _normalize_social_security_split_strategy(strategy: str | None) -> str:
-    resolved = (strategy or SOCIAL_SECURITY_SPLIT_STRATEGY_GROUPED_SHARE).strip().lower()
+    resolved = (
+        (strategy or SOCIAL_SECURITY_SPLIT_STRATEGY_GROUPED_SHARE).strip().lower()
+    )
     allowed = {
         SOCIAL_SECURITY_SPLIT_STRATEGY_GROUPED_SHARE,
         SOCIAL_SECURITY_SPLIT_STRATEGY_PE_QRF,
@@ -1145,7 +1498,9 @@ def _build_pe_style_social_security_predictor_frame(
     if "age" in frame.columns:
         result["age"] = pd.to_numeric(frame["age"], errors="coerce").astype(float)
     if "is_male" in frame.columns:
-        result["is_male"] = pd.to_numeric(frame["is_male"], errors="coerce").astype(float)
+        result["is_male"] = pd.to_numeric(frame["is_male"], errors="coerce").astype(
+            float
+        )
     elif "sex" in frame.columns:
         sex = pd.to_numeric(frame["sex"], errors="coerce")
         result["is_male"] = pd.Series(
@@ -1283,80 +1638,6 @@ def _default_pe_style_puf_social_security_share_model(
     )
 
 
-def _ensure_policyengine_us_data_repo_on_sys_path(
-    policyengine_us_data_repo: str | Path | None,
-) -> None:
-    if policyengine_us_data_repo is None:
-        return
-    repo_root = Path(policyengine_us_data_repo).expanduser().resolve()
-    if not repo_root.exists():
-        raise ValueError(
-            f"PolicyEngine US-data repo does not exist: {repo_root}"
-        )
-    repo_root_str = str(repo_root)
-    if repo_root_str not in sys.path:
-        sys.path.insert(0, repo_root_str)
-
-
-def _build_pe_style_puf_pre_tax_subprocess_script() -> str:
-    return dedent(
-        """
-import pickle
-import sys
-
-import pandas as pd
-
-repo_root = sys.argv[1]
-predictors_path = sys.argv[2]
-predictions_path = sys.argv[3]
-
-if repo_root not in sys.path:
-    sys.path.insert(0, repo_root)
-
-from microimpute.models.qrf import QRF
-from policyengine_us import Microsimulation
-from policyengine_us_data.datasets.cps import CPS_2021
-
-with open(predictors_path, "rb") as handle:
-    X_test = pickle.load(handle)
-X_test = pd.DataFrame(X_test)
-
-predictors = ["employment_income", "age", "is_male"]
-cps = Microsimulation(dataset=CPS_2021)
-cps.subsample(10_000)
-cps_df = cps.calculate_dataframe(
-    [*predictors, "household_weight", "pre_tax_contributions"]
-)
-train = cps_df.loc[:, [*predictors, "pre_tax_contributions"]].copy()
-train = train.apply(lambda column: pd.to_numeric(column, errors="coerce").fillna(0.0))
-X_test = X_test.loc[:, predictors].copy()
-X_test = X_test.apply(lambda column: pd.to_numeric(column, errors="coerce").fillna(0.0))
-
-qrf = QRF(log_level="WARNING", memory_efficient=True)
-fitted_model = qrf.fit(
-    X_train=train,
-    predictors=predictors,
-    imputed_variables=["pre_tax_contributions"],
-    n_jobs=1,
-)
-predictions = fitted_model.predict(X_test=X_test)
-
-with open(predictions_path, "wb") as handle:
-    pickle.dump(
-        pd.DataFrame(
-            {
-                "pre_tax_contributions": pd.to_numeric(
-                    predictions["pre_tax_contributions"],
-                    errors="coerce",
-                ).fillna(0.0)
-            }
-        ),
-        handle,
-    )
-"""
-    ).strip()
-
-
 def _load_pe_extended_cps_pre_tax_training_frame(
     *,
     policyengine_us_data_repo: str | Path,
@@ -1388,18 +1669,14 @@ def _load_pe_extended_cps_pre_tax_training_frame(
                     h5["employment_income"][sorted(h5["employment_income"].keys())[-1]],
                     dtype=float,
                 ),
-                "age": np.asarray(
-                    h5["age"][str(int(training_year))], dtype=float
-                )
+                "age": np.asarray(h5["age"][str(int(training_year))], dtype=float)
                 if str(int(training_year)) in h5["age"]
                 else np.asarray(
                     h5["age"][sorted(h5["age"].keys())[-1]],
                     dtype=float,
                 ),
                 "is_male": 1.0
-                - np.asarray(
-                    h5["is_female"][str(int(training_year))], dtype=float
-                )
+                - np.asarray(h5["is_female"][str(int(training_year))], dtype=float)
                 if str(int(training_year)) in h5["is_female"]
                 else 1.0
                 - np.asarray(
@@ -1423,6 +1700,69 @@ def _load_pe_extended_cps_pre_tax_training_frame(
     return train
 
 
+def _load_microplex_cps_pre_tax_training_frame(
+    *,
+    training_year: int,
+) -> pd.DataFrame:
+    cps = load_cps_asec(year=int(training_year))
+    persons = cps.persons.to_pandas()
+    index = persons.index
+    employment_income = pd.to_numeric(
+        persons.get("employment_income", persons.get("wage_income", 0.0)),
+        errors="coerce",
+    ).fillna(0.0)
+    age = pd.to_numeric(persons.get("age", 0.0), errors="coerce").fillna(0.0)
+    if "is_male" in persons.columns:
+        is_male = pd.to_numeric(persons["is_male"], errors="coerce").fillna(0.0)
+    elif "sex" in persons.columns:
+        is_male = (
+            pd.to_numeric(persons["sex"], errors="coerce")
+            .fillna(0)
+            .astype(int)
+            .eq(1)
+            .astype(float)
+        )
+    else:
+        is_male = pd.Series(0.0, index=index)
+
+    if "pre_tax_contributions" in persons.columns:
+        pre_tax_contributions = pd.to_numeric(
+            persons["pre_tax_contributions"],
+            errors="coerce",
+        ).fillna(0.0)
+    else:
+        pre_tax_contributions = pd.Series(0.0, index=index)
+        for column in (
+            "traditional_401k_contributions",
+            "traditional_401k_contributions_desired",
+            "traditional_403b_contributions",
+            "traditional_403b_contributions_desired",
+            "pre_tax_health_insurance_premiums",
+            "health_savings_account_payroll_contributions",
+        ):
+            if column in persons.columns:
+                pre_tax_contributions = pre_tax_contributions.add(
+                    pd.to_numeric(persons[column], errors="coerce").fillna(0.0),
+                    fill_value=0.0,
+                )
+
+    train = pd.DataFrame(
+        {
+            "employment_income": employment_income,
+            "age": age,
+            "is_male": is_male,
+            "pre_tax_contributions": pre_tax_contributions,
+        },
+        index=index,
+    )
+    train = train.apply(
+        lambda column: pd.to_numeric(column, errors="coerce").fillna(0.0)
+    )
+    if len(train) > 10_000:
+        train = train.sample(n=10_000, random_state=0)
+    return train
+
+
 @lru_cache(maxsize=4)
 def _default_pe_style_puf_pre_tax_contribution_model(
     *,
@@ -1438,13 +1778,8 @@ def _default_pe_style_puf_pre_tax_contribution_model(
                 training_year=pre_tax_training_year,
             )
         except (FileNotFoundError, KeyError, OSError, ValueError):
-            return PEStyleQRFImputationModel(
-                predictors=predictors,
-                imputed_variable="pre_tax_contributions",
-                fitted_model=PEStyleSubprocessImputationPredictor(
-                    policyengine_us_data_repo=policyengine_us_data_repo,
-                    policyengine_us_data_python=policyengine_us_data_python,
-                ),
+            train = _load_microplex_cps_pre_tax_training_frame(
+                training_year=pre_tax_training_year,
             )
 
         from microimpute.models.qrf import QRF
@@ -1466,18 +1801,10 @@ def _default_pe_style_puf_pre_tax_contribution_model(
         )
 
     from microimpute.models.qrf import QRF
-    from policyengine_us import Microsimulation
 
-    _ensure_policyengine_us_data_repo_on_sys_path(policyengine_us_data_repo)
-    from policyengine_us_data.datasets.cps import CPS_2021
-
-    cps = Microsimulation(dataset=CPS_2021)
-    cps.subsample(10_000)
-    cps_df = cps.calculate_dataframe(
-        [*predictors, "household_weight", "pre_tax_contributions"]
+    train = _load_microplex_cps_pre_tax_training_frame(
+        training_year=pre_tax_training_year
     )
-    train = cps_df.loc[:, [*predictors, "pre_tax_contributions"]].copy()
-    train = train.apply(lambda column: pd.to_numeric(column, errors="coerce").fillna(0.0))
 
     qrf = QRF(log_level="WARNING", memory_efficient=True)
     fitted_model = qrf.fit(
@@ -1497,9 +1824,11 @@ def _strategy_social_security_share_model_loader(
     strategy: str,
 ) -> Callable[[int, Path | None], SocialSecurityShareModel]:
     if strategy == SOCIAL_SECURITY_SPLIT_STRATEGY_PE_QRF:
-        return lambda year, cache_dir: _default_pe_style_puf_social_security_share_model(
-            cps_reference_year=year,
-            cache_dir=cache_dir,
+        return lambda year, cache_dir: (
+            _default_pe_style_puf_social_security_share_model(
+                cps_reference_year=year,
+                cache_dir=cache_dir,
+            )
         )
     if strategy == SOCIAL_SECURITY_SPLIT_STRATEGY_AGE_HEURISTIC:
         return lambda year, cache_dir: _age_heuristic_puf_social_security_share_model()
@@ -1632,16 +1961,12 @@ def _add_derived_income_columns(df: pd.DataFrame) -> pd.DataFrame:
 
     result["interest_income"] = taxable_interest_income
     result["dividend_income"] = ordinary_dividend_income
-    result["capital_gains"] = (
-        short_term_capital_gains
-        + long_term_capital_gains
-    )
+    result["capital_gains"] = short_term_capital_gains + long_term_capital_gains
     result["pension_income"] = taxable_pension_income
     result["social_security"] = gross_social_security
-    result["social_security_retirement"] = (
-        gross_social_security.where(ages >= MINIMUM_SOCIAL_SECURITY_RETIREMENT_AGE, 0.0)
-        .astype(float)
-    )
+    result["social_security_retirement"] = gross_social_security.where(
+        ages >= MINIMUM_SOCIAL_SECURITY_RETIREMENT_AGE, 0.0
+    ).astype(float)
     result["income"] = (
         employment_income
         + self_employment_income
@@ -1688,13 +2013,20 @@ def expand_to_persons(df: pd.DataFrame) -> pd.DataFrame:
     This enables stacking with CPS person-level data.
     """
     records = []
-    split_columns = [column for column in df.columns if _is_puf_numeric_split_column(df, column)]
+    split_columns = [
+        column for column in df.columns if _is_puf_numeric_split_column(df, column)
+    ]
     pe_rng = np.random.default_rng(PE_PUF_PERSON_EXPANSION_RANDOM_SEED)
+    pe_age_rng = np.random.default_rng(PE_PUF_PERSON_EXPANSION_RANDOM_SEED + 1)
 
     for idx, row in df.iterrows():
         filing_status = row.get("filing_status", "SINGLE")
-        exemptions = int(pd.to_numeric(row.get("exemptions_count", 1), errors="coerce") or 1)
-        has_pe_demographics = "_puf_agerange" in row.index and not pd.isna(row.get("_puf_agerange"))
+        exemptions = int(
+            pd.to_numeric(row.get("exemptions_count", 1), errors="coerce") or 1
+        )
+        has_pe_demographics = "_puf_agerange" in row.index and not pd.isna(
+            row.get("_puf_agerange")
+        )
         tax_unit_id = row.get("_puf_recid")
         if tax_unit_id is None or pd.isna(tax_unit_id):
             tax_unit_id = idx
@@ -1705,12 +2037,15 @@ def expand_to_persons(df: pd.DataFrame) -> pd.DataFrame:
         head["is_head"] = 1
         head["is_spouse"] = 0
         head["is_dependent"] = 0
-        head["person_id"] = f"{pe_tax_unit_id}:1" if has_pe_demographics else f"{idx}_head"
+        head["person_id"] = (
+            f"{pe_tax_unit_id}:1" if has_pe_demographics else f"{idx}_head"
+        )
         head["tax_unit_id"] = pe_tax_unit_id if has_pe_demographics else str(idx)
         if has_pe_demographics:
             head["age"] = _decode_puf_filer_age(
                 row.get("_puf_agerange"),
                 fallback=row.get("age", 40.0),
+                rng=pe_age_rng,
             )
             if pd.notna(row.get("_puf_gender")):
                 head["is_male"] = float(int(row.get("_puf_gender")) == 1)
@@ -1722,7 +2057,9 @@ def expand_to_persons(df: pd.DataFrame) -> pd.DataFrame:
             spouse["is_head"] = 0
             spouse["is_spouse"] = 1
             spouse["is_dependent"] = 0
-            spouse["person_id"] = f"{pe_tax_unit_id}:2" if has_pe_demographics else f"{idx}_spouse"
+            spouse["person_id"] = (
+                f"{pe_tax_unit_id}:2" if has_pe_demographics else f"{idx}_spouse"
+            )
             spouse["tax_unit_id"] = pe_tax_unit_id if has_pe_demographics else str(idx)
             spouse["is_surviving_spouse"] = False
 
@@ -1730,6 +2067,7 @@ def expand_to_persons(df: pd.DataFrame) -> pd.DataFrame:
                 spouse["age"] = _decode_puf_filer_age(
                     row.get("_puf_agerange"),
                     fallback=row.get("age", 40.0),
+                    rng=pe_age_rng,
                 )
                 if pd.notna(row.get("_puf_gender")):
                     spouse["is_male"] = _puf_spouse_is_male(
@@ -1737,7 +2075,9 @@ def expand_to_persons(df: pd.DataFrame) -> pd.DataFrame:
                     )
                 head_share = _puf_joint_head_share(row, rng=pe_rng)
                 for column in split_columns:
-                    amount = float(pd.to_numeric(row.get(column), errors="coerce") or 0.0)
+                    amount = float(
+                        pd.to_numeric(row.get(column), errors="coerce") or 0.0
+                    )
                     head[column] = amount * head_share
                     spouse[column] = amount * (1.0 - head_share)
             else:
@@ -1765,7 +2105,9 @@ def expand_to_persons(df: pd.DataFrame) -> pd.DataFrame:
                 records.append(dependent)
 
     result = pd.DataFrame(records).reset_index(drop=True)
-    helper_columns = [column for column in result.columns if column in PUF_DEMOGRAPHIC_HELPER_COLUMNS]
+    helper_columns = [
+        column for column in result.columns if column in PUF_DEMOGRAPHIC_HELPER_COLUMNS
+    ]
     if helper_columns:
         result = result.drop(columns=helper_columns)
     result = _add_derived_income_columns(result)
@@ -1929,7 +2271,10 @@ def _sample_tax_units(
             .fillna(0.0)
             .clip(lower=0.0)
         )
-        if candidate_weights.sum() > 0.0 and int((candidate_weights > 0.0).sum()) >= sample_n:
+        if (
+            candidate_weights.sum() > 0.0
+            and int((candidate_weights > 0.0).sum()) >= sample_n
+        ):
             sample_weights = candidate_weights
     try:
         return tax_units.sample(
@@ -2005,7 +2350,9 @@ def _build_puf_tax_units(
     tax_units["tenure"] = 0
     tax_units["household_weight"] = tax_units["weight"].astype(float)
     tax_units = _add_derived_income_columns(tax_units)
-    is_male = tax_units.get("is_male", pd.Series(np.nan, index=tax_units.index)).fillna(0)
+    is_male = tax_units.get("is_male", pd.Series(np.nan, index=tax_units.index)).fillna(
+        0
+    )
     tax_units["sex"] = np.where(is_male > 0, 1, np.where(is_male == 0, 2, 0))
     tax_units["education"] = 0
     return tax_units
@@ -2132,7 +2479,9 @@ class PUFSourceProvider:
         Callable[[int, Path | None], SocialSecurityShareModel] | None
     ) = None
     _descriptor_cache: SourceDescriptor | None = None
-    _social_security_share_model_cache: dict[tuple[int, str], SocialSecurityShareModel] = field(
+    _social_security_share_model_cache: dict[
+        tuple[int, str], SocialSecurityShareModel
+    ] = field(
         default_factory=dict,
         init=False,
         repr=False,
@@ -2311,9 +2660,12 @@ if __name__ == "__main__":
 
     print("\nIncome variable sums:")
     income_vars = [
-        "employment_income", "self_employment_income",
-        "long_term_capital_gains", "partnership_s_corp_income",
-        "gross_social_security", "taxable_pension_income",
+        "employment_income",
+        "self_employment_income",
+        "long_term_capital_gains",
+        "partnership_s_corp_income",
+        "gross_social_security",
+        "taxable_pension_income",
     ]
     for var in income_vars:
         if var in df.columns:

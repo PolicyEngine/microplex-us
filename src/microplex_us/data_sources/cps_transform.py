@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 import polars as pl
 
 from microplex_us.data_sources.cps import CPSDataset
+from microplex_us.data_sources.cps_age import randomize_cps_topcoded_age_80_84
 from microplex_us.data_sources.cps_mappings import (
     CoverageLevel,
     get_all_mappings,
@@ -79,15 +80,21 @@ def _transform_persons(persons: pl.DataFrame) -> pl.DataFrame:
 
     # Age
     if "A_AGE" in result.columns:
-        result = result.with_columns(pl.col("A_AGE").alias("age"))
+        result = randomize_cps_topcoded_age_80_84(
+            result.with_columns(pl.col("A_AGE").alias("age"))
+        )
 
     # Earned income (wages + self-employment)
     wage_col = "WSAL_VAL" if "WSAL_VAL" in result.columns else "wage_income"
     semp_col = "SEMP_VAL" if "SEMP_VAL" in result.columns else "self_employment_income"
 
     if wage_col in result.columns or semp_col in result.columns:
-        wage_expr = pl.col(wage_col).fill_null(0) if wage_col in result.columns else pl.lit(0)
-        semp_expr = pl.col(semp_col).fill_null(0) if semp_col in result.columns else pl.lit(0)
+        wage_expr = (
+            pl.col(wage_col).fill_null(0) if wage_col in result.columns else pl.lit(0)
+        )
+        semp_expr = (
+            pl.col(semp_col).fill_null(0) if semp_col in result.columns else pl.lit(0)
+        )
 
         # Earned income for EITC is non-negative
         result = result.with_columns(
@@ -96,9 +103,7 @@ def _transform_persons(persons: pl.DataFrame) -> pl.DataFrame:
 
     # Is blind
     if "PEDISEYE" in result.columns:
-        result = result.with_columns(
-            (pl.col("PEDISEYE") == 1).alias("is_blind")
-        )
+        result = result.with_columns((pl.col("PEDISEYE") == 1).alias("is_blind"))
     else:
         result = result.with_columns(pl.lit(False).alias("is_blind"))
 
@@ -106,8 +111,8 @@ def _transform_persons(persons: pl.DataFrame) -> pl.DataFrame:
     if "A_EXPRRP" in result.columns and "age" in result.columns:
         result = result.with_columns(
             (
-                (pl.col("A_EXPRRP").is_in([4, 8])) &  # Child or grandchild
-                (pl.col("age") < 19)
+                (pl.col("A_EXPRRP").is_in([4, 8]))  # Child or grandchild
+                & (pl.col("age") < 19)
             ).alias("is_dependent")
         )
     else:
@@ -116,7 +121,9 @@ def _transform_persons(persons: pl.DataFrame) -> pl.DataFrame:
     return result
 
 
-def _construct_tax_units(persons: pl.DataFrame, households: pl.DataFrame) -> pl.DataFrame:
+def _construct_tax_units(
+    persons: pl.DataFrame, households: pl.DataFrame
+) -> pl.DataFrame:
     """
     Construct tax units from persons.
 
@@ -137,10 +144,8 @@ def _construct_tax_units(persons: pl.DataFrame, households: pl.DataFrame) -> pl.
     lineno_col = "A_LINENO" if "A_LINENO" in persons.columns else None
 
     # Aggregate earned income to household level
-    earned_income_agg = (
-        persons
-        .group_by(hh_id_col)
-        .agg(pl.col("earned_income").sum().alias("earned_income"))
+    earned_income_agg = persons.group_by(hh_id_col).agg(
+        pl.col("earned_income").sum().alias("earned_income")
     )
 
     # Count CTC qualifying children per household
@@ -149,8 +154,8 @@ def _construct_tax_units(persons: pl.DataFrame, households: pl.DataFrame) -> pl.
         if "A_EXPRRP" in persons.columns:
             persons_with_ctc = persons.with_columns(
                 (
-                    (pl.col("A_EXPRRP") == 4) &  # Child of householder
-                    (pl.col("age") < 17)
+                    (pl.col("A_EXPRRP") == 4)  # Child of householder
+                    & (pl.col("age") < 17)
                 ).alias("_is_ctc_child")
             )
         else:
@@ -158,16 +163,12 @@ def _construct_tax_units(persons: pl.DataFrame, households: pl.DataFrame) -> pl.
                 (pl.col("age") < 17).alias("_is_ctc_child")
             )
 
-        ctc_counts = (
-            persons_with_ctc
-            .group_by(hh_id_col)
-            .agg(pl.col("_is_ctc_child").sum().alias("ctc_qualifying_children"))
+        ctc_counts = persons_with_ctc.group_by(hh_id_col).agg(
+            pl.col("_is_ctc_child").sum().alias("ctc_qualifying_children")
         )
     else:
-        ctc_counts = (
-            persons
-            .group_by(hh_id_col)
-            .agg(pl.lit(0).alias("ctc_qualifying_children"))
+        ctc_counts = persons.group_by(hh_id_col).agg(
+            pl.lit(0).alias("ctc_qualifying_children")
         )
 
     # Get reference person attributes for each household
@@ -195,9 +196,7 @@ def _construct_tax_units(persons: pl.DataFrame, households: pl.DataFrame) -> pl.
             .alias("filing_status")
         )
     else:
-        ref_persons = ref_persons.with_columns(
-            pl.lit("single").alias("filing_status")
-        )
+        ref_persons = ref_persons.with_columns(pl.lit("single").alias("filing_status"))
 
     # Get weight
     weight_col = "A_FNLWGT" if "A_FNLWGT" in ref_persons.columns else "weight"
@@ -239,31 +238,39 @@ def _construct_tax_units(persons: pl.DataFrame, households: pl.DataFrame) -> pl.
             invest_agg_exprs.append(pl.col(div_col).fill_null(0).sum().alias("_div"))
 
         if invest_agg_exprs:
-            invest_income = (
-                persons
-                .group_by(hh_id_col)
-                .agg(invest_agg_exprs)
-            )
+            invest_income = persons.group_by(hh_id_col).agg(invest_agg_exprs)
 
             tax_units = tax_units.join(invest_income, on=hh_id_col, how="left")
 
             # Add to AGI proxy
-            int_expr = pl.col("_int").fill_null(0) if "_int" in tax_units.columns else pl.lit(0)
-            div_expr = pl.col("_div").fill_null(0) if "_div" in tax_units.columns else pl.lit(0)
+            int_expr = (
+                pl.col("_int").fill_null(0)
+                if "_int" in tax_units.columns
+                else pl.lit(0)
+            )
+            div_expr = (
+                pl.col("_div").fill_null(0)
+                if "_div" in tax_units.columns
+                else pl.lit(0)
+            )
 
             tax_units = tax_units.with_columns(
                 (pl.col("agi_proxy") + int_expr + div_expr).alias("agi_proxy")
             )
 
             # Drop temp columns
-            tax_units = tax_units.drop([c for c in ["_int", "_div"] if c in tax_units.columns])
+            tax_units = tax_units.drop(
+                [c for c in ["_int", "_div"] if c in tax_units.columns]
+            )
 
     # Fill nulls
-    tax_units = tax_units.with_columns([
-        pl.col("earned_income").fill_null(0),
-        pl.col("ctc_qualifying_children").fill_null(0),
-        pl.col("agi_proxy").fill_null(0),
-    ])
+    tax_units = tax_units.with_columns(
+        [
+            pl.col("earned_income").fill_null(0),
+            pl.col("ctc_qualifying_children").fill_null(0),
+            pl.col("agi_proxy").fill_null(0),
+        ]
+    )
 
     # Rename household ID to tax_unit_id
     tax_units = tax_units.rename({hh_id_col: "tax_unit_id"})
@@ -293,13 +300,15 @@ def _generate_coverage_report() -> dict:
 
         # Collect gaps
         for gap in m.gaps:
-            gaps.append({
-                "variable": m.policyengine_us_variable,
-                "component": gap.component,
-                "statute_ref": gap.statute_ref,
-                "impact": gap.impact,
-                "notes": gap.notes,
-            })
+            gaps.append(
+                {
+                    "variable": m.policyengine_us_variable,
+                    "component": gap.component,
+                    "statute_ref": gap.statute_ref,
+                    "impact": gap.impact,
+                    "notes": gap.notes,
+                }
+            )
 
     return {
         "full": full,

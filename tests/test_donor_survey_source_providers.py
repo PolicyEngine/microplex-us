@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import h5py
 import pandas as pd
 from microplex.core import EntityType
 
@@ -163,7 +164,9 @@ def test_sample_households_and_persons_falls_back_when_weighted_sampling_errors(
     )
 
     assert len(sampled_households) == 2
-    assert set(sampled_persons["household_id"]) == set(sampled_households["household_id"])
+    assert set(sampled_persons["household_id"]) == set(
+        sampled_households["household_id"]
+    )
 
 
 def test_sample_households_and_persons_state_floor_preserves_states() -> None:
@@ -191,10 +194,14 @@ def test_sample_households_and_persons_state_floor_preserves_states() -> None:
 
     assert len(sampled_households) == 3
     assert sampled_households["state_fips"].nunique() == 3
-    assert set(sampled_persons["household_id"]) == set(sampled_households["household_id"])
+    assert set(sampled_persons["household_id"]) == set(
+        sampled_households["household_id"]
+    )
 
 
-def test_sample_households_and_persons_state_age_floor_preserves_age_band_coverage() -> None:
+def test_sample_households_and_persons_state_age_floor_preserves_age_band_coverage() -> (
+    None
+):
     households = pd.DataFrame(
         {
             "household_id": ["h1", "h2", "h3", "h4"],
@@ -284,7 +291,9 @@ def test_acs_source_provider_uses_manifest_backed_dataset_loader(
 ) -> None:
     captured: dict[str, object] = {}
 
-    def _fake_loader(*, spec, year, sample_n, random_seed, **_kwargs) -> DonorSurveyTables:
+    def _fake_loader(
+        *, spec, year, sample_n, random_seed, **_kwargs
+    ) -> DonorSurveyTables:
         captured["spec"] = spec
         captured["year"] = year
         captured["sample_n"] = sample_n
@@ -305,6 +314,47 @@ def test_acs_source_provider_uses_manifest_backed_dataset_loader(
     assert captured["year"] == 2022
     assert captured["sample_n"] is None
     assert captured["random_seed"] == 0
+
+
+def test_acs_source_provider_can_load_newer_storage_h5(
+    tmp_path,
+) -> None:
+    storage_dir = tmp_path / "policyengine_us_data" / "storage"
+    storage_dir.mkdir(parents=True)
+    h5_path = storage_dir / "acs_2024.h5"
+    with h5py.File(h5_path, "w") as h5:
+        h5.create_dataset("household_id", data=[1, 2])
+        h5.create_dataset("person_household_id", data=[1, 1, 2])
+        h5.create_dataset("person_id", data=[11, 12, 21])
+        h5.create_dataset("age", data=[45, 12, 68])
+        h5.create_dataset("is_male", data=[True, False, False])
+        h5.create_dataset("is_household_head", data=[True, False, True])
+        h5.create_dataset("state_fips", data=[6, 36])
+        h5.create_dataset(
+            "tenure_type",
+            data=[b"OWNED_WITH_MORTGAGE", b"RENTED"],
+        )
+        h5.create_dataset("employment_income", data=[50_000.0, 0.0, 12_000.0])
+        h5.create_dataset("self_employment_income", data=[5_000.0, 0.0, 0.0])
+        h5.create_dataset("social_security", data=[0.0, 0.0, 20_000.0])
+        h5.create_dataset(
+            "taxable_private_pension_income",
+            data=[0.0, 0.0, 15_000.0],
+        )
+        h5.create_dataset("rent", data=[1_200.0, 0.0, 950.0])
+        h5.create_dataset("real_estate_taxes", data=[3_000.0, 0.0, 0.0])
+        h5.create_dataset("household_weight", data=[100.0, 120.0])
+
+    frame = ACSSourceProvider(
+        year=2024, policyengine_us_data_repo=tmp_path
+    ).load_frame()
+
+    assert frame.source.name == "acs_2024"
+    households = frame.tables[EntityType.HOUSEHOLD]
+    persons = frame.tables[EntityType.PERSON]
+    assert households["household_weight"].tolist() == [100.0, 120.0]
+    assert persons["rent"].tolist() == [1_200.0, 0.0, 950.0]
+    assert persons["tenure"].tolist() == [1, 1, 2]
 
 
 def test_acs_source_provider_forwards_state_age_floor_query_filter() -> None:
@@ -333,7 +383,9 @@ def test_acs_source_provider_forwards_state_age_floor_query_filter() -> None:
 def test_acs_source_provider_deduplicates_households_from_dataset_loader(
     monkeypatch,
 ) -> None:
-    def _fake_loader(*, spec, year, sample_n, random_seed, **_kwargs) -> DonorSurveyTables:
+    def _fake_loader(
+        *, spec, year, sample_n, random_seed, **_kwargs
+    ) -> DonorSurveyTables:
         households = pd.DataFrame(
             {
                 "household_id": [1, 1, 2],
@@ -380,7 +432,9 @@ def test_acs_source_provider_deduplicates_households_from_dataset_loader(
 def test_acs_source_provider_makes_duplicate_person_ids_household_scoped(
     monkeypatch,
 ) -> None:
-    def _fake_loader(*, spec, year, sample_n, random_seed, **_kwargs) -> DonorSurveyTables:
+    def _fake_loader(
+        *, spec, year, sample_n, random_seed, **_kwargs
+    ) -> DonorSurveyTables:
         households = pd.DataFrame(
             {
                 "household_id": [1, 2],
@@ -448,7 +502,9 @@ def test_scf_source_provider_uses_manifest_backed_dataset_loader(
 ) -> None:
     captured: dict[str, object] = {}
 
-    def _fake_loader(*, spec, year, sample_n, random_seed, **_kwargs) -> DonorSurveyTables:
+    def _fake_loader(
+        *, spec, year, sample_n, random_seed, **_kwargs
+    ) -> DonorSurveyTables:
         captured["spec"] = spec
         captured["year"] = year
         captured["sample_n"] = sample_n

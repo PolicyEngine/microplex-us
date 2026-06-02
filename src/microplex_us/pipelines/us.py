@@ -5453,6 +5453,15 @@ class USMicroplexPipeline:
                 household_rows,
             )
 
+        if self.config.puf_support_clone_enabled:
+            cps_candidates = [
+                source
+                for source in candidates
+                if self._is_cps_asec_scaffold_source(source.frame.source.name)
+            ]
+            if cps_candidates:
+                return max(cps_candidates, key=score)
+
         return max(candidates, key=score)
 
     def _household_geography_coverage(

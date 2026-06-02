@@ -7288,6 +7288,135 @@ class TestUSMicroplexPipeline:
         assert result.source_frame.source.name == "cps_like"
         assert result.seed_data["state_fips"].tolist() == [6, 36]
 
+    def test_select_scaffold_prefers_cps_when_puf_support_clone_enabled(self):
+        cps_households = pd.DataFrame(
+            {
+                "household_id": [1, 2],
+                "hh_weight": [100.0, 120.0],
+                "state_fips": [6, 36],
+                "tenure": [1, 2],
+            }
+        )
+        cps_persons = pd.DataFrame(
+            {
+                "person_id": [10, 20],
+                "household_id": [1, 2],
+                "age": [45, 19],
+                "sex": [1, 2],
+                "education": [3, 2],
+                "employment_status": [1, 0],
+                "income": [60_000.0, 12_000.0],
+            }
+        )
+        acs_households = pd.DataFrame(
+            {
+                "household_id": [101, 102, 103],
+                "hh_weight": [90.0, 110.0, 130.0],
+                "state_fips": [6, 36, 48],
+                "tenure": [1, 2, 1],
+                "rent": [1_000.0, 1_500.0, 900.0],
+                "real_estate_taxes": [0.0, 2_000.0, 3_000.0],
+            }
+        )
+        acs_persons = pd.DataFrame(
+            {
+                "person_id": [1001, 1002, 1003],
+                "household_id": [101, 102, 103],
+                "age": [44, 21, 62],
+                "sex": [1, 2, 1],
+                "education": [3, 2, 4],
+                "employment_status": [1, 0, 1],
+                "income": [58_000.0, 13_000.0, 74_000.0],
+                "extra_person_var": [9.0, 8.0, 7.0],
+            }
+        )
+
+        def frame(
+            name: str,
+            households: pd.DataFrame,
+            persons: pd.DataFrame,
+            household_variables: tuple[str, ...],
+            person_variables: tuple[str, ...],
+        ) -> ObservationFrame:
+            return ObservationFrame(
+                source=SourceDescriptor(
+                    name=name,
+                    shareability=Shareability.PUBLIC,
+                    time_structure=TimeStructure.REPEATED_CROSS_SECTION,
+                    observations=(
+                        EntityObservation(
+                            entity=EntityType.HOUSEHOLD,
+                            key_column="household_id",
+                            variable_names=household_variables,
+                            weight_column="hh_weight",
+                        ),
+                        EntityObservation(
+                            entity=EntityType.PERSON,
+                            key_column="person_id",
+                            variable_names=person_variables,
+                        ),
+                    ),
+                ),
+                tables={
+                    EntityType.HOUSEHOLD: households,
+                    EntityType.PERSON: persons,
+                },
+                relationships=(
+                    EntityRelationship(
+                        parent_entity=EntityType.HOUSEHOLD,
+                        child_entity=EntityType.PERSON,
+                        parent_key="household_id",
+                        child_key="household_id",
+                        cardinality=RelationshipCardinality.ONE_TO_MANY,
+                    ),
+                ),
+            )
+
+        cps_frame = frame(
+            "cps_asec_2025",
+            cps_households,
+            cps_persons,
+            ("state_fips", "tenure"),
+            (
+                "household_id",
+                "age",
+                "sex",
+                "education",
+                "employment_status",
+                "income",
+            ),
+        )
+        acs_frame = frame(
+            "acs_2022",
+            acs_households,
+            acs_persons,
+            ("state_fips", "tenure", "rent", "real_estate_taxes"),
+            (
+                "household_id",
+                "age",
+                "sex",
+                "education",
+                "employment_status",
+                "income",
+                "extra_person_var",
+            ),
+        )
+        pipeline = USMicroplexPipeline(
+            USMicroplexBuildConfig(
+                puf_support_clone_enabled=True,
+                synthesis_backend="seed",
+                calibration_backend="entropy",
+            )
+        )
+        source_inputs = [
+            pipeline.prepare_source_input(cps_frame),
+            pipeline.prepare_source_input(acs_frame),
+        ]
+
+        selected = pipeline._select_scaffold_source(source_inputs)
+
+        assert selected.frame.source.name == "cps_asec_2025"
+
     def test_build_from_frames_prefers_scaffold_with_state_program_proxies(self):
         proxy_households = pd.DataFrame(
             {

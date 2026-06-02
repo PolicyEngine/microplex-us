@@ -1981,7 +1981,7 @@ def run_policyengine_us_data_rebuild_checkpoint(
     include_donor_surveys: bool = True,
     include_sipp: bool | None = None,
     include_scf: bool | None = None,
-    acs_year: int = 2022,
+    acs_year: int = 2024,
     sipp_year: int = 2023,
     scf_year: int = 2022,
     donor_cache_dir: str | Path | None = None,
@@ -2264,7 +2264,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--cps-source-year", type=int, default=2023)
     parser.add_argument("--puf-target-year", type=int)
     parser.add_argument("--puf-cps-reference-year", type=int)
-    parser.add_argument("--acs-year", type=int, default=2022)
+    parser.add_argument("--acs-year", type=int, default=2024)
     parser.add_argument("--sipp-year", type=int, default=2023)
     parser.add_argument("--scf-year", type=int, default=2022)
     parser.add_argument("--cps-cache-dir")

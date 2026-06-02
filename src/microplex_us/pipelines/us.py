@@ -285,6 +285,7 @@ PUF_SUPPORT_CLONE_TOP_TAIL_ROUGH_AGI_VARIABLES: tuple[str, ...] = (
     "taxable_interest_income",
     "tax_exempt_interest_income",
     "capital_gains",
+    "long_term_capital_gains_before_response",
     "long_term_capital_gains",
     "short_term_capital_gains",
     "non_sch_d_capital_gains",
@@ -303,6 +304,7 @@ PUF_SUPPORT_CLONE_TOP_TAIL_ROUGH_AGI_VARIABLES: tuple[str, ...] = (
 )
 PUF_SUPPORT_CLONE_TOP_TAIL_SCALE_VARIABLES: tuple[str, ...] = (
     "capital_gains",
+    "long_term_capital_gains_before_response",
     "long_term_capital_gains",
     "short_term_capital_gains",
     "non_sch_d_capital_gains",
@@ -5812,7 +5814,8 @@ class USMicroplexPipeline:
             add(variable)
 
         if not add("capital_gains"):
-            add("long_term_capital_gains")
+            if not add("long_term_capital_gains_before_response"):
+                add("long_term_capital_gains")
             add("short_term_capital_gains")
         add("non_sch_d_capital_gains")
 
@@ -5872,10 +5875,19 @@ class USMicroplexPipeline:
             return clone, summary
 
         integrated_set = set(integrated_variables)
+
+        def is_integrated_or_export_alias(variable: str) -> bool:
+            if variable in integrated_set:
+                return True
+            return (
+                variable == "long_term_capital_gains_before_response"
+                and "long_term_capital_gains" in integrated_set
+            )
+
         scale_variables = [
             variable
             for variable in self.config.puf_support_clone_top_tail_scale_variables
-            if variable in clone.columns and variable in integrated_set
+            if variable in clone.columns and is_integrated_or_export_alias(variable)
         ]
         if not scale_variables:
             summary["max_rough_agi_after"] = summary["max_rough_agi_before"]

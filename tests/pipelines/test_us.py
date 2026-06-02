@@ -4100,6 +4100,50 @@ class TestUSMicroplexPipeline:
         pd.testing.assert_frame_equal(guarded, clone)
         assert summary["affected_rows"] == 0
 
+    def test_puf_support_clone_top_tail_guard_scales_exported_ltcg_alias(self):
+        pipeline = USMicroplexPipeline(
+            USMicroplexBuildConfig(
+                synthesis_backend="seed",
+                puf_support_clone_enabled=True,
+                puf_support_clone_top_tail_rough_agi_cap=78_999_999.0,
+            )
+        )
+        clone = pd.DataFrame(
+            {
+                "employment_income": [100_000.0],
+                "long_term_capital_gains": [70_000_000.0],
+                "long_term_capital_gains_before_response": [95_000_000.0],
+            }
+        )
+
+        guarded, summary = pipeline._apply_puf_support_clone_top_tail_guard(
+            clone,
+            integrated_variables=["long_term_capital_gains"],
+        )
+        rough_agi, rough_agi_variables = pipeline._puf_support_clone_top_tail_rough_agi(
+            guarded
+        )
+
+        assert rough_agi.iloc[0] == pytest.approx(78_999_999.0)
+        assert rough_agi_variables == [
+            "employment_income",
+            "long_term_capital_gains_before_response",
+        ]
+        assert guarded["employment_income"].iloc[0] == pytest.approx(100_000.0)
+        assert (
+            guarded["long_term_capital_gains_before_response"].iloc[0]
+            < clone["long_term_capital_gains_before_response"].iloc[0]
+        )
+        assert (
+            guarded["long_term_capital_gains"].iloc[0]
+            < clone["long_term_capital_gains"].iloc[0]
+        )
+        assert summary["affected_rows"] == 1
+        assert summary["scale_basis_variables"] == [
+            "long_term_capital_gains_before_response"
+        ]
+        assert "long_term_capital_gains_before_response" in summary["scaled_variables"]
+
     def test_puf_support_clone_top_tail_guard_can_be_disabled(self):
         pipeline = USMicroplexPipeline(
             USMicroplexBuildConfig(

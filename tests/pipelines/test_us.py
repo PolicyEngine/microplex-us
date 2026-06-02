@@ -3939,6 +3939,74 @@ class TestUSMicroplexPipeline:
         assert generated_lengths[-1] == (("ssi_reported",), 4)
         assert "ssi_reported" in result.columns
 
+    def test_puf_support_clone_refresh_rematches_cps_only_disability_to_puf_income(
+        self,
+    ):
+        pipeline = USMicroplexPipeline(
+            USMicroplexBuildConfig(
+                synthesis_backend="seed",
+                puf_support_clone_enabled=True,
+            )
+        )
+        original = pd.DataFrame(
+            {
+                "person_id": [1, 2],
+                "household_id": [1, 2],
+                "age": [40, 40],
+                "is_male": [1, 1],
+                "state_fips": [6, 6],
+                "employment_income": [0.0, 100_000.0],
+                "self_employment_income": [0.0, 0.0],
+                "social_security": [0.0, 0.0],
+                "is_disabled": [1, 0],
+                "difficulty_hearing": [1, 0],
+                "meets_ssi_disability_criteria": [1, 0],
+            }
+        )
+        clone = original.copy()
+        clone["employment_income"] = [100_000.0, 0.0]
+
+        refreshed, summary = pipeline._refresh_puf_support_clone_cps_only_fields(
+            original=original,
+            clone=clone,
+            integrated_variables=["employment_income"],
+            preclone_columns=set(original.columns),
+        )
+
+        assert refreshed["is_disabled"].tolist() == [0, 1]
+        assert refreshed["difficulty_hearing"].tolist() == [0, 1]
+        assert refreshed["meets_ssi_disability_criteria"].tolist() == [0, 1]
+        assert "employment_income" in summary["condition_variables"]
+        assert summary["matched_source_row_count"] == 2
+        assert "is_disabled" in summary["refreshed_variables"]
+
+    def test_puf_support_clone_refresh_reconciles_social_security_subcomponents(
+        self,
+    ):
+        pipeline = USMicroplexPipeline(
+            USMicroplexBuildConfig(
+                synthesis_backend="seed",
+                puf_support_clone_enabled=True,
+            )
+        )
+        clone = pd.DataFrame(
+            {
+                "age": [45, 70, 40],
+                "social_security": [12_000.0, 8_000.0, 0.0],
+                "social_security_retirement": [0.0, 2_000.0, 100.0],
+                "social_security_disability": [3_000.0, 0.0, 50.0],
+            }
+        )
+
+        reconciled = pipeline._reconcile_puf_support_clone_social_security(clone)
+
+        assert reconciled == [
+            "social_security_retirement",
+            "social_security_disability",
+        ]
+        assert clone["social_security_disability"].tolist() == [12_000.0, 0.0, 0.0]
+        assert clone["social_security_retirement"].tolist() == [0.0, 8_000.0, 0.0]
+
     def test_integrate_donor_sources_puf_support_clone_validates_scaffold_and_donor(
         self,
     ):

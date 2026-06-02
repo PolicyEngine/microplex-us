@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import json
-import os
-import subprocess
-import tempfile
+from collections.abc import Callable
+from os import PathLike
 from typing import Any, Self
 
 import numpy as np
@@ -17,54 +15,9 @@ from microplex.calibration import (
 )
 from scipy import sparse as sp
 
-_PE_L0_SUBPROCESS_SCRIPT = """
-import json
-import sys
-
-import numpy as np
-from scipy import sparse as sp
-
-REPO_ROOT = sys.argv[1]
-if REPO_ROOT not in sys.path:
-    sys.path.insert(0, REPO_ROOT)
-
-from policyengine_us_data.calibration.unified_calibration import fit_l0_weights
-
-X_sparse = sp.load_npz(sys.argv[2])
-targets = np.load(sys.argv[3])
-initial_weights = np.load(sys.argv[4])
-with open(sys.argv[5]) as handle:
-    target_names = json.load(handle)
-output_path = sys.argv[6]
-lambda_l0 = float(sys.argv[7])
-epochs = int(sys.argv[8])
-device = sys.argv[9]
-verbose_freq = None if sys.argv[10] == "none" else int(sys.argv[10])
-beta = float(sys.argv[11])
-lambda_l2 = float(sys.argv[12])
-learning_rate = float(sys.argv[13])
-achievable = np.asarray(X_sparse.sum(axis=1)).reshape(-1) > 0
-
-weights = fit_l0_weights(
-    X_sparse=X_sparse,
-    targets=targets,
-    lambda_l0=lambda_l0,
-    epochs=epochs,
-    device=device,
-    verbose_freq=verbose_freq,
-    beta=beta,
-    lambda_l2=lambda_l2,
-    learning_rate=learning_rate,
-    target_names=target_names,
-    initial_weights=initial_weights,
-    achievable=achievable,
-)
-np.save(output_path, np.asarray(weights, dtype=float))
-""".strip()
-
 
 class PolicyEngineL0Calibrator:
-    """Wrap PolicyEngine US-data's L0 optimizer behind the Microplex interface."""
+    """Legacy L0 adapter for explicit experiments behind the Microplex interface."""
 
     def __init__(
         self,
@@ -77,8 +30,9 @@ class PolicyEngineL0Calibrator:
         tol: float = 1e-6,
         device: str = "cpu",
         verbose_freq: int | None = None,
-        policyengine_us_data_repo_root: str | os.PathLike[str] | None = None,
-        policyengine_us_data_python: str | os.PathLike[str] | None = None,
+        policyengine_us_data_repo_root: str | PathLike[str] | None = None,
+        policyengine_us_data_python: str | PathLike[str] | None = None,
+        fit_l0_weights_fn: Callable[..., np.ndarray] | None = None,
     ) -> None:
         self.lambda_l0 = float(lambda_l0)
         self.lambda_l2 = float(lambda_l2)
@@ -90,6 +44,7 @@ class PolicyEngineL0Calibrator:
         self.verbose_freq = verbose_freq
         self.policyengine_us_data_repo_root = policyengine_us_data_repo_root
         self.policyengine_us_data_python = policyengine_us_data_python
+        self.fit_l0_weights_fn = fit_l0_weights_fn
 
         self.weights_: np.ndarray | None = None
         self.is_fitted_: bool = False
@@ -111,7 +66,9 @@ class PolicyEngineL0Calibrator:
         marginal_targets: dict[str, dict[str, float]],
         continuous_targets: dict[str, float] | None = None,
         weight_col: str = "weight",
-        linear_constraints: tuple[LinearConstraint, ...] | list[LinearConstraint] | None = None,
+        linear_constraints: tuple[LinearConstraint, ...]
+        | list[LinearConstraint]
+        | None = None,
     ) -> Self:
         self.n_records_ = len(data)
         self.marginal_targets_ = marginal_targets
@@ -192,13 +149,9 @@ class PolicyEngineL0Calibrator:
                 initial_weights=initial_weights,
             )
         self.effective_backend_ = "policyengine_l0"
-        try:
-            from policyengine_us_data.calibration.unified_calibration import (
-                fit_l0_weights,
-            )
-
+        if self.fit_l0_weights_fn is not None:
             achievable = np.asarray(X_sparse.sum(axis=1)).reshape(-1) > 0
-            return fit_l0_weights(
+            return self.fit_l0_weights_fn(
                 X_sparse=X_sparse,
                 targets=targets,
                 lambda_l0=self.lambda_l0,
@@ -212,13 +165,12 @@ class PolicyEngineL0Calibrator:
                 initial_weights=initial_weights,
                 achievable=achievable,
             )
-        except ImportError:
-            return self._fit_weights_via_policyengine_python(
-                X_sparse=X_sparse,
-                targets=targets,
-                initial_weights=initial_weights,
-                target_names=target_names,
-            )
+        raise RuntimeError(
+            "The pe_l0 backend is legacy/experimental and no longer loads "
+            "policyengine-us-data implicitly. Pass an explicit fit_l0_weights_fn "
+            "for an experiment, or use the production entropy/dense calibration "
+            "path for MP eCPS replacement builds."
+        )
 
     def _fit_dense_no_l0_weights(
         self,
@@ -300,87 +252,6 @@ class PolicyEngineL0Calibrator:
         self.n_iterations_ = completed_iter
         return weights
 
-    def _fit_weights_via_policyengine_python(
-        self,
-        *,
-        X_sparse,
-        targets: np.ndarray,
-        initial_weights: np.ndarray,
-        target_names: list[str],
-    ) -> np.ndarray:
-        from microplex_us.pipelines.pe_native_scores import (
-            build_policyengine_us_data_pythonpath,
-            resolve_policyengine_us_data_python,
-            resolve_policyengine_us_data_repo_root,
-        )
-
-        repo_root = resolve_policyengine_us_data_repo_root(
-            self.policyengine_us_data_repo_root
-        )
-        python_path = resolve_policyengine_us_data_python(
-            self.policyengine_us_data_python,
-            repo_root=repo_root,
-        )
-        env = {
-            key: value
-            for key, value in os.environ.items()
-            if key in {"HOME", "PATH", "TMPDIR", "LANG", "LC_ALL", "TZ"}
-        }
-        env["PYTHONPATH"] = build_policyengine_us_data_pythonpath(
-            repo_root,
-            existing_pythonpath=os.environ.get("PYTHONPATH"),
-        )
-
-        with tempfile.TemporaryDirectory(prefix="microplex-pe-l0-") as tmpdir:
-            matrix_path = os.path.join(tmpdir, "constraints.npz")
-            targets_path = os.path.join(tmpdir, "targets.npy")
-            initial_path = os.path.join(tmpdir, "initial_weights.npy")
-            names_path = os.path.join(tmpdir, "target_names.json")
-            output_path = os.path.join(tmpdir, "weights.npy")
-            sp.save_npz(matrix_path, X_sparse)
-            np.save(targets_path, targets)
-            np.save(initial_path, initial_weights)
-            with open(names_path, "w") as handle:
-                json.dump(target_names, handle)
-
-            verbose_freq = "none" if self.verbose_freq is None else str(self.verbose_freq)
-            try:
-                completed = subprocess.run(
-                    [
-                        str(python_path),
-                        "-c",
-                        _PE_L0_SUBPROCESS_SCRIPT,
-                        str(repo_root),
-                        matrix_path,
-                        targets_path,
-                        initial_path,
-                        names_path,
-                        output_path,
-                        str(self.lambda_l0),
-                        str(self.epochs),
-                        self.device,
-                        verbose_freq,
-                        str(self.beta),
-                        str(self.lambda_l2),
-                        str(self.learning_rate),
-                    ],
-                    check=True,
-                    capture_output=True,
-                    text=True,
-                    env=env,
-                )
-            except subprocess.CalledProcessError as exc:
-                stderr = (exc.stderr or "").strip()
-                stdout = (exc.stdout or "").strip()
-                detail = stderr or stdout or str(exc)
-                raise RuntimeError(
-                    "PolicyEngine L0 subprocess calibration failed. "
-                    f"Detail: {detail}"
-                ) from exc
-            if completed.stderr:
-                print(completed.stderr, end="")
-            return np.load(output_path)
-
     def transform(
         self,
         data: pd.DataFrame,
@@ -402,7 +273,9 @@ class PolicyEngineL0Calibrator:
         marginal_targets: dict[str, dict[str, float]],
         continuous_targets: dict[str, float] | None = None,
         weight_col: str = "weight",
-        linear_constraints: tuple[LinearConstraint, ...] | list[LinearConstraint] | None = None,
+        linear_constraints: tuple[LinearConstraint, ...]
+        | list[LinearConstraint]
+        | None = None,
     ) -> pd.DataFrame:
         self.fit(
             data,

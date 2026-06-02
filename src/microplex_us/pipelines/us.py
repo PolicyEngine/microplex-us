@@ -201,6 +201,59 @@ DEFAULT_EARLY_HEAD_START_TAKEUP_RATE = 0.09
 DEFAULT_EITC_TAKEUP_RATES_BY_CHILDREN = {0: 0.65, 1: 0.86, 2: 0.85, 3: 0.85}
 DEFAULT_HEAD_START_TAKEUP_RATE = 0.30
 DEFAULT_MEDICAID_TAKEUP_RATE = 0.93
+DEFAULT_MEDICAID_TAKEUP_RATES_BY_STATE = {
+    "AK": 0.88,
+    "AL": 0.92,
+    "AR": 0.79,
+    "AZ": 0.95,
+    "CA": 0.78,
+    "CO": 0.99,
+    "CT": 0.89,
+    "DC": 0.99,
+    "DE": 0.86,
+    "FL": 0.98,
+    "GA": 0.73,
+    "HI": 0.88,
+    "IA": 0.84,
+    "ID": 0.78,
+    "IL": 0.85,
+    "IN": 0.99,
+    "KS": 0.92,
+    "KY": 0.87,
+    "LA": 0.79,
+    "MA": 0.94,
+    "MD": 0.95,
+    "ME": 0.92,
+    "MI": 0.91,
+    "MN": 0.89,
+    "MO": 0.89,
+    "MS": 0.75,
+    "MT": 0.83,
+    "NC": 0.94,
+    "ND": 0.91,
+    "NE": 0.79,
+    "NH": 0.84,
+    "NJ": 0.74,
+    "NM": 0.84,
+    "NV": 0.93,
+    "NY": 0.86,
+    "OH": 0.82,
+    "OK": 0.77,
+    "OR": 0.92,
+    "PA": 0.64,
+    "RI": 0.94,
+    "SC": 0.93,
+    "SD": 0.88,
+    "TN": 0.92,
+    "TX": 0.76,
+    "UT": 0.53,
+    "VA": 0.82,
+    "VT": 0.93,
+    "WA": 0.98,
+    "WI": 0.91,
+    "WV": 0.83,
+    "WY": 0.70,
+}
 DEFAULT_SNAP_TAKEUP_RATE = 0.82
 DEFAULT_TANF_TAKEUP_RATE = 0.22
 DEFAULT_VOLUNTARY_FILING_RATE = 0.05
@@ -218,13 +271,35 @@ DEFAULT_VOLUNTARY_FILING_RATES = {
         "high": {"under_65": 0.025, "age_65_plus": 0.0037},
     },
 }
+WIC_TAKEUP_CATEGORY_PREGNANT = "PREGNANT"
+WIC_TAKEUP_CATEGORY_POSTPARTUM = "POSTPARTUM"
+WIC_TAKEUP_CATEGORY_BREASTFEEDING = "BREASTFEEDING"
+WIC_TAKEUP_CATEGORY_INFANT = "INFANT"
+WIC_TAKEUP_CATEGORY_CHILD = "CHILD"
+WIC_TAKEUP_CATEGORY_NONE = "NONE"
+DEFAULT_WIC_TAKEUP_RATES = {
+    WIC_TAKEUP_CATEGORY_PREGNANT: 0.456,
+    WIC_TAKEUP_CATEGORY_POSTPARTUM: 0.689,
+    WIC_TAKEUP_CATEGORY_BREASTFEEDING: 0.663,
+    WIC_TAKEUP_CATEGORY_INFANT: 0.784,
+    WIC_TAKEUP_CATEGORY_CHILD: 0.460,
+    WIC_TAKEUP_CATEGORY_NONE: 0.0,
+}
+DEFAULT_WIC_NUTRITIONAL_RISK_RATES = {
+    WIC_TAKEUP_CATEGORY_PREGNANT: 0.913,
+    WIC_TAKEUP_CATEGORY_POSTPARTUM: 0.933,
+    WIC_TAKEUP_CATEGORY_BREASTFEEDING: 0.889,
+    WIC_TAKEUP_CATEGORY_INFANT: 0.950,
+    WIC_TAKEUP_CATEGORY_CHILD: 0.752,
+    WIC_TAKEUP_CATEGORY_NONE: 0.0,
+}
 EITC_TAKEUP_CHILD_COUNT_HELPER_COLUMN = "_mp_eitc_child_count_for_takeup"
 VOLUNTARY_FILING_AGE_HEAD_HELPER_COLUMN = "_mp_voluntary_filing_age_head"
 VOLUNTARY_FILING_WAGE_INCOME_HELPER_COLUMN = "_mp_voluntary_filing_wage_income"
 
 
 def _stable_string_hash(value: str) -> np.uint64:
-    """Deterministic string hash matching policyengine-us-data's RNG helper."""
+    """Deterministic string hash for reproducible MP stochastic inputs."""
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", "overflow encountered", RuntimeWarning)
         hashed = np.uint64(0)
@@ -236,7 +311,7 @@ def _stable_string_hash(value: str) -> np.uint64:
     return hashed
 
 
-def _policyengine_us_data_seeded_rng(
+def _microplex_seeded_rng(
     variable_name: str,
     *,
     salt: str | None = None,
@@ -246,75 +321,54 @@ def _policyengine_us_data_seeded_rng(
     return np.random.default_rng(seed=seed)
 
 
-def _load_policyengine_us_data_takeup_rate(variable_name: str, year: int) -> float:
-    """Load an eCPS take-up rate, with scalar fallbacks for non-PE-data envs."""
-    try:
-        from policyengine_us_data.parameters import load_take_up_rate
-    except ImportError:
-        if variable_name == "aca":
-            return DEFAULT_ACA_TAKEUP_RATE
-        if variable_name == "dc_ptc":
-            return DEFAULT_DC_PTC_TAKEUP_RATE
-        if variable_name == "early_head_start":
-            return DEFAULT_EARLY_HEAD_START_TAKEUP_RATE
-        if variable_name == "head_start":
-            return DEFAULT_HEAD_START_TAKEUP_RATE
-        if variable_name == "snap":
-            return DEFAULT_SNAP_TAKEUP_RATE
-        if variable_name == "tanf":
-            return DEFAULT_TANF_TAKEUP_RATE
-        raise
-    rate = load_take_up_rate(variable_name, year)
-    if isinstance(rate, dict):
-        raise TypeError(f"Expected scalar take-up rate for {variable_name!r}, got dict")
-    return float(rate)
+def _load_microplex_takeup_rate(variable_name: str, year: int) -> float:
+    """Load MP-owned scalar take-up assumptions for PE dataset inputs."""
+    if variable_name == "aca":
+        return DEFAULT_ACA_TAKEUP_RATE
+    if variable_name == "dc_ptc":
+        return DEFAULT_DC_PTC_TAKEUP_RATE
+    if variable_name == "early_head_start":
+        return DEFAULT_EARLY_HEAD_START_TAKEUP_RATE
+    if variable_name == "head_start":
+        return 0.40 if year <= 2020 else DEFAULT_HEAD_START_TAKEUP_RATE
+    if variable_name == "snap":
+        return DEFAULT_SNAP_TAKEUP_RATE
+    if variable_name == "tanf":
+        return DEFAULT_TANF_TAKEUP_RATE
+    raise KeyError(f"Unknown Microplex take-up rate: {variable_name!r}")
 
 
-def _load_policyengine_us_data_medicaid_takeup_rates(year: int) -> dict[str, float]:
-    """Load eCPS Medicaid take-up rates by state abbreviation."""
-    try:
-        from policyengine_us_data.parameters import load_take_up_rate
-    except ImportError:
-        return {
-            state_abbr: DEFAULT_MEDICAID_TAKEUP_RATE
-            for state_abbr in STATE_FIPS.values()
-        }
-    rates = load_take_up_rate("medicaid", year)
-    if not isinstance(rates, dict):
-        raise TypeError(f"Expected dict take-up rate for 'medicaid', got {type(rates)}")
-    return {str(state): float(rate) for state, rate in rates.items()}
+def _load_microplex_medicaid_takeup_rates(year: int) -> dict[str, float]:
+    """Load MP-owned Medicaid take-up rates by state abbreviation."""
+    _ = year
+    return dict(DEFAULT_MEDICAID_TAKEUP_RATES_BY_STATE)
 
 
-def _load_policyengine_us_data_eitc_takeup_rates(year: int) -> dict[int, float]:
-    """Load eCPS EITC take-up rates by capped qualifying-child count."""
-    try:
-        from policyengine_us_data.parameters import load_take_up_rate
-    except ImportError:
-        return dict(DEFAULT_EITC_TAKEUP_RATES_BY_CHILDREN)
-    rates = load_take_up_rate("eitc", year)
-    if not isinstance(rates, dict):
-        raise TypeError(f"Expected dict take-up rate for 'eitc', got {type(rates)}")
-    return {int(children): float(rate) for children, rate in rates.items()}
+def _load_microplex_eitc_takeup_rates(year: int) -> dict[int, float]:
+    """Load MP-owned EITC take-up rates by capped qualifying-child count."""
+    _ = year
+    return dict(DEFAULT_EITC_TAKEUP_RATES_BY_CHILDREN)
 
 
-def _load_policyengine_us_data_voluntary_filing_rates(year: int) -> dict:
-    """Load current eCPS voluntary-filing rate table."""
-    try:
-        from policyengine_us_data.parameters import load_take_up_rate
-    except ImportError:
-        return DEFAULT_VOLUNTARY_FILING_RATES
-    rates = load_take_up_rate("voluntary_filing", year)
-    if not isinstance(rates, dict):
-        # Older PE-US-data used a scalar voluntary filing rate.
-        scalar_rate = float(rates)
-        return {
-            children: {
-                wage: {age: scalar_rate for age in ("under_65", "age_65_plus")}
-                for wage in ("zero", "low", "medium", "high")
-            }
-            for children in ("no_children", "with_children")
-        }
-    return rates
+def _load_microplex_voluntary_filing_rates(year: int) -> dict:
+    """Load MP-owned voluntary filing rate table."""
+    _ = year
+    return {
+        children: {wage: dict(age_rates) for wage, age_rates in wage_rates.items()}
+        for children, wage_rates in DEFAULT_VOLUNTARY_FILING_RATES.items()
+    }
+
+
+def _load_microplex_wic_takeup_rates(year: int) -> dict[str, float]:
+    """Load MP-owned WIC take-up rates by demographic category."""
+    _ = year
+    return dict(DEFAULT_WIC_TAKEUP_RATES)
+
+
+def _load_microplex_wic_nutritional_risk_rates(year: int) -> dict[str, float]:
+    """Load MP-owned WIC nutritional-risk rates by demographic category."""
+    _ = year
+    return dict(DEFAULT_WIC_NUTRITIONAL_RISK_RATES)
 
 
 PUF_SUPPORT_CLONE_OVERRIDDEN_VARIABLES: tuple[str, ...] = (
@@ -4836,6 +4890,7 @@ class USMicroplexPipeline:
         tax_units = self._attach_policyengine_tax_unit_takeup_inputs(tax_units)
         persons = self._construct_aotc_eligibility_inputs(persons)
         persons = self._assign_family_and_spm_units(persons)
+        persons = self._attach_policyengine_wic_inputs(persons)
         families = self._collapse_group_table(persons, "family_id")
         spm_units = self._collapse_group_table(persons, "spm_unit_id")
         spm_units = self._attach_spm_unit_source_columns(persons, spm_units)
@@ -8590,8 +8645,8 @@ class USMicroplexPipeline:
             or self.config.policyengine_target_period
             or 2024
         )
-        rate = _load_policyengine_us_data_takeup_rate("aca", year)
-        rng = _policyengine_us_data_seeded_rng(column)
+        rate = _load_microplex_takeup_rate("aca", year)
+        rng = _microplex_seeded_rng(column)
         result[column] = rng.random(len(result)) < rate
         return result
 
@@ -8624,8 +8679,8 @@ class USMicroplexPipeline:
             return result
 
         year = self._policyengine_takeup_year()
-        rate = _load_policyengine_us_data_takeup_rate(rate_key, year)
-        rng = _policyengine_us_data_seeded_rng(column)
+        rate = _load_microplex_takeup_rate(rate_key, year)
+        rng = _microplex_seeded_rng(column)
         result[column] = rng.random(len(result)) < rate
         return result
 
@@ -8642,7 +8697,7 @@ class USMicroplexPipeline:
             return result
 
         year = self._policyengine_takeup_year()
-        rates = _load_policyengine_us_data_eitc_takeup_rates(year)
+        rates = _load_microplex_eitc_takeup_rates(year)
         child_count_column = (
             EITC_TAKEUP_CHILD_COUNT_HELPER_COLUMN
             if EITC_TAKEUP_CHILD_COUNT_HELPER_COLUMN in result.columns
@@ -8660,7 +8715,7 @@ class USMicroplexPipeline:
             .astype(int)
         )
         takeup_rate = dependent_count.map(lambda count: rates.get(int(count), 0.85))
-        rng = _policyengine_us_data_seeded_rng(column)
+        rng = _microplex_seeded_rng(column)
         result[column] = rng.random(len(result)) < takeup_rate.to_numpy(dtype=float)
         return result
 
@@ -8684,7 +8739,7 @@ class USMicroplexPipeline:
             )
 
         year = self._policyengine_takeup_year()
-        rates = _load_policyengine_us_data_voluntary_filing_rates(year)
+        rates = _load_microplex_voluntary_filing_rates(year)
         takes_up_eitc = self._normal_bool_series(
             result.get("takes_up_eitc", False),
             index=result.index,
@@ -8710,7 +8765,7 @@ class USMicroplexPipeline:
             wage_income=wage_income,
             age_head=age_head,
         )
-        rng = _policyengine_us_data_seeded_rng(column)
+        rng = _microplex_seeded_rng(column)
         result[column] = (~takes_up_eitc.to_numpy(dtype=bool)) & (
             rng.random(len(result)) < takeup_rate.to_numpy(dtype=float)
         )
@@ -8802,8 +8857,8 @@ class USMicroplexPipeline:
             return result
 
         year = self._policyengine_takeup_year()
-        rate = _load_policyengine_us_data_takeup_rate(rate_key, year)
-        rng = _policyengine_us_data_seeded_rng(column)
+        rate = _load_microplex_takeup_rate(rate_key, year)
+        rng = _microplex_seeded_rng(column)
         result[column] = rng.random(len(result)) < rate
         return result
 
@@ -8820,14 +8875,137 @@ class USMicroplexPipeline:
             return result
 
         year = self._policyengine_takeup_year()
-        rates = _load_policyengine_us_data_medicaid_takeup_rates(year)
+        rates = _load_microplex_medicaid_takeup_rates(year)
         states = self._person_state_abbreviation(result)
         takeup_rate = states.map(
             lambda state: rates.get(state, DEFAULT_MEDICAID_TAKEUP_RATE)
         )
-        rng = _policyengine_us_data_seeded_rng(column)
+        rng = _microplex_seeded_rng(column)
         result[column] = rng.random(len(result)) < takeup_rate.to_numpy(dtype=float)
         return result
+
+    def _attach_policyengine_wic_inputs(
+        self,
+        persons: pd.DataFrame,
+    ) -> pd.DataFrame:
+        result = persons.copy()
+        category = self._policyengine_wic_category_for_takeup(result)
+        year = self._policyengine_takeup_year()
+
+        claim_column = "would_claim_wic"
+        if claim_column in result.columns:
+            result[claim_column] = self._normal_bool_series(
+                result[claim_column],
+                index=result.index,
+            )
+        else:
+            claim_rates = _load_microplex_wic_takeup_rates(year)
+            claim_rate = category.map(
+                lambda value: claim_rates.get(str(value), 0.0)
+            ).fillna(0.0)
+            rng = _microplex_seeded_rng(claim_column)
+            result[claim_column] = rng.random(len(result)) < claim_rate.to_numpy(
+                dtype=float
+            )
+
+        risk_column = "is_wic_at_nutritional_risk"
+        if risk_column in result.columns:
+            result[risk_column] = self._normal_bool_series(
+                result[risk_column],
+                index=result.index,
+            )
+        else:
+            risk_rates = _load_microplex_wic_nutritional_risk_rates(year)
+            risk_rate = category.map(
+                lambda value: risk_rates.get(str(value), 0.0)
+            ).fillna(0.0)
+            receives_wic = self._normal_bool_series(
+                result.get("receives_wic", False),
+                index=result.index,
+            )
+            rng = _microplex_seeded_rng(risk_column)
+            result[risk_column] = receives_wic | (
+                rng.random(len(result)) < risk_rate.to_numpy(dtype=float)
+            )
+        return result
+
+    def _policyengine_wic_category_for_takeup(
+        self,
+        persons: pd.DataFrame,
+    ) -> pd.Series:
+        index = persons.index
+        age = pd.to_numeric(
+            persons.get("age", pd.Series(0.0, index=index)),
+            errors="coerce",
+        ).fillna(0.0)
+        pregnant = self._normal_bool_series(
+            persons.get("is_pregnant", False),
+            index=index,
+        )
+        breastfeeding = self._normal_bool_series(
+            persons.get("is_breastfeeding", False),
+            index=index,
+        )
+        if "is_female" in persons.columns:
+            female = self._normal_bool_series(persons["is_female"], index=index)
+        elif "sex" in persons.columns:
+            female = (
+                pd.to_numeric(persons["sex"], errors="coerce")
+                .fillna(0)
+                .astype(int)
+                .eq(2)
+            )
+        else:
+            female = pd.Series(False, index=index)
+
+        own_children = pd.to_numeric(
+            persons.get("own_children_in_household", pd.Series(0, index=index)),
+            errors="coerce",
+        ).fillna(0.0)
+        mother = breastfeeding | (female & own_children.gt(0))
+
+        group_column = next(
+            (
+                column
+                for column in ("family_id", "spm_unit_id", "household_id")
+                if column in persons.columns
+            ),
+            None,
+        )
+        if group_column is None:
+            min_age_group = age
+        else:
+            group_keys = persons[group_column].where(
+                persons[group_column].notna(),
+                pd.Series(np.arange(len(persons)), index=index),
+            )
+            min_age_group = age.groupby(group_keys, sort=False).transform("min")
+
+        category = np.select(
+            [
+                pregnant.to_numpy(dtype=bool),
+                (
+                    mother.to_numpy(dtype=bool)
+                    & breastfeeding.to_numpy(dtype=bool)
+                    & min_age_group.lt(1.0).to_numpy(dtype=bool)
+                ),
+                (
+                    mother.to_numpy(dtype=bool)
+                    & min_age_group.lt(0.5).to_numpy(dtype=bool)
+                ),
+                age.lt(1.0).to_numpy(dtype=bool),
+                age.lt(5.0).to_numpy(dtype=bool),
+            ],
+            [
+                WIC_TAKEUP_CATEGORY_PREGNANT,
+                WIC_TAKEUP_CATEGORY_BREASTFEEDING,
+                WIC_TAKEUP_CATEGORY_POSTPARTUM,
+                WIC_TAKEUP_CATEGORY_INFANT,
+                WIC_TAKEUP_CATEGORY_CHILD,
+            ],
+            default=WIC_TAKEUP_CATEGORY_NONE,
+        )
+        return pd.Series(category, index=index, dtype="string")
 
     def _person_state_abbreviation(self, persons: pd.DataFrame) -> pd.Series:
         if "state" in persons.columns:
@@ -8867,8 +9045,8 @@ class USMicroplexPipeline:
             return result
 
         year = self._policyengine_takeup_year()
-        rate = _load_policyengine_us_data_takeup_rate("tanf", year)
-        rng = _policyengine_us_data_seeded_rng(column)
+        rate = _load_microplex_takeup_rate("tanf", year)
+        rng = _microplex_seeded_rng(column)
         result[column] = rng.random(len(result)) < rate
         return result
 
@@ -9540,8 +9718,8 @@ class USMicroplexPipeline:
             or self.config.policyengine_target_period
             or 2024
         )
-        rate = _load_policyengine_us_data_takeup_rate("snap", year)
-        rng = _policyengine_us_data_seeded_rng(column)
+        rate = _load_microplex_takeup_rate("snap", year)
+        rng = _microplex_seeded_rng(column)
         result[column] = rng.random(len(result)) < rate
         return result
 

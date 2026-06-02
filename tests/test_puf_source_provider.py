@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import pickle
 import sys
 import types
-from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -1108,7 +1106,7 @@ def test_map_puf_variables_can_require_pre_tax_contribution_model(monkeypatch):
         )
 
 
-def test_map_puf_variables_can_impute_pre_tax_contributions_via_policyengine_subprocess(
+def test_map_puf_variables_uses_microplex_cps_pre_tax_training_when_legacy_h5_missing(
     monkeypatch, tmp_path
 ):
     raw = pd.DataFrame(
@@ -1122,42 +1120,37 @@ def test_map_puf_variables_can_impute_pre_tax_contributions_via_policyengine_sub
             "GENDER": [1],
         }
     )
-    calls: dict[str, object] = {}
-
-    def _resolve_repo(_repo):
-        return tmp_path
-
-    def _resolve_python(_python, *, repo_root):
-        assert repo_root == tmp_path
-        return Path("/fake/python")
-
-    def _build_env(repo_root):
-        assert repo_root == tmp_path
-        return {"PE_ENV": "1"}
-
-    def _run(args, *, check, cwd, env):
-        calls["args"] = list(args)
-        calls["cwd"] = cwd
-        calls["env"] = dict(env)
-        assert check is True
-        out_path = Path(args[-1])
-        with out_path.open("wb") as handle:
-            pickle.dump(pd.DataFrame({"pre_tax_contributions": [4321.0]}), handle)
-
-    monkeypatch.setattr(
-        puf_module, "resolve_policyengine_us_data_repo_root", _resolve_repo
+    qrf_calls = _install_fake_qrf(
+        monkeypatch,
+        pd.DataFrame({"pre_tax_contributions": [4321.0]}),
     )
-    monkeypatch.setattr(
-        puf_module, "resolve_policyengine_us_data_python", _resolve_python
-    )
-    monkeypatch.setattr(
-        puf_module, "build_policyengine_us_data_subprocess_env", _build_env
-    )
-    monkeypatch.setattr(puf_module.subprocess, "run", _run)
+    h5_calls: list[dict[str, object]] = []
+    local_calls: list[int] = []
+
+    def missing_h5(**kwargs):
+        h5_calls.append(dict(kwargs))
+        raise FileNotFoundError("missing h5")
+
+    def local_training_frame(*, training_year: int):
+        local_calls.append(training_year)
+        return pd.DataFrame(
+            {
+                "employment_income": [10_000.0, 20_000.0],
+                "age": [30.0, 45.0],
+                "is_male": [0.0, 1.0],
+                "pre_tax_contributions": [500.0, 1_500.0],
+            }
+        )
+
     monkeypatch.setattr(
         puf_module,
         "_load_pe_extended_cps_pre_tax_training_frame",
-        lambda **_kwargs: (_ for _ in ()).throw(FileNotFoundError("missing h5")),
+        missing_h5,
+    )
+    monkeypatch.setattr(
+        puf_module,
+        "_load_microplex_cps_pre_tax_training_frame",
+        local_training_frame,
     )
 
     mapped = map_puf_variables(
@@ -1169,8 +1162,10 @@ def test_map_puf_variables_can_impute_pre_tax_contributions_via_policyengine_sub
     )
 
     assert mapped.loc[0, "pre_tax_contributions"] == 4321.0
-    assert calls["cwd"] == tmp_path
-    assert calls["env"] == {"PE_ENV": "1"}
+    assert h5_calls == [{"policyengine_us_data_repo": tmp_path, "training_year": 2024}]
+    assert local_calls == [2024]
+    assert qrf_calls["predictors"] == ("employment_income", "age", "is_male")
+    assert qrf_calls["imputed_variables"] == ("pre_tax_contributions",)
 
 
 def test_map_puf_variables_maps_widow_status_to_surviving_spouse():

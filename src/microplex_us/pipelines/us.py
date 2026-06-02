@@ -10208,6 +10208,12 @@ class USMicroplexPipeline:
             else:
                 result["is_hispanic"] = hispanic.fillna(0).astype(int).ne(0)
 
+        if has_any("pre_subsidy_rent", "rent"):
+            result["pre_subsidy_rent"] = first_nonzero_or_present(
+                "pre_subsidy_rent",
+                "rent",
+            ).clip(lower=0.0)
+
         marital_status = (
             pd.to_numeric(result["marital_status"], errors="coerce")
             if "marital_status" in result.columns

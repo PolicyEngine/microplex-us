@@ -4790,6 +4790,27 @@ class TestUSMicroplexPipeline:
 
         assert augmented["non_sch_d_capital_gains"].tolist() == [250.0]
 
+    def test_augment_policyengine_person_inputs_aliases_rent_to_pre_subsidy_rent(
+        self,
+    ):
+        pipeline = USMicroplexPipeline(USMicroplexBuildConfig())
+        persons = pd.DataFrame(
+            {
+                "rent": [14_400.0, 0.0, 9_600.0],
+                "pre_subsidy_rent": [0.0, 7_200.0, None],
+                "age": [45, 70, 12],
+                "sex": [1, 2, 1],
+            }
+        )
+
+        augmented = pipeline._augment_policyengine_person_inputs(persons)
+
+        assert augmented["pre_subsidy_rent"].tolist() == [
+            14_400.0,
+            7_200.0,
+            9_600.0,
+        ]
+
     def test_augment_policyengine_person_inputs_zeros_part_b_without_medicare(
         self,
     ):

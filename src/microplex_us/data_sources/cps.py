@@ -38,7 +38,7 @@ from microplex_us.source_registry import resolve_source_variable_capabilities
 
 # Default cache directory
 DEFAULT_CACHE_DIR = Path.home() / ".cache" / "microplex"
-CPS_ASEC_PROCESSED_CACHE_VERSION = "20260601_ecps_age80_84"
+CPS_ASEC_PROCESSED_CACHE_VERSION = "20260602_childcare_input"
 
 # CPS ASEC data URLs by year
 CPS_URLS = {
@@ -244,6 +244,7 @@ PERSON_CACHE_REQUIRED_COLUMNS = (
     "social_security_survivors",
     "social_security_dependents",
     "receives_wic",
+    "spm_unit_pre_subsidy_childcare_expenses",
 )
 
 PERSON_CPS_DISABILITY_COLUMNS = (

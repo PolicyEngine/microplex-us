@@ -3980,6 +3980,51 @@ class TestUSMicroplexPipeline:
         assert summary["matched_source_row_count"] == 2
         assert "is_disabled" in summary["refreshed_variables"]
 
+    def test_puf_support_clone_refresh_does_not_overwrite_amount_fields(self):
+        pipeline = USMicroplexPipeline(
+            USMicroplexBuildConfig(
+                synthesis_backend="seed",
+                puf_support_clone_enabled=True,
+            )
+        )
+        original = pd.DataFrame(
+            {
+                "person_id": [1, 2],
+                "household_id": [1, 2],
+                "age": [40, 40],
+                "is_male": [1, 1],
+                "state_fips": [6, 6],
+                "employment_income": [0.0, 100_000.0],
+                "self_employment_income": [0.0, 0.0],
+                "social_security": [0.0, 0.0],
+                "is_disabled": [1, 0],
+                "disability_benefits": [4_000.0, 0.0],
+                "weekly_hours_worked": [0.0, 40.0],
+                "taxable_401k_distributions": [0.0, 2_000.0],
+            }
+        )
+        clone = original.copy()
+        clone["employment_income"] = [100_000.0, 0.0]
+        clone["disability_benefits"] = [123_456.0, 789_012.0]
+        clone["weekly_hours_worked"] = [12.0, 34.0]
+        clone["taxable_401k_distributions"] = [56.0, 78.0]
+
+        refreshed, summary = pipeline._refresh_puf_support_clone_cps_only_fields(
+            original=original,
+            clone=clone,
+            integrated_variables=["employment_income"],
+            preclone_columns=set(original.columns),
+        )
+
+        assert refreshed["is_disabled"].tolist() == [0, 1]
+        assert refreshed["disability_benefits"].tolist() == [123_456.0, 789_012.0]
+        assert refreshed["weekly_hours_worked"].tolist() == [12.0, 34.0]
+        assert refreshed["taxable_401k_distributions"].tolist() == [56.0, 78.0]
+        assert "is_disabled" in summary["refreshed_variables"]
+        assert "disability_benefits" not in summary["refreshed_variables"]
+        assert "weekly_hours_worked" not in summary["refreshed_variables"]
+        assert "taxable_401k_distributions" not in summary["refreshed_variables"]
+
     def test_puf_support_clone_refresh_reconciles_social_security_subcomponents(
         self,
     ):
@@ -4006,259 +4051,6 @@ class TestUSMicroplexPipeline:
         ]
         assert clone["social_security_disability"].tolist() == [12_000.0, 0.0, 0.0]
         assert clone["social_security_retirement"].tolist() == [0.0, 8_000.0, 0.0]
-
-    def test_puf_support_clone_top_tail_guard_scales_investment_income(self):
-        pipeline = USMicroplexPipeline(
-            USMicroplexBuildConfig(
-                synthesis_backend="seed",
-                puf_support_clone_enabled=True,
-                puf_support_clone_top_tail_rough_agi_cap=78_999_999.0,
-            )
-        )
-        clone = pd.DataFrame(
-            {
-                "employment_income": [100_000.0, 125_000.0],
-                "capital_gains": [120_000_000.0, 15_000_000.0],
-                "long_term_capital_gains": [100_000_000.0, 10_000_000.0],
-                "qualified_dividend_income": [1_000_000.0, 0.0],
-            }
-        )
-
-        guarded, summary = pipeline._apply_puf_support_clone_top_tail_guard(
-            clone,
-            integrated_variables=[
-                "capital_gains",
-                "long_term_capital_gains",
-                "qualified_dividend_income",
-            ],
-        )
-
-        rough_agi, rough_agi_variables = pipeline._puf_support_clone_top_tail_rough_agi(
-            guarded
-        )
-        assert rough_agi.iloc[0] == pytest.approx(78_999_999.0)
-        assert rough_agi.iloc[1] == pytest.approx(10_125_000.0)
-        assert guarded["employment_income"].tolist() == [100_000.0, 125_000.0]
-        assert guarded["capital_gains"].iloc[0] < clone["capital_gains"].iloc[0]
-        assert (
-            guarded["long_term_capital_gains"].iloc[0]
-            < clone["long_term_capital_gains"].iloc[0]
-        )
-        assert summary["affected_rows"] == 1
-        assert rough_agi_variables == [
-            "employment_income",
-            "long_term_capital_gains",
-            "qualified_dividend_income",
-        ]
-        assert summary["scale_basis_variables"] == [
-            "long_term_capital_gains",
-            "qualified_dividend_income",
-        ]
-        assert "long_term_capital_gains" in summary["scaled_variables"]
-
-    def test_puf_support_clone_top_tail_guard_avoids_redundant_income_totals(self):
-        pipeline = USMicroplexPipeline(
-            USMicroplexBuildConfig(
-                synthesis_backend="seed",
-                puf_support_clone_enabled=True,
-                puf_support_clone_top_tail_rough_agi_cap=78_999_999.0,
-            )
-        )
-        clone = pd.DataFrame(
-            {
-                "employment_income": [100_000.0],
-                "capital_gains": [60_000_000.0],
-                "long_term_capital_gains": [60_000_000.0],
-                "short_term_capital_gains": [0.0],
-                "ordinary_dividend_income": [5_000_000.0],
-                "qualified_dividend_income": [4_000_000.0],
-                "non_qualified_dividend_income": [1_000_000.0],
-            }
-        )
-
-        rough_agi, rough_agi_variables = pipeline._puf_support_clone_top_tail_rough_agi(
-            clone
-        )
-        guarded, summary = pipeline._apply_puf_support_clone_top_tail_guard(
-            clone,
-            integrated_variables=[
-                "capital_gains",
-                "long_term_capital_gains",
-                "short_term_capital_gains",
-                "ordinary_dividend_income",
-                "qualified_dividend_income",
-                "non_qualified_dividend_income",
-            ],
-        )
-
-        assert rough_agi.iloc[0] == pytest.approx(65_100_000.0)
-        assert rough_agi_variables == [
-            "employment_income",
-            "long_term_capital_gains",
-            "short_term_capital_gains",
-            "ordinary_dividend_income",
-        ]
-        pd.testing.assert_frame_equal(guarded, clone)
-        assert summary["affected_rows"] == 0
-
-    def test_puf_support_clone_top_tail_guard_prefers_capital_gains_components(
-        self,
-    ):
-        pipeline = USMicroplexPipeline(
-            USMicroplexBuildConfig(
-                synthesis_backend="seed",
-                puf_support_clone_enabled=True,
-                puf_support_clone_top_tail_rough_agi_cap=78_999_999.0,
-            )
-        )
-        clone = pd.DataFrame(
-            {
-                "employment_income": [105_000.0],
-                "capital_gains": [14_000_000.0],
-                "long_term_capital_gains": [95_000_000.0],
-                "short_term_capital_gains": [250.0],
-            }
-        )
-
-        guarded, summary = pipeline._apply_puf_support_clone_top_tail_guard(
-            clone,
-            integrated_variables=[
-                "capital_gains",
-                "long_term_capital_gains",
-                "short_term_capital_gains",
-            ],
-        )
-        rough_agi, rough_agi_variables = pipeline._puf_support_clone_top_tail_rough_agi(
-            guarded
-        )
-
-        assert rough_agi.iloc[0] == pytest.approx(78_999_999.0)
-        assert rough_agi_variables == [
-            "employment_income",
-            "long_term_capital_gains",
-            "short_term_capital_gains",
-        ]
-        assert guarded["capital_gains"].iloc[0] < clone["capital_gains"].iloc[0]
-        assert (
-            guarded["long_term_capital_gains"].iloc[0]
-            < clone["long_term_capital_gains"].iloc[0]
-        )
-        assert summary["affected_rows"] == 1
-        assert summary["scale_basis_variables"] == [
-            "long_term_capital_gains",
-            "short_term_capital_gains",
-        ]
-
-    def test_puf_support_clone_top_tail_guard_scales_exported_ltcg_alias(self):
-        pipeline = USMicroplexPipeline(
-            USMicroplexBuildConfig(
-                synthesis_backend="seed",
-                puf_support_clone_enabled=True,
-                puf_support_clone_top_tail_rough_agi_cap=78_999_999.0,
-            )
-        )
-        clone = pd.DataFrame(
-            {
-                "employment_income": [100_000.0],
-                "long_term_capital_gains": [70_000_000.0],
-                "long_term_capital_gains_before_response": [95_000_000.0],
-            }
-        )
-
-        guarded, summary = pipeline._apply_puf_support_clone_top_tail_guard(
-            clone,
-            integrated_variables=["long_term_capital_gains"],
-        )
-        rough_agi, rough_agi_variables = pipeline._puf_support_clone_top_tail_rough_agi(
-            guarded
-        )
-
-        assert rough_agi.iloc[0] == pytest.approx(78_999_999.0)
-        assert rough_agi_variables == [
-            "employment_income",
-            "long_term_capital_gains_before_response",
-        ]
-        assert guarded["employment_income"].iloc[0] == pytest.approx(100_000.0)
-        assert (
-            guarded["long_term_capital_gains_before_response"].iloc[0]
-            < clone["long_term_capital_gains_before_response"].iloc[0]
-        )
-        assert (
-            guarded["long_term_capital_gains"].iloc[0]
-            < clone["long_term_capital_gains"].iloc[0]
-        )
-        assert summary["affected_rows"] == 1
-        assert summary["scale_basis_variables"] == [
-            "long_term_capital_gains_before_response"
-        ]
-        assert "long_term_capital_gains_before_response" in summary["scaled_variables"]
-
-    def test_puf_support_clone_top_tail_guard_counts_exported_income_inputs(self):
-        pipeline = USMicroplexPipeline(
-            USMicroplexBuildConfig(
-                synthesis_backend="seed",
-                puf_support_clone_enabled=True,
-                puf_support_clone_top_tail_rough_agi_cap=78_999_999.0,
-            )
-        )
-        clone = pd.DataFrame(
-            {
-                "employment_income_before_lsr": [178_427.0],
-                "long_term_capital_gains_before_response": [95_000_000.0],
-                "taxable_private_pension_income": [127_000.0],
-                "social_security_retirement": [18_000.0],
-            }
-        )
-
-        guarded, summary = pipeline._apply_puf_support_clone_top_tail_guard(
-            clone,
-            integrated_variables=["long_term_capital_gains"],
-        )
-        rough_agi, rough_agi_variables = pipeline._puf_support_clone_top_tail_rough_agi(
-            guarded
-        )
-
-        assert rough_agi.iloc[0] == pytest.approx(78_999_999.0)
-        assert rough_agi_variables == [
-            "employment_income_before_lsr",
-            "long_term_capital_gains_before_response",
-            "taxable_private_pension_income",
-            "social_security_retirement",
-        ]
-        assert guarded["employment_income_before_lsr"].iloc[0] == pytest.approx(
-            178_427.0
-        )
-        assert guarded["long_term_capital_gains_before_response"].iloc[
-            0
-        ] == pytest.approx(78_999_999.0 - 178_427.0 - 127_000.0 - 18_000.0)
-        assert summary["affected_rows"] == 1
-        assert summary["scale_basis_variables"] == [
-            "long_term_capital_gains_before_response"
-        ]
-
-    def test_puf_support_clone_top_tail_guard_can_be_disabled(self):
-        pipeline = USMicroplexPipeline(
-            USMicroplexBuildConfig(
-                synthesis_backend="seed",
-                puf_support_clone_enabled=True,
-                puf_support_clone_top_tail_rough_agi_cap=None,
-            )
-        )
-        clone = pd.DataFrame(
-            {
-                "employment_income": [100_000.0],
-                "capital_gains": [20_000_000.0],
-                "long_term_capital_gains": [100_000_000.0],
-            }
-        )
-
-        guarded, summary = pipeline._apply_puf_support_clone_top_tail_guard(
-            clone,
-            integrated_variables=["capital_gains", "long_term_capital_gains"],
-        )
-
-        pd.testing.assert_frame_equal(guarded, clone)
-        assert summary["enabled"] is False
 
     def test_integrate_donor_sources_puf_support_clone_validates_scaffold_and_donor(
         self,

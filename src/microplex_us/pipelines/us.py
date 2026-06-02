@@ -5813,10 +5813,15 @@ class USMicroplexPipeline:
         ):
             add(variable)
 
-        if not add("capital_gains"):
-            if not add("long_term_capital_gains_before_response"):
-                add("long_term_capital_gains")
-            add("short_term_capital_gains")
+        added_capital_gain_components = False
+        if add("long_term_capital_gains_before_response"):
+            added_capital_gain_components = True
+        elif add("long_term_capital_gains"):
+            added_capital_gain_components = True
+        if add("short_term_capital_gains"):
+            added_capital_gain_components = True
+        if not added_capital_gain_components:
+            add("capital_gains")
         add("non_sch_d_capital_gains")
 
         if not add("dividend_income") and not add("ordinary_dividend_income"):

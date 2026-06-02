@@ -160,10 +160,7 @@ def test_donor_imputation_block_specs_include_match_strategies_and_restored_vari
         "qualified_dividend_income",
         "non_qualified_dividend_income",
     )
-    assert (
-        specs[0].strategy_for("dividend_income")
-        is DonorMatchStrategy.ZERO_INFLATED_POSITIVE
-    )
+    assert specs[0].strategy_for("dividend_income") is DonorMatchStrategy.RANK
     assert specs[0].native_entity is EntityType.PERSON
     assert specs[0].condition_entities == (
         EntityType.PERSON,
@@ -178,10 +175,7 @@ def test_donor_imputation_block_specs_include_match_strategies_and_restored_vari
         EntityType.HOUSEHOLD,
         EntityType.TAX_UNIT,
     )
-    assert (
-        specs[1].strategy_for("taxable_interest_income")
-        is DonorMatchStrategy.ZERO_INFLATED_POSITIVE
-    )
+    assert specs[1].strategy_for("taxable_interest_income") is DonorMatchStrategy.RANK
 
 
 def test_donor_imputation_block_specs_use_zero_inflated_matching_for_sparse_irs_amounts():
@@ -208,14 +202,14 @@ def test_donor_imputation_block_specs_use_zero_inflated_matching_for_sparse_irs_
         )
         assert (
             by_variable[variable_name].strategy_for(variable_name)
-            is DonorMatchStrategy.ZERO_INFLATED_POSITIVE
+            is DonorMatchStrategy.RANK
         )
     assert by_variable["partnership_s_corp_income"].native_entity is EntityType.PERSON
     assert (
         by_variable["partnership_s_corp_income"].strategy_for(
             "partnership_s_corp_income"
         )
-        is DonorMatchStrategy.ZERO_INFLATED_POSITIVE
+        is DonorMatchStrategy.RANK
     )
 
 
@@ -312,17 +306,15 @@ def test_state_program_proxy_semantics_are_registered():
     from microplex_us.variables import variable_semantic_spec_for
 
     has_medicaid = variable_semantic_spec_for("has_medicaid")
-    assert has_medicaid.support_family is VariableSupportFamily.ZERO_INFLATED_POSITIVE
-    assert (
-        has_medicaid.donor_match_strategy is DonorMatchStrategy.ZERO_INFLATED_POSITIVE
-    )
+    assert has_medicaid.support_family is VariableSupportFamily.SUPPORT_SENSITIVE
+    assert has_medicaid.donor_match_strategy is DonorMatchStrategy.RANK
     assert has_medicaid.condition_score_mode is ConditionScoreMode.VALUE_AND_SUPPORT
     assert has_medicaid.projection_aggregation is ProjectionAggregation.MAX
 
     for variable_name in ("public_assistance", "ssi", "social_security"):
         spec = variable_semantic_spec_for(variable_name)
-        assert spec.support_family is VariableSupportFamily.ZERO_INFLATED_POSITIVE
-        assert spec.donor_match_strategy is DonorMatchStrategy.ZERO_INFLATED_POSITIVE
+        assert spec.support_family is VariableSupportFamily.SUPPORT_SENSITIVE
+        assert spec.donor_match_strategy is DonorMatchStrategy.RANK
 
 
 def test_sparse_irs_ald_semantics_are_registered():
@@ -335,8 +327,8 @@ def test_sparse_irs_ald_semantics_are_registered():
     ):
         spec = variable_semantic_spec_for(variable_name)
         assert spec.native_entity is EntityType.PERSON
-        assert spec.support_family is VariableSupportFamily.ZERO_INFLATED_POSITIVE
-        assert spec.donor_match_strategy is DonorMatchStrategy.ZERO_INFLATED_POSITIVE
+        assert spec.support_family is VariableSupportFamily.SUPPORT_SENSITIVE
+        assert spec.donor_match_strategy is DonorMatchStrategy.RANK
         assert spec.condition_score_mode is ConditionScoreMode.VALUE_AND_SUPPORT
 
 
@@ -345,8 +337,8 @@ def test_partnership_income_semantics_remain_person_native():
 
     spec = variable_semantic_spec_for("partnership_s_corp_income")
     assert spec.native_entity is EntityType.PERSON
-    assert spec.support_family is VariableSupportFamily.ZERO_INFLATED_SIGNED
-    assert spec.donor_match_strategy is DonorMatchStrategy.ZERO_INFLATED_POSITIVE
+    assert spec.support_family is VariableSupportFamily.SUPPORT_SENSITIVE
+    assert spec.donor_match_strategy is DonorMatchStrategy.RANK
     assert spec.condition_score_mode is ConditionScoreMode.VALUE_AND_SUPPORT
 
 
@@ -419,8 +411,8 @@ def test_rental_income_components_use_sparse_asset_conditioning():
 
     for variable_name in ("rental_income_positive", "rental_income_negative"):
         spec = variable_semantic_spec_for(variable_name)
-        assert spec.support_family is VariableSupportFamily.ZERO_INFLATED_POSITIVE
-        assert spec.donor_match_strategy is DonorMatchStrategy.ZERO_INFLATED_POSITIVE
+        assert spec.support_family is VariableSupportFamily.SUPPORT_SENSITIVE
+        assert spec.donor_match_strategy is DonorMatchStrategy.RANK
         assert spec.condition_score_mode is ConditionScoreMode.VALUE_AND_SUPPORT
         assert (
             spec.preferred_condition_vars

@@ -395,7 +395,6 @@ class TestDonorFitOnScfLeaves:
             condition_vars=_DONOR_CONDITION_VARS,
             target_vars=list(_DONOR_TARGET_VARS),
             n_estimators=60,
-            nonnegative_vars=set(_DONOR_TARGET_VARS),
             seed=42,
         )
         imputer.fit(train)

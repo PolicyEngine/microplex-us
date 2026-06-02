@@ -168,19 +168,13 @@ class RegimeAwareDonorImputer:
         condition_vars: list[str],
         target_vars: list[str],
         n_estimators: int = 100,
-        nonnegative_vars: set[str] | None = None,
         classifier_type: str = "hist_gb",
-        min_class_count: int = 10,
-        min_class_fraction: float = 0.01,
         seed: int = 42,
     ) -> None:
         self.condition_vars = list(condition_vars)
         self.target_vars = list(target_vars)
         self.n_estimators = int(n_estimators)
-        self.nonnegative_vars = set(nonnegative_vars or ())
         self.classifier_type = str(classifier_type)
-        self.min_class_count = int(min_class_count)
-        self.min_class_fraction = float(min_class_fraction)
         self.seed = int(seed)
         self._fitted: dict[str, Any] = {}
         self._regimes: dict[str, str] = {}
@@ -204,8 +198,7 @@ class RegimeAwareDonorImputer:
             )
         if importlib.util.find_spec("quantile_forest") is None:
             raise ImportError(
-                "quantile-forest is required for the RegimeAwareDonorImputer "
-                "base QRF."
+                "quantile-forest is required for the RegimeAwareDonorImputer base QRF."
             )
 
         from microimpute.models.qrf import QRF
@@ -224,8 +217,6 @@ class RegimeAwareDonorImputer:
             wrapper = ZeroInflatedImputer(
                 base_imputer_class=QRF,
                 base_imputer_kwargs={},
-                min_class_count=self.min_class_count,
-                min_class_fraction=self.min_class_fraction,
                 classifier_type=self.classifier_type,
                 seed=self.seed,
             )
@@ -256,10 +247,7 @@ class RegimeAwareDonorImputer:
             )
             self._reset_prediction_rngs(fitted, seed=column_seed)
             preds = fitted.predict(synthetic[self.condition_vars])
-            values = preds[column].to_numpy(dtype=float)
-            if column in self.nonnegative_vars:
-                values = np.maximum(values, 0.0)
-            synthetic[column] = values
+            synthetic[column] = preds[column].to_numpy(dtype=float)
         return synthetic
 
     def _reset_prediction_rngs(

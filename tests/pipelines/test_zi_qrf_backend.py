@@ -11,7 +11,7 @@ v8 flips `--donor-imputer-backend zi_qrf`. These tests pin the three
 guarantees v8 relies on:
 
 1. The factory (`_build_donor_imputer`) populates `zero_inflated_vars`
-   from the `VariableSupportFamily.ZERO_INFLATED_POSITIVE` variables
+   from the `VariableSupportFamily.SUPPORT_SENSITIVE` variables
    when `backend == "zi_qrf"`, and leaves it empty otherwise.
 2. `ColumnwiseQRFDonorImputer.fit` trains a `RandomForestClassifier`
    zero-gate on each whitelisted column whose observed zero fraction
@@ -151,16 +151,14 @@ class TestImputerGenerateSkipsPredict:
 class TestBuildDonorImputerFactory:
     """The pipeline factory wires zero_inflated_vars only when backend='zi_qrf'."""
 
-    def _factory(
-        self, backend: str
-    ) -> ColumnwiseQRFDonorImputer:
+    def _factory(self, backend: str) -> ColumnwiseQRFDonorImputer:
         config = USMicroplexBuildConfig(
             donor_imputer_backend=backend,
             donor_imputer_qrf_n_estimators=25,
         )
         pipeline = USMicroplexPipeline(config=config)
         # Variables chosen to span support families:
-        #   qualified_dividend_income, taxable_interest_income → ZERO_INFLATED_POSITIVE
+        #   qualified_dividend_income, taxable_interest_income → SUPPORT_SENSITIVE
         #   age → BOUNDED_INTEGER
         # These are all real PolicyEngine-US variable names with explicit
         # semantic specs in microplex_us.variables.

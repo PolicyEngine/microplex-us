@@ -45,6 +45,24 @@ def test_normalize_dividend_columns_prefers_atomic_components_over_totals():
     assert normalized["dividend_income"].tolist() == [42.0]
 
 
+def test_normalize_dividend_columns_coalesces_sparse_total_aliases_by_row():
+    frame = pd.DataFrame(
+        {
+            "ordinary_dividend_income": [0.0, 30.0, 0.0],
+            "dividend_income": [80.0, 999.0, 0.0],
+            "qualified_dividend_income": [0.0, 5.0, 0.0],
+            "non_qualified_dividend_income": [0.0, 25.0, 0.0],
+        }
+    )
+
+    normalized = normalize_dividend_columns(frame)
+
+    assert normalized["qualified_dividend_income"].tolist() == [0.0, 5.0, 0.0]
+    assert normalized["non_qualified_dividend_income"].tolist() == [80.0, 25.0, 0.0]
+    assert normalized["ordinary_dividend_income"].tolist() == [80.0, 30.0, 0.0]
+    assert normalized["dividend_income"].tolist() == [80.0, 30.0, 0.0]
+
+
 def test_normalize_social_security_columns_tracks_unclassified_residual():
     frame = pd.DataFrame(
         {

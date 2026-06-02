@@ -986,6 +986,7 @@ def build_us_stage_output_manifests_from_artifact_manifest(
             complete=all(
                 _artifact_exists(root, artifacts, key)
                 for key in (
+                    "pre_calibration_policyengine_entity_tables",
                     "calibrated_data",
                     "targets",
                     "calibration_summary",

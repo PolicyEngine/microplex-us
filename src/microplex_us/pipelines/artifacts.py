@@ -918,11 +918,7 @@ def save_us_microplex_artifacts(
         if result.scaffold_seed_data is not None
         else result.seed_data
     )
-    pre_calibration_policyengine_tables = (
-        result.pre_calibration_policyengine_tables
-        if result.pre_calibration_policyengine_tables is not None
-        else result.policyengine_tables
-    )
+    pre_calibration_policyengine_tables = result.pre_calibration_policyengine_tables
 
     seed_data_path = resolve_us_stage_artifact_contract_path(
         output_dir,

@@ -322,6 +322,18 @@ class TestSaveUSMicroplexArtifacts:
             calibration_summary={"max_error": 0.01, "mean_error": 0.005},
             synthesis_metadata={"backend": "bootstrap"},
             synthesizer=None,
+            pre_calibration_policyengine_tables=PolicyEngineUSEntityTableBundle(
+                households=pd.DataFrame(
+                    {"household_id": [1, 2], "household_weight": [1.0, 1.0]}
+                ),
+                tax_units=pd.DataFrame(
+                    {
+                        "tax_unit_id": [101, 102],
+                        "household_id": [1, 2],
+                        "filing_status": ["SINGLE", "JOINT"],
+                    }
+                ),
+            ),
             policyengine_tables=PolicyEngineUSEntityTableBundle(
                 households=pd.DataFrame(
                     {"household_id": [1, 2], "household_weight": [0.5, 1.5]}
@@ -470,6 +482,69 @@ class TestSaveUSMicroplexArtifacts:
             assert "taxable_interest_income" in handle
             assert "filing_status" not in handle
             assert "source_weight_diagnostics" not in handle
+
+    def test_leaves_pre_calibration_entity_artifact_blank_when_tables_are_absent(
+        self,
+        tmp_path,
+    ):
+        result = USMicroplexBuildResult(
+            config=USMicroplexBuildConfig(
+                n_synthetic=1,
+                synthesis_backend="bootstrap",
+                calibration_backend="entropy",
+            ),
+            seed_data=pd.DataFrame({"income": [10.0], "hh_weight": [1.0]}),
+            scaffold_seed_data=pd.DataFrame({"income": [10.0], "hh_weight": [1.0]}),
+            synthetic_data=pd.DataFrame({"income": [10.0], "weight": [1.0]}),
+            calibrated_data=pd.DataFrame({"income": [10.0], "weight": [1.0]}),
+            targets=USMicroplexTargets(marginal={}, continuous={}),
+            calibration_summary={"max_error": 0.0},
+            synthesis_metadata={
+                "backend": "bootstrap",
+                "source_names": ["source"],
+                "scaffold_source": "source",
+            },
+            policyengine_tables=PolicyEngineUSEntityTableBundle(
+                households=pd.DataFrame(
+                    {"household_id": [1], "household_weight": [1.0]}
+                ),
+                persons=pd.DataFrame(
+                    {
+                        "person_id": [10],
+                        "household_id": [1],
+                        "tax_unit_id": [101],
+                        "spm_unit_id": [201],
+                        "family_id": [301],
+                        "marital_unit_id": [401],
+                        "age": [35],
+                    }
+                ),
+                tax_units=pd.DataFrame({"tax_unit_id": [101], "household_id": [1]}),
+                spm_units=pd.DataFrame({"spm_unit_id": [201], "household_id": [1]}),
+                families=pd.DataFrame({"family_id": [301], "household_id": [1]}),
+                marital_units=pd.DataFrame(
+                    {"marital_unit_id": [401], "household_id": [1]}
+                ),
+            ),
+        )
+
+        paths = save_us_microplex_artifacts(result, tmp_path)
+
+        manifest = json.loads(paths.manifest.read_text())
+        assert paths.pre_calibration_policyengine_entity_tables is None
+        assert (
+            manifest["artifacts"]["pre_calibration_policyengine_entity_tables"] is None
+        )
+        assert not (tmp_path / "stage_artifacts" / "06_policyengine_entities").exists()
+        stage7_manifest = json.loads(
+            (
+                tmp_path / "stage_artifacts" / "manifests" / "07_calibration.json"
+            ).read_text()
+        )
+        assert stage7_manifest["complete"] is False
+        assert (
+            stage7_manifest["outputs"]["policyengine_entity_tables"]["exists"] is True
+        )
 
     def test_writes_model_when_present(self, tmp_path):
         class FakeSynthesizer:

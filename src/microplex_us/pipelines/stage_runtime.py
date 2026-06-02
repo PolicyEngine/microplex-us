@@ -282,28 +282,51 @@ class USStageRuntimeWriter:
         ):
             existing = self._stage_payload(outputs.stage_id)
             now = _now()
-            lifecycle_status = _final_lifecycle_status(outputs)
             existing_events = tuple(
                 dict(event)
                 for event in existing.get("events", ())
                 if isinstance(event, dict)
             )
-            lifecycle_outputs = replace(
-                outputs,
-                input_stage_manifest=outputs.input_stage_manifest
-                or self._previous_stage_manifest_ref(outputs.stage_id),
-                lifecycle_status=lifecycle_status,
-                started_at=_optional_str(existing.get("startedAt")) or now,
-                updated_at=now,
-                completed_at=now if lifecycle_status == "complete" else None,
-                deferred_reason=(
+            existing_lifecycle = _terminal_lifecycle(existing)
+            if existing_lifecycle is not None:
+                lifecycle_status = existing_lifecycle
+                complete = bool(existing.get("complete"))
+                started_at = _optional_str(existing.get("startedAt"))
+                updated_at = _optional_str(existing.get("updatedAt"))
+                completed_at = _optional_str(existing.get("completedAt"))
+                failed_at = _optional_str(existing.get("failedAt"))
+                deferred_reason = _optional_str(existing.get("deferredReason"))
+                failure = existing.get("failure")
+                events = existing_events
+            else:
+                lifecycle_status = _final_lifecycle_status(outputs)
+                complete = outputs.complete
+                started_at = _optional_str(existing.get("startedAt")) or now
+                updated_at = now
+                completed_at = now if lifecycle_status == "complete" else None
+                failed_at = None
+                deferred_reason = (
                     outputs.deferred_reason if lifecycle_status == "deferred" else None
-                ),
-                events=(
+                )
+                failure = None
+                events = (
                     *existing_events,
                     *tuple(outputs.events),
                     _event(f"stage_{lifecycle_status}", now),
-                ),
+                )
+            lifecycle_outputs = replace(
+                outputs,
+                complete=complete,
+                input_stage_manifest=outputs.input_stage_manifest
+                or self._previous_stage_manifest_ref(outputs.stage_id),
+                lifecycle_status=lifecycle_status,
+                started_at=started_at,
+                updated_at=updated_at,
+                completed_at=completed_at,
+                failed_at=failed_at,
+                deferred_reason=deferred_reason,
+                failure=failure,
+                events=events,
             )
             self._run_writer.record_stage(lifecycle_outputs)
         self.manifest_payload = self._run_writer.write_manifest_files()
@@ -557,6 +580,15 @@ def _final_lifecycle_status(
     if outputs.resolved_lifecycle_status() == "deferred":
         return "deferred"
     return "complete" if outputs.complete else "pending"
+
+
+def _terminal_lifecycle(
+    payload: Mapping[str, Any],
+) -> USStageLifecycleStatus | None:
+    status = payload.get("lifecycleStatus")
+    if status in {"complete", "failed", "deferred"}:
+        return status
+    return None
 
 
 def _runtime_serialize(value: Any, artifact_root: str | Path | None) -> Any:

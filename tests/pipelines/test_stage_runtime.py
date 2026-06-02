@@ -88,6 +88,48 @@ def test_runtime_writer_completes_stage_and_exposes_lifecycle(tmp_path):
     ]
 
 
+def test_runtime_writer_finalize_preserves_completed_stage_lifecycle(tmp_path):
+    writer = USStageRuntimeWriter(
+        tmp_path,
+        manifest_payload={
+            "config": {"calibration_backend": "none"},
+            "artifacts": {"manifest": "manifest.json"},
+        },
+    )
+    writer.start_stage("01_run_profile", metadata={"profile": "test"})
+    writer.complete_stage(
+        USRunProfileOutputs(
+            manifest=USArtifactRef(
+                key="manifest",
+                path="manifest.json",
+                format="json",
+                required=True,
+                assume_exists=True,
+            ),
+            resolved_config={"calibration_backend": "none"},
+            provider_query_plan={"source_names": ["unit"]},
+            diagnostics=_diagnostics("01_run_profile"),
+        )
+    )
+    stage1_path = tmp_path / "stage_artifacts" / "manifests" / "01_run_profile.json"
+    before = json.loads(stage1_path.read_text())
+
+    writer.finalize_from_artifact_manifest(
+        {
+            "config": {"calibration_backend": "none"},
+            "artifacts": {"manifest": "manifest.json"},
+            "synthesis": {"source_names": ["unit"]},
+        }
+    )
+
+    after = json.loads(stage1_path.read_text())
+    assert after["lifecycleStatus"] == "complete"
+    assert after["startedAt"] == before["startedAt"]
+    assert after["updatedAt"] == before["updatedAt"]
+    assert after["completedAt"] == before["completedAt"]
+    assert after["events"] == before["events"]
+
+
 def test_runtime_writer_serializes_enum_outputs(tmp_path):
     writer = USStageRuntimeWriter(
         tmp_path,

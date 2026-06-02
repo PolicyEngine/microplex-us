@@ -423,6 +423,55 @@ def test_download_pe_soi_targets_fetches_missing_cache(tmp_path, monkeypatch):
     assert pd.read_csv(resolved)["Variable"].tolist()
 
 
+def test_download_pe_soi_targets_revision_controls_cache_name_and_url(
+    tmp_path,
+    monkeypatch,
+):
+    source = tmp_path / "source_soi_targets.csv"
+    _write_minimal_soi_csv(source)
+
+    class FakeResponse:
+        content = source.read_bytes()
+
+        def raise_for_status(self):
+            return None
+
+    calls: list[tuple[str, int]] = []
+
+    def fake_get(url, *, timeout):
+        calls.append((url, timeout))
+        return FakeResponse()
+
+    monkeypatch.setattr(soi_module.requests, "get", fake_get)
+
+    revision = "custom/ref"
+    cache_dir = tmp_path / "cache"
+    resolved = soi_module.download_pe_soi_targets(
+        cache_dir,
+        revision=revision,
+    )
+
+    assert resolved == soi_module.pe_soi_targets_cache_path(
+        cache_dir,
+        revision=revision,
+    )
+    assert resolved.name == "soi_targets_pe_us_data_custom_ref.csv"
+    assert calls == [(soi_module.pe_soi_targets_url(revision), 300)]
+
+
+def test_pe_soi_targets_paths_expand_user(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    home.mkdir()
+    soi_path = home / "soi_targets.csv"
+    _write_minimal_soi_csv(soi_path)
+    monkeypatch.setenv("HOME", str(home))
+
+    assert soi_module.validate_pe_soi_targets_file("~/soi_targets.csv") == soi_path
+    assert soi_module.pe_soi_targets_cache_path("~/cache") == (
+        home / "cache" / soi_module.SOI_TARGETS_CACHE_FILENAME
+    )
+
+
 def test_validate_pe_soi_targets_file_rejects_bad_schema(tmp_path):
     bad_path = tmp_path / "soi_targets.csv"
     pd.DataFrame({"Variable": ["count"]}).to_csv(bad_path, index=False)

@@ -111,6 +111,7 @@ def test_default_policyengine_us_data_rebuild_source_providers_use_pe_style_bund
         puf_target_year=2024,
         cps_download=False,
         puf_expand_persons=False,
+        soi_path="/tmp/soi_targets.csv",
         policyengine_us_data_python="/tmp/pe-python",
     )
 
@@ -124,6 +125,7 @@ def test_default_policyengine_us_data_rebuild_source_providers_use_pe_style_bund
     assert puf_provider.cps_reference_year == 2022
     assert puf_provider.expand_persons is False
     assert puf_provider.uprating_mode == PUF_UPRATING_MODE_PE_SOI
+    assert puf_provider.soi_path == "/tmp/soi_targets.csv"
     assert puf_provider.policyengine_us_data_python == "/tmp/pe-python"
     assert puf_provider.impute_pre_tax_contributions is False
     assert puf_provider.require_pre_tax_contribution_model is False

@@ -12,6 +12,7 @@ import pytest
 from microplex.core import EntityType, SourceArchetype, SourceProvider, SourceQuery
 
 import microplex_us.data_sources.puf as puf_module
+import microplex_us.data_sources.soi as soi_module
 from microplex_us.data_sources import PUFSourceProvider, expand_to_persons
 from microplex_us.data_sources.puf import (
     PUF_UPRATING_MODE_PE_SOI,
@@ -334,7 +335,7 @@ def test_puf_source_provider_selects_pe_qrf_social_security_strategy(
 
 
 def test_uprate_raw_puf_pe_style_matches_pe_soi_contract(tmp_path):
-    soi_path = tmp_path / "soi.csv"
+    soi_path = tmp_path / "soi_targets.csv"
     _write_minimal_soi_csv(soi_path)
 
     raw = pd.DataFrame(
@@ -359,6 +360,75 @@ def test_uprate_raw_puf_pe_style_matches_pe_soi_contract(tmp_path):
     assert result["E00900"].tolist() == pytest.approx([19.2, -2.4])
     assert result["E03290"].tolist() == pytest.approx([8.4, 3.6])
     assert result["S006"].tolist() == pytest.approx([110.0, 220.0])
+
+
+def test_uprate_raw_puf_pe_style_uses_cached_soi_targets_by_default(
+    tmp_path,
+    monkeypatch,
+):
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    soi_path = soi_module.pe_soi_targets_cache_path(cache_dir)
+    _write_minimal_soi_csv(soi_path)
+
+    def fail_get(*args, **kwargs):
+        raise AssertionError(
+            "requests.get should not be called for cached SOI targets"
+        )
+
+    monkeypatch.setattr(soi_module.requests, "get", fail_get)
+
+    raw = pd.DataFrame(
+        {
+            "E00200": [10.0],
+            "S006": [100.0],
+        }
+    )
+
+    result = uprate_raw_puf_pe_style(
+        raw,
+        from_year=2015,
+        to_year=2024,
+        cache_dir=cache_dir,
+    )
+
+    assert result["E00200"].tolist() == pytest.approx([15.0])
+    assert result["S006"].tolist() == pytest.approx([110.0])
+
+
+def test_download_pe_soi_targets_fetches_missing_cache(tmp_path, monkeypatch):
+    source = tmp_path / "source_soi_targets.csv"
+    _write_minimal_soi_csv(source)
+
+    class FakeResponse:
+        content = source.read_bytes()
+
+        def raise_for_status(self):
+            return None
+
+    calls: list[tuple[str, int]] = []
+
+    def fake_get(url, *, timeout):
+        calls.append((url, timeout))
+        return FakeResponse()
+
+    monkeypatch.setattr(soi_module.requests, "get", fake_get)
+
+    cache_dir = tmp_path / "cache"
+    resolved = soi_module.download_pe_soi_targets(cache_dir)
+
+    assert resolved == soi_module.pe_soi_targets_cache_path(cache_dir)
+    assert soi_module.SOI_TARGETS_POLICYENGINE_US_DATA_REF in resolved.name
+    assert calls == [(soi_module.SOI_TARGETS_URL, 300)]
+    assert pd.read_csv(resolved)["Variable"].tolist()
+
+
+def test_validate_pe_soi_targets_file_rejects_bad_schema(tmp_path):
+    bad_path = tmp_path / "soi_targets.csv"
+    pd.DataFrame({"Variable": ["count"]}).to_csv(bad_path, index=False)
+
+    with pytest.raises(ValueError, match="missing required columns"):
+        soi_module.validate_pe_soi_targets_file(bad_path)
 
 
 def test_uprate_mapped_puf_with_pe_factors_uses_aliases_and_recomputes(tmp_path):
@@ -402,7 +472,7 @@ def test_puf_source_provider_pe_soi_mode_uses_raw_uprating(tmp_path):
     repo_root = tmp_path / "pe-us-data"
     storage = repo_root / "policyengine_us_data" / "storage"
     storage.mkdir(parents=True)
-    soi_path = storage / "soi.csv"
+    soi_path = tmp_path / "soi_targets.csv"
     uprating_factors_path = storage / "uprating_factors.csv"
     _write_minimal_soi_csv(soi_path)
     _write_minimal_uprating_factors_csv(uprating_factors_path)
@@ -439,6 +509,58 @@ def test_puf_source_provider_pe_soi_mode_uses_raw_uprating(tmp_path):
     assert household["household_weight"] == pytest.approx(1.21)
     assert person["employment_income"] == pytest.approx(18.0)
     assert person["non_sch_d_capital_gains"] == pytest.approx(13.0)
+
+
+def test_puf_source_provider_pe_soi_mode_does_not_require_repo_storage_soi(
+    tmp_path,
+    monkeypatch,
+):
+    repo_root = tmp_path / "pe-us-data"
+    storage = repo_root / "policyengine_us_data" / "storage"
+    storage.mkdir(parents=True)
+    _write_minimal_uprating_factors_csv(storage / "uprating_factors.csv")
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    _write_minimal_soi_csv(soi_module.pe_soi_targets_cache_path(cache_dir))
+
+    def fail_get(*args, **kwargs):
+        raise AssertionError(
+            "requests.get should not be called for cached SOI targets"
+        )
+
+    monkeypatch.setattr(soi_module.requests, "get", fail_get)
+
+    puf = pd.DataFrame(
+        {
+            "RECID": [101],
+            "MARS": [1],
+            "XTOT": [1],
+            "S006": [100.0],
+            "E00200": [10.0],
+            "E01100": [5.0],
+            "AGE_HEAD": [45],
+            "GENDER": [1],
+        }
+    )
+    puf_path = tmp_path / "puf.csv"
+    demographics_path = tmp_path / "demographics.csv"
+    puf.to_csv(puf_path, index=False)
+    pd.DataFrame({"RECID": [101]}).to_csv(demographics_path, index=False)
+
+    provider = PUFSourceProvider(
+        puf_path=puf_path,
+        demographics_path=demographics_path,
+        target_year=2024,
+        cache_dir=cache_dir,
+        uprating_mode=PUF_UPRATING_MODE_PE_SOI,
+        policyengine_us_data_repo=repo_root,
+        social_security_share_model_loader=_mock_social_security_share_model_loader,
+    )
+    frame = provider.load_frame(SourceQuery(period=2024))
+    person = frame.tables[EntityType.PERSON].iloc[0]
+
+    assert not (storage / "soi.csv").exists()
+    assert person["employment_income"] == pytest.approx(18.0)
 
 
 def test_expand_to_persons_splits_negative_joint_self_employment_losses():

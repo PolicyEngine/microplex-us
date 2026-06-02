@@ -38,6 +38,10 @@ from microplex_us.data_sources.share_imputation import (
     fit_grouped_share_model,
     predict_grouped_component_shares,
 )
+from microplex_us.data_sources.soi import (
+    download_pe_soi_targets,
+    validate_pe_soi_targets_file,
+)
 from microplex_us.pipelines.pe_native_scores import (
     build_policyengine_us_data_subprocess_env,
     resolve_policyengine_us_data_python,
@@ -466,27 +470,17 @@ def _normalize_puf_uprating_mode(mode: str | None) -> str:
 
 def _resolve_pe_soi_path(
     *,
+    cache_dir: str | Path | None = None,
     policyengine_us_data_repo: str | Path | None = None,
     soi_path: str | Path | None = None,
 ) -> Path:
     if soi_path is not None:
-        resolved = Path(soi_path).expanduser()
-        if not resolved.exists():
-            raise FileNotFoundError(f"Could not find PE SOI file at {resolved}")
-        return resolved
-    if policyengine_us_data_repo is None:
-        raise ValueError(
-            "PE SOI uprating requires soi_path or policyengine_us_data_repo"
-        )
-    resolved = (
-        Path(policyengine_us_data_repo).expanduser()
-        / "policyengine_us_data"
-        / "storage"
-        / "soi.csv"
-    )
-    if not resolved.exists():
-        raise FileNotFoundError(f"Could not find PE SOI file at {resolved}")
-    return resolved
+        return validate_pe_soi_targets_file(soi_path)
+
+    # Kept in the signature for backward compatibility with older callers.
+    # SOI resolution is now cache-backed and does not probe PE-US-data storage.
+    _ = policyengine_us_data_repo
+    return download_pe_soi_targets(cache_dir=cache_dir)
 
 
 def _resolve_pe_uprating_factors_path(
@@ -580,6 +574,7 @@ def uprate_raw_puf_pe_style(
     *,
     from_year: int = 2015,
     to_year: int = 2024,
+    cache_dir: str | Path | None = None,
     policyengine_us_data_repo: str | Path | None = None,
     soi_path: str | Path | None = None,
 ) -> pd.DataFrame:
@@ -587,6 +582,7 @@ def uprate_raw_puf_pe_style(
     if from_year == to_year:
         return puf.copy()
     resolved_soi_path = _resolve_pe_soi_path(
+        cache_dir=cache_dir,
         policyengine_us_data_repo=policyengine_us_data_repo,
         soi_path=soi_path,
     )
@@ -1819,6 +1815,7 @@ def load_puf(
             raw,
             from_year=2015,
             to_year=raw_uprating_year,
+            cache_dir=cache_dir,
             policyengine_us_data_repo=policyengine_us_data_repo,
             soi_path=soi_path,
         )
@@ -1962,6 +1959,7 @@ def _build_puf_tax_units(
     policyengine_us_data_python: str | Path | None = None,
     impute_pre_tax_contributions: bool = False,
     pre_tax_training_year: int = 2024,
+    cache_dir: str | Path | None = None,
     soi_path: str | Path | None = None,
     require_pre_tax_contribution_model: bool = False,
 ) -> pd.DataFrame:
@@ -1973,6 +1971,7 @@ def _build_puf_tax_units(
             raw,
             from_year=2015,
             to_year=raw_uprating_year,
+            cache_dir=cache_dir,
             policyengine_us_data_repo=policyengine_us_data_repo,
             soi_path=soi_path,
         )
@@ -2261,6 +2260,7 @@ class PUFSourceProvider:
             policyengine_us_data_python=policyengine_us_data_python,
             impute_pre_tax_contributions=impute_pre_tax_contributions,
             pre_tax_training_year=pre_tax_training_year,
+            cache_dir=self.cache_dir,
             soi_path=soi_path,
             require_pre_tax_contribution_model=require_pre_tax_contribution_model,
         )

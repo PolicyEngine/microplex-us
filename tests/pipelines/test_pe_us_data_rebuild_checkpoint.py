@@ -719,6 +719,8 @@ def test_main_passes_donor_condition_selection_override(monkeypatch, capsys) -> 
             "/tmp/policy_data.db",
             "--version-id",
             "run-1",
+            "--soi-path",
+            "/tmp/soi_targets.csv",
             "--donor-imputer-condition-selection",
             "pe_plus_puf_native_challenger",
             "--defer-native-audit",
@@ -731,6 +733,7 @@ def test_main_passes_donor_condition_selection_override(monkeypatch, capsys) -> 
     )
     assert captured["config_overrides"]["n_synthetic"] == 100_000
     assert captured["config_overrides"]["random_seed"] == 42
+    assert captured["soi_path"] == "/tmp/soi_targets.csv"
     assert captured["defer_native_audit"] is True
     assert captured["defer_imputation_ablation"] is True
     stdout = capsys.readouterr().out

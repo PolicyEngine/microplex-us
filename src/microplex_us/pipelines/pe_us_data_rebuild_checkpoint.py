@@ -2294,8 +2294,9 @@ def main(argv: list[str] | None = None) -> None:
         action=argparse.BooleanOptionalAction,
         default=None,
         help=(
-            "Include the ACS donor provider. Defaults to --include-donor-surveys; "
-            "use --no-include-acs for an eCPS-shaped run that keeps SIPP/SCF."
+            "Deprecated/no-op for the ACS donor: the ACS donor (rent, "
+            "real_estate_taxes) is always enabled, matching eCPS. Retained for "
+            "backward compatibility. ACS as a population spine is a separate control."
         ),
     )
     parser.add_argument(

@@ -5291,18 +5291,13 @@ class USMicroplexPipeline:
         nonnegative_vars = {
             variable
             for variable, support_family in support_families.items()
-            if support_family
-            in {
-                VariableSupportFamily.ZERO_INFLATED_POSITIVE,
-                VariableSupportFamily.BOUNDED_SHARE,
-            }
+            if support_family is VariableSupportFamily.BOUNDED_SHARE
         }
         if backend == "regime_aware":
             return RegimeAwareDonorImputer(
                 condition_vars=condition_vars,
                 target_vars=list(target_vars),
                 n_estimators=self.config.donor_imputer_qrf_n_estimators,
-                nonnegative_vars=nonnegative_vars,
                 seed=self.config.random_seed,
             )
         zero_inflated_vars = (
@@ -5311,8 +5306,7 @@ class USMicroplexPipeline:
                 for variable, support_family in support_families.items()
                 if support_family
                 in {
-                    VariableSupportFamily.ZERO_INFLATED_POSITIVE,
-                    VariableSupportFamily.ZERO_INFLATED_SIGNED,
+                    VariableSupportFamily.SUPPORT_SENSITIVE,
                 }
             }
             if backend == "zi_qrf"
@@ -7147,7 +7141,7 @@ class USMicroplexPipeline:
             donor_weight_array = donor_weights.to_numpy(dtype=float)
             donor_weight_array = np.clip(donor_weight_array, a_min=0.0, a_max=None)
 
-        if strategy is DonorMatchStrategy.ZERO_INFLATED_POSITIVE or (
+        if (
             strategy is DonorMatchStrategy.RANK
             and self._is_zero_inflated_positive_distribution(donor_array)
         ):

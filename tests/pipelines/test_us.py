@@ -3383,7 +3383,7 @@ class TestUSMicroplexPipeline:
         assert captured["init_kwargs"]["n_estimators"] == 77
         assert captured["init_kwargs"]["zero_threshold"] == 0.1
         assert captured["init_kwargs"]["zero_inflated_vars"] == {"public_assistance"}
-        assert captured["init_kwargs"]["nonnegative_vars"] == {"public_assistance"}
+        assert captured["init_kwargs"]["nonnegative_vars"] == set()
         assert "weight" in captured["fit_columns"]
         assert captured["fit_kwargs"]["weight_col"] == "weight"
         assert set(integration["seed_data"]["public_assistance"].tolist()) <= {
@@ -3391,7 +3391,7 @@ class TestUSMicroplexPipeline:
             200.0,
         }
 
-    def test_signed_zero_inflated_donor_vars_are_not_clamped(self, monkeypatch):
+    def test_support_sensitive_donor_vars_do_not_force_clamps(self, monkeypatch):
         captured: dict[str, dict[str, object]] = {}
 
         class FakeRegimeAwareDonorImputer:
@@ -3435,8 +3435,8 @@ class TestUSMicroplexPipeline:
             target_vars=target_vars,
         )
 
-        assert captured["regime_aware"]["nonnegative_vars"] == {"public_assistance"}
-        assert captured["zi_qrf"]["nonnegative_vars"] == {"public_assistance"}
+        assert "nonnegative_vars" not in captured["regime_aware"]
+        assert captured["zi_qrf"]["nonnegative_vars"] == set()
         assert captured["zi_qrf"]["zero_inflated_vars"] == {
             "partnership_s_corp_income",
             "public_assistance",

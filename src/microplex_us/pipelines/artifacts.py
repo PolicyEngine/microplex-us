@@ -44,6 +44,7 @@ from microplex_us.pipelines.stage_contracts import (
 )
 from microplex_us.pipelines.stage_manifest import (
     write_us_policyengine_entity_stage_artifact,
+    write_us_validation_evidence_manifest,
 )
 from microplex_us.pipelines.stage_run import (
     USArtifactRef,
@@ -994,7 +995,7 @@ def save_us_microplex_artifacts(
     policyengine_entity_tables_path = (
         resolve_us_stage_artifact_contract_path(
             output_dir,
-            "06_policyengine_entities",
+            "07_calibration",
             "policyengine_entity_tables",
         )
         if result.policyengine_tables is not None
@@ -1004,6 +1005,15 @@ def save_us_microplex_artifacts(
         output_dir,
         "07_calibration",
         "calibration_summary",
+    )
+    pre_calibration_policyengine_entity_tables_path = (
+        resolve_us_stage_artifact_contract_path(
+            output_dir,
+            "06_policyengine_entities",
+            "pre_calibration_policyengine_entity_tables",
+        )
+        if result.policyengine_tables is not None
+        else None
     )
     validation_evidence_path = (
         resolve_us_stage_artifact_contract_path(
@@ -1024,198 +1034,195 @@ def save_us_microplex_artifacts(
     if stage_runtime_writer is not None:
         stage_runtime_writer.start_stage("08_dataset_assembly")
 
-    if result.scaffold_seed_data is not None and scaffold_seed_data_path is not None:
+    try:
+        if (
+            result.scaffold_seed_data is not None
+            and scaffold_seed_data_path is not None
+        ):
+            _write_parquet_unless_live_artifact_exists(
+                scaffold_seed_data_path,
+                result.scaffold_seed_data,
+                live_artifact=live_artifacts,
+            )
         _write_parquet_unless_live_artifact_exists(
-            scaffold_seed_data_path,
-            result.scaffold_seed_data,
+            seed_data_path,
+            result.seed_data,
             live_artifact=live_artifacts,
         )
-    _write_parquet_unless_live_artifact_exists(
-        seed_data_path,
-        result.seed_data,
-        live_artifact=live_artifacts,
-    )
-    _write_parquet_unless_live_artifact_exists(
-        synthetic_data_path,
-        result.synthetic_data,
-        live_artifact=live_artifacts,
-    )
-    _write_parquet_unless_live_artifact_exists(
-        calibrated_data_path,
-        result.calibrated_data,
-        live_artifact=live_artifacts,
-    )
-    _write_json_unless_live_artifact_exists(
-        targets_path,
-        {
-            "marginal": result.targets.marginal,
-            "continuous": result.targets.continuous,
-        },
-        live_artifact=live_artifacts,
-    )
-
-    if result.synthesizer is not None and synthesizer_path is not None:
-        result.synthesizer.save(synthesizer_path)
-
-    if not (live_artifacts and source_plan_path.exists()):
-        _write_us_source_plan_artifact(result, source_plan_path)
-    if not (live_artifacts and calibration_summary_path.exists()):
-        _write_json_atomically(calibration_summary_path, result.calibration_summary)
-    source_weight_diagnostics_payload = _build_source_weight_diagnostics(result)
-    _write_json_atomically(
-        source_weight_diagnostics_path,
-        source_weight_diagnostics_payload,
-    )
-
-    if result.policyengine_tables is not None and policyengine_dataset_path is not None:
-        if policyengine_entity_tables_path is not None:
-            if not (live_artifacts and policyengine_entity_tables_path.exists()):
-                write_us_policyengine_entity_stage_artifact(
-                    result.policyengine_tables,
-                    output_dir,
-                )
-        period = result.config.policyengine_dataset_year or 2024
-        USMicroplexPipeline(result.config).export_policyengine_dataset(
-            result,
-            policyengine_dataset_path,
-            period=period,
+        _write_parquet_unless_live_artifact_exists(
+            synthetic_data_path,
+            result.synthetic_data,
+            live_artifact=live_artifacts,
         )
-    capital_gains_lots_path, capital_gains_lots_summary = (
-        _maybe_write_capital_gains_lot_artifact(result, output_dir)
-    )
+        _write_parquet_unless_live_artifact_exists(
+            calibrated_data_path,
+            result.calibrated_data,
+            live_artifact=live_artifacts,
+        )
+        _write_json_unless_live_artifact_exists(
+            targets_path,
+            {
+                "marginal": result.targets.marginal,
+                "continuous": result.targets.continuous,
+            },
+            live_artifact=live_artifacts,
+        )
 
-    if stage_runtime_writer is not None:
-        stage_runtime_writer.complete_stage(
-            USDatasetAssemblyOutputs(
-                policyengine_dataset=(
-                    _stage_artifact_ref(
+        if result.synthesizer is not None and synthesizer_path is not None:
+            result.synthesizer.save(synthesizer_path)
+
+        if not (live_artifacts and source_plan_path.exists()):
+            _write_us_source_plan_artifact(result, source_plan_path)
+        if not (live_artifacts and calibration_summary_path.exists()):
+            _write_json_atomically(calibration_summary_path, result.calibration_summary)
+        source_weight_diagnostics_payload = _build_source_weight_diagnostics(result)
+        _write_json_atomically(
+            source_weight_diagnostics_path,
+            source_weight_diagnostics_payload,
+        )
+
+        if (
+            result.policyengine_tables is not None
+            and policyengine_dataset_path is not None
+        ):
+            if policyengine_entity_tables_path is not None:
+                if not (live_artifacts and policyengine_entity_tables_path.exists()):
+                    write_us_policyengine_entity_stage_artifact(
+                        result.policyengine_tables,
+                        output_dir,
+                        stage_id="07_calibration",
+                        artifact_key="policyengine_entity_tables",
+                        checkpoint_stage="post_calibration",
+                    )
+            period = result.config.policyengine_dataset_year or 2024
+            USMicroplexPipeline(result.config).export_policyengine_dataset(
+                result,
+                policyengine_dataset_path,
+                period=period,
+            )
+        capital_gains_lots_path, capital_gains_lots_summary = (
+            _maybe_write_capital_gains_lot_artifact(result, output_dir)
+        )
+
+        if stage_runtime_writer is not None:
+            stage_runtime_writer.complete_stage(
+                USDatasetAssemblyOutputs(
+                    policyengine_dataset=(
+                        _stage_artifact_ref(
+                            output_dir,
+                            "08_dataset_assembly",
+                            "policyengine_dataset",
+                        )
+                        if policyengine_dataset_path is not None
+                        else None
+                    ),
+                    stage_manifest=_stage_artifact_ref(
                         output_dir,
                         "08_dataset_assembly",
-                        "policyengine_dataset",
-                    )
-                    if policyengine_dataset_path is not None
-                    else None
-                ),
-                stage_manifest=_stage_artifact_ref(
-                    output_dir,
-                    "08_dataset_assembly",
-                    "stage_manifest",
-                    assume_exists=True,
-                ),
-                data_flow_snapshot=_stage_artifact_ref(
-                    output_dir,
-                    "08_dataset_assembly",
-                    "data_flow_snapshot",
-                    assume_exists=True,
-                ),
-                artifact_inventory=_stage_artifact_ref(
-                    output_dir,
-                    "08_dataset_assembly",
-                    "artifact_inventory",
-                    assume_exists=True,
-                ),
-                conditional_readiness=_stage_artifact_ref(
-                    output_dir,
-                    "08_dataset_assembly",
-                    "conditional_readiness",
-                    assume_exists=True,
-                ),
-                diagnostics=_stage_diagnostics(
-                    "08_dataset_assembly",
-                    {
-                        "policyengine_dataset": (
-                            str(policyengine_dataset_path.relative_to(output_dir))
-                            if policyengine_dataset_path is not None
-                            else None
-                        ),
-                        "has_capital_gains_lots": capital_gains_lots_path is not None,
-                    },
-                ),
+                        "stage_manifest",
+                        assume_exists=True,
+                    ),
+                    data_flow_snapshot=_stage_artifact_ref(
+                        output_dir,
+                        "08_dataset_assembly",
+                        "data_flow_snapshot",
+                        assume_exists=True,
+                    ),
+                    artifact_inventory=_stage_artifact_ref(
+                        output_dir,
+                        "08_dataset_assembly",
+                        "artifact_inventory",
+                        assume_exists=True,
+                    ),
+                    conditional_readiness=_stage_artifact_ref(
+                        output_dir,
+                        "08_dataset_assembly",
+                        "conditional_readiness",
+                        assume_exists=True,
+                    ),
+                    diagnostics=_stage_diagnostics(
+                        "08_dataset_assembly",
+                        {
+                            "policyengine_dataset": (
+                                str(policyengine_dataset_path.relative_to(output_dir))
+                                if policyengine_dataset_path is not None
+                                else None
+                            ),
+                            "has_capital_gains_lots": (
+                                capital_gains_lots_path is not None
+                            ),
+                        },
+                    ),
+                )
             )
-        )
-        stage_runtime_writer.start_stage("09_validation_benchmarking")
+            stage_runtime_writer.start_stage("09_validation_benchmarking")
+    except Exception as exc:
+        if stage_runtime_writer is not None:
+            stage_runtime_writer.fail_stage("08_dataset_assembly", exc)
+        raise
 
-    (
-        resolved_target_provider,
-        resolved_baseline_dataset,
-        resolved_harness_slices,
-        resolved_harness_metadata,
-    ) = _resolve_policyengine_harness_context(
-        result,
-        policyengine_comparison_cache=policyengine_comparison_cache,
-        policyengine_target_provider=policyengine_target_provider,
-        policyengine_baseline_dataset=policyengine_baseline_dataset,
-        policyengine_harness_slices=policyengine_harness_slices,
-        policyengine_harness_metadata=policyengine_harness_metadata,
-    )
-
-    harness_summary = None
-    native_scores_payload = (
-        dict(precomputed_policyengine_native_scores)
-        if precomputed_policyengine_native_scores is not None
-        else None
-    )
-    if precomputed_policyengine_harness_payload is not None:
-        harness_payload = dict(precomputed_policyengine_harness_payload)
-        policyengine_harness_path = resolve_us_stage_artifact_contract_path(
-            output_dir,
-            "09_validation_benchmarking",
-            "policyengine_harness",
-        )
-        policyengine_harness_path.write_text(
-            json.dumps(harness_payload, indent=2, sort_keys=True)
-        )
-        harness_summary = harness_payload.get("summary")
-    elif (
-        not defer_policyengine_harness
-        and result.policyengine_tables is not None
-        and resolved_target_provider is not None
-        and resolved_baseline_dataset is not None
-        and resolved_harness_slices
-    ):
-        harness_period = result.config.policyengine_dataset_year or 2024
-        harness_run = evaluate_policyengine_us_harness(
-            result.policyengine_tables,
+    try:
+        (
             resolved_target_provider,
+            resolved_baseline_dataset,
             resolved_harness_slices,
-            baseline_dataset=str(resolved_baseline_dataset),
-            dataset_year=harness_period,
-            simulation_cls=result.config.policyengine_simulation_cls,
-            candidate_label="microplex",
-            baseline_label="policyengine_us_data",
-            metadata=resolved_harness_metadata,
-            cache=policyengine_comparison_cache,
+            resolved_harness_metadata,
+        ) = _resolve_policyengine_harness_context(
+            result,
+            policyengine_comparison_cache=policyengine_comparison_cache,
+            policyengine_target_provider=policyengine_target_provider,
+            policyengine_baseline_dataset=policyengine_baseline_dataset,
+            policyengine_harness_slices=policyengine_harness_slices,
+            policyengine_harness_metadata=policyengine_harness_metadata,
         )
-        policyengine_harness_path = resolve_us_stage_artifact_contract_path(
-            output_dir,
-            "09_validation_benchmarking",
-            "policyengine_harness",
-        )
-        harness_run.save(policyengine_harness_path)
-        harness_payload = harness_run.to_dict()
-        harness_summary = harness_payload["summary"]
 
-    if native_scores_payload is not None:
-        policyengine_native_scores_path = resolve_us_stage_artifact_contract_path(
-            output_dir,
-            "09_validation_benchmarking",
-            "policyengine_native_scores",
+        harness_summary = None
+        native_scores_payload = (
+            dict(precomputed_policyengine_native_scores)
+            if precomputed_policyengine_native_scores is not None
+            else None
         )
-        policyengine_native_scores_path.write_text(
-            json.dumps(native_scores_payload, indent=2, sort_keys=True)
-        )
-    elif (
-        not defer_policyengine_native_score
-        and policyengine_dataset_path is not None
-        and resolved_baseline_dataset is not None
-    ):
-        try:
-            native_scores_payload = compute_us_pe_native_scores(
-                candidate_dataset_path=policyengine_dataset_path,
-                baseline_dataset_path=resolved_baseline_dataset,
-                period=result.config.policyengine_dataset_year or 2024,
-                policyengine_us_data_repo=policyengine_us_data_repo,
+        if precomputed_policyengine_harness_payload is not None:
+            harness_payload = dict(precomputed_policyengine_harness_payload)
+            policyengine_harness_path = resolve_us_stage_artifact_contract_path(
+                output_dir,
+                "09_validation_benchmarking",
+                "policyengine_harness",
             )
+            policyengine_harness_path.write_text(
+                json.dumps(harness_payload, indent=2, sort_keys=True)
+            )
+            harness_summary = harness_payload.get("summary")
+        elif (
+            not defer_policyengine_harness
+            and result.policyengine_tables is not None
+            and resolved_target_provider is not None
+            and resolved_baseline_dataset is not None
+            and resolved_harness_slices
+        ):
+            harness_period = result.config.policyengine_dataset_year or 2024
+            harness_run = evaluate_policyengine_us_harness(
+                result.policyengine_tables,
+                resolved_target_provider,
+                resolved_harness_slices,
+                baseline_dataset=str(resolved_baseline_dataset),
+                dataset_year=harness_period,
+                simulation_cls=result.config.policyengine_simulation_cls,
+                candidate_label="microplex",
+                baseline_label="policyengine_us_data",
+                metadata=resolved_harness_metadata,
+                cache=policyengine_comparison_cache,
+            )
+            policyengine_harness_path = resolve_us_stage_artifact_contract_path(
+                output_dir,
+                "09_validation_benchmarking",
+                "policyengine_harness",
+            )
+            harness_run.save(policyengine_harness_path)
+            harness_payload = harness_run.to_dict()
+            harness_summary = harness_payload["summary"]
+
+        if native_scores_payload is not None:
             policyengine_native_scores_path = resolve_us_stage_artifact_contract_path(
                 output_dir,
                 "09_validation_benchmarking",
@@ -1224,218 +1231,265 @@ def save_us_microplex_artifacts(
             policyengine_native_scores_path.write_text(
                 json.dumps(native_scores_payload, indent=2, sort_keys=True)
             )
-        except Exception:
-            if require_policyengine_native_score:
-                raise
-
-    child_tax_unit_agi_drift_path = None
-    child_tax_unit_agi_drift_summary: dict[str, Any] | None = None
-    if enable_child_tax_unit_agi_drift:
-        try:
-            drift_path = resolve_us_stage_artifact_contract_path(
-                output_dir,
-                "09_validation_benchmarking",
-                "child_tax_unit_agi_drift",
-            )
-            variables = (
-                child_tax_unit_agi_drift_variables
-                or DEFAULT_CHILD_TAX_UNIT_AGI_DRIFT_VARIABLES
-            )
-            payload = summarize_child_tax_unit_agi_drift(
-                output_dir,
-                variables=variables,
-            )
-            drift_path.write_text(json.dumps(payload, indent=2, sort_keys=True))
-            child_tax_unit_agi_drift_path = drift_path
-            child_tax_unit_agi_drift_summary = (
-                _summarize_child_tax_unit_agi_drift_ratios(
-                    payload,
-                    stage="calibrated",
-                    variables=variables,
+        elif (
+            not defer_policyengine_native_score
+            and policyengine_dataset_path is not None
+            and resolved_baseline_dataset is not None
+        ):
+            try:
+                native_scores_payload = compute_us_pe_native_scores(
+                    candidate_dataset_path=policyengine_dataset_path,
+                    baseline_dataset_path=resolved_baseline_dataset,
+                    period=result.config.policyengine_dataset_year or 2024,
+                    policyengine_us_data_repo=policyengine_us_data_repo,
                 )
-            )
-        except Exception as exc:  # pragma: no cover - diagnostic best-effort
-            child_tax_unit_agi_drift_summary = {
-                "error": f"{type(exc).__name__}: {exc}",
-            }
-
-    manifest = {
-        "created_at": datetime.now(UTC).isoformat(),
-        "config": result.config.to_dict(),
-        "rows": {
-            "seed": int(len(result.seed_data)),
-            "synthetic": int(len(result.synthetic_data)),
-            "calibrated": int(len(result.calibrated_data)),
-        },
-        "weights": {
-            "nonzero": result.n_nonzero_weights,
-            "total": result.total_weighted_population,
-        },
-        "targets": {
-            "n_marginal_groups": len(result.targets.marginal),
-            "n_continuous": len(result.targets.continuous),
-        },
-        "synthesis": result.synthesis_metadata,
-        "calibration": result.calibration_summary,
-        "artifacts": {
-            "seed_data": seed_data_path.name,
-            "scaffold_seed_data": (
-                str(scaffold_seed_data_path.relative_to(output_dir))
-                if scaffold_seed_data_path is not None
-                else None
-            ),
-            "synthetic_data": synthetic_data_path.name,
-            "calibrated_data": calibrated_data_path.name,
-            "targets": targets_path.name,
-            "synthesizer": synthesizer_path.name if synthesizer_path else None,
-            "source_plan": str(source_plan_path.relative_to(output_dir)),
-            "source_weight_diagnostics": source_weight_diagnostics_path.name,
-            "calibration_summary": str(
-                calibration_summary_path.relative_to(output_dir)
-            ),
-            "policyengine_entity_tables": (
-                str(policyengine_entity_tables_path.relative_to(output_dir))
-                if policyengine_entity_tables_path is not None
-                else None
-            ),
-            "policyengine_dataset": (
-                policyengine_dataset_path.name if policyengine_dataset_path else None
-            ),
-            "data_flow_snapshot": data_flow_snapshot_path.name,
-            "stage_manifest": stage_manifest_path.name,
-            "artifact_inventory": str(artifact_inventory_path.relative_to(output_dir)),
-            "conditional_readiness": str(
-                conditional_readiness_path.relative_to(output_dir)
-            ),
-            "validation_evidence": (
-                str(validation_evidence_path.relative_to(output_dir))
-                if validation_evidence_path is not None
-                else None
-            ),
-            "policyengine_harness": (
-                policyengine_harness_path.name if policyengine_harness_path else None
-            ),
-            "policyengine_native_scores": (
-                policyengine_native_scores_path.name
-                if policyengine_native_scores_path is not None
-                else None
-            ),
-            "capital_gains_lots": (
-                capital_gains_lots_path.name
-                if capital_gains_lots_path is not None
-                else None
-            ),
-        },
-    }
-    if harness_summary is not None:
-        manifest["policyengine_harness"] = harness_summary
-    if native_scores_payload is not None:
-        manifest["policyengine_native_scores"] = dict(
-            native_scores_payload.get("summary", {})
-        )
-    if child_tax_unit_agi_drift_path is not None:
-        manifest["artifacts"]["child_tax_unit_agi_drift"] = (
-            child_tax_unit_agi_drift_path.name
-        )
-    if child_tax_unit_agi_drift_summary is not None:
-        manifest.setdefault("diagnostics", {})["child_tax_unit_agi_drift"] = (
-            child_tax_unit_agi_drift_summary
-        )
-    if capital_gains_lots_summary is not None:
-        manifest.setdefault("diagnostics", {})["capital_gains_lots"] = (
-            capital_gains_lots_summary
-        )
-    manifest.setdefault("diagnostics", {})["source_weight_diagnostics"] = dict(
-        source_weight_diagnostics_payload.get("summary", {})
-    )
-    if harness_summary is not None or native_scores_payload is not None:
-        resolved_run_registry_path = Path(
-            run_registry_path or output_dir.parent / "run_registry.jsonl"
-        )
-        run_entry = build_us_microplex_run_registry_entry(
-            artifact_dir=output_dir,
-            manifest_path=manifest_path,
-            manifest=manifest,
-            policyengine_harness_path=policyengine_harness_path,
-            policyengine_harness_payload=harness_payload,
-            metadata=dict(run_registry_metadata or {}),
-        )
-        recorded_entry = append_us_microplex_run_registry_entry(
-            resolved_run_registry_path,
-            run_entry,
-        )
-        resolved_run_index_path = append_us_microplex_run_index_entry(
-            run_index_path or output_dir.parent,
-            recorded_entry,
-            policyengine_harness_payload=harness_payload,
-        )
-        manifest["run_registry"] = {
-            "path": str(resolved_run_registry_path),
-            "artifact_id": recorded_entry.artifact_id,
-            "improved_candidate_frontier": recorded_entry.improved_candidate_frontier,
-            "improved_delta_frontier": recorded_entry.improved_delta_frontier,
-            "improved_composite_frontier": recorded_entry.improved_composite_frontier,
-            "improved_native_frontier": recorded_entry.improved_native_frontier,
-            "default_frontier_metric": (
-                "enhanced_cps_native_loss_delta"
-                if native_scores_payload is not None
-                else "candidate_composite_parity_loss"
-            ),
-        }
-        manifest["run_index"] = {
-            "path": str(resolved_run_index_path),
-            "artifact_id": recorded_entry.artifact_id,
-        }
-    if stage_runtime_writer is not None:
-        stage_runtime_writer.manifest_payload = manifest
-        stage9_summary = _stage9_benchmark_summary(manifest)
-        if stage9_summary:
-            stage_runtime_writer.complete_stage(
-                USValidationBenchmarkingOutputs(
-                    validation_evidence=_stage_artifact_ref(
+                policyengine_native_scores_path = (
+                    resolve_us_stage_artifact_contract_path(
                         output_dir,
                         "09_validation_benchmarking",
-                        "validation_evidence",
-                        assume_exists=True,
-                    ),
-                    benchmark_summary=stage9_summary,
-                    policyengine_harness=(
-                        _stage_artifact_ref(
-                            output_dir,
-                            "09_validation_benchmarking",
-                            "policyengine_harness",
-                        )
-                        if policyengine_harness_path is not None
-                        else None
-                    ),
-                    policyengine_native_scores=(
-                        _stage_artifact_ref(
-                            output_dir,
-                            "09_validation_benchmarking",
-                            "policyengine_native_scores",
-                        )
-                        if policyengine_native_scores_path is not None
-                        else None
-                    ),
-                    diagnostics=_stage_diagnostics(
-                        "09_validation_benchmarking",
-                        stage9_summary,
-                    ),
+                        "policyengine_native_scores",
+                    )
                 )
+                policyengine_native_scores_path.write_text(
+                    json.dumps(native_scores_payload, indent=2, sort_keys=True)
+                )
+            except Exception:
+                if require_policyengine_native_score:
+                    raise
+
+        child_tax_unit_agi_drift_path = None
+        child_tax_unit_agi_drift_summary: dict[str, Any] | None = None
+        if enable_child_tax_unit_agi_drift:
+            try:
+                drift_path = resolve_us_stage_artifact_contract_path(
+                    output_dir,
+                    "09_validation_benchmarking",
+                    "child_tax_unit_agi_drift",
+                )
+                variables = (
+                    child_tax_unit_agi_drift_variables
+                    or DEFAULT_CHILD_TAX_UNIT_AGI_DRIFT_VARIABLES
+                )
+                payload = summarize_child_tax_unit_agi_drift(
+                    output_dir,
+                    variables=variables,
+                )
+                drift_path.write_text(json.dumps(payload, indent=2, sort_keys=True))
+                child_tax_unit_agi_drift_path = drift_path
+                child_tax_unit_agi_drift_summary = (
+                    _summarize_child_tax_unit_agi_drift_ratios(
+                        payload,
+                        stage="calibrated",
+                        variables=variables,
+                    )
+                )
+            except Exception as exc:  # pragma: no cover - diagnostic best-effort
+                child_tax_unit_agi_drift_summary = {
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+
+        manifest = {
+            "created_at": datetime.now(UTC).isoformat(),
+            "config": result.config.to_dict(),
+            "rows": {
+                "seed": int(len(result.seed_data)),
+                "synthetic": int(len(result.synthetic_data)),
+                "calibrated": int(len(result.calibrated_data)),
+            },
+            "weights": {
+                "nonzero": result.n_nonzero_weights,
+                "total": result.total_weighted_population,
+            },
+            "targets": {
+                "n_marginal_groups": len(result.targets.marginal),
+                "n_continuous": len(result.targets.continuous),
+            },
+            "synthesis": result.synthesis_metadata,
+            "calibration": result.calibration_summary,
+            "artifacts": {
+                "seed_data": seed_data_path.name,
+                "scaffold_seed_data": (
+                    str(scaffold_seed_data_path.relative_to(output_dir))
+                    if scaffold_seed_data_path is not None
+                    else None
+                ),
+                "synthetic_data": synthetic_data_path.name,
+                "calibrated_data": calibrated_data_path.name,
+                "targets": targets_path.name,
+                "synthesizer": synthesizer_path.name if synthesizer_path else None,
+                "source_plan": str(source_plan_path.relative_to(output_dir)),
+                "source_weight_diagnostics": source_weight_diagnostics_path.name,
+                "calibration_summary": str(
+                    calibration_summary_path.relative_to(output_dir)
+                ),
+                "pre_calibration_policyengine_entity_tables": (
+                    str(
+                        pre_calibration_policyengine_entity_tables_path.relative_to(
+                            output_dir
+                        )
+                    )
+                    if pre_calibration_policyengine_entity_tables_path is not None
+                    and pre_calibration_policyengine_entity_tables_path.exists()
+                    else None
+                ),
+                "policyengine_entity_tables": (
+                    str(policyengine_entity_tables_path.relative_to(output_dir))
+                    if policyengine_entity_tables_path is not None
+                    else None
+                ),
+                "policyengine_dataset": (
+                    policyengine_dataset_path.name
+                    if policyengine_dataset_path
+                    else None
+                ),
+                "data_flow_snapshot": data_flow_snapshot_path.name,
+                "stage_manifest": stage_manifest_path.name,
+                "artifact_inventory": str(
+                    artifact_inventory_path.relative_to(output_dir)
+                ),
+                "conditional_readiness": str(
+                    conditional_readiness_path.relative_to(output_dir)
+                ),
+                "validation_evidence": (
+                    str(validation_evidence_path.relative_to(output_dir))
+                    if validation_evidence_path is not None
+                    else None
+                ),
+                "policyengine_harness": (
+                    policyengine_harness_path.name
+                    if policyengine_harness_path
+                    else None
+                ),
+                "policyengine_native_scores": (
+                    policyengine_native_scores_path.name
+                    if policyengine_native_scores_path is not None
+                    else None
+                ),
+                "capital_gains_lots": (
+                    capital_gains_lots_path.name
+                    if capital_gains_lots_path is not None
+                    else None
+                ),
+            },
+        }
+        if harness_summary is not None:
+            manifest["policyengine_harness"] = harness_summary
+        if native_scores_payload is not None:
+            manifest["policyengine_native_scores"] = dict(
+                native_scores_payload.get("summary", {})
             )
-        else:
-            stage_runtime_writer.defer_stage(
-                "09_validation_benchmarking",
-                "No validation or benchmark evidence was configured for this run.",
+        if child_tax_unit_agi_drift_path is not None:
+            manifest["artifacts"]["child_tax_unit_agi_drift"] = (
+                child_tax_unit_agi_drift_path.name
             )
-        manifest = stage_runtime_writer.finalize_from_artifact_manifest(manifest)
-    else:
-        manifest = write_us_stage_run_manifests_from_artifact_manifest(
-            output_dir,
-            manifest,
-            allow_stage_input_overrides=allow_stage_input_overrides,
-            stage_input_overrides=stage_input_overrides,
+        if child_tax_unit_agi_drift_summary is not None:
+            manifest.setdefault("diagnostics", {})["child_tax_unit_agi_drift"] = (
+                child_tax_unit_agi_drift_summary
+            )
+        if capital_gains_lots_summary is not None:
+            manifest.setdefault("diagnostics", {})["capital_gains_lots"] = (
+                capital_gains_lots_summary
+            )
+        manifest.setdefault("diagnostics", {})["source_weight_diagnostics"] = dict(
+            source_weight_diagnostics_payload.get("summary", {})
         )
+        if harness_summary is not None or native_scores_payload is not None:
+            resolved_run_registry_path = Path(
+                run_registry_path or output_dir.parent / "run_registry.jsonl"
+            )
+            run_entry = build_us_microplex_run_registry_entry(
+                artifact_dir=output_dir,
+                manifest_path=manifest_path,
+                manifest=manifest,
+                policyengine_harness_path=policyengine_harness_path,
+                policyengine_harness_payload=harness_payload,
+                metadata=dict(run_registry_metadata or {}),
+            )
+            recorded_entry = append_us_microplex_run_registry_entry(
+                resolved_run_registry_path,
+                run_entry,
+            )
+            resolved_run_index_path = append_us_microplex_run_index_entry(
+                run_index_path or output_dir.parent,
+                recorded_entry,
+                policyengine_harness_payload=harness_payload,
+            )
+            manifest["run_registry"] = {
+                "path": str(resolved_run_registry_path),
+                "artifact_id": recorded_entry.artifact_id,
+                "improved_candidate_frontier": recorded_entry.improved_candidate_frontier,
+                "improved_delta_frontier": recorded_entry.improved_delta_frontier,
+                "improved_composite_frontier": recorded_entry.improved_composite_frontier,
+                "improved_native_frontier": recorded_entry.improved_native_frontier,
+                "default_frontier_metric": (
+                    "enhanced_cps_native_loss_delta"
+                    if native_scores_payload is not None
+                    else "candidate_composite_parity_loss"
+                ),
+            }
+            manifest["run_index"] = {
+                "path": str(resolved_run_index_path),
+                "artifact_id": recorded_entry.artifact_id,
+            }
+        if stage_runtime_writer is not None:
+            stage_runtime_writer.manifest_payload = manifest
+            stage9_summary = _stage9_benchmark_summary(manifest)
+            if stage9_summary:
+                if validation_evidence_path is not None:
+                    write_us_validation_evidence_manifest(
+                        output_dir,
+                        validation_evidence_path,
+                        manifest_payload=manifest,
+                    )
+                stage_runtime_writer.complete_stage(
+                    USValidationBenchmarkingOutputs(
+                        validation_evidence=_stage_artifact_ref(
+                            output_dir,
+                            "09_validation_benchmarking",
+                            "validation_evidence",
+                        ),
+                        benchmark_summary=stage9_summary,
+                        policyengine_harness=(
+                            _stage_artifact_ref(
+                                output_dir,
+                                "09_validation_benchmarking",
+                                "policyengine_harness",
+                            )
+                            if policyengine_harness_path is not None
+                            else None
+                        ),
+                        policyengine_native_scores=(
+                            _stage_artifact_ref(
+                                output_dir,
+                                "09_validation_benchmarking",
+                                "policyengine_native_scores",
+                            )
+                            if policyengine_native_scores_path is not None
+                            else None
+                        ),
+                        diagnostics=_stage_diagnostics(
+                            "09_validation_benchmarking",
+                            stage9_summary,
+                        ),
+                    )
+                )
+            else:
+                stage_runtime_writer.defer_stage(
+                    "09_validation_benchmarking",
+                    "No validation or benchmark evidence was configured for this run.",
+                )
+            manifest = stage_runtime_writer.finalize_from_artifact_manifest(manifest)
+        else:
+            manifest = write_us_stage_run_manifests_from_artifact_manifest(
+                output_dir,
+                manifest,
+                allow_stage_input_overrides=allow_stage_input_overrides,
+                stage_input_overrides=stage_input_overrides,
+            )
+    except Exception as exc:
+        if stage_runtime_writer is not None:
+            stage_runtime_writer.fail_stage("09_validation_benchmarking", exc)
+        raise
     assert_valid_benchmark_artifact_manifest(
         manifest,
         artifact_dir=output_dir,

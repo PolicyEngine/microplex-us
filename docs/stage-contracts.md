@@ -34,6 +34,11 @@ directory before loading sources, writes Stage 1 immediately, writes Stage 2 as
 source frames load, then finalizes all stage manifests against the completed
 artifact manifest during save.
 
+Other versioned convenience entry points still reconstruct their stage manifests
+from the completed saved artifact manifest. They expose the same saved-run
+contract files, but they do not yet produce live per-stage lifecycle updates
+while the build is running.
+
 The registry exposes two seam layers:
 
 - `inputs` and `outputs` are structured stage resources. They identify artifact,
@@ -67,9 +72,11 @@ boundary artifacts where the pipeline already has stable outputs:
 
 - Stage 4: `stage_artifacts/04_seed_scaffold/scaffold_seed_data.parquet`
 - Stage 5: `seed_data.parquet` and `synthetic_data.parquet`
-- Stage 6: `stage_artifacts/06_policyengine_entities/`
+- Stage 6: `stage_artifacts/06_policyengine_entities/` for the pre-calibration
+  PolicyEngine entity-table checkpoint
 - Stage 7: `calibrated_data.parquet`, `targets.json`, and
-  `stage_artifacts/07_calibration/calibration_summary.json`
+  `stage_artifacts/07_calibration/calibration_summary.json`, plus the calibrated
+  PolicyEngine entity-table bundle used by dataset export
 - Stage 8: `policyengine_us.h5`
 - Stage 9: validation and benchmark evidence artifacts
 
@@ -77,9 +84,12 @@ The Stage 4 artifact is the scaffold-projected seed before donor integration. It
 is a diagnostic and manual replay boundary, not an automatic conditional resume
 point yet.
 
-Conditional execution is intentionally not implemented yet. The stage manifest
-and artifacts are designed to make that possible later without changing the
-saved-run contract again.
+Conditional execution is intentionally narrow in this implementation. Stage 9
+validation and benchmarking can be replayed against an existing complete Stage 8
+dataset through `microplex-us-stage9-replay`. Earlier-stage conditional source
+loading, donor integration, synthesis, calibration, and automatic graph
+scheduling remain future work. The stage manifest and artifacts are designed to
+make those routes possible later without changing the saved-run contract again.
 
 ## Artifact inventory and readiness
 

@@ -193,7 +193,10 @@ class USStageRuntimeWriter:
             input_overrides=self._input_overrides_for_stage(outputs.stage_id),
         )
         self._write_stage_payload(outputs.stage_id, payload)
-        self._refresh_aggregate()
+        if outputs.stage_id == "08_dataset_assembly":
+            self.manifest_payload = self._run_writer.write_manifest_files()
+        else:
+            self._refresh_aggregate()
         return payload
 
     def fail_stage(
@@ -364,7 +367,8 @@ class USStageRuntimeWriter:
         previous_stage_id = US_CANONICAL_STAGE_IDS[stage_index - 1]
         previous_payload = self._stage_payload(previous_stage_id)
         if previous_payload.get("lifecycleStatus") == "complete":
-            self._validate_completed_previous_stage(previous_stage_id, previous_payload)
+            self._validate_completed_stage(previous_stage_id, previous_payload)
+            self._validate_required_start_inputs(stage_id)
             return
         contract = get_us_pipeline_stage_contract(stage_id)
         required_previous_inputs = tuple(
@@ -376,13 +380,41 @@ class USStageRuntimeWriter:
             self._override_satisfies(stage_id, resource.key)
             for resource in required_previous_inputs
         ):
+            self._validate_required_start_inputs(stage_id)
             return
         raise ValueError(
             f"{stage_id} requires {previous_stage_id} to be complete before start, "
             "unless explicit stage input overrides are enabled"
         )
 
-    def _validate_completed_previous_stage(
+    def _validate_required_start_inputs(self, stage_id: str) -> None:
+        contract = get_us_pipeline_stage_contract(stage_id)
+        missing_inputs: list[str] = []
+        for resource in contract.inputs:
+            if (
+                not resource.required
+                or resource.stage_id is None
+                or resource.kind not in {"artifact", "manifest", "stage_output"}
+                or self._override_satisfies(stage_id, resource.key)
+            ):
+                continue
+            payload = self._stage_payload(resource.stage_id)
+            if payload.get("lifecycleStatus") != "complete":
+                missing_inputs.append(f"{resource.stage_id}.{resource.key}")
+                continue
+            self._validate_completed_stage(resource.stage_id, payload)
+            outputs = payload.get("outputs")
+            if not isinstance(outputs, Mapping) or not _serialized_output_is_available(
+                outputs.get(resource.key)
+            ):
+                missing_inputs.append(f"{resource.stage_id}.{resource.key}")
+        if missing_inputs:
+            raise ValueError(
+                f"{stage_id} is missing required stage input(s) before start: "
+                f"{', '.join(missing_inputs)}"
+            )
+
+    def _validate_completed_stage(
         self,
         stage_id: str,
         payload: Mapping[str, Any],

@@ -159,6 +159,7 @@ def _validated_stage8_dataset_path(
     dataset_path = Path(str(dataset_value))
     if not dataset_path.is_absolute():
         dataset_path = artifact_root / dataset_path
+    dataset_path = dataset_path.expanduser().resolve()
     if not dataset_path.exists():
         raise FileNotFoundError(f"Stage 8 dataset artifact is missing: {dataset_path}")
 
@@ -181,7 +182,14 @@ def _validated_stage8_dataset_path(
         serialized_dataset = stage8_outputs.get("policyengine_dataset")
         if isinstance(serialized_dataset, dict):
             output_path = serialized_dataset.get("path")
-            if output_path and Path(str(output_path)).name != dataset_path.name:
+            if (
+                output_path
+                and _resolve_artifact_path(
+                    artifact_root,
+                    output_path,
+                )
+                != dataset_path
+            ):
                 raise ValueError(
                     "Stage 8 dataset output does not match the root manifest "
                     "policyengine_dataset artifact"
@@ -222,6 +230,13 @@ def _relative_to_root(path: Path, artifact_root: Path) -> str:
         return str(path.relative_to(artifact_root))
     except ValueError:
         return str(path)
+
+
+def _resolve_artifact_path(artifact_root: Path, value: object) -> Path:
+    path = Path(str(value))
+    if not path.is_absolute():
+        path = artifact_root / path
+    return path.expanduser().resolve()
 
 
 def main(argv: list[str] | None = None) -> int:

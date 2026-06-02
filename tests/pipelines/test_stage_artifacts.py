@@ -28,7 +28,9 @@ from microplex_us.policyengine import PolicyEngineUSEntityTableBundle
 def test_build_us_stage_artifact_inventory_hashes_files_and_directories(tmp_path):
     (tmp_path / "seed_data.parquet").write_text("seed")
     (tmp_path / "synthetic_data.parquet").write_text("synthetic")
-    source_plan = tmp_path / "stage_artifacts" / "03_source_planning" / "source_plan.json"
+    source_plan = (
+        tmp_path / "stage_artifacts" / "03_source_planning" / "source_plan.json"
+    )
     source_plan.parent.mkdir(parents=True)
     source_plan.write_text("{}")
     entity_dir = tmp_path / "stage_artifacts" / "06_policyengine_entities"
@@ -44,7 +46,7 @@ def test_build_us_stage_artifact_inventory_hashes_files_and_directories(tmp_path
             "seed_data": "seed_data.parquet",
             "synthetic_data": "synthetic_data.parquet",
             "source_plan": "stage_artifacts/03_source_planning/source_plan.json",
-            "policyengine_entity_tables": (
+            "pre_calibration_policyengine_entity_tables": (
                 "stage_artifacts/06_policyengine_entities/metadata.json"
             ),
         },
@@ -57,22 +59,23 @@ def test_build_us_stage_artifact_inventory_hashes_files_and_directories(tmp_path
     )
 
     records = {
-        (record["stageId"], record["key"]): record
-        for record in inventory["artifacts"]
+        (record["stageId"], record["key"]): record for record in inventory["artifacts"]
     }
-    assert records[("05_donor_integration_synthesis", "synthetic_data")][
-        "classification"
-    ] == "manual_replay"
-    assert records[("05_donor_integration_synthesis", "synthetic_data")][
-        "hashStatus"
-    ] == "hashed"
-    assert records[("05_donor_integration_synthesis", "synthetic_data")][
-        "contentHash"
-    ]
+    assert (
+        records[("05_donor_integration_synthesis", "synthetic_data")]["classification"]
+        == "manual_replay"
+    )
+    assert (
+        records[("05_donor_integration_synthesis", "synthetic_data")]["hashStatus"]
+        == "hashed"
+    )
+    assert records[("05_donor_integration_synthesis", "synthetic_data")]["contentHash"]
     assert records[("03_source_planning", "source_plan")]["classification"] == (
         "diagnostic_only"
     )
-    entity_record = records[("06_policyengine_entities", "policyengine_entity_tables")]
+    entity_record = records[
+        ("06_policyengine_entities", "pre_calibration_policyengine_entity_tables")
+    ]
     assert entity_record["classification"] == "manual_resume"
     assert entity_record["fileCount"] == 2
     assert entity_record["hashStatus"] == "hashed"
@@ -95,15 +98,16 @@ def test_build_us_stage_artifact_inventory_classifies_missing_and_contract_only(
     inventory = build_us_stage_artifact_inventory(tmp_path, manifest_payload=manifest)
 
     records = {
-        (record["stageId"], record["key"]): record
-        for record in inventory["artifacts"]
+        (record["stageId"], record["key"]): record for record in inventory["artifacts"]
     }
-    assert records[("05_donor_integration_synthesis", "synthetic_data")][
-        "classification"
-    ] == "missing_required"
-    assert records[("05_donor_integration_synthesis", "synthesizer")][
-        "classification"
-    ] == "contract_only"
+    assert (
+        records[("05_donor_integration_synthesis", "synthetic_data")]["classification"]
+        == "missing_required"
+    )
+    assert (
+        records[("05_donor_integration_synthesis", "synthesizer")]["classification"]
+        == "contract_only"
+    )
 
 
 def test_build_us_stage_artifact_inventory_skips_large_file_hashes(tmp_path):
@@ -123,9 +127,7 @@ def test_build_us_stage_artifact_inventory_skips_large_file_hashes(tmp_path):
     )
 
     record = next(
-        record
-        for record in inventory["artifacts"]
-        if record["key"] == "synthetic_data"
+        record for record in inventory["artifacts"] if record["key"] == "synthetic_data"
     )
     assert record["hashStatus"] == "too_large"
     assert record["contentHash"] is None
@@ -186,7 +188,9 @@ def test_load_us_candidate_stage_artifacts_reads_stage5_boundary(tmp_path):
 
     pd.testing.assert_frame_equal(loaded.seed_data, seed)
     pd.testing.assert_frame_equal(loaded.synthetic_data, synthetic)
-    assert loaded.artifact_paths["synthetic_data"] == tmp_path / "synthetic_data.parquet"
+    assert (
+        loaded.artifact_paths["synthetic_data"] == tmp_path / "synthetic_data.parquet"
+    )
 
 
 def test_load_us_seed_scaffold_stage_artifacts_reads_stage4_boundary(tmp_path):
@@ -274,7 +278,7 @@ def test_load_us_policyengine_entity_stage_artifacts_reads_checkpoint(tmp_path):
         "synthesis": {"source_names": ["source"], "scaffold_source": "source"},
         "calibration": {},
         "artifacts": {
-            "policyengine_entity_tables": (
+            "pre_calibration_policyengine_entity_tables": (
                 "stage_artifacts/06_policyengine_entities/metadata.json"
             ),
         },
@@ -350,7 +354,9 @@ def test_load_us_dataset_assembly_artifacts_resolves_stage8_paths(tmp_path):
     assert loaded.stage_manifest == tmp_path / "stage_manifest.json"
     assert loaded.data_flow_snapshot == tmp_path / "data_flow_snapshot.json"
     assert loaded.artifact_inventory == stage_artifacts / "artifact_inventory.json"
-    assert loaded.conditional_readiness == stage_artifacts / "conditional_readiness.json"
+    assert (
+        loaded.conditional_readiness == stage_artifacts / "conditional_readiness.json"
+    )
 
 
 def test_stage_artifact_checked_resolver_enforces_format_and_existence(tmp_path):

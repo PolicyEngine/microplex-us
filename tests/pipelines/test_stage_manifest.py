@@ -38,6 +38,9 @@ def test_build_us_stage_manifest_reports_nine_stage_statuses(tmp_path):
     calibration_path = tmp_path / "stage_artifacts" / "07_calibration"
     calibration_path.mkdir(parents=True)
     (calibration_path / "calibration_summary.json").write_text("{}")
+    final_entity_path = calibration_path / "policyengine_entity_tables"
+    final_entity_path.mkdir(parents=True)
+    (final_entity_path / "metadata.json").write_text("{}")
     (tmp_path / "stage_manifest.json").write_text("{}")
     (tmp_path / "data_flow_snapshot.json").write_text("{}")
     (tmp_path / "stage_artifacts" / "artifact_inventory.json").write_text("{}")
@@ -62,11 +65,14 @@ def test_build_us_stage_manifest_reports_nine_stage_statuses(tmp_path):
             "calibrated_data": "calibrated_data.parquet",
             "targets": "targets.json",
             "source_plan": "stage_artifacts/03_source_planning/source_plan.json",
-            "policyengine_entity_tables": (
+            "pre_calibration_policyengine_entity_tables": (
                 "stage_artifacts/06_policyengine_entities/metadata.json"
             ),
             "calibration_summary": (
                 "stage_artifacts/07_calibration/calibration_summary.json"
+            ),
+            "policyengine_entity_tables": (
+                "stage_artifacts/07_calibration/policyengine_entity_tables/metadata.json"
             ),
             "policyengine_dataset": "policyengine_us.h5",
             "stage_manifest": "stage_manifest.json",

@@ -376,7 +376,8 @@ def test_save_versioned_us_microplex_artifacts_uses_explicit_version(tmp_path):
     assert paths.policyengine_entity_tables == (
         paths.output_dir
         / "stage_artifacts"
-        / "06_policyengine_entities"
+        / "07_calibration"
+        / "policyengine_entity_tables"
         / "metadata.json"
     )
     assert paths.calibration_summary == (

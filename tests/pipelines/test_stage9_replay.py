@@ -79,6 +79,24 @@ def test_stage9_replay_rejects_incomplete_stage8(tmp_path):
         )
 
 
+def test_stage9_replay_rejects_stage8_dataset_path_mismatch(tmp_path):
+    artifact_dir = _write_stage8_bundle(tmp_path)
+    stage8_manifest_path = (
+        artifact_dir / "stage_artifacts" / "manifests" / "08_dataset_assembly.json"
+    )
+    stage8_manifest = json.loads(stage8_manifest_path.read_text())
+    stage8_manifest["outputs"]["policyengine_dataset"]["path"] = (
+        "other/policyengine_us.h5"
+    )
+    stage8_manifest_path.write_text(json.dumps(stage8_manifest))
+
+    with pytest.raises(ValueError, match="does not match"):
+        replay_us_stage9_validation_benchmarking(
+            artifact_dir,
+            precomputed_policyengine_native_scores={"summary": {"loss": 1.0}},
+        )
+
+
 def test_stage9_replay_cli_smoke(tmp_path, capsys):
     artifact_dir = _write_stage8_bundle(tmp_path)
     payload_path = tmp_path / "native_scores.json"

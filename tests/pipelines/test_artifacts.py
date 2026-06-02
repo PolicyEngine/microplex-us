@@ -404,6 +404,10 @@ class TestSaveUSMicroplexArtifacts:
         )
         assert (
             manifest["artifacts"]["policyengine_entity_tables"]
+            == "stage_artifacts/07_calibration/policyengine_entity_tables/metadata.json"
+        )
+        assert (
+            manifest["artifacts"]["pre_calibration_policyengine_entity_tables"]
             == "stage_artifacts/06_policyengine_entities/metadata.json"
         )
         assert (

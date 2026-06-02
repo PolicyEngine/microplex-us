@@ -2524,14 +2524,17 @@ class USMicroplexPipeline:
                 write_us_policyengine_entity_stage_artifact(
                     synthetic_tables,
                     self.stage_runtime_writer.artifact_root,
+                    stage_id="06_policyengine_entities",
+                    artifact_key="pre_calibration_policyengine_entity_tables",
+                    checkpoint_stage="post_microsim",
                 )
                 entity_summary = _runtime_policyengine_table_summary(synthetic_tables)
                 self.stage_runtime_writer.complete_stage(
                     USPolicyEngineEntityOutputs(
-                        policyengine_entity_tables=_runtime_stage_artifact_ref(
+                        pre_calibration_policyengine_entity_tables=_runtime_stage_artifact_ref(
                             self.stage_runtime_writer,
                             "06_policyengine_entities",
-                            "policyengine_entity_tables",
+                            "pre_calibration_policyengine_entity_tables",
                         ),
                         materialized_policyengine_inputs=entity_summary,
                         diagnostics=_runtime_stage_diagnostics(
@@ -2588,6 +2591,13 @@ class USMicroplexPipeline:
                     persons=int(len(policyengine_tables.persons)),
                 )
             if self.stage_runtime_writer is not None:
+                write_us_policyengine_entity_stage_artifact(
+                    policyengine_tables,
+                    self.stage_runtime_writer.artifact_root,
+                    stage_id="07_calibration",
+                    artifact_key="policyengine_entity_tables",
+                    checkpoint_stage="post_calibration",
+                )
                 calibrated_data_path = _runtime_stage_artifact_path(
                     self.stage_runtime_writer,
                     "07_calibration",
@@ -2626,6 +2636,11 @@ class USMicroplexPipeline:
                             self.stage_runtime_writer,
                             "07_calibration",
                             "calibration_summary",
+                        ),
+                        policyengine_entity_tables=_runtime_stage_artifact_ref(
+                            self.stage_runtime_writer,
+                            "07_calibration",
+                            "policyengine_entity_tables",
                         ),
                         target_ledger=target_ledger,
                         diagnostics=_runtime_stage_diagnostics(

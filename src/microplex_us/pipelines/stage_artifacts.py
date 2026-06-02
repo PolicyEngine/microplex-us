@@ -462,15 +462,28 @@ def load_us_policyengine_entity_stage_artifacts(
 ) -> USPolicyEngineEntityStageArtifacts:
     """Load the saved Stage 6 PolicyEngine entity-table bundle."""
 
-    metadata_path = resolve_us_stage_artifact_path_checked(
-        artifact_dir,
-        "06_policyengine_entities",
-        "policyengine_entity_tables",
-        manifest_payload=manifest_payload,
-        stage_manifest=stage_manifest,
-        expected_format="policyengine_entity_bundle",
+    try:
+        metadata_path = resolve_us_stage_artifact_path_checked(
+            artifact_dir,
+            "06_policyengine_entities",
+            "pre_calibration_policyengine_entity_tables",
+            manifest_payload=manifest_payload,
+            stage_manifest=stage_manifest,
+            expected_format="policyengine_entity_bundle",
+        )
+    except (KeyError, FileNotFoundError):
+        metadata_path = resolve_us_stage_artifact_path_checked(
+            artifact_dir,
+            "06_policyengine_entities",
+            "policyengine_entity_tables",
+            manifest_payload=manifest_payload,
+            stage_manifest=stage_manifest,
+            expected_format="policyengine_entity_bundle",
+        )
+    bundle, metadata = load_us_policyengine_entity_stage_artifact(
+        metadata_path,
+        expected_stage="post_microsim",
     )
-    bundle, metadata = load_us_policyengine_entity_stage_artifact(metadata_path)
     return USPolicyEngineEntityStageArtifacts(
         bundle=bundle,
         metadata=metadata,

@@ -352,7 +352,7 @@ class USDonorSynthesisOutputs(USStageOutputManifest):
 @dataclass(frozen=True)
 class USPolicyEngineEntityOutputs(USStageOutputManifest):
     stage_id: str = field(default="06_policyengine_entities", init=False)
-    policyengine_entity_tables: USArtifactRef | None = None
+    pre_calibration_policyengine_entity_tables: USArtifactRef | None = None
     materialized_policyengine_inputs: Mapping[str, Any] = field(default_factory=dict)
 
 
@@ -362,6 +362,7 @@ class USCalibrationOutputs(USStageOutputManifest):
     calibrated_data: USArtifactRef | None = None
     targets: USArtifactRef | None = None
     calibration_summary: USArtifactRef | None = None
+    policyengine_entity_tables: USArtifactRef | None = None
     target_ledger: Mapping[str, Any] = field(default_factory=dict)
 
 
@@ -944,18 +945,23 @@ def build_us_stage_output_manifests_from_artifact_manifest(
             ),
         ),
         USPolicyEngineEntityOutputs(
-            policyengine_entity_tables=_artifact_ref(
+            pre_calibration_policyengine_entity_tables=_artifact_ref(
                 root,
                 artifacts,
-                "policyengine_entity_tables",
+                "pre_calibration_policyengine_entity_tables",
                 "06_policyengine_entities",
             ),
             materialized_policyengine_inputs=_policyengine_entity_metadata_summary(
                 root,
                 artifacts,
+                artifact_key="pre_calibration_policyengine_entity_tables",
             ),
             diagnostics=_diagnostics("06_policyengine_entities", manifest),
-            complete=_artifact_exists(root, artifacts, "policyengine_entity_tables"),
+            complete=_artifact_exists(
+                root,
+                artifacts,
+                "pre_calibration_policyengine_entity_tables",
+            ),
         ),
         USCalibrationOutputs(
             calibrated_data=_artifact_ref(
@@ -969,11 +975,22 @@ def build_us_stage_output_manifests_from_artifact_manifest(
                 "07_calibration",
                 category="diagnostic",
             ),
+            policyengine_entity_tables=_artifact_ref(
+                root,
+                artifacts,
+                "policyengine_entity_tables",
+                "07_calibration",
+            ),
             target_ledger={"target_count": manifest.get("targets", {})},
             diagnostics=_diagnostics("07_calibration", manifest),
             complete=all(
                 _artifact_exists(root, artifacts, key)
-                for key in ("calibrated_data", "targets", "calibration_summary")
+                for key in (
+                    "calibrated_data",
+                    "targets",
+                    "calibration_summary",
+                    "policyengine_entity_tables",
+                )
             ),
         ),
         USDatasetAssemblyOutputs(
@@ -1230,8 +1247,10 @@ def _path_for_manifest(path: Path, artifact_root: Path) -> str:
 def _policyengine_entity_metadata_summary(
     artifact_root: Path,
     artifacts: Mapping[str, Any],
+    *,
+    artifact_key: str = "policyengine_entity_tables",
 ) -> dict[str, Any]:
-    declared = artifacts.get("policyengine_entity_tables")
+    declared = artifacts.get(artifact_key)
     if declared is None:
         return {}
     path = Path(str(declared))
@@ -1325,7 +1344,9 @@ def _default_stage_diagnostic_summary(
             "backend": synthesis.get("backend"),
         }
     if stage_id == "06_policyengine_entities":
-        return {"entity_tables": artifacts.get("policyengine_entity_tables")}
+        return {
+            "entity_tables": artifacts.get("pre_calibration_policyengine_entity_tables")
+        }
     if stage_id == "07_calibration":
         return {
             "calibrated_rows": rows.get("calibrated"),

@@ -488,6 +488,7 @@ def _write_artifact_bundle_files(root):
         "stage_artifacts/04_seed_scaffold/scaffold_seed_data.parquet",
         "stage_artifacts/06_policyengine_entities/metadata.json",
         "stage_artifacts/07_calibration/calibration_summary.json",
+        "stage_artifacts/07_calibration/policyengine_entity_tables/metadata.json",
     ):
         path = root / relative
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -561,8 +562,11 @@ def _artifact_manifest():
             "scaffold_seed_data": (
                 "stage_artifacts/04_seed_scaffold/scaffold_seed_data.parquet"
             ),
-            "policyengine_entity_tables": (
+            "pre_calibration_policyengine_entity_tables": (
                 "stage_artifacts/06_policyengine_entities/metadata.json"
+            ),
+            "policyengine_entity_tables": (
+                "stage_artifacts/07_calibration/policyengine_entity_tables/metadata.json"
             ),
             "calibration_summary": (
                 "stage_artifacts/07_calibration/calibration_summary.json"

@@ -161,8 +161,14 @@ _PIPELINE_CHECKPOINT_TABLES: tuple[str, ...] = (
     "marital_units",
 )
 
+USPipelineCheckpointStage = Literal[
+    "post_imputation",
+    "post_microsim",
+    "post_calibration",
+]
+
 _ALLOWED_CHECKPOINT_STAGES: frozenset[str] = frozenset(
-    {"post_imputation", "post_microsim"}
+    {"post_imputation", "post_microsim", "post_calibration"}
 )
 
 
@@ -170,7 +176,7 @@ def save_us_pipeline_checkpoint(
     bundle: PolicyEngineUSEntityTableBundle,
     path: str | Path,
     *,
-    stage: Literal["post_imputation", "post_microsim"],
+    stage: USPipelineCheckpointStage,
 ) -> Path:
     """Persist a pipeline-stage bundle to ``path`` as parquet + metadata.
 
@@ -183,6 +189,7 @@ def save_us_pipeline_checkpoint(
       microsim + calibration.
     * ``"post_microsim"`` — after microsim materialization, before the
       calibration fit loop. Resuming from here reruns only calibration.
+    * ``"post_calibration"`` — after calibration, ready for dataset export.
     """
     import json
     import shutil
@@ -216,7 +223,7 @@ def save_us_pipeline_checkpoint(
 def load_us_pipeline_checkpoint(
     path: str | Path,
     *,
-    expected_stage: Literal["post_imputation", "post_microsim"] | None = None,
+    expected_stage: USPipelineCheckpointStage | None = None,
 ) -> tuple[PolicyEngineUSEntityTableBundle, dict[str, Any]]:
     """Load a pipeline-stage bundle previously saved by ``save_us_pipeline_checkpoint``.
 

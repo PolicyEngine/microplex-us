@@ -1952,6 +1952,7 @@ class USMicroplexBuildResult:
     synthesis_metadata: dict[str, Any] = field(default_factory=dict)
     synthesizer: Synthesizer | Any | None = None
     policyengine_tables: PolicyEngineUSEntityTableBundle | None = None
+    pre_calibration_policyengine_tables: PolicyEngineUSEntityTableBundle | None = None
     source_frame: ObservationFrame | None = None
     source_frames: tuple[ObservationFrame, ...] = ()
     fusion_plan: FusionPlan | None = None
@@ -2667,6 +2668,7 @@ class USMicroplexPipeline:
             synthesis_metadata=synthesis_metadata,
             synthesizer=synthesizer,
             policyengine_tables=policyengine_tables,
+            pre_calibration_policyengine_tables=synthetic_tables,
             source_frame=scaffold_input.frame,
             source_frames=tuple(frame for frame in frames),
             fusion_plan=fusion_plan,

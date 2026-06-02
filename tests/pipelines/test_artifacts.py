@@ -16,6 +16,9 @@ from microplex_us.pipelines.artifacts import (
     save_us_microplex_artifacts,
 )
 from microplex_us.pipelines.registry import load_us_microplex_run_registry
+from microplex_us.pipelines.stage_policyengine_artifacts import (
+    load_us_policyengine_entity_stage_artifact,
+)
 from microplex_us.pipelines.us import (
     USMicroplexBuildConfig,
     USMicroplexBuildResult,
@@ -375,6 +378,8 @@ class TestSaveUSMicroplexArtifacts:
         assert paths.conditional_readiness.exists()
         assert paths.source_plan is not None
         assert paths.source_plan.exists()
+        assert paths.pre_calibration_policyengine_entity_tables is not None
+        assert paths.pre_calibration_policyengine_entity_tables.exists()
         assert paths.policyengine_entity_tables is not None
         assert paths.policyengine_entity_tables.exists()
         assert paths.calibration_summary is not None
@@ -452,13 +457,18 @@ class TestSaveUSMicroplexArtifacts:
         assert source_diagnostics["sources"][0]["person_weight_share"] == 1.0
         assert source_diagnostics["sources"][0]["tax_unit_count"] == 2
         assert source_diagnostics["sources"][0]["tax_unit_weight_share"] == 1.0
+        pre_calibration_tables, _ = load_us_policyengine_entity_stage_artifact(
+            paths.pre_calibration_policyengine_entity_tables
+        )
+        assert pre_calibration_tables.tax_units is not None
+        assert "filing_status" in pre_calibration_tables.tax_units
 
         with h5py.File(paths.policyengine_dataset, "r") as handle:
             assert "household_id" in handle
             assert "person_household_id" in handle
             assert "tax_unit_id" in handle
             assert "taxable_interest_income" in handle
-            assert "filing_status" in handle
+            assert "filing_status" not in handle
             assert "source_weight_diagnostics" not in handle
 
     def test_writes_model_when_present(self, tmp_path):

@@ -101,6 +101,7 @@ class USMicroplexArtifactPaths:
     artifact_inventory: Path | None = None
     conditional_readiness: Path | None = None
     source_plan: Path | None = None
+    pre_calibration_policyengine_entity_tables: Path | None = None
     policyengine_entity_tables: Path | None = None
     calibration_summary: Path | None = None
     validation_evidence: Path | None = None
@@ -254,10 +255,12 @@ def replay_us_microplex_policyengine_stage_from_artifact(
     )
 
     pipeline = USMicroplexPipeline(config)
+    pre_calibration_policyengine_tables = pipeline.build_policyengine_entity_tables(
+        synthetic_data
+    )
     if config.policyengine_targets_db is not None:
-        synthetic_tables = pipeline.build_policyengine_entity_tables(synthetic_data)
         policyengine_tables, calibrated_data, calibration_summary = (
-            pipeline.calibrate_policyengine_tables(synthetic_tables)
+            pipeline.calibrate_policyengine_tables(pre_calibration_policyengine_tables)
         )
     else:
         calibrated_data, calibration_summary = pipeline.calibrate(
@@ -282,6 +285,7 @@ def replay_us_microplex_policyengine_stage_from_artifact(
         calibration_summary=calibration_summary,
         synthesis_metadata=synthesis_metadata,
         policyengine_tables=policyengine_tables,
+        pre_calibration_policyengine_tables=pre_calibration_policyengine_tables,
         scaffold_seed_data=scaffold_seed_data,
     )
 
@@ -909,6 +913,16 @@ def save_us_microplex_artifacts(
     """Persist a build result as a reproducible artifact bundle."""
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    scaffold_seed_data = (
+        result.scaffold_seed_data
+        if result.scaffold_seed_data is not None
+        else result.seed_data
+    )
+    pre_calibration_policyengine_tables = (
+        result.pre_calibration_policyengine_tables
+        if result.pre_calibration_policyengine_tables is not None
+        else result.policyengine_tables
+    )
 
     seed_data_path = resolve_us_stage_artifact_contract_path(
         output_dir,
@@ -983,14 +997,10 @@ def save_us_microplex_artifacts(
         "03_source_planning",
         "source_plan",
     )
-    scaffold_seed_data_path = (
-        resolve_us_stage_artifact_contract_path(
-            output_dir,
-            "04_seed_scaffold",
-            "scaffold_seed_data",
-        )
-        if result.scaffold_seed_data is not None
-        else None
+    scaffold_seed_data_path = resolve_us_stage_artifact_contract_path(
+        output_dir,
+        "04_seed_scaffold",
+        "scaffold_seed_data",
     )
     policyengine_entity_tables_path = (
         resolve_us_stage_artifact_contract_path(
@@ -1012,7 +1022,7 @@ def save_us_microplex_artifacts(
             "06_policyengine_entities",
             "pre_calibration_policyengine_entity_tables",
         )
-        if result.policyengine_tables is not None
+        if pre_calibration_policyengine_tables is not None
         else None
     )
     validation_evidence_path = (
@@ -1035,15 +1045,11 @@ def save_us_microplex_artifacts(
         stage_runtime_writer.start_stage("08_dataset_assembly")
 
     try:
-        if (
-            result.scaffold_seed_data is not None
-            and scaffold_seed_data_path is not None
-        ):
-            _write_parquet_unless_live_artifact_exists(
-                scaffold_seed_data_path,
-                result.scaffold_seed_data,
-                live_artifact=live_artifacts,
-            )
+        _write_parquet_unless_live_artifact_exists(
+            scaffold_seed_data_path,
+            scaffold_seed_data,
+            live_artifact=live_artifacts,
+        )
         _write_parquet_unless_live_artifact_exists(
             seed_data_path,
             result.seed_data,
@@ -1082,18 +1088,36 @@ def save_us_microplex_artifacts(
         )
 
         if (
+            pre_calibration_policyengine_entity_tables_path is not None
+            and pre_calibration_policyengine_tables is not None
+        ):
+            if not (
+                live_artifacts
+                and pre_calibration_policyengine_entity_tables_path.exists()
+            ):
+                write_us_policyengine_entity_stage_artifact(
+                    pre_calibration_policyengine_tables,
+                    output_dir,
+                    stage_id="06_policyengine_entities",
+                    artifact_key="pre_calibration_policyengine_entity_tables",
+                    checkpoint_stage="post_microsim",
+                )
+        if (
+            policyengine_entity_tables_path is not None
+            and result.policyengine_tables is not None
+        ):
+            if not (live_artifacts and policyengine_entity_tables_path.exists()):
+                write_us_policyengine_entity_stage_artifact(
+                    result.policyengine_tables,
+                    output_dir,
+                    stage_id="07_calibration",
+                    artifact_key="policyengine_entity_tables",
+                    checkpoint_stage="post_calibration",
+                )
+        if (
             result.policyengine_tables is not None
             and policyengine_dataset_path is not None
         ):
-            if policyengine_entity_tables_path is not None:
-                if not (live_artifacts and policyengine_entity_tables_path.exists()):
-                    write_us_policyengine_entity_stage_artifact(
-                        result.policyengine_tables,
-                        output_dir,
-                        stage_id="07_calibration",
-                        artifact_key="policyengine_entity_tables",
-                        checkpoint_stage="post_calibration",
-                    )
             period = result.config.policyengine_dataset_year or 2024
             USMicroplexPipeline(result.config).export_policyengine_dataset(
                 result,
@@ -1310,10 +1334,8 @@ def save_us_microplex_artifacts(
             "calibration": result.calibration_summary,
             "artifacts": {
                 "seed_data": seed_data_path.name,
-                "scaffold_seed_data": (
-                    str(scaffold_seed_data_path.relative_to(output_dir))
-                    if scaffold_seed_data_path is not None
-                    else None
+                "scaffold_seed_data": str(
+                    scaffold_seed_data_path.relative_to(output_dir)
                 ),
                 "synthetic_data": synthetic_data_path.name,
                 "calibrated_data": calibrated_data_path.name,
@@ -1500,7 +1522,7 @@ def save_us_microplex_artifacts(
             "policyengine_harness" if harness_summary is not None else None
         ),
         required_artifact_keys=(
-            *(("scaffold_seed_data",) if scaffold_seed_data_path is not None else ()),
+            "scaffold_seed_data",
             "seed_data",
             "synthetic_data",
             "calibrated_data",
@@ -1539,6 +1561,9 @@ def save_us_microplex_artifacts(
         artifact_inventory=artifact_inventory_path,
         conditional_readiness=conditional_readiness_path,
         source_plan=source_plan_path,
+        pre_calibration_policyengine_entity_tables=(
+            pre_calibration_policyengine_entity_tables_path
+        ),
         policyengine_entity_tables=policyengine_entity_tables_path,
         calibration_summary=calibration_summary_path,
         validation_evidence=validation_evidence_path,

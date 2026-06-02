@@ -105,7 +105,6 @@ def default_policyengine_us_data_rebuild_source_providers(
     puf_demographics_path: str | Path | None = None,
     puf_expand_persons: bool = True,
     include_donor_surveys: bool = True,
-    include_acs: bool | None = None,
     include_sipp: bool | None = None,
     include_scf: bool | None = None,
     acs_year: int = 2022,
@@ -155,19 +154,21 @@ def default_policyengine_us_data_rebuild_source_providers(
             social_security_split_strategy=SOCIAL_SECURITY_SPLIT_STRATEGY_PE_QRF,
         ),
     ]
-    resolved_include_acs = include_donor_surveys if include_acs is None else include_acs
     resolved_include_sipp = (
         include_donor_surveys if include_sipp is None else include_sipp
     )
     resolved_include_scf = include_donor_surveys if include_scf is None else include_scf
-    if resolved_include_acs:
-        providers.append(
-            ACSSourceProvider(
-                year=int(acs_year),
-                policyengine_us_data_repo=policyengine_us_data_repo,
-                policyengine_us_data_python=policyengine_us_data_python,
-            )
+    # The ACS donor is always enabled. It supplies the rent and real_estate_taxes
+    # source imputation that eCPS also draws from ACS, so omitting it leaves those
+    # variables at zero. ACS as a population spine ("multispine") is a separate,
+    # independently controlled feature that is not enabled here.
+    providers.append(
+        ACSSourceProvider(
+            year=int(acs_year),
+            policyengine_us_data_repo=policyengine_us_data_repo,
+            policyengine_us_data_python=policyengine_us_data_python,
         )
+    )
     if resolved_include_sipp:
         providers.extend(
             [

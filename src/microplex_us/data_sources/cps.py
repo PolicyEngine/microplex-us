@@ -117,6 +117,9 @@ PERSON_VARIABLES = {
     "WICYN": "_receives_wic",
     "SPM_CAPHOUSESUB": "_spm_capped_housing_subsidy",
     "SPM_ENGVAL": "spm_unit_energy_subsidy",
+    # Capped work childcare expenses are a PolicyEngine-computed variable
+    # (derived from this pre-subsidy input), so only the input is exported.
+    "SPM_CHILDCAREXPNS": "spm_unit_pre_subsidy_childcare_expenses",
     # Person relationship-to-householder code (eCPS cps.py:190-195, :1219).
     # Codes 43/44/46/47 mark an unmarried partner of the household head.
     "PERRP": "_person_relationship_to_householder",
@@ -200,6 +203,7 @@ PERSON_NONNEGATIVE_VALUE_COLUMNS = (
     "social_security_survivors",
     "social_security_dependents",
     "spm_unit_energy_subsidy",
+    "spm_unit_pre_subsidy_childcare_expenses",
 )
 
 PERSON_ZERO_DEFAULT_VALUE_COLUMNS = (
@@ -216,6 +220,7 @@ PERSON_ZERO_DEFAULT_VALUE_COLUMNS = (
     "social_security_survivors",
     "social_security_dependents",
     "spm_unit_energy_subsidy",
+    "spm_unit_pre_subsidy_childcare_expenses",
 )
 
 PERSON_CACHE_REQUIRED_COLUMNS = (

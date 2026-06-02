@@ -1014,6 +1014,7 @@ class TestUSMicroplexPipeline:
                 "takes_up_housing_assistance_if_eligible": [False, True, False],
                 "takes_up_snap_if_eligible": [False, True, False],
                 "spm_unit_energy_subsidy": [90.0, 90.0, 0.0],
+                "spm_unit_pre_subsidy_childcare_expenses": [1500.0, 1500.0, 0.0],
             }
         )
 
@@ -1028,6 +1029,10 @@ class TestUSMicroplexPipeline:
         ]
         assert spm_units["takes_up_snap_if_eligible"].tolist() == [True, False]
         assert spm_units["spm_unit_energy_subsidy"].tolist() == [90.0, 0.0]
+        assert spm_units["spm_unit_pre_subsidy_childcare_expenses"].tolist() == [
+            1500.0,
+            0.0,
+        ]
 
     def test_build_policyengine_entity_tables_adds_deterministic_snap_takeup(
         self,

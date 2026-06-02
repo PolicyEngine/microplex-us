@@ -138,7 +138,10 @@ def test_default_policyengine_us_data_rebuild_source_providers_use_pe_style_bund
         SOCIAL_SECURITY_SPLIT_STRATEGY_PE_QRF
     )
     assert isinstance(providers[2], ACSSourceProvider)
-    assert providers[2].year == 2024
+    # ACS is pinned to its 2022 release (manifest ACS_2022, not aged); the default
+    # derives from MP_2024.acs.release. The prior 2024 here disagreed with the
+    # loader -- see the declared ACS gap in the vintage profile.
+    assert providers[2].year == 2022
     assert isinstance(providers[3], SIPPSourceProvider)
     assert providers[3].block == "tips"
     assert providers[3].target_year == 2024
@@ -222,3 +225,17 @@ def test_source_provider_year_defaults_derive_from_mp_2024_profile() -> None:
     assert params["sipp_year"].default == MP_2024.sipp.release
     assert params["scf_year"].default == MP_2024.scf.release
     assert params["puf_target_year"].default == MP_2024.model_year
+
+    # The checkpoint signature is the second of the three sites the stale literal
+    # used to live in; guard it too so a revert there cannot pass silently.
+    from microplex_us.pipelines.pe_us_data_rebuild_checkpoint import (
+        run_policyengine_us_data_rebuild_checkpoint,
+    )
+
+    checkpoint_params = inspect.signature(
+        run_policyengine_us_data_rebuild_checkpoint
+    ).parameters
+    assert checkpoint_params["cps_source_year"].default == MP_2024.cps_asec.release
+    assert checkpoint_params["acs_year"].default == MP_2024.acs.release
+    assert checkpoint_params["sipp_year"].default == MP_2024.sipp.release
+    assert checkpoint_params["scf_year"].default == MP_2024.scf.release

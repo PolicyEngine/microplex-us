@@ -59,13 +59,34 @@ def test_release_cannot_age_backward():
 # --- DatasetProfile coherence ---------------------------------------------
 
 
-def test_mp_2024_is_coherent_and_has_no_gaps():
+def test_mp_2024_is_coherent_with_only_the_acs_gap_declared():
     assert MP_2024.model_year == 2024
+    # No *undeclared* incoherence. The ACS donor is an explicitly declared gap
+    # (pinned to its 2022 release, not yet aged to the model year).
     assert MP_2024.incoherent_sources() == {}
-    assert MP_2024.declared_gaps() == {}
-    # Every source's dollars land on the model year.
+    assert set(MP_2024.declared_gaps()) == {"acs"}
+    # Every non-gapped source's dollars land on the model year.
     for name, release in MP_2024.sources().items():
+        if name in MP_2024.declared_gaps():
+            continue
         assert release.effective_year == 2024, name
+
+
+def test_release_rejects_empty_gap_reason():
+    with pytest.raises(ValueError, match="empty gap_reason"):
+        Release(release=2022, income_year=2022, gap_reason="   ")
+
+
+def test_mp_2024_donor_releases_match_source_manifest():
+    # The profile's donor release years must equal what the build's donor loaders
+    # actually use (the pe_source_impute manifest ``default_year``), or the profile
+    # asserts a vintage the build does not load. This guard catches exactly the ACS
+    # 2024-vs-ACS_2022 mismatch the profile is meant to surface.
+    from microplex_us.pe_source_impute_specs import get_pe_source_impute_block_spec
+
+    for source, block in [("acs", "acs"), ("sipp", "sipp_tips"), ("scf", "scf")]:
+        spec = get_pe_source_impute_block_spec(block)
+        assert MP_2024.sources()[source].release == spec.default_year, source
 
 
 def test_mp_2024_cps_spine_is_native_2024_income():

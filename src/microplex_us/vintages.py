@@ -68,6 +68,11 @@ class Release:
                 f"Release(release={self.release}) ages backward: age_to="
                 f"{self.age_to} < income_year={self.income_year}."
             )
+        if self.gap_reason is not None and not self.gap_reason.strip():
+            raise ValueError(
+                f"Release(release={self.release}) has an empty gap_reason; use None "
+                "for no declared gap or give a real explanation."
+            )
 
     @property
     def effective_year(self) -> int:
@@ -145,8 +150,19 @@ MP_2024 = DatasetProfile(
     cps_asec=Release(release=2025, income_year=2024),
     # Public-use PUF base is 2015 (latest released); aged to 2024 via SOI factors.
     puf=Release(release=2015, income_year=2015, age_to=2024, factors="soi"),
-    # ACS donor at the native-2024 release.
-    acs=Release(release=2024, income_year=2024),
+    # ACS donor is pinned to the 2022 release (manifest block ACS_2022,
+    # default_year=2022) and is not in TARGET_YEAR_UPRATED_SURVEYS, so it is not
+    # aged to the model year. The provider default had drifted to 2024 while the
+    # loader stayed at 2022; declare the real release and flag the gap so the
+    # ACS-2024 migration is explicit rather than silently assumed done.
+    acs=Release(
+        release=2022,
+        income_year=2022,
+        gap_reason=(
+            "ACS donor loads the 2022 release (manifest ACS_2022) and is not aged "
+            "to the model year; reconcile when ACS moves to the 2024 release."
+        ),
+    ),
     # SIPP/SCF donors aged from their latest releases to 2024.
     sipp=Release(release=2023, income_year=2023, age_to=2024, factors="pe_growfactors"),
     scf=Release(release=2022, income_year=2022, age_to=2024, factors="pe_growfactors"),
@@ -162,4 +178,6 @@ def get_profile(name: str) -> DatasetProfile:
         return PROFILES[name]
     except KeyError:
         known = ", ".join(sorted(PROFILES))
-        raise KeyError(f"Unknown dataset profile {name!r}; known profiles: {known}")
+        raise KeyError(
+            f"Unknown dataset profile {name!r}; known profiles: {known}"
+        ) from None

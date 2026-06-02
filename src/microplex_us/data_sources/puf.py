@@ -471,15 +471,11 @@ def _normalize_puf_uprating_mode(mode: str | None) -> str:
 def _resolve_pe_soi_path(
     *,
     cache_dir: str | Path | None = None,
-    policyengine_us_data_repo: str | Path | None = None,
     soi_path: str | Path | None = None,
 ) -> Path:
     if soi_path is not None:
         return validate_pe_soi_targets_file(soi_path)
 
-    # Kept in the signature for backward compatibility with older callers.
-    # SOI resolution is now cache-backed and does not probe PE-US-data storage.
-    _ = policyengine_us_data_repo
     return download_pe_soi_targets(cache_dir=cache_dir)
 
 
@@ -575,7 +571,6 @@ def uprate_raw_puf_pe_style(
     from_year: int = 2015,
     to_year: int = 2024,
     cache_dir: str | Path | None = None,
-    policyengine_us_data_repo: str | Path | None = None,
     soi_path: str | Path | None = None,
 ) -> pd.DataFrame:
     """Uprate raw PUF columns using the PE SOI growth contract."""
@@ -583,7 +578,6 @@ def uprate_raw_puf_pe_style(
         return puf.copy()
     resolved_soi_path = _resolve_pe_soi_path(
         cache_dir=cache_dir,
-        policyengine_us_data_repo=policyengine_us_data_repo,
         soi_path=soi_path,
     )
     soi_table = _load_pe_soi_table(str(resolved_soi_path.resolve()))
@@ -1816,7 +1810,6 @@ def load_puf(
             from_year=2015,
             to_year=raw_uprating_year,
             cache_dir=cache_dir,
-            policyengine_us_data_repo=policyengine_us_data_repo,
             soi_path=soi_path,
         )
 
@@ -1972,7 +1965,6 @@ def _build_puf_tax_units(
             from_year=2015,
             to_year=raw_uprating_year,
             cache_dir=cache_dir,
-            policyengine_us_data_repo=policyengine_us_data_repo,
             soi_path=soi_path,
         )
     tax_units = map_puf_variables(

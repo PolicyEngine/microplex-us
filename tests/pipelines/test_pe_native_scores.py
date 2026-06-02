@@ -638,6 +638,73 @@ def test_build_us_pe_native_target_diagnostics_payload_adds_public_aliases(
     assert top_row["artifact_id"] == "artifact-1"
 
 
+def test_build_us_pe_native_target_diagnostics_payload_infers_legacy_metadata(
+    tmp_path,
+) -> None:
+    def row(target_name: str, family: str, scope: str = "state") -> dict[str, object]:
+        return {
+            "target_name": target_name,
+            "target_family": family,
+            "target_scope": scope,
+            "winner": "to",
+            "weighted_term_delta": -1.0,
+            "from_weighted_term": 2.0,
+            "to_weighted_term": 1.0,
+            "target_value": 100.0,
+            "from_estimate": 90.0,
+            "to_estimate": 95.0,
+            "from_rel_error": 0.2,
+            "to_rel_error": 0.1,
+        }
+
+    payload = build_us_pe_native_target_diagnostics_payload(
+        target_delta_payload={
+            "metric": "enhanced_cps_native_loss_target_delta",
+            "period": 2024,
+            "from_dataset": "/tmp/enhanced_cps_2024.h5",
+            "to_dataset": "/tmp/policyengine_us.h5",
+            "summary": {"n_targets": 3},
+            "targets": [
+                row("state/irs/aca_spending/ak", "other"),
+                row("US39/snap-hhs", "state_snap_households"),
+                row("nation/irs/count/count/AGI in 20k-25k/taxable/All", "national_irs_other", "national"),
+                row("state/census/age/AZ/75-79", "state_age_distribution"),
+                row("nation/cbo/income_by_source/qualified_dividend_income", "other", "national"),
+                row("nation/soi/filer_count/agi_1m_2m", "other", "national"),
+                row("nation/hhs/medicaid_enrollment", "other", "national"),
+            ],
+            "top_regressions": [],
+            "top_improvements": [],
+        },
+        policyengine_targets_db_path=tmp_path / "missing.db",
+    )
+
+    aca, snap, irs_count, state_age, cbo_income, soi_count, hhs_medicaid = payload[
+        "targets"
+    ]
+    assert aca["variable"] == "aca_spending"
+    assert aca["geography"] == "AK"
+    assert aca["state"] == "AK"
+    assert aca["entity"] == "tax_unit"
+    assert aca["family"] == "state_aca_spending"
+    assert snap["variable"] == "snap_households"
+    assert snap["geography"] == "US39"
+    assert snap["state"] == "US39"
+    assert snap["entity"] == "household"
+    assert irs_count["variable"] == "tax_unit_count"
+    assert irs_count["geography"] == "US"
+    assert irs_count["entity"] == "tax_unit"
+    assert state_age["variable"] == "age"
+    assert state_age["geography"] == "AZ"
+    assert state_age["entity"] == "person"
+    assert cbo_income["variable"] == "qualified_dividend_income"
+    assert cbo_income["entity"] == "tax_unit"
+    assert soi_count["variable"] == "filer_count"
+    assert soi_count["entity"] == "tax_unit"
+    assert hhs_medicaid["variable"] == "medicaid_enrollment"
+    assert hhs_medicaid["entity"] == "person"
+
+
 def test_compute_batch_us_pe_native_target_deltas_wraps_multiple_candidates(
     monkeypatch,
     tmp_path,

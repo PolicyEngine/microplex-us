@@ -3386,6 +3386,7 @@ def _add_policyengine_target_diagnostic_aliases_to_row(
         _first_present(
             row.get("policyengine_target_variable"),
             expected_target.get("variable"),
+            _infer_target_variable(target_name, row),
         ),
     )
     row.setdefault(
@@ -3440,7 +3441,7 @@ def _add_policyengine_target_diagnostic_aliases_to_row(
     row.setdefault("candidate_loss_contribution", row.get("to_weighted_term"))
     row.setdefault("loss_contribution", row.get("to_weighted_term"))
     row.setdefault("loss_contribution_delta", row.get("weighted_term_delta"))
-    row.setdefault("family", row.get("target_family"))
+    row.setdefault("family", _infer_target_family(target_name, row))
     row.setdefault("in_loss", True)
     row.setdefault("supported_by_microplex", True)
 
@@ -3459,6 +3460,103 @@ def _first_present(*values: Any) -> Any:
 
 def _target_name_parts(target_name: str) -> list[str]:
     return [part for part in target_name.split("/") if part]
+
+
+def _infer_target_variable(target_name: str, row: dict[str, Any]) -> str | None:
+    parts = _target_name_parts(target_name)
+    if not parts:
+        return None
+
+    if target_name.endswith("/snap-cost"):
+        return "snap_cost"
+    if target_name.endswith("/snap-hhs"):
+        return "snap_households"
+
+    if parts[0] == "nation":
+        return _infer_national_target_variable(parts)
+    if parts[0] == "state":
+        return _infer_state_target_variable(parts)
+
+    family = row.get("target_family")
+    return str(family) if family not in {None, "other"} else None
+
+
+def _infer_target_family(target_name: str, row: dict[str, Any]) -> str | None:
+    family = row.get("target_family")
+    if family not in {None, "other"}:
+        return str(family)
+    if target_name.startswith("state/irs/aca_spending/"):
+        return "state_aca_spending"
+    if target_name.startswith("state/irs/aca_enrollment/"):
+        return "state_aca_enrollment"
+    if target_name.endswith("/snap-cost"):
+        return "state_snap_cost"
+    if target_name.endswith("/snap-hhs"):
+        return "state_snap_households"
+    return str(family) if family is not None else None
+
+
+def _infer_national_target_variable(parts: list[str]) -> str | None:
+    if len(parts) < 2:
+        return None
+    source = parts[1]
+    if source == "irs" and len(parts) >= 3:
+        metric = parts[2]
+        if metric == "adjusted gross income":
+            return "adjusted_gross_income"
+        if metric == "count":
+            return "tax_unit_count"
+        return _slugify_target_token(metric)
+    if source == "census" and len(parts) >= 3:
+        metric = parts[2]
+        if metric.startswith("agi_in_spm_threshold_decile_"):
+            return "agi_in_spm_threshold_decile"
+        if metric.startswith("count_in_spm_threshold_decile_"):
+            return "count_in_spm_threshold_decile"
+        if metric == "population_by_age":
+            return "population"
+        return _slugify_target_token(metric)
+    if source == "gov" and len(parts) >= 3:
+        return _slugify_target_token(parts[2])
+    if source == "cbo" and len(parts) >= 3:
+        if parts[2] == "income_by_source" and len(parts) >= 4:
+            return _slugify_target_token(parts[3])
+        return _slugify_target_token(parts[2])
+    if source in {"soi", "hhs"} and len(parts) >= 3:
+        return _slugify_target_token(parts[2])
+    if source in {"jct", "net_worth", "ssa"}:
+        return source
+    return _slugify_target_token(source)
+
+
+def _infer_state_target_variable(parts: list[str]) -> str | None:
+    if len(parts) < 2:
+        return None
+    source_or_state = parts[1]
+    if source_or_state == "irs" and len(parts) >= 3:
+        return _slugify_target_token(parts[2])
+    if source_or_state == "census" and len(parts) >= 3:
+        metric = parts[2]
+        if metric == "population_by_state":
+            return "population"
+        if metric == "population_under_5_by_state":
+            return "population_under_5"
+        return _slugify_target_token(metric)
+    if source_or_state == "real_estate_taxes":
+        return "real_estate_taxes"
+    if _looks_like_state_code(source_or_state) and len(parts) >= 3:
+        return _slugify_target_token(parts[2])
+    return _slugify_target_token(source_or_state)
+
+
+def _slugify_target_token(value: str) -> str:
+    return (
+        value.strip()
+        .lower()
+        .replace(" ", "_")
+        .replace("-", "_")
+        .replace("/", "_")
+    )
 
 
 def _infer_target_geo_level(target_name: str, row: dict[str, Any]) -> str | None:
@@ -3489,11 +3587,27 @@ def _infer_target_state(target_name: str, row: dict[str, Any]) -> str | None:
         _expected_policyengine_target(row).get("geographic_id"),
     )
     if isinstance(geography, str) and geography != "US":
-        return geography
+        return _normalize_state_code(geography)
     parts = _target_name_parts(target_name)
-    if len(parts) >= 2 and parts[0] == "state":
-        return parts[1]
+    if parts and parts[0] == "state":
+        for token in parts[1:]:
+            if _looks_like_state_code(token):
+                return _normalize_state_code(token)
+    if parts and _looks_like_state_fips_id(parts[0]):
+        return parts[0]
     return None
+
+
+def _looks_like_state_code(value: str) -> bool:
+    return len(value) == 2 and value.isalpha()
+
+
+def _looks_like_state_fips_id(value: str) -> bool:
+    return len(value) == 4 and value.startswith("US") and value[2:].isdigit()
+
+
+def _normalize_state_code(value: str) -> str:
+    return value.upper() if _looks_like_state_code(value) else value
 
 
 def _infer_policyengine_target_entity(
@@ -3520,10 +3634,53 @@ def _infer_policyengine_target_entity(
     parts = _target_name_parts(target_name)
     if "irs" in parts or "jct" in parts:
         return "tax_unit"
+    if "soi" in parts:
+        return "tax_unit"
+    if "cbo" in parts:
+        if "snap" in parts:
+            return "household"
+        if "ssi" in parts or "social_security" in parts:
+            return "person"
+        return "tax_unit"
+    if "hhs" in parts:
+        return "person"
     if "census" in parts:
         return "person"
+    family = row.get("target_family")
+    if family in {
+        "state_agi_distribution",
+        "national_irs_other",
+        "national_tax_expenditures",
+        "state_aca_enrollment",
+        "state_aca_spending",
+    }:
+        return "tax_unit"
+    if family in {
+        "state_age_distribution",
+        "state_population",
+        "state_population_under_5",
+        "national_population_by_age",
+        "national_infants",
+        "national_census_other",
+        "national_ssa",
+    }:
+        return "person"
+    if family in {
+        "national_spm_threshold_agi",
+        "national_spm_threshold_count",
+    }:
+        return "spm_unit"
+    if family in {
+        "state_real_estate_taxes",
+        "national_net_worth",
+    }:
+        return "household"
     if "snap-hhs" in target_name:
         return "household"
+    if "snap-cost" in target_name:
+        return "household"
+    if _contains_entity_hint("aca", variable, target_name):
+        return "tax_unit"
     if "spm-unit" in target_name:
         return "spm_unit"
     return None

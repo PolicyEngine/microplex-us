@@ -1041,7 +1041,7 @@ class TestUSMicroplexPipeline:
 
         monkeypatch.setattr(
             us_pipeline_module,
-            "_load_policyengine_us_data_takeup_rate",
+            "_load_microplex_takeup_rate",
             fake_load_takeup_rate,
         )
         pipeline = USMicroplexPipeline(
@@ -1277,7 +1277,7 @@ class TestUSMicroplexPipeline:
 
         monkeypatch.setattr(
             us_pipeline_module,
-            "_load_policyengine_us_data_takeup_rate",
+            "_load_microplex_takeup_rate",
             fake_load_takeup_rate,
         )
         pipeline = USMicroplexPipeline(
@@ -1385,22 +1385,22 @@ class TestUSMicroplexPipeline:
 
         monkeypatch.setattr(
             us_pipeline_module,
-            "_load_policyengine_us_data_takeup_rate",
+            "_load_microplex_takeup_rate",
             fake_load_takeup_rate,
         )
         monkeypatch.setattr(
             us_pipeline_module,
-            "_load_policyengine_us_data_medicaid_takeup_rates",
+            "_load_microplex_medicaid_takeup_rates",
             fake_load_medicaid_rates,
         )
         monkeypatch.setattr(
             us_pipeline_module,
-            "_load_policyengine_us_data_eitc_takeup_rates",
+            "_load_microplex_eitc_takeup_rates",
             fake_load_eitc_rates,
         )
         monkeypatch.setattr(
             us_pipeline_module,
-            "_load_policyengine_us_data_voluntary_filing_rates",
+            "_load_microplex_voluntary_filing_rates",
             fake_load_voluntary_rates,
         )
         pipeline = USMicroplexPipeline(
@@ -1460,6 +1460,78 @@ class TestUSMicroplexPipeline:
         assert eitc_calls == [2024]
         assert voluntary_calls == [2024]
 
+    def test_build_policyengine_entity_tables_adds_wic_takeup_inputs(
+        self,
+        monkeypatch,
+    ):
+        wic_takeup_calls: list[int] = []
+        wic_risk_calls: list[int] = []
+
+        def fake_wic_takeup_rates(year: int) -> dict[str, float]:
+            wic_takeup_calls.append(year)
+            return {
+                "PREGNANT": 0.0,
+                "POSTPARTUM": 1.0,
+                "BREASTFEEDING": 0.0,
+                "INFANT": 1.0,
+                "CHILD": 0.0,
+                "NONE": 0.0,
+            }
+
+        def fake_wic_risk_rates(year: int) -> dict[str, float]:
+            wic_risk_calls.append(year)
+            return {
+                "PREGNANT": 0.0,
+                "POSTPARTUM": 0.0,
+                "BREASTFEEDING": 0.0,
+                "INFANT": 0.0,
+                "CHILD": 1.0,
+                "NONE": 0.0,
+            }
+
+        monkeypatch.setattr(
+            us_pipeline_module,
+            "_load_microplex_wic_takeup_rates",
+            fake_wic_takeup_rates,
+        )
+        monkeypatch.setattr(
+            us_pipeline_module,
+            "_load_microplex_wic_nutritional_risk_rates",
+            fake_wic_risk_rates,
+        )
+        pipeline = USMicroplexPipeline(
+            USMicroplexBuildConfig(policyengine_dataset_year=2024)
+        )
+        population = pd.DataFrame(
+            {
+                "person_id": [1, 2, 3, 4],
+                "household_id": [10, 10, 30, 40],
+                "family_id": [10, 10, 30, 40],
+                "spm_unit_id": [10, 10, 30, 40],
+                "weight": [1.0, 1.0, 1.0, 1.0],
+                "age": [30, 0, 4, 40],
+                "sex": [2, 1, 2, 1],
+                "income": [40_000.0, 0.0, 0.0, 35_000.0],
+                "relationship_to_head": [0, 2, 0, 0],
+                "state_fips": [6, 6, 6, 6],
+                "own_children_in_household": [1, 0, 0, 0],
+                "receives_wic": [False, True, False, False],
+            }
+        )
+
+        tables = pipeline.build_policyengine_entity_tables(population)
+
+        persons = tables.persons.sort_values("person_id").reset_index(drop=True)
+        assert persons["would_claim_wic"].tolist() == [True, True, False, False]
+        assert persons["is_wic_at_nutritional_risk"].tolist() == [
+            False,
+            True,
+            True,
+            False,
+        ]
+        assert wic_takeup_calls == [2024]
+        assert wic_risk_calls == [2024]
+
     def test_build_policyengine_entity_tables_preserves_explicit_stochastic_takeup_inputs(
         self,
         monkeypatch,
@@ -1476,25 +1548,41 @@ class TestUSMicroplexPipeline:
         def fail_voluntary_rates(year: int) -> dict:
             raise AssertionError(f"unexpected voluntary filing rate load: {year}")
 
+        def fail_wic_takeup_rates(year: int) -> dict[str, float]:
+            raise AssertionError(f"unexpected WIC take-up rate load: {year}")
+
+        def fail_wic_risk_rates(year: int) -> dict[str, float]:
+            raise AssertionError(f"unexpected WIC nutritional-risk rate load: {year}")
+
         monkeypatch.setattr(
             us_pipeline_module,
-            "_load_policyengine_us_data_takeup_rate",
+            "_load_microplex_takeup_rate",
             fail_scalar_rate,
         )
         monkeypatch.setattr(
             us_pipeline_module,
-            "_load_policyengine_us_data_medicaid_takeup_rates",
+            "_load_microplex_medicaid_takeup_rates",
             fail_medicaid_rates,
         )
         monkeypatch.setattr(
             us_pipeline_module,
-            "_load_policyengine_us_data_eitc_takeup_rates",
+            "_load_microplex_eitc_takeup_rates",
             fail_eitc_rates,
         )
         monkeypatch.setattr(
             us_pipeline_module,
-            "_load_policyengine_us_data_voluntary_filing_rates",
+            "_load_microplex_voluntary_filing_rates",
             fail_voluntary_rates,
+        )
+        monkeypatch.setattr(
+            us_pipeline_module,
+            "_load_microplex_wic_takeup_rates",
+            fail_wic_takeup_rates,
+        )
+        monkeypatch.setattr(
+            us_pipeline_module,
+            "_load_microplex_wic_nutritional_risk_rates",
+            fail_wic_risk_rates,
         )
         pipeline = USMicroplexPipeline(
             USMicroplexBuildConfig(policyengine_dataset_year=2024)
@@ -1519,6 +1607,8 @@ class TestUSMicroplexPipeline:
                 "would_file_taxes_voluntarily": [True, False],
                 "takes_up_snap_if_eligible": [False, True],
                 "takes_up_tanf_if_eligible": [True, False],
+                "would_claim_wic": [False, True],
+                "is_wic_at_nutritional_risk": [True, False],
             }
         )
 
@@ -1531,6 +1621,8 @@ class TestUSMicroplexPipeline:
             True,
             False,
         ]
+        assert persons["would_claim_wic"].tolist() == [False, True]
+        assert persons["is_wic_at_nutritional_risk"].tolist() == [True, False]
 
         tax_units = tables.tax_units.sort_values("household_id").reset_index(drop=True)
         assert tax_units["takes_up_aca_if_eligible"].tolist() == [True]
@@ -1563,22 +1655,22 @@ class TestUSMicroplexPipeline:
 
         monkeypatch.setattr(
             us_pipeline_module,
-            "_load_policyengine_us_data_takeup_rate",
+            "_load_microplex_takeup_rate",
             fail_scalar_rate,
         )
         monkeypatch.setattr(
             us_pipeline_module,
-            "_load_policyengine_us_data_medicaid_takeup_rates",
+            "_load_microplex_medicaid_takeup_rates",
             fail_medicaid_rates,
         )
         monkeypatch.setattr(
             us_pipeline_module,
-            "_load_policyengine_us_data_eitc_takeup_rates",
+            "_load_microplex_eitc_takeup_rates",
             fake_eitc_rates,
         )
         monkeypatch.setattr(
             us_pipeline_module,
-            "_load_policyengine_us_data_voluntary_filing_rates",
+            "_load_microplex_voluntary_filing_rates",
             fail_voluntary_rates,
         )
         pipeline = USMicroplexPipeline(

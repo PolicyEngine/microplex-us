@@ -131,6 +131,7 @@ def default_policyengine_us_data_rebuild_source_providers(
     cps_cache = None if cps_cache_dir is None else Path(cps_cache_dir)
     puf_cache = None if puf_cache_dir is None else Path(puf_cache_dir)
     donor_cache = None if donor_cache_dir is None else Path(donor_cache_dir)
+    donor_target_year = int(puf_target_year)
     providers: list[SourceProvider] = [
         CPSASECSourceProvider(
             year=int(cps_source_year),
@@ -176,11 +177,17 @@ def default_policyengine_us_data_rebuild_source_providers(
                     block="tips",
                     year=int(sipp_year),
                     cache_dir=donor_cache,
+                    policyengine_us_data_repo=policyengine_us_data_repo,
+                    policyengine_us_data_python=policyengine_us_data_python,
+                    target_year=donor_target_year,
                 ),
                 SIPPSourceProvider(
                     block="assets",
                     year=int(sipp_year),
                     cache_dir=donor_cache,
+                    policyengine_us_data_repo=policyengine_us_data_repo,
+                    policyengine_us_data_python=policyengine_us_data_python,
+                    target_year=donor_target_year,
                 ),
             ]
         )
@@ -190,6 +197,7 @@ def default_policyengine_us_data_rebuild_source_providers(
                 year=int(scf_year),
                 policyengine_us_data_repo=policyengine_us_data_repo,
                 policyengine_us_data_python=policyengine_us_data_python,
+                target_year=donor_target_year,
             )
         )
     return tuple(providers)

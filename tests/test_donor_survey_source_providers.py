@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import h5py
 import pandas as pd
+import pytest
 from microplex.core import EntityType
 
 import microplex_us.data_sources.donor_surveys as donor_surveys
@@ -275,6 +276,25 @@ def _scf_tables(**_kwargs) -> DonorSurveyTables:
     return DonorSurveyTables(households=households, persons=persons)
 
 
+def _write_uprating_factors(
+    repo_root,
+    rows: dict[str, tuple[float, float, float]],
+) -> None:
+    storage_dir = repo_root / "policyengine_us_data" / "storage"
+    storage_dir.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "Variable": variable,
+                "2022": values[0],
+                "2023": values[1],
+                "2024": values[2],
+            }
+            for variable, values in rows.items()
+        ]
+    ).to_csv(storage_dir / "uprating_factors.csv", index=False)
+
+
 def test_acs_source_provider_builds_observation_frame_from_injected_loader() -> None:
     provider = ACSSourceProvider(loader=_acs_tables)
 
@@ -495,6 +515,100 @@ def test_sipp_and_scf_provider_fillers_are_not_usable_as_conditions() -> None:
     assert assets_frame.source.is_authoritative_for("tenure") is False
     assert scf_frame.source.allows_conditioning_on("state_fips") is False
     assert scf_frame.source.observes("net_worth", EntityType.PERSON)
+
+
+def test_sipp_provider_uprates_amounts_to_target_year(tmp_path) -> None:
+    _write_uprating_factors(
+        tmp_path,
+        {
+            "employment_income_before_lsr": (1.0, 1.0, 1.1),
+            "tip_income": (1.0, 1.0, 1.25),
+        },
+    )
+
+    provider = SIPPSourceProvider(
+        block="tips",
+        loader=_sipp_tips_tables,
+        policyengine_us_data_repo=tmp_path,
+        target_year=2024,
+    )
+
+    frame = provider.load_frame()
+    households = frame.tables[EntityType.HOUSEHOLD]
+    persons = frame.tables[EntityType.PERSON]
+
+    assert frame.source.name == "sipp_tips_2023"
+    assert households["year"].tolist() == [2024, 2024]
+    assert persons["year"].tolist() == [2024, 2024, 2024]
+    assert persons["employment_income"].tolist() == pytest.approx(
+        [44_000.0, 0.0, 27_500.0]
+    )
+    assert persons["income"].tolist() == pytest.approx([44_000.0, 0.0, 27_500.0])
+    assert persons["tip_income"].tolist() == [1_125.0, 0.0, 312.5]
+    assert persons["weight"].tolist() == [80.0, 80.0, 90.0]
+
+
+def test_sipp_asset_provider_uprates_liquid_assets_to_target_year(tmp_path) -> None:
+    _write_uprating_factors(
+        tmp_path,
+        {
+            "employment_income_before_lsr": (1.0, 1.0, 1.1),
+            "bank_account_assets": (1.0, 1.0, 1.2),
+            "stock_assets": (1.0, 1.0, 1.3),
+            "bond_assets": (1.0, 1.0, 1.4),
+        },
+    )
+
+    provider = SIPPSourceProvider(
+        block="assets",
+        loader=_sipp_assets_tables,
+        policyengine_us_data_repo=tmp_path,
+        target_year=2024,
+    )
+
+    persons = provider.load_frame().tables[EntityType.PERSON]
+
+    assert persons["employment_income"].tolist() == pytest.approx([44_000.0, 27_500.0])
+    assert persons["income"].tolist() == pytest.approx([44_000.0, 27_500.0])
+    assert persons["bank_account_assets"].tolist() == [3_000.0, 12_000.0]
+    assert persons["stock_assets"].tolist() == [0.0, 5_200.0]
+    assert persons["bond_assets"].tolist() == [0.0, 2_100.0]
+
+
+def test_scf_provider_uprates_amounts_to_target_year(tmp_path) -> None:
+    _write_uprating_factors(
+        tmp_path,
+        {
+            "employment_income_before_lsr": (1.0, 1.0, 1.1),
+            "taxable_interest_income": (1.0, 1.0, 2.0),
+            "social_security_retirement": (1.0, 1.0, 1.5),
+            "net_worth": (1.0, 1.0, 1.2),
+            "auto_loan_balance": (1.0, 1.0, 1.3),
+            "auto_loan_interest": (1.0, 1.0, 1.4),
+        },
+    )
+
+    provider = SCFSourceProvider(
+        loader=_scf_tables,
+        policyengine_us_data_repo=tmp_path,
+        target_year=2024,
+    )
+
+    frame = provider.load_frame()
+    households = frame.tables[EntityType.HOUSEHOLD]
+    persons = frame.tables[EntityType.PERSON]
+
+    assert frame.source.name == "scf_2022"
+    assert households["year"].tolist() == [2024, 2024]
+    assert persons["year"].tolist() == [2024, 2024]
+    assert persons["employment_income"].tolist() == [82_500.0, 0.0]
+    assert persons["income"].tolist() == [82_500.0, 0.0]
+    assert persons["interest_dividend_income"].tolist() == [2_400.0, 800.0]
+    assert persons["social_security_pension_income"].tolist() == [0.0, 27_000.0]
+    assert persons["net_worth"].tolist() == [420_000.0, 216_000.0]
+    assert persons["auto_loan_balance"].tolist() == [10_400.0, 0.0]
+    assert persons["auto_loan_interest"].tolist() == [770.0, 0.0]
+    assert persons["weight"].tolist() == [10.0, 12.0]
 
 
 def test_scf_source_provider_uses_manifest_backed_dataset_loader(

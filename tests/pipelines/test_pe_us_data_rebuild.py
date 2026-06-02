@@ -141,9 +141,14 @@ def test_default_policyengine_us_data_rebuild_source_providers_use_pe_style_bund
     assert providers[2].year == 2024
     assert isinstance(providers[3], SIPPSourceProvider)
     assert providers[3].block == "tips"
+    assert providers[3].target_year == 2024
+    assert providers[3].policyengine_us_data_python == "/tmp/pe-python"
     assert isinstance(providers[4], SIPPSourceProvider)
     assert providers[4].block == "assets"
+    assert providers[4].target_year == 2024
+    assert providers[4].policyengine_us_data_python == "/tmp/pe-python"
     assert isinstance(providers[5], SCFSourceProvider)
+    assert providers[5].target_year == 2024
 
 
 def test_default_policyengine_us_data_rebuild_source_providers_keeps_acs_when_donor_surveys_disabled() -> (
@@ -177,9 +182,12 @@ def test_default_policyengine_us_data_rebuild_source_providers_can_include_donor
     assert isinstance(providers[2], ACSSourceProvider)
     assert isinstance(providers[3], SIPPSourceProvider)
     assert providers[3].block == "tips"
+    assert providers[3].target_year == 2024
     assert isinstance(providers[4], SIPPSourceProvider)
     assert providers[4].block == "assets"
+    assert providers[4].target_year == 2024
     assert isinstance(providers[5], SCFSourceProvider)
+    assert providers[5].target_year == 2024
 
 
 def test_build_policyengine_us_data_rebuild_pipeline_returns_configured_pipeline() -> (

@@ -9891,6 +9891,7 @@ class USMicroplexPipeline:
             "takes_up_snap_if_eligible": "max",
             "takes_up_tanf_if_eligible": "max",
             "spm_unit_energy_subsidy": "first",
+            "spm_unit_pre_subsidy_childcare_expenses": "first",
         }
         aggregations = {
             column: aggregation

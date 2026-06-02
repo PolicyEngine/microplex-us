@@ -4037,7 +4037,7 @@ class TestUSMicroplexPipeline:
             guarded
         )
         assert rough_agi.iloc[0] == pytest.approx(78_999_999.0)
-        assert rough_agi.iloc[1] == pytest.approx(15_125_000.0)
+        assert rough_agi.iloc[1] == pytest.approx(10_125_000.0)
         assert guarded["employment_income"].tolist() == [100_000.0, 125_000.0]
         assert guarded["capital_gains"].iloc[0] < clone["capital_gains"].iloc[0]
         assert (
@@ -4047,11 +4047,11 @@ class TestUSMicroplexPipeline:
         assert summary["affected_rows"] == 1
         assert rough_agi_variables == [
             "employment_income",
-            "capital_gains",
+            "long_term_capital_gains",
             "qualified_dividend_income",
         ]
         assert summary["scale_basis_variables"] == [
-            "capital_gains",
+            "long_term_capital_gains",
             "qualified_dividend_income",
         ]
         assert "long_term_capital_gains" in summary["scaled_variables"]
@@ -4094,11 +4094,60 @@ class TestUSMicroplexPipeline:
         assert rough_agi.iloc[0] == pytest.approx(65_100_000.0)
         assert rough_agi_variables == [
             "employment_income",
-            "capital_gains",
+            "long_term_capital_gains",
+            "short_term_capital_gains",
             "ordinary_dividend_income",
         ]
         pd.testing.assert_frame_equal(guarded, clone)
         assert summary["affected_rows"] == 0
+
+    def test_puf_support_clone_top_tail_guard_prefers_capital_gains_components(
+        self,
+    ):
+        pipeline = USMicroplexPipeline(
+            USMicroplexBuildConfig(
+                synthesis_backend="seed",
+                puf_support_clone_enabled=True,
+                puf_support_clone_top_tail_rough_agi_cap=78_999_999.0,
+            )
+        )
+        clone = pd.DataFrame(
+            {
+                "employment_income": [105_000.0],
+                "capital_gains": [14_000_000.0],
+                "long_term_capital_gains": [95_000_000.0],
+                "short_term_capital_gains": [250.0],
+            }
+        )
+
+        guarded, summary = pipeline._apply_puf_support_clone_top_tail_guard(
+            clone,
+            integrated_variables=[
+                "capital_gains",
+                "long_term_capital_gains",
+                "short_term_capital_gains",
+            ],
+        )
+        rough_agi, rough_agi_variables = pipeline._puf_support_clone_top_tail_rough_agi(
+            guarded
+        )
+
+        assert rough_agi.iloc[0] == pytest.approx(78_999_999.0)
+        assert rough_agi_variables == [
+            "employment_income",
+            "long_term_capital_gains",
+            "short_term_capital_gains",
+        ]
+        assert guarded["capital_gains"].iloc[0] < clone["capital_gains"].iloc[0]
+        assert (
+            guarded["long_term_capital_gains"].iloc[0]
+            < clone["long_term_capital_gains"].iloc[0]
+        )
+        assert summary["affected_rows"] == 1
+        assert summary["scale_basis_variables"] == [
+            "long_term_capital_gains",
+            "short_term_capital_gains",
+        ]
 
     def test_puf_support_clone_top_tail_guard_scales_exported_ltcg_alias(self):
         pipeline = USMicroplexPipeline(

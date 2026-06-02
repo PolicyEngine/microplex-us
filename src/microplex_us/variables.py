@@ -666,17 +666,22 @@ def normalize_dividend_columns(frame: pd.DataFrame) -> pd.DataFrame:
     result = frame.copy()
     qualified = _nonnegative_series(result, "qualified_dividend_income")
     non_qualified = _nonnegative_series(result, "non_qualified_dividend_income")
-    total = (
-        _nonnegative_series(result, "ordinary_dividend_income")
-        if "ordinary_dividend_income" in result.columns
-        else _nonnegative_series(result, "dividend_income")
-    )
+    ordinary_total = _nonnegative_series(result, "ordinary_dividend_income")
+    dividend_total = _nonnegative_series(result, "dividend_income")
+    if "ordinary_dividend_income" in result.columns:
+        total = ordinary_total.where(ordinary_total.ne(0.0), dividend_total)
+    else:
+        total = dividend_total
 
     has_qualified = "qualified_dividend_income" in result.columns
     has_non_qualified = "non_qualified_dividend_income" in result.columns
 
     if has_qualified and has_non_qualified:
-        normalized_total = qualified + non_qualified
+        component_total = qualified + non_qualified
+        total_only = component_total.eq(0.0) & total.gt(0.0)
+        non_qualified = non_qualified.where(~total_only, total)
+        component_total = qualified + non_qualified
+        normalized_total = component_total.where(component_total.ne(0.0), total)
     elif has_qualified:
         normalized_total = np.maximum(total.to_numpy(dtype=float), qualified.to_numpy(dtype=float))
         non_qualified = pd.Series(

@@ -10151,6 +10151,27 @@ class USMicroplexPipeline:
                     )
             return zero.copy()
 
+        def first_nonzero_or_present(*columns: str) -> pd.Series:
+            values = zero.copy()
+            found = False
+            for column in columns:
+                if column not in result.columns:
+                    continue
+                candidate = (
+                    pd.to_numeric(
+                        result[column],
+                        errors="coerce",
+                    )
+                    .fillna(0.0)
+                    .astype(float)
+                )
+                if not found:
+                    values = candidate.copy()
+                    found = True
+                    continue
+                values = values.where(values.ne(0.0), candidate)
+            return values if found else zero.copy()
+
         def has_any(*columns: str) -> bool:
             return any(column in result.columns for column in columns)
 
@@ -10272,14 +10293,17 @@ class USMicroplexPipeline:
             result["takes_up_ssi_if_eligible"] = first_present("ssi").gt(0.0)
 
         known_nonemployment = (
-            first_present("self_employment_income")
-            + first_present("taxable_interest_income", "interest_income")
-            + first_present("ordinary_dividend_income", "dividend_income")
+            first_nonzero_or_present(
+                "self_employment_income_before_lsr",
+                "self_employment_income",
+            )
+            + first_nonzero_or_present("taxable_interest_income", "interest_income")
+            + first_nonzero_or_present("ordinary_dividend_income", "dividend_income")
             + first_present("rental_income")
             + first_present("gross_social_security", "social_security")
             + first_present("ssi")
             + first_present("public_assistance")
-            + first_present("taxable_pension_income", "pension_income")
+            + first_nonzero_or_present("taxable_pension_income", "pension_income")
             + first_present("unemployment_compensation")
         )
         fallback_employment_income = (
@@ -10290,7 +10314,7 @@ class USMicroplexPipeline:
         ).clip(lower=0.0)
 
         result["employment_income_before_lsr"] = (
-            first_present(
+            first_nonzero_or_present(
                 "employment_income_before_lsr", "employment_income", "wage_income"
             )
             if has_any(
@@ -10298,11 +10322,11 @@ class USMicroplexPipeline:
             )
             else fallback_employment_income
         )
-        result["self_employment_income_before_lsr"] = first_present(
+        result["self_employment_income_before_lsr"] = first_nonzero_or_present(
             "self_employment_income_before_lsr",
             "self_employment_income",
         )
-        result["taxable_interest_income"] = first_present(
+        result["taxable_interest_income"] = first_nonzero_or_present(
             "taxable_interest_income",
             "interest_income",
         )
@@ -10315,17 +10339,21 @@ class USMicroplexPipeline:
         result["non_qualified_dividend_income"] = first_present(
             "non_qualified_dividend_income",
         ).clip(lower=0.0)
-        result["ordinary_dividend_income"] = first_present(
+        dividend_alias = first_nonzero_or_present(
             "ordinary_dividend_income",
             "dividend_income",
         ).clip(lower=0.0)
+        result["ordinary_dividend_income"] = dividend_alias
         if has_any("qualified_dividend_income", "non_qualified_dividend_income"):
             dividend_total = (
                 result["qualified_dividend_income"]
                 + result["non_qualified_dividend_income"]
             ).clip(lower=0.0)
-            result["ordinary_dividend_income"] = dividend_total
-            result["dividend_income"] = dividend_total
+            result["ordinary_dividend_income"] = dividend_total.where(
+                dividend_total.ne(0.0),
+                dividend_alias,
+            )
+            result["dividend_income"] = result["ordinary_dividend_income"]
         else:
             result = normalize_dividend_columns(result)
 
@@ -10335,15 +10363,17 @@ class USMicroplexPipeline:
             "capital_gains_distributions",
         )
         result["long_term_capital_gains_before_response"] = (
-            first_present(
+            first_nonzero_or_present(
                 "long_term_capital_gains_before_response",
                 "long_term_capital_gains",
+                "capital_gains",
             )
             if has_any(
                 "long_term_capital_gains_before_response",
                 "long_term_capital_gains",
+                "capital_gains",
             )
-            else first_present("capital_gains")
+            else zero.copy()
         )
         result["partnership_s_corp_income"] = first_present("partnership_s_corp_income")
         result["partnership_se_income"] = first_present("partnership_se_income")

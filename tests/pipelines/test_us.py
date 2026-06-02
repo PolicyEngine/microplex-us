@@ -4919,6 +4919,52 @@ class TestUSMicroplexPipeline:
         assert augmented["self_employed_health_insurance_ald"].tolist() == [15.0]
         assert augmented["self_employed_pension_contribution_ald"].tolist() == [10.0]
 
+    def test_augment_policyengine_person_inputs_coalesces_sparse_source_aliases_by_row(
+        self,
+    ):
+        pipeline = USMicroplexPipeline(USMicroplexBuildConfig())
+        persons = pd.DataFrame(
+            {
+                "age": [45, 50, 55],
+                "sex": [1, 2, 1],
+                "income": [60_000.0, 75_000.0, 0.0],
+                "employment_income_before_lsr": [0.0, 70_000.0, 0.0],
+                "wage_income": [50_000.0, 80_000.0, 0.0],
+                "self_employment_income_before_lsr": [0.0, 200.0, -300.0],
+                "self_employment_income": [500.0, 999.0, 50.0],
+                "taxable_interest_income": [0.0, 20.0, 0.0],
+                "interest_income": [100.0, 999.0, 0.0],
+                "ordinary_dividend_income": [0.0, 30.0, 0.0],
+                "dividend_income": [80.0, 999.0, 0.0],
+                "qualified_dividend_income": [0.0, 5.0, 0.0],
+                "non_qualified_dividend_income": [0.0, 25.0, 0.0],
+                "long_term_capital_gains_before_response": [0.0, 60.0, -10.0],
+                "long_term_capital_gains": [40.0, 999.0, 0.0],
+                "capital_gains": [999.0, 999.0, 25.0],
+            }
+        )
+
+        augmented = pipeline._augment_policyengine_person_inputs(persons)
+
+        assert augmented["employment_income_before_lsr"].tolist() == [
+            50_000.0,
+            70_000.0,
+            0.0,
+        ]
+        assert augmented["self_employment_income_before_lsr"].tolist() == [
+            500.0,
+            200.0,
+            -300.0,
+        ]
+        assert augmented["taxable_interest_income"].tolist() == [100.0, 20.0, 0.0]
+        assert augmented["ordinary_dividend_income"].tolist() == [80.0, 30.0, 0.0]
+        assert augmented["dividend_income"].tolist() == [80.0, 30.0, 0.0]
+        assert augmented["long_term_capital_gains_before_response"].tolist() == [
+            40.0,
+            60.0,
+            -10.0,
+        ]
+
     def test_augment_policyengine_person_inputs_derives_marital_status_flags_from_cps_codes(
         self,
     ):

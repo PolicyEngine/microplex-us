@@ -64,6 +64,7 @@ from microplex_us.pipelines.stage_run import (
     write_us_stage_run_manifests_from_artifact_manifest,
 )
 from microplex_us.variables import prune_redundant_variables
+from microplex_us.vintages import MP_2024
 
 if TYPE_CHECKING:
     from microplex.core import SourceProvider
@@ -1969,7 +1970,7 @@ def run_policyengine_us_data_rebuild_checkpoint(
     config_overrides: dict[str, Any] | None = None,
     providers: tuple[SourceProvider, ...] | list[SourceProvider] | None = None,
     queries: dict[str, SourceQuery] | None = None,
-    cps_source_year: int = 2023,
+    cps_source_year: int = MP_2024.cps_asec.release,
     cps_cache_dir: str | Path | None = None,
     cps_download: bool = True,
     puf_target_year: int | None = None,
@@ -1981,9 +1982,9 @@ def run_policyengine_us_data_rebuild_checkpoint(
     include_donor_surveys: bool = True,
     include_sipp: bool | None = None,
     include_scf: bool | None = None,
-    acs_year: int = 2024,
-    sipp_year: int = 2023,
-    scf_year: int = 2022,
+    acs_year: int = MP_2024.acs.release,
+    sipp_year: int = MP_2024.sipp.release,
+    scf_year: int = MP_2024.scf.release,
     donor_cache_dir: str | Path | None = None,
     policyengine_us_data_repo: str | Path | None = None,
     policyengine_us_data_python: str | Path | None = None,
@@ -2261,12 +2262,14 @@ def main(argv: list[str] | None = None) -> None:
             "variables. See docs/next-run-plan.md."
         ),
     )
-    parser.add_argument("--cps-source-year", type=int, default=2023)
+    parser.add_argument(
+        "--cps-source-year", type=int, default=MP_2024.cps_asec.release
+    )
     parser.add_argument("--puf-target-year", type=int)
     parser.add_argument("--puf-cps-reference-year", type=int)
-    parser.add_argument("--acs-year", type=int, default=2024)
-    parser.add_argument("--sipp-year", type=int, default=2023)
-    parser.add_argument("--scf-year", type=int, default=2022)
+    parser.add_argument("--acs-year", type=int, default=MP_2024.acs.release)
+    parser.add_argument("--sipp-year", type=int, default=MP_2024.sipp.release)
+    parser.add_argument("--scf-year", type=int, default=MP_2024.scf.release)
     parser.add_argument("--cps-cache-dir")
     parser.add_argument("--puf-cache-dir")
     parser.add_argument("--donor-cache-dir")

@@ -203,3 +203,22 @@ def test_build_policyengine_us_data_rebuild_pipeline_returns_configured_pipeline
     assert pipeline.config.calibration_max_iter == 77
     assert pipeline.config.synthesis_backend == "seed"
     assert pipeline.config.calibration_backend == "entropy"
+
+
+def test_source_provider_year_defaults_derive_from_mp_2024_profile() -> None:
+    # Year defaults come from the single-source-of-truth vintage profile, so a
+    # stale literal cannot silently return. The CPS spine default is the profile's
+    # ASEC release (2025 = income year 2024), not the 2023 that used to require a
+    # CLI override to be correct.
+    import inspect
+
+    from microplex_us.vintages import MP_2024
+
+    params = inspect.signature(
+        default_policyengine_us_data_rebuild_source_providers
+    ).parameters
+    assert params["cps_source_year"].default == MP_2024.cps_asec.release == 2025
+    assert params["acs_year"].default == MP_2024.acs.release
+    assert params["sipp_year"].default == MP_2024.sipp.release
+    assert params["scf_year"].default == MP_2024.scf.release
+    assert params["puf_target_year"].default == MP_2024.model_year

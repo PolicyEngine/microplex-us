@@ -7,6 +7,8 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from microplex_us.vintages import MP_2024
+
 if TYPE_CHECKING:
     from microplex.core import SourceProvider
 
@@ -95,10 +97,10 @@ def default_policyengine_us_data_rebuild_config(
 
 def default_policyengine_us_data_rebuild_source_providers(
     *,
-    cps_source_year: int = 2023,
+    cps_source_year: int = MP_2024.cps_asec.release,
     cps_cache_dir: str | Path | None = None,
     cps_download: bool = True,
-    puf_target_year: int = 2024,
+    puf_target_year: int = MP_2024.model_year,
     puf_cps_reference_year: int | None = None,
     puf_cache_dir: str | Path | None = None,
     puf_path: str | Path | None = None,
@@ -107,9 +109,9 @@ def default_policyengine_us_data_rebuild_source_providers(
     include_donor_surveys: bool = True,
     include_sipp: bool | None = None,
     include_scf: bool | None = None,
-    acs_year: int = 2024,
-    sipp_year: int = 2023,
-    scf_year: int = 2022,
+    acs_year: int = MP_2024.acs.release,
+    sipp_year: int = MP_2024.sipp.release,
+    scf_year: int = MP_2024.scf.release,
     donor_cache_dir: str | Path | None = None,
     policyengine_us_data_repo: str | Path | None = None,
     policyengine_us_data_python: str | Path | None = None,

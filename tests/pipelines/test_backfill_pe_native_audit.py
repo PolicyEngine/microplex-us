@@ -101,6 +101,34 @@ def test_backfill_us_pe_native_audit_root_updates_manifest_and_snapshot(
         "microplex_us.pipelines.backfill_pe_native_audit.build_policyengine_us_data_rebuild_native_audit",
         lambda *args, **kwargs: {
             "artifactId": "run-1",
+            "period": 2024,
+            "targetDelta": {
+                "metric": "enhanced_cps_native_loss_target_delta",
+                "period": 2024,
+                "from_dataset": str((tmp_path / "baseline.h5").resolve()),
+                "to_dataset": str((bundle_dir / "policyengine_us.h5").resolve()),
+                "summary": {"n_targets": 1, "to_win_rate": 1.0},
+                "family_summaries": [{"target_family": "national_irs_other"}],
+                "scope_summaries": [{"target_scope": "national"}],
+                "targets": [
+                    {
+                        "target_name": "nation/irs/example",
+                        "target_family": "national_irs_other",
+                        "target_scope": "national",
+                        "winner": "to",
+                        "weighted_term_delta": -1.0,
+                        "from_weighted_term": 2.0,
+                        "to_weighted_term": 1.0,
+                        "target_value": 100.0,
+                        "from_estimate": 90.0,
+                        "to_estimate": 95.0,
+                        "from_rel_error": 0.2,
+                        "to_rel_error": 0.1,
+                    }
+                ],
+                "top_regressions": [],
+                "top_improvements": [],
+            },
             "verdictHints": {
                 "largestRegressingFamily": "national_irs_other",
                 "productionImputationVariant": "structured_pe_conditioning",
@@ -119,6 +147,14 @@ def test_backfill_us_pe_native_audit_root_updates_manifest_and_snapshot(
         == "pe_us_data_rebuild_native_audit.json"
     )
     assert (
+        updated_manifest["artifacts"]["policyengine_native_target_diagnostics"]
+        == "pe_native_target_diagnostics.json"
+    )
+    target_diagnostics = json.loads(
+        (bundle_dir / "pe_native_target_diagnostics.json").read_text()
+    )
+    assert target_diagnostics["targets"][0]["delta_absolute_error"] == -5.0
+    assert (
         updated_manifest["policyengine_native_audit"][
             "productionImputationVariantIsSupportWinner"
         ]
@@ -133,6 +169,7 @@ def test_backfill_us_pe_native_audit_root_updates_manifest_and_snapshot(
     assert benchmark["outputs"] == [
         "policyengine_native_scores.json",
         "pe_us_data_rebuild_native_audit.json",
+        "pe_native_target_diagnostics.json",
     ]
 
 

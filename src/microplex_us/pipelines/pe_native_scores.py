@@ -3213,19 +3213,67 @@ def write_us_pe_native_target_diagnostics(
 ) -> Path:
     """Write the full PE-native per-target diagnostic dataset to disk."""
 
-    payload = compare_us_pe_native_target_deltas(
+    payload = build_us_pe_native_target_diagnostics_payload(
         from_dataset_path=from_dataset_path,
         to_dataset_path=to_dataset_path,
         period=period,
         top_k=top_k,
+        from_label=from_label,
+        to_label=to_label,
         policyengine_us_data_repo=policyengine_us_data_repo,
         policyengine_us_data_python=policyengine_us_data_python,
+        policyengine_targets_db_path=policyengine_targets_db_path,
+    )
+    destination = Path(output_path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(json.dumps(payload, indent=2, sort_keys=True))
+    return destination
+
+
+def build_us_pe_native_target_diagnostics_payload(
+    *,
+    from_dataset_path: str | Path | None = None,
+    to_dataset_path: str | Path | None = None,
+    period: int = 2024,
+    top_k: int = 50,
+    from_label: str = "policyengine-us-data",
+    to_label: str = "microplex-us",
+    policyengine_us_data_repo: str | Path | None = None,
+    policyengine_us_data_python: str | Path | None = None,
+    policyengine_targets_db_path: str | Path | None = None,
+    target_delta_payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build the full PE-native per-target diagnostic payload.
+
+    When ``target_delta_payload`` is supplied, the caller is responsible for
+    ensuring it compares the same baseline/candidate datasets and period.
+    """
+
+    payload = (
+        dict(target_delta_payload)
+        if target_delta_payload is not None
+        else compare_us_pe_native_target_deltas(
+            from_dataset_path=_required_dataset_path(
+                from_dataset_path,
+                label="from_dataset_path",
+            ),
+            to_dataset_path=_required_dataset_path(
+                to_dataset_path,
+                label="to_dataset_path",
+            ),
+            period=period,
+            top_k=top_k,
+            policyengine_us_data_repo=policyengine_us_data_repo,
+            policyengine_us_data_python=policyengine_us_data_python,
+        )
     )
     payload["diagnostic_schema_version"] = 1
     payload["dataset_labels"] = {
         "from": from_label,
         "to": to_label,
     }
+    payload.setdefault("baseline_dataset", payload.get("from_dataset"))
+    payload.setdefault("candidate_dataset", payload.get("to_dataset"))
     target_db_path = (
         Path(policyengine_targets_db_path).expanduser()
         if policyengine_targets_db_path is not None
@@ -3236,10 +3284,69 @@ def write_us_pe_native_target_diagnostics(
         target_db_path=target_db_path,
         period=period,
     )
-    destination = Path(output_path)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text(json.dumps(payload, indent=2, sort_keys=True))
-    return destination
+    _add_policyengine_target_diagnostic_aliases(payload)
+    return payload
+
+
+def _required_dataset_path(value: str | Path | None, *, label: str) -> str | Path:
+    if value is None:
+        raise ValueError(
+            f"{label} is required when target_delta_payload is not supplied"
+        )
+    return value
+
+
+def _add_policyengine_target_diagnostic_aliases(payload: dict[str, Any]) -> None:
+    """Add dashboard-friendly aliases while preserving the native delta schema."""
+
+    baseline_dataset = payload.get("from_dataset")
+    candidate_dataset = payload.get("to_dataset")
+    baseline_label = payload.get("dataset_labels", {}).get("from")
+    candidate_label = payload.get("dataset_labels", {}).get("to")
+    for row in payload.get("targets", ()):
+        if not isinstance(row, dict):
+            continue
+        target_value = row.get("target_value")
+        from_estimate = row.get("from_estimate")
+        to_estimate = row.get("to_estimate")
+        from_absolute_error = _absolute_error_or_none(from_estimate, target_value)
+        to_absolute_error = _absolute_error_or_none(to_estimate, target_value)
+        row.setdefault("target_id", row.get("policyengine_target_id") or row.get("target_name"))
+        row.setdefault("baseline_dataset", baseline_dataset)
+        row.setdefault("candidate_dataset", candidate_dataset)
+        row.setdefault("baseline_label", baseline_label)
+        row.setdefault("candidate_label", candidate_label)
+        row.setdefault("us_data_aggregate", from_estimate)
+        row.setdefault("microplex_aggregate", to_estimate)
+        row.setdefault("us_data_absolute_error", from_absolute_error)
+        row.setdefault("microplex_absolute_error", to_absolute_error)
+        row.setdefault("us_data_relative_error", row.get("from_rel_error"))
+        row.setdefault("microplex_relative_error", row.get("to_rel_error"))
+        if from_absolute_error is not None and to_absolute_error is not None:
+            row.setdefault(
+                "delta_absolute_error",
+                to_absolute_error - from_absolute_error,
+            )
+        row.setdefault(
+            "delta_relative_error",
+            _delta_or_none(row.get("to_rel_error"), row.get("from_rel_error")),
+        )
+        row.setdefault("loss_contribution", row.get("to_weighted_term"))
+        row.setdefault("family", row.get("target_family"))
+        row.setdefault("in_loss", True)
+        row.setdefault("supported_by_microplex", True)
+
+
+def _absolute_error_or_none(value: Any, target: Any) -> float | None:
+    if value is None or target is None:
+        return None
+    return abs(float(value) - float(target))
+
+
+def _delta_or_none(value: Any, baseline: Any) -> float | None:
+    if value is None or baseline is None:
+        return None
+    return float(value) - float(baseline)
 
 
 def main(argv: list[str] | None = None) -> int:

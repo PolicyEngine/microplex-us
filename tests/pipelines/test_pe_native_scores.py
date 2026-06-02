@@ -11,6 +11,7 @@ from microplex_us.pipelines.pe_native_scores import (
     annotate_pe_native_target_db_matches,
     build_policyengine_us_data_pythonpath,
     build_policyengine_us_data_subprocess_env,
+    build_us_pe_native_target_diagnostics_payload,
     compare_us_pe_native_target_deltas,
     compute_batch_us_pe_native_scores,
     compute_batch_us_pe_native_support_audits,
@@ -558,6 +559,57 @@ def test_write_us_pe_native_target_diagnostics_persists_full_payload(
     assert payload["targets"][0]["target_name"] == "nation/irs/example"
     assert payload["targets"][0]["policyengine_target_match"] == "unparsed"
     assert payload["target_db_summary"]["unparsed"] == 1
+
+
+def test_build_us_pe_native_target_diagnostics_payload_adds_public_aliases(
+    tmp_path,
+) -> None:
+    payload = build_us_pe_native_target_diagnostics_payload(
+        target_delta_payload={
+            "metric": "enhanced_cps_native_loss_target_delta",
+            "period": 2024,
+            "from_dataset": "/tmp/enhanced_cps_2024.h5",
+            "to_dataset": "/tmp/policyengine_us.h5",
+            "summary": {"n_targets": 1},
+            "targets": [
+                {
+                    "target_name": "nation/irs/example",
+                    "target_family": "national_irs_other",
+                    "target_scope": "national",
+                    "winner": "to",
+                    "weighted_term_delta": -1.0,
+                    "from_weighted_term": 2.0,
+                    "to_weighted_term": 1.0,
+                    "target_value": 100.0,
+                    "from_estimate": 90.0,
+                    "to_estimate": 95.0,
+                    "from_rel_error": 0.2,
+                    "to_rel_error": 0.1,
+                }
+            ],
+            "top_regressions": [],
+            "top_improvements": [],
+        },
+        from_label="policyengine-us-data",
+        to_label="microplex-us",
+        policyengine_targets_db_path=tmp_path / "missing.db",
+    )
+
+    row = payload["targets"][0]
+    assert payload["diagnostic_schema_version"] == 1
+    assert payload["baseline_dataset"] == "/tmp/enhanced_cps_2024.h5"
+    assert payload["candidate_dataset"] == "/tmp/policyengine_us.h5"
+    assert row["target_id"] == "nation/irs/example"
+    assert row["us_data_aggregate"] == 90.0
+    assert row["microplex_aggregate"] == 95.0
+    assert row["us_data_absolute_error"] == 10.0
+    assert row["microplex_absolute_error"] == 5.0
+    assert row["delta_absolute_error"] == -5.0
+    assert round(row["delta_relative_error"], 10) == -0.1
+    assert row["loss_contribution"] == 1.0
+    assert row["family"] == "national_irs_other"
+    assert row["in_loss"] is True
+    assert row["supported_by_microplex"] is True
 
 
 def test_compute_batch_us_pe_native_target_deltas_wraps_multiple_candidates(

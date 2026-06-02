@@ -29,6 +29,7 @@ def build_us_validation_evidence_manifest(
         "policyengine_harness",
         "policyengine_native_scores",
         "policyengine_native_audit",
+        "policyengine_native_target_diagnostics",
         "imputation_ablation",
         "child_tax_unit_agi_drift",
     )

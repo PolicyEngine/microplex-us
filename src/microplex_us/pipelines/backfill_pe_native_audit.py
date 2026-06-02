@@ -13,6 +13,7 @@ from microplex_us.pipelines.backfill_pe_native_scores import (
     discover_us_candidate_artifact_dirs,
 )
 from microplex_us.pipelines.pe_native_scores import (
+    build_us_pe_native_target_diagnostics_payload,
     compute_batch_us_pe_native_support_audits,
     compute_batch_us_pe_native_target_deltas,
 )
@@ -245,10 +246,38 @@ def _write_native_audit_payload_to_bundle(
     artifacts["policyengine_native_audit"] = str(
         native_audit_path.relative_to(bundle_dir)
     )
+    extra_outputs = [native_audit_path.name]
+    target_delta_payload = payload.get("targetDelta")
+    if isinstance(target_delta_payload, dict):
+        target_diagnostics = build_us_pe_native_target_diagnostics_payload(
+            period=int(payload.get("period") or 2024),
+            from_label="policyengine-us-data",
+            to_label="microplex-us",
+            policyengine_targets_db_path=dict(manifest.get("config", {})).get(
+                "policyengine_targets_db"
+            ),
+            target_delta_payload=target_delta_payload,
+        )
+        target_diagnostics_path = resolve_us_stage_artifact_contract_path(
+            bundle_dir,
+            "09_validation_benchmarking",
+            "policyengine_native_target_diagnostics",
+        )
+        target_diagnostics_path.write_text(
+            json.dumps(target_diagnostics, indent=2, sort_keys=True)
+        )
+        artifacts["policyengine_native_target_diagnostics"] = str(
+            target_diagnostics_path.relative_to(bundle_dir)
+        )
+        extra_outputs.append(target_diagnostics_path.name)
     manifest["artifacts"] = artifacts
     manifest["policyengine_native_audit"] = dict(payload.get("verdictHints", {}))
 
-    _refresh_checkpoint_data_flow_snapshot(bundle_dir, manifest)
+    _refresh_checkpoint_data_flow_snapshot(
+        bundle_dir,
+        manifest,
+        extra_outputs=tuple(extra_outputs),
+    )
     assert_valid_benchmark_artifact_manifest(
         manifest,
         artifact_dir=bundle_dir,

@@ -4193,6 +4193,49 @@ class TestUSMicroplexPipeline:
         ]
         assert "long_term_capital_gains_before_response" in summary["scaled_variables"]
 
+    def test_puf_support_clone_top_tail_guard_counts_exported_income_inputs(self):
+        pipeline = USMicroplexPipeline(
+            USMicroplexBuildConfig(
+                synthesis_backend="seed",
+                puf_support_clone_enabled=True,
+                puf_support_clone_top_tail_rough_agi_cap=78_999_999.0,
+            )
+        )
+        clone = pd.DataFrame(
+            {
+                "employment_income_before_lsr": [178_427.0],
+                "long_term_capital_gains_before_response": [95_000_000.0],
+                "taxable_private_pension_income": [127_000.0],
+                "social_security_retirement": [18_000.0],
+            }
+        )
+
+        guarded, summary = pipeline._apply_puf_support_clone_top_tail_guard(
+            clone,
+            integrated_variables=["long_term_capital_gains"],
+        )
+        rough_agi, rough_agi_variables = pipeline._puf_support_clone_top_tail_rough_agi(
+            guarded
+        )
+
+        assert rough_agi.iloc[0] == pytest.approx(78_999_999.0)
+        assert rough_agi_variables == [
+            "employment_income_before_lsr",
+            "long_term_capital_gains_before_response",
+            "taxable_private_pension_income",
+            "social_security_retirement",
+        ]
+        assert guarded["employment_income_before_lsr"].iloc[0] == pytest.approx(
+            178_427.0
+        )
+        assert guarded["long_term_capital_gains_before_response"].iloc[
+            0
+        ] == pytest.approx(78_999_999.0 - 178_427.0 - 127_000.0 - 18_000.0)
+        assert summary["affected_rows"] == 1
+        assert summary["scale_basis_variables"] == [
+            "long_term_capital_gains_before_response"
+        ]
+
     def test_puf_support_clone_top_tail_guard_can_be_disabled(self):
         pipeline = USMicroplexPipeline(
             USMicroplexBuildConfig(

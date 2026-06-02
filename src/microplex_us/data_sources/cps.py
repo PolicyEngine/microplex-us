@@ -29,6 +29,7 @@ from microplex.core import (
     apply_source_query,
 )
 
+from microplex_us.data_sources.cps_age import randomize_cps_topcoded_age_80_84
 from microplex_us.data_sources.sampling import (
     sample_frame_with_state_floor,
     sample_frame_without_replacement,
@@ -37,7 +38,7 @@ from microplex_us.source_registry import resolve_source_variable_capabilities
 
 # Default cache directory
 DEFAULT_CACHE_DIR = Path.home() / ".cache" / "microplex"
-CPS_ASEC_PROCESSED_CACHE_VERSION = "20260601_ecps_spm_takeup_inputs"
+CPS_ASEC_PROCESSED_CACHE_VERSION = "20260601_ecps_age80_84"
 
 # CPS ASEC data URLs by year
 CPS_URLS = {
@@ -386,7 +387,9 @@ def _descriptor_from_tables(
                 entity=EntityType.HOUSEHOLD,
                 key_column="household_id",
                 variable_names=household_variables,
-                weight_column="household_weight" if "household_weight" in households.columns else None,
+                weight_column="household_weight"
+                if "household_weight" in households.columns
+                else None,
                 period_column="year" if "year" in households.columns else None,
             ),
             EntityObservation(
@@ -410,7 +413,9 @@ def _ensure_person_ids(persons: pd.DataFrame) -> pd.DataFrame:
         return result
     if "person_number" in result.columns and "household_id" in result.columns:
         result["person_id"] = (
-            result["household_id"].astype(str) + ":" + result["person_number"].astype(str)
+            result["household_id"].astype(str)
+            + ":"
+            + result["person_number"].astype(str)
         )
         return result
     if "household_id" in result.columns:
@@ -485,8 +490,14 @@ def _repair_relationship_to_head(
                 for index in household_relationship.index.tolist()
                 if household_ages.loc[index] >= 18
             ]
-            candidate_pool = spouse_candidates or adult_candidates or household_relationship.index.tolist()
-            head_choice = max(candidate_pool, key=lambda index: household_ages.loc[index])
+            candidate_pool = (
+                spouse_candidates
+                or adult_candidates
+                or household_relationship.index.tolist()
+            )
+            head_choice = max(
+                candidate_pool, key=lambda index: household_ages.loc[index]
+            )
             normalized.loc[head_choice] = 0
             head_index = [head_choice]
         elif len(head_index) > 1:
@@ -545,8 +556,13 @@ def _normalize_relationship_to_head(persons: pd.DataFrame) -> pd.Series:
         order = persons.groupby("household_id").cumcount()
         normalized = pd.Series(3, index=persons.index, dtype=int)
         normalized.loc[order == 0] = 0
-        normalized.loc[(order == 1) & (pd.to_numeric(persons.get("age", 0), errors="coerce").fillna(0) >= 18)] = 1
-        normalized.loc[pd.to_numeric(persons.get("age", 0), errors="coerce").fillna(0) < 18] = 2
+        normalized.loc[
+            (order == 1)
+            & (pd.to_numeric(persons.get("age", 0), errors="coerce").fillna(0) >= 18)
+        ] = 1
+        normalized.loc[
+            pd.to_numeric(persons.get("age", 0), errors="coerce").fillna(0) < 18
+        ] = 2
         return _repair_relationship_to_head(persons, normalized)
 
     relationship = (
@@ -570,8 +586,13 @@ def _normalize_relationship_to_head(persons: pd.DataFrame) -> pd.Series:
     order = persons.groupby("household_id").cumcount()
     normalized = pd.Series(3, index=persons.index, dtype=int)
     normalized.loc[order == 0] = 0
-    normalized.loc[(order == 1) & (pd.to_numeric(persons.get("age", 0), errors="coerce").fillna(0) >= 18)] = 1
-    normalized.loc[pd.to_numeric(persons.get("age", 0), errors="coerce").fillna(0) < 18] = 2
+    normalized.loc[
+        (order == 1)
+        & (pd.to_numeric(persons.get("age", 0), errors="coerce").fillna(0) >= 18)
+    ] = 1
+    normalized.loc[
+        pd.to_numeric(persons.get("age", 0), errors="coerce").fillna(0) < 18
+    ] = 2
     return _repair_relationship_to_head(persons, normalized)
 
 
@@ -589,15 +610,23 @@ def _add_cps_tax_unit_structure_columns(persons: pd.DataFrame) -> pd.DataFrame:
     result["is_tax_unit_dependent"] = 0.0
 
     ages = pd.to_numeric(result.get("age", 0), errors="coerce").fillna(0.0)
-    spouse_person_number = pd.to_numeric(
-        result.get("spouse_person_number", 0), errors="coerce"
-    ).fillna(0).astype(int)
-    person_number = pd.to_numeric(
-        result.get("person_number", 0), errors="coerce"
-    ).fillna(0).astype(int)
+    spouse_person_number = (
+        pd.to_numeric(result.get("spouse_person_number", 0), errors="coerce")
+        .fillna(0)
+        .astype(int)
+    )
+    person_number = (
+        pd.to_numeric(result.get("person_number", 0), errors="coerce")
+        .fillna(0)
+        .astype(int)
+    )
 
-    valid_tax_unit_ids = result["tax_unit_id"].notna() & result["tax_unit_id"].astype(str).str.strip().ne("")
-    grouped = result.loc[valid_tax_unit_ids].groupby(["household_id", "tax_unit_id"], sort=False)
+    valid_tax_unit_ids = result["tax_unit_id"].notna() & result["tax_unit_id"].astype(
+        str
+    ).str.strip().ne("")
+    grouped = result.loc[valid_tax_unit_ids].groupby(
+        ["household_id", "tax_unit_id"], sort=False
+    )
     for _, unit_persons in grouped:
         member_index = unit_persons.index
         unit_relationship = relationship.loc[member_index]
@@ -621,8 +650,12 @@ def _add_cps_tax_unit_structure_columns(persons: pd.DataFrame) -> pd.DataFrame:
                 continue
             spouse_index.extend([int(idx), int(spouse_idx)])
         if not spouse_index:
-            spouse_index = unit_relationship[unit_relationship.eq(1)].index.astype(int).tolist()
-        spouse_index = [idx for idx in dict.fromkeys(spouse_index) if idx not in dependent_index]
+            spouse_index = (
+                unit_relationship[unit_relationship.eq(1)].index.astype(int).tolist()
+            )
+        spouse_index = [
+            idx for idx in dict.fromkeys(spouse_index) if idx not in dependent_index
+        ]
 
         head_index: int | None = None
         head_candidates = [
@@ -659,7 +692,9 @@ def _add_cps_tax_unit_structure_columns(persons: pd.DataFrame) -> pd.DataFrame:
             ]
 
         result.loc[member_index, "tax_unit_is_joint"] = float(bool(spouse_index))
-        result.loc[member_index, "tax_unit_count_dependents"] = float(len(dependent_index))
+        result.loc[member_index, "tax_unit_count_dependents"] = float(
+            len(dependent_index)
+        )
         result.loc[dependent_index, "is_tax_unit_dependent"] = 1.0
         if head_index is not None:
             result.loc[head_index, "is_tax_unit_head"] = 1.0
@@ -714,9 +749,7 @@ def _sample_households_and_persons(
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Sample households and keep all linked person records."""
     household_sort_columns = [
-        column
-        for column in ("household_id", "year")
-        if column in households.columns
+        column for column in ("household_id", "year") if column in households.columns
     ]
     person_sort_columns = [
         column
@@ -759,7 +792,9 @@ def _sample_households_and_persons(
             person_sort_columns,
             kind="mergesort",
         )
-    return sampled_households.reset_index(drop=True), sampled_persons.reset_index(drop=True)
+    return sampled_households.reset_index(drop=True), sampled_persons.reset_index(
+        drop=True
+    )
 
 
 def _sample_cps_households(
@@ -1202,14 +1237,13 @@ def _process_persons(df: pl.DataFrame, year: int) -> pl.DataFrame:
     if not selected:
         raise ValueError("No recognized variables found in person file")
     result = df.select(selected)
+    result = randomize_cps_topcoded_age_80_84(result)
 
     # Scale weights: CPS ASEC weights have 2 implied decimal places
     # See CPS documentation: A_FNLWGT is expressed in units of 1/100
     # Divide by 100 to get actual population representation
     if "weight" in result.columns:
-        result = result.with_columns(
-            (pl.col("weight") / 100).alias("weight")
-        )
+        result = result.with_columns((pl.col("weight") / 100).alias("weight"))
     if "march_supplement_weight" in result.columns:
         result = result.with_columns(
             (pl.col("march_supplement_weight") / 100).alias("march_supplement_weight")
@@ -1217,11 +1251,13 @@ def _process_persons(df: pl.DataFrame, year: int) -> pl.DataFrame:
 
     # Add derived columns
     if "age" in result.columns:
-        result = result.with_columns([
-            (pl.col("age") >= 18).alias("is_adult"),
-            (pl.col("age") < 18).alias("is_child"),
-            (pl.col("age") >= 65).alias("is_senior"),
-        ])
+        result = result.with_columns(
+            [
+                (pl.col("age") >= 18).alias("is_adult"),
+                (pl.col("age") < 18).alias("is_child"),
+                (pl.col("age") >= 65).alias("is_senior"),
+            ]
+        )
 
     if "race" in result.columns and "cps_race" not in result.columns:
         result = result.with_columns(pl.col("race").alias("cps_race"))
@@ -1260,22 +1296,18 @@ def _process_persons(df: pl.DataFrame, year: int) -> pl.DataFrame:
     ):
         reason_1 = pl.col("_social_security_reason_1")
         reason_2 = pl.col("_social_security_reason_2")
-        has_retirement_reason = (
-            (reason_1 == SOCIAL_SECURITY_RETIREMENT_REASON_CODE)
-            | (reason_2 == SOCIAL_SECURITY_RETIREMENT_REASON_CODE)
+        has_retirement_reason = (reason_1 == SOCIAL_SECURITY_RETIREMENT_REASON_CODE) | (
+            reason_2 == SOCIAL_SECURITY_RETIREMENT_REASON_CODE
         )
-        has_disability_reason = (
-            (reason_1 == SOCIAL_SECURITY_DISABILITY_REASON_CODE)
-            | (reason_2 == SOCIAL_SECURITY_DISABILITY_REASON_CODE)
+        has_disability_reason = (reason_1 == SOCIAL_SECURITY_DISABILITY_REASON_CODE) | (
+            reason_2 == SOCIAL_SECURITY_DISABILITY_REASON_CODE
         )
-        has_survivor_reason = (
-            reason_1.is_in(SOCIAL_SECURITY_SURVIVOR_REASON_CODES)
-            | reason_2.is_in(SOCIAL_SECURITY_SURVIVOR_REASON_CODES)
-        )
-        has_dependent_reason = (
-            reason_1.is_in(SOCIAL_SECURITY_DEPENDENT_REASON_CODES)
-            | reason_2.is_in(SOCIAL_SECURITY_DEPENDENT_REASON_CODES)
-        )
+        has_survivor_reason = reason_1.is_in(
+            SOCIAL_SECURITY_SURVIVOR_REASON_CODES
+        ) | reason_2.is_in(SOCIAL_SECURITY_SURVIVOR_REASON_CODES)
+        has_dependent_reason = reason_1.is_in(
+            SOCIAL_SECURITY_DEPENDENT_REASON_CODES
+        ) | reason_2.is_in(SOCIAL_SECURITY_DEPENDENT_REASON_CODES)
         unclassified_social_security = (
             (pl.col("social_security") > 0)
             & ~has_retirement_reason
@@ -1371,8 +1403,7 @@ def _process_persons(df: pl.DataFrame, year: int) -> pl.DataFrame:
         "wage_income",
         "self_employment_income",
     }.issubset(set(result.columns)) and any(
-        leaf not in result.columns
-        for leaf in _RETIREMENT_CONTRIBUTION_DESIRED_LEAVES
+        leaf not in result.columns for leaf in _RETIREMENT_CONTRIBUTION_DESIRED_LEAVES
     ):
         retirement_contributions = pl.col("_retirement_contributions")
         has_wages = pl.col("wage_income") > 0
@@ -1383,7 +1414,9 @@ def _process_persons(df: pl.DataFrame, year: int) -> pl.DataFrame:
         #    No statutory limit applied here (PolicyEngine-US applies it).
         se_pension = (
             pl.when(has_se)
-            .then(retirement_contributions * SE_PENSION_SHARE_OF_RETIREMENT_CONTRIBUTIONS)
+            .then(
+                retirement_contributions * SE_PENSION_SHARE_OF_RETIREMENT_CONTRIBUTIONS
+            )
             .otherwise(0.0)
         )
         remaining = pl.max_horizontal(
@@ -1399,11 +1432,7 @@ def _process_persons(df: pl.DataFrame, year: int) -> pl.DataFrame:
             .then(remaining * DC_SHARE_OF_RETIREMENT_CONTRIBUTIONS)
             .otherwise(0.0)
         )
-        ira_pool = (
-            pl.when(has_earned_income)
-            .then(remaining - dc_pool)
-            .otherwise(0.0)
-        )
+        ira_pool = pl.when(has_earned_income).then(remaining - dc_pool).otherwise(0.0)
 
         derived_retirement_columns: list[pl.Expr] = []
         if "self_employed_pension_contributions_desired" not in result.columns:
@@ -1471,11 +1500,14 @@ def _process_persons(df: pl.DataFrame, year: int) -> pl.DataFrame:
     }.issubset(set(result.columns)) and "disability_benefits" not in result.columns:
         result = result.with_columns(
             (
-                pl.when(pl.col("_disability_income_code_1") != WORKERS_COMP_DISABILITY_CODE)
+                pl.when(
+                    pl.col("_disability_income_code_1") != WORKERS_COMP_DISABILITY_CODE
+                )
                 .then(pl.col("_disability_income_1"))
                 .otherwise(0)
-                +
-                pl.when(pl.col("_disability_income_code_2") != WORKERS_COMP_DISABILITY_CODE)
+                + pl.when(
+                    pl.col("_disability_income_code_2") != WORKERS_COMP_DISABILITY_CODE
+                )
                 .then(pl.col("_disability_income_2"))
                 .otherwise(0)
             ).alias("disability_benefits")
@@ -1559,13 +1591,10 @@ def _process_persons(df: pl.DataFrame, year: int) -> pl.DataFrame:
         if "employer_sponsored_insurance_premiums" not in result.columns:
             # Employee-paid premium (PHIP_VAL), clipped at zero like eCPS.
             employee_paid = (
-                pl.when(
-                    pl.col("health_insurance_premiums_without_medicare_part_b") > 0
-                )
+                pl.when(pl.col("health_insurance_premiums_without_medicare_part_b") > 0)
                 .then(pl.col("health_insurance_premiums_without_medicare_part_b"))
                 .otherwise(0.0)
-                if "health_insurance_premiums_without_medicare_part_b"
-                in result.columns
+                if "health_insurance_premiums_without_medicare_part_b" in result.columns
                 else pl.lit(0.0)
             )
             total_premium = (
@@ -1602,13 +1631,9 @@ def _process_persons(df: pl.DataFrame, year: int) -> pl.DataFrame:
                 .otherwise(0.0)
                 .alias("employer_sponsored_insurance_premiums")
             )
-        result = result.drop(
-            [c for c in _esi_source_columns if c in result.columns]
-        )
+        result = result.drop([c for c in _esi_source_columns if c in result.columns])
     else:
-        result = result.drop(
-            [c for c in _esi_source_columns if c in result.columns]
-        )
+        result = result.drop([c for c in _esi_source_columns if c in result.columns])
     for value_column in PERSON_ZERO_DEFAULT_VALUE_COLUMNS:
         if value_column not in result.columns:
             result = result.with_columns(pl.lit(0.0).alias(value_column))
@@ -1631,12 +1656,12 @@ def _process_persons(df: pl.DataFrame, year: int) -> pl.DataFrame:
     for col in PERSON_NONNEGATIVE_VALUE_COLUMNS:
         if col in result.columns:
             result = result.with_columns(
-                pl.when(pl.col(col) < 0)
-                .then(0)
-                .otherwise(pl.col(col))
-                .alias(col)
+                pl.when(pl.col(col) < 0).then(0).otherwise(pl.col(col)).alias(col)
             )
-    if "marital_status" in result.columns and "is_surviving_spouse" not in result.columns:
+    if (
+        "marital_status" in result.columns
+        and "is_surviving_spouse" not in result.columns
+    ):
         result = result.with_columns(
             (pl.col("marital_status") == 4).alias("is_surviving_spouse")
         )
@@ -1644,16 +1669,14 @@ def _process_persons(df: pl.DataFrame, year: int) -> pl.DataFrame:
         result = result.with_columns(
             (pl.col("marital_status") == 6).alias("is_separated")
         )
-    if (
-        {"household_id", "person_number", "spouse_person_number"}.issubset(result.columns)
-        and "marital_unit_id" not in result.columns
-    ):
-        raw_marital_unit_id = (
-            pl.col("household_id").cast(pl.Int64) * 1_000_000
-            + pl.max_horizontal(
-                pl.col("person_number").cast(pl.Int64),
-                pl.col("spouse_person_number").fill_null(0).cast(pl.Int64),
-            )
+    if {"household_id", "person_number", "spouse_person_number"}.issubset(
+        result.columns
+    ) and "marital_unit_id" not in result.columns:
+        raw_marital_unit_id = pl.col("household_id").cast(
+            pl.Int64
+        ) * 1_000_000 + pl.max_horizontal(
+            pl.col("person_number").cast(pl.Int64),
+            pl.col("spouse_person_number").fill_null(0).cast(pl.Int64),
         )
         result = result.with_columns(
             raw_marital_unit_id.rank("dense").cast(pl.Int64).alias("marital_unit_id")
@@ -1711,18 +1734,24 @@ def _attach_cps_ssn_card_type(
     if len(persons_raw) != len(persons):
         return fallback
 
-    household_weights = households.select(["household_id", "household_weight"]).to_pandas()
+    household_weights = households.select(
+        ["household_id", "household_weight"]
+    ).to_pandas()
     household_weight_map = dict(
         zip(
             pd.to_numeric(household_weights["household_id"], errors="coerce"),
-            pd.to_numeric(household_weights["household_weight"], errors="coerce").fillna(0.0),
+            pd.to_numeric(
+                household_weights["household_weight"], errors="coerce"
+            ).fillna(0.0),
         )
     )
     person_household_ids = pd.to_numeric(
         persons["household_id"].to_pandas(),
         errors="coerce",
     )
-    person_weights = person_household_ids.map(household_weight_map).fillna(0.0).to_numpy()
+    person_weights = (
+        person_household_ids.map(household_weight_map).fillna(0.0).to_numpy()
+    )
 
     raw = persons_raw.select(sorted(required_person_columns)).to_pandas()
 
@@ -1801,12 +1830,19 @@ def _attach_cps_ssn_card_type(
     has_five_plus_years = peinusyr.isin(list(range(8, 27))).to_numpy()
     has_three_plus_years = peinusyr.isin(list(range(8, 28))).to_numpy()
     is_married = marital.isin([1, 2]).to_numpy() & spouse_pointer.gt(0).to_numpy()
-    eligible_naturalized = is_naturalized & is_adult & (
-        has_five_plus_years | (has_three_plus_years & is_married)
+    eligible_naturalized = (
+        is_naturalized
+        & is_adult
+        & (has_five_plus_years | (has_three_plus_years & is_married))
     )
     has_medicare = medicare.eq(1).to_numpy()
-    has_federal_pension = pension_source_1.isin([3]).to_numpy() | pension_source_2.isin([3]).to_numpy()
-    has_ss_disability = social_security_reason_1.isin([2]).to_numpy() | social_security_reason_2.isin([2]).to_numpy()
+    has_federal_pension = (
+        pension_source_1.isin([3]).to_numpy() | pension_source_2.isin([3]).to_numpy()
+    )
+    has_ss_disability = (
+        social_security_reason_1.isin([2]).to_numpy()
+        | social_security_reason_2.isin([2]).to_numpy()
+    )
     has_ihs = ihs.eq(1).to_numpy()
     has_medicaid = medicaid.eq(1).to_numpy()
     has_champva = champva.eq(1).to_numpy()
@@ -1853,11 +1889,7 @@ def _attach_cps_ssn_card_type(
         & noncitizens
         & ((wage_income.gt(0).to_numpy()) | (self_employment_income.gt(0).to_numpy()))
     )
-    student_mask = (
-        (ssn_card_type != 3)
-        & noncitizens
-        & student_status.eq(2).to_numpy()
-    )
+    student_mask = (ssn_card_type != 3) & noncitizens & student_status.eq(2).to_numpy()
 
     worker_ids = np.flatnonzero(worker_mask)
     selected_workers = select_random_subset_to_target(
@@ -1959,10 +1991,7 @@ def _attach_household_geography_to_persons(
         return persons
     joined = persons.join(
         households.select(["household_id", *geography_columns]).rename(
-            {
-                column: f"_household_{column}"
-                for column in geography_columns
-            }
+            {column: f"_household_{column}" for column in geography_columns}
         ),
         on="household_id",
         how="left",
@@ -2015,9 +2044,7 @@ def _derive_households(persons: pl.DataFrame) -> pl.DataFrame:
 
     if "year" in persons.columns:
         year_val = persons.select("year").unique().to_series()[0]
-        households = households.with_columns(
-            pl.lit(year_val).alias("year")
-        )
+        households = households.with_columns(pl.lit(year_val).alias("year"))
 
     return households
 

@@ -1979,7 +1979,6 @@ def run_policyengine_us_data_rebuild_checkpoint(
     puf_demographics_path: str | Path | None = None,
     puf_expand_persons: bool = True,
     include_donor_surveys: bool = True,
-    include_acs: bool | None = None,
     include_sipp: bool | None = None,
     include_scf: bool | None = None,
     acs_year: int = 2022,
@@ -2066,7 +2065,6 @@ def run_policyengine_us_data_rebuild_checkpoint(
                 puf_demographics_path=puf_demographics_path,
                 puf_expand_persons=puf_expand_persons,
                 include_donor_surveys=include_donor_surveys,
-                include_acs=include_acs,
                 include_sipp=include_sipp,
                 include_scf=include_scf,
                 acs_year=acs_year,
@@ -2290,16 +2288,6 @@ def main(argv: list[str] | None = None) -> None:
         default=True,
     )
     parser.add_argument(
-        "--include-acs",
-        action=argparse.BooleanOptionalAction,
-        default=None,
-        help=(
-            "Deprecated/no-op for the ACS donor: the ACS donor (rent, "
-            "real_estate_taxes) is always enabled, matching eCPS. Retained for "
-            "backward compatibility. ACS as a population spine is a separate control."
-        ),
-    )
-    parser.add_argument(
         "--include-sipp",
         action=argparse.BooleanOptionalAction,
         default=None,
@@ -2489,7 +2477,6 @@ def main(argv: list[str] | None = None) -> None:
         puf_demographics_path=args.puf_demographics_path,
         puf_expand_persons=not args.no_puf_expand_persons,
         include_donor_surveys=args.include_donor_surveys,
-        include_acs=args.include_acs,
         include_sipp=args.include_sipp,
         include_scf=args.include_scf,
         acs_year=args.acs_year,

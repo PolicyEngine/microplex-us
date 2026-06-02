@@ -181,29 +181,6 @@ def test_default_policyengine_us_data_rebuild_source_providers_can_include_donor
     assert isinstance(providers[5], SCFSourceProvider)
 
 
-def test_default_policyengine_us_data_rebuild_source_providers_always_includes_acs_donor() -> (
-    None
-):
-    # The ACS donor is mandatory: it supplies the rent / real_estate_taxes source
-    # imputation (as eCPS does), so it is present even when include_acs=False. That
-    # flag no longer disables the donor.
-    providers = default_policyengine_us_data_rebuild_source_providers(
-        include_donor_surveys=True,
-        include_acs=False,
-        cps_download=False,
-    )
-
-    assert len(providers) == 6
-    assert isinstance(providers[0], CPSASECSourceProvider)
-    assert isinstance(providers[1], PUFSourceProvider)
-    assert isinstance(providers[2], ACSSourceProvider)
-    assert isinstance(providers[3], SIPPSourceProvider)
-    assert providers[3].block == "tips"
-    assert isinstance(providers[4], SIPPSourceProvider)
-    assert providers[4].block == "assets"
-    assert isinstance(providers[5], SCFSourceProvider)
-
-
 def test_build_policyengine_us_data_rebuild_pipeline_returns_configured_pipeline() -> (
     None
 ):

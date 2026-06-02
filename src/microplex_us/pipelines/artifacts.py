@@ -1155,13 +1155,15 @@ def save_us_microplex_artifacts(
                     ),
                 )
             )
-            stage_runtime_writer.start_stage("09_validation_benchmarking")
     except Exception as exc:
         if stage_runtime_writer is not None:
             stage_runtime_writer.fail_stage("08_dataset_assembly", exc)
         raise
 
     try:
+        if stage_runtime_writer is not None:
+            stage_runtime_writer.start_stage("09_validation_benchmarking")
+
         (
             resolved_target_provider,
             resolved_baseline_dataset,

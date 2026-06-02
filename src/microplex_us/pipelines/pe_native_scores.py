@@ -2940,6 +2940,8 @@ def annotate_pe_native_target_db_matches(
                     "policyengine_target_period": match["period"],
                     "policyengine_target_value": match["value"],
                     "policyengine_target_source": match["source"],
+                    "policyengine_target_geo_level": match["geo_level"],
+                    "policyengine_target_geographic_id": match["geographic_id"],
                     "policyengine_target_domain_variable": match["domain_variable"],
                     "policyengine_target_constraints": match["constraints"],
                 }
@@ -3210,6 +3212,8 @@ def write_us_pe_native_target_diagnostics(
     policyengine_us_data_repo: str | Path | None = None,
     policyengine_us_data_python: str | Path | None = None,
     policyengine_targets_db_path: str | Path | None = None,
+    artifact_id: str | None = None,
+    run_id: str | None = None,
 ) -> Path:
     """Write the full PE-native per-target diagnostic dataset to disk."""
 
@@ -3223,6 +3227,8 @@ def write_us_pe_native_target_diagnostics(
         policyengine_us_data_repo=policyengine_us_data_repo,
         policyengine_us_data_python=policyengine_us_data_python,
         policyengine_targets_db_path=policyengine_targets_db_path,
+        artifact_id=artifact_id,
+        run_id=run_id,
     )
     destination = Path(output_path)
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -3242,6 +3248,8 @@ def build_us_pe_native_target_diagnostics_payload(
     policyengine_us_data_python: str | Path | None = None,
     policyengine_targets_db_path: str | Path | None = None,
     target_delta_payload: dict[str, Any] | None = None,
+    artifact_id: str | None = None,
+    run_id: str | None = None,
 ) -> dict[str, Any]:
     """Build the full PE-native per-target diagnostic payload.
 
@@ -3272,6 +3280,14 @@ def build_us_pe_native_target_diagnostics_payload(
         "from": from_label,
         "to": to_label,
     }
+    resolved_artifact_id = _first_present(
+        artifact_id,
+        payload.get("artifact_id"),
+        payload.get("artifactId"),
+    )
+    resolved_run_id = _first_present(run_id, payload.get("run_id"), payload.get("runId"))
+    payload.setdefault("artifact_id", resolved_artifact_id)
+    payload.setdefault("run_id", resolved_run_id)
     payload.setdefault("baseline_dataset", payload.get("from_dataset"))
     payload.setdefault("candidate_dataset", payload.get("to_dataset"))
     target_db_path = (
@@ -3299,42 +3315,222 @@ def _required_dataset_path(value: str | Path | None, *, label: str) -> str | Pat
 def _add_policyengine_target_diagnostic_aliases(payload: dict[str, Any]) -> None:
     """Add dashboard-friendly aliases while preserving the native delta schema."""
 
-    baseline_dataset = payload.get("from_dataset")
-    candidate_dataset = payload.get("to_dataset")
-    baseline_label = payload.get("dataset_labels", {}).get("from")
-    candidate_label = payload.get("dataset_labels", {}).get("to")
+    context = _PolicyEngineTargetDiagnosticAliasContext.from_payload(payload)
+    targets_by_name: dict[str, dict[str, Any]] = {}
     for row in payload.get("targets", ()):
         if not isinstance(row, dict):
             continue
-        target_value = row.get("target_value")
-        from_estimate = row.get("from_estimate")
-        to_estimate = row.get("to_estimate")
-        from_absolute_error = _absolute_error_or_none(from_estimate, target_value)
-        to_absolute_error = _absolute_error_or_none(to_estimate, target_value)
-        row.setdefault("target_id", row.get("policyengine_target_id") or row.get("target_name"))
-        row.setdefault("baseline_dataset", baseline_dataset)
-        row.setdefault("candidate_dataset", candidate_dataset)
-        row.setdefault("baseline_label", baseline_label)
-        row.setdefault("candidate_label", candidate_label)
-        row.setdefault("us_data_aggregate", from_estimate)
-        row.setdefault("microplex_aggregate", to_estimate)
-        row.setdefault("us_data_absolute_error", from_absolute_error)
-        row.setdefault("microplex_absolute_error", to_absolute_error)
-        row.setdefault("us_data_relative_error", row.get("from_rel_error"))
-        row.setdefault("microplex_relative_error", row.get("to_rel_error"))
-        if from_absolute_error is not None and to_absolute_error is not None:
-            row.setdefault(
-                "delta_absolute_error",
-                to_absolute_error - from_absolute_error,
-            )
-        row.setdefault(
-            "delta_relative_error",
-            _delta_or_none(row.get("to_rel_error"), row.get("from_rel_error")),
+        _add_policyengine_target_diagnostic_aliases_to_row(row, context)
+        target_name = row.get("target_name")
+        if target_name is not None:
+            targets_by_name[str(target_name)] = row
+
+    for list_name in ("top_improvements", "top_regressions"):
+        for row in payload.get(list_name) or []:
+            if not isinstance(row, dict):
+                continue
+            full_row = targets_by_name.get(str(row.get("target_name", "")))
+            if full_row is not None:
+                for key, value in full_row.items():
+                    row.setdefault(key, value)
+            _add_policyengine_target_diagnostic_aliases_to_row(row, context)
+
+
+@dataclass(frozen=True)
+class _PolicyEngineTargetDiagnosticAliasContext:
+    baseline_dataset: Any
+    candidate_dataset: Any
+    baseline_label: Any
+    candidate_label: Any
+    period: Any
+    artifact_id: Any
+    run_id: Any
+
+    @classmethod
+    def from_payload(
+        cls,
+        payload: dict[str, Any],
+    ) -> _PolicyEngineTargetDiagnosticAliasContext:
+        return cls(
+            baseline_dataset=payload.get("from_dataset"),
+            candidate_dataset=payload.get("to_dataset"),
+            baseline_label=payload.get("dataset_labels", {}).get("from"),
+            candidate_label=payload.get("dataset_labels", {}).get("to"),
+            period=payload.get("period"),
+            artifact_id=payload.get("artifact_id") or payload.get("artifactId"),
+            run_id=payload.get("run_id") or payload.get("runId"),
         )
-        row.setdefault("loss_contribution", row.get("to_weighted_term"))
-        row.setdefault("family", row.get("target_family"))
-        row.setdefault("in_loss", True)
-        row.setdefault("supported_by_microplex", True)
+
+
+def _add_policyengine_target_diagnostic_aliases_to_row(
+    row: dict[str, Any],
+    context: _PolicyEngineTargetDiagnosticAliasContext,
+) -> None:
+    expected_target = _expected_policyengine_target(row)
+    target_name = str(row.get("target_name") or "")
+    target_value = row.get("target_value")
+    from_estimate = row.get("from_estimate")
+    to_estimate = row.get("to_estimate")
+    from_absolute_error = _absolute_error_or_none(from_estimate, target_value)
+    to_absolute_error = _absolute_error_or_none(to_estimate, target_value)
+    row.setdefault(
+        "target_id",
+        row.get("policyengine_target_id") or row.get("target_name"),
+    )
+    row.setdefault(
+        "period",
+        _first_present(row.get("policyengine_target_period"), context.period),
+    )
+    row.setdefault(
+        "variable",
+        _first_present(
+            row.get("policyengine_target_variable"),
+            expected_target.get("variable"),
+        ),
+    )
+    row.setdefault(
+        "geo_level",
+        _first_present(
+            row.get("policyengine_target_geo_level"),
+            expected_target.get("geo_level"),
+            _infer_target_geo_level(target_name, row),
+        ),
+    )
+    row.setdefault(
+        "geography",
+        _first_present(
+            row.get("policyengine_target_geographic_id"),
+            expected_target.get("geographic_id"),
+            _infer_target_geography(target_name, row),
+        ),
+    )
+    row.setdefault("state", _infer_target_state(target_name, row))
+    row.setdefault(
+        "entity",
+        _infer_policyengine_target_entity(target_name, row, expected_target),
+    )
+    row.setdefault("artifact_id", context.artifact_id)
+    row.setdefault("run_id", context.run_id)
+    row.setdefault("baseline_dataset", context.baseline_dataset)
+    row.setdefault("candidate_dataset", context.candidate_dataset)
+    row.setdefault("baseline_label", context.baseline_label)
+    row.setdefault("candidate_label", context.candidate_label)
+    row.setdefault("us_data_aggregate", from_estimate)
+    row.setdefault("microplex_aggregate", to_estimate)
+    row.setdefault("us_data_absolute_error", from_absolute_error)
+    row.setdefault("microplex_absolute_error", to_absolute_error)
+    row.setdefault("us_data_relative_error", row.get("from_rel_error"))
+    row.setdefault("microplex_relative_error", row.get("to_rel_error"))
+    if from_absolute_error is not None and to_absolute_error is not None:
+        row.setdefault(
+            "delta_absolute_error",
+            to_absolute_error - from_absolute_error,
+        )
+    row.setdefault(
+        "delta_relative_error",
+        _delta_or_none(row.get("to_rel_error"), row.get("from_rel_error")),
+    )
+    row.setdefault("us_data_loss_contribution", row.get("from_weighted_term"))
+    row.setdefault(
+        "policyengine_us_data_loss_contribution",
+        row.get("from_weighted_term"),
+    )
+    row.setdefault("baseline_loss_contribution", row.get("from_weighted_term"))
+    row.setdefault("microplex_loss_contribution", row.get("to_weighted_term"))
+    row.setdefault("candidate_loss_contribution", row.get("to_weighted_term"))
+    row.setdefault("loss_contribution", row.get("to_weighted_term"))
+    row.setdefault("loss_contribution_delta", row.get("weighted_term_delta"))
+    row.setdefault("family", row.get("target_family"))
+    row.setdefault("in_loss", True)
+    row.setdefault("supported_by_microplex", True)
+
+
+def _expected_policyengine_target(row: dict[str, Any]) -> dict[str, Any]:
+    expected = row.get("policyengine_target_expected")
+    return expected if isinstance(expected, dict) else {}
+
+
+def _first_present(*values: Any) -> Any:
+    for value in values:
+        if value is not None:
+            return value
+    return None
+
+
+def _target_name_parts(target_name: str) -> list[str]:
+    return [part for part in target_name.split("/") if part]
+
+
+def _infer_target_geo_level(target_name: str, row: dict[str, Any]) -> str | None:
+    scope = row.get("target_scope")
+    if scope in {"national", "state"}:
+        return str(scope)
+    parts = _target_name_parts(target_name)
+    if not parts:
+        return None
+    if parts[0] == "nation":
+        return "national"
+    if parts[0] == "state":
+        return "state"
+    return None
+
+
+def _infer_target_geography(target_name: str, row: dict[str, Any]) -> str | None:
+    geo_level = _infer_target_geo_level(target_name, row)
+    if geo_level == "national":
+        return "US"
+    state = _infer_target_state(target_name, row)
+    return state
+
+
+def _infer_target_state(target_name: str, row: dict[str, Any]) -> str | None:
+    geography = _first_present(
+        row.get("policyengine_target_geographic_id"),
+        _expected_policyengine_target(row).get("geographic_id"),
+    )
+    if isinstance(geography, str) and geography != "US":
+        return geography
+    parts = _target_name_parts(target_name)
+    if len(parts) >= 2 and parts[0] == "state":
+        return parts[1]
+    return None
+
+
+def _infer_policyengine_target_entity(
+    target_name: str,
+    row: dict[str, Any],
+    expected_target: dict[str, Any],
+) -> str | None:
+    variable = _first_present(
+        row.get("policyengine_target_variable"),
+        expected_target.get("variable"),
+        row.get("variable"),
+    )
+    domain_variable = _first_present(
+        row.get("policyengine_target_domain_variable"),
+        expected_target.get("domain_variable"),
+    )
+    if _contains_entity_hint("tax_unit", variable, domain_variable):
+        return "tax_unit"
+    if _contains_entity_hint("spm_unit", variable, domain_variable):
+        return "spm_unit"
+    if _contains_entity_hint("household", variable, domain_variable):
+        return "household"
+
+    parts = _target_name_parts(target_name)
+    if "irs" in parts or "jct" in parts:
+        return "tax_unit"
+    if "census" in parts:
+        return "person"
+    if "snap-hhs" in target_name:
+        return "household"
+    if "spm-unit" in target_name:
+        return "spm_unit"
+    return None
+
+
+def _contains_entity_hint(entity: str, *values: Any) -> bool:
+    return any(entity in str(value) for value in values if value is not None)
 
 
 def _absolute_error_or_none(value: Any, target: Any) -> float | None:
@@ -3392,6 +3588,8 @@ def main_target_diagnostics(argv: list[str] | None = None) -> int:
     parser.add_argument("--policyengine-us-data-python")
     parser.add_argument("--policyengine-us-data-repo")
     parser.add_argument("--policyengine-targets-db")
+    parser.add_argument("--artifact-id")
+    parser.add_argument("--run-id")
     args = parser.parse_args(argv)
 
     path = write_us_pe_native_target_diagnostics(
@@ -3405,6 +3603,8 @@ def main_target_diagnostics(argv: list[str] | None = None) -> int:
         policyengine_us_data_python=args.policyengine_us_data_python,
         policyengine_us_data_repo=args.policyengine_us_data_repo,
         policyengine_targets_db_path=args.policyengine_targets_db,
+        artifact_id=args.artifact_id,
+        run_id=args.run_id,
     )
     print(str(path))
     return 0

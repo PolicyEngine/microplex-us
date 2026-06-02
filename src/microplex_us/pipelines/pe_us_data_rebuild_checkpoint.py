@@ -1777,6 +1777,12 @@ def attach_policyengine_us_data_rebuild_checkpoint_evidence(
                     policyengine_us_data_python=policyengine_us_data_python,
                     policyengine_targets_db_path=config.get("policyengine_targets_db"),
                     target_delta_payload=target_delta_payload,
+                    artifact_id=str(
+                        native_audit_payload.get("artifactId") or artifact_root.name
+                    ),
+                    run_id=str(
+                        native_audit_payload.get("artifactId") or artifact_root.name
+                    ),
                 )
             )
             native_target_diagnostics_path = resolve_us_stage_artifact_contract_path(

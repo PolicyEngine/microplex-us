@@ -153,6 +153,9 @@ def test_backfill_us_pe_native_audit_root_updates_manifest_and_snapshot(
     target_diagnostics = json.loads(
         (bundle_dir / "pe_native_target_diagnostics.json").read_text()
     )
+    assert target_diagnostics["artifact_id"] == "run-1"
+    assert target_diagnostics["run_id"] == "run-1"
+    assert target_diagnostics["targets"][0]["artifact_id"] == "run-1"
     assert target_diagnostics["targets"][0]["delta_absolute_error"] == -5.0
     assert (
         updated_manifest["policyengine_native_audit"][

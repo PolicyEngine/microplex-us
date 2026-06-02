@@ -498,6 +498,8 @@ def test_annotate_pe_native_target_db_matches_marks_matches_and_gaps(
 
     assert payload["targets"][0]["policyengine_target_match"] == "matched"
     assert payload["targets"][0]["policyengine_target_id"] == 123
+    assert payload["targets"][0]["policyengine_target_geo_level"] == "national"
+    assert payload["targets"][0]["policyengine_target_geographic_id"] == "US"
     assert payload["targets"][1]["policyengine_target_match"] == "legacy_only"
     assert payload["targets"][1]["policyengine_target_expected"]["variable"] == (
         "tax_unit_count"
@@ -573,7 +575,7 @@ def test_build_us_pe_native_target_diagnostics_payload_adds_public_aliases(
             "summary": {"n_targets": 1},
             "targets": [
                 {
-                    "target_name": "nation/irs/example",
+                    "target_name": "nation/irs/eitc/returns/c2_0_1k",
                     "target_family": "national_irs_other",
                     "target_scope": "national",
                     "winner": "to",
@@ -587,19 +589,34 @@ def test_build_us_pe_native_target_diagnostics_payload_adds_public_aliases(
                     "to_rel_error": 0.1,
                 }
             ],
-            "top_regressions": [],
+            "top_regressions": [
+                {
+                    "target_name": "nation/irs/eitc/returns/c2_0_1k",
+                    "weighted_term_delta": -1.0,
+                }
+            ],
             "top_improvements": [],
         },
         from_label="policyengine-us-data",
         to_label="microplex-us",
         policyengine_targets_db_path=tmp_path / "missing.db",
+        artifact_id="artifact-1",
+        run_id="run-1",
     )
 
     row = payload["targets"][0]
     assert payload["diagnostic_schema_version"] == 1
     assert payload["baseline_dataset"] == "/tmp/enhanced_cps_2024.h5"
     assert payload["candidate_dataset"] == "/tmp/policyengine_us.h5"
-    assert row["target_id"] == "nation/irs/example"
+    assert row["target_id"] == "nation/irs/eitc/returns/c2_0_1k"
+    assert row["period"] == 2024
+    assert row["variable"] == "tax_unit_count"
+    assert row["geo_level"] == "national"
+    assert row["geography"] == "US"
+    assert row["state"] is None
+    assert row["entity"] == "tax_unit"
+    assert row["artifact_id"] == "artifact-1"
+    assert row["run_id"] == "run-1"
     assert row["us_data_aggregate"] == 90.0
     assert row["microplex_aggregate"] == 95.0
     assert row["us_data_absolute_error"] == 10.0
@@ -607,9 +624,18 @@ def test_build_us_pe_native_target_diagnostics_payload_adds_public_aliases(
     assert row["delta_absolute_error"] == -5.0
     assert round(row["delta_relative_error"], 10) == -0.1
     assert row["loss_contribution"] == 1.0
+    assert row["microplex_loss_contribution"] == 1.0
+    assert row["candidate_loss_contribution"] == 1.0
+    assert row["us_data_loss_contribution"] == 2.0
+    assert row["policyengine_us_data_loss_contribution"] == 2.0
+    assert row["baseline_loss_contribution"] == 2.0
+    assert row["loss_contribution_delta"] == -1.0
     assert row["family"] == "national_irs_other"
     assert row["in_loss"] is True
     assert row["supported_by_microplex"] is True
+    top_row = payload["top_regressions"][0]
+    assert top_row["microplex_aggregate"] == 95.0
+    assert top_row["artifact_id"] == "artifact-1"
 
 
 def test_compute_batch_us_pe_native_target_deltas_wraps_multiple_candidates(

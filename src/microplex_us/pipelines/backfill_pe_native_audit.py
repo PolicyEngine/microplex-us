@@ -257,6 +257,8 @@ def _write_native_audit_payload_to_bundle(
                 "policyengine_targets_db"
             ),
             target_delta_payload=target_delta_payload,
+            artifact_id=str(payload.get("artifactId") or bundle_dir.name),
+            run_id=str(payload.get("artifactId") or bundle_dir.name),
         )
         target_diagnostics_path = resolve_us_stage_artifact_contract_path(
             bundle_dir,

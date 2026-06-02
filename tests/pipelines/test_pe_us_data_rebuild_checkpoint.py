@@ -1045,6 +1045,9 @@ def test_attach_policyengine_us_data_rebuild_checkpoint_evidence_updates_manifes
     written_target_diagnostics = json.loads(
         (artifact_dir / "pe_native_target_diagnostics.json").read_text()
     )
+    assert written_target_diagnostics["artifact_id"] == "artifact"
+    assert written_target_diagnostics["run_id"] == "artifact"
+    assert written_target_diagnostics["targets"][0]["artifact_id"] == "artifact"
     assert (
         written_manifest["artifacts"]["policyengine_harness"]
         == "policyengine_harness.json"

@@ -446,6 +446,11 @@ POLICYENGINE_US_EXPORT_COLUMN_ALIASES: dict[str, str] = {
     # the persisted leaf input when no explicit last-week field is present.
     "hours_worked": "hours_worked_last_week",
     "race": "cps_race",
+    # PE-US computes ``rent`` from the persisted source input
+    # ``pre_subsidy_rent``. Microplex's ACS donor block restores the
+    # user-facing ``rent`` column, so export it through the storable leaf input
+    # rather than dropping it as formula-owned.
+    "rent": "pre_subsidy_rent",
 }
 
 POLICYENGINE_US_STRUCTURAL_EXPORT_COLUMNS: frozenset[str] = frozenset(

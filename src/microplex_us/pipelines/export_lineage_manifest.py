@@ -528,6 +528,15 @@ def _add_pipeline_constructed_evidence(
             "CPS weekly-hours export support",
             ("A_HRS1", "hours_worked", "hours_worked_last_week"),
         ),
+        "selected_marketplace_plan_benchmark_ratio": (
+            "PE-US ACA selected Marketplace plan ratio construction",
+            (
+                "health_insurance_premiums_without_medicare_part_b",
+                "takes_up_aca_if_eligible",
+                "aca_ptc",
+                "slcsp",
+            ),
+        ),
         "self_employment_income_before_lsr": (
             "USMicroplexPipeline income normalizer",
             ("self_employment_income",),

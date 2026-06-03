@@ -21,17 +21,10 @@ def test_export_lineage_manifest_tracks_source_backed_blocks():
         "home_mortgage_interest",
         "reported_has_medicaid_health_coverage_at_interview",
         "ssn_card_type",
+        "selected_marketplace_plan_benchmark_ratio",
         "weekly_hours_worked_before_lsr",
     ):
         assert columns[column]["has_source_lineage"]
-
-    assert (
-        columns["selected_marketplace_plan_benchmark_ratio"]["export_path_status"]
-        == "default_only"
-    )
-    assert not columns["selected_marketplace_plan_benchmark_ratio"][
-        "has_source_lineage"
-    ]
 
 
 def test_export_lineage_manifest_flags_populated_ecps_default_only_column(tmp_path):
@@ -40,7 +33,7 @@ def test_export_lineage_manifest_flags_populated_ecps_default_only_column(tmp_pa
         json.dumps(
             {
                 "required": [
-                    "selected_marketplace_plan_benchmark_ratio",
+                    "is_wic_at_nutritional_risk",
                     "weekly_hours_worked_before_lsr",
                 ],
                 "forbidden": [],
@@ -49,8 +42,8 @@ def test_export_lineage_manifest_flags_populated_ecps_default_only_column(tmp_pa
     )
     baseline_path = tmp_path / "baseline.h5"
     with h5py.File(baseline_path, "w") as handle:
-        selected = handle.create_group("selected_marketplace_plan_benchmark_ratio")
-        selected.create_dataset("2024", data=np.array([0.8, 1.0]))
+        wic = handle.create_group("is_wic_at_nutritional_risk")
+        wic.create_dataset("2024", data=np.array([False, True]))
         weekly_hours = handle.create_group("weekly_hours_worked_before_lsr")
         weekly_hours.create_dataset("2024", data=np.array([0.0, 40.0]))
 
@@ -61,9 +54,9 @@ def test_export_lineage_manifest_flags_populated_ecps_default_only_column(tmp_pa
 
     issues = {issue["column"]: issue for issue in payload["issues"]}
     assert issues == {
-        "selected_marketplace_plan_benchmark_ratio": {
-            "column": "selected_marketplace_plan_benchmark_ratio",
-            "ecps_support_requirement": "numeric_nonzero",
+        "is_wic_at_nutritional_risk": {
+            "column": "is_wic_at_nutritional_risk",
+            "ecps_support_requirement": "categorical_variation",
             "export_path_status": "default_only",
             "issue": "ecps_populated_export_has_no_source_lineage",
         }

@@ -5,50 +5,41 @@
 from importlib import import_module
 from typing import Any
 
-from microplex.targets import TargetSet, TargetSpec
-
-from microplex_us.calibration_harness import (
-    CalibrationHarness,
-    CalibrationResult,
-    run_pe_parity_suite,
+_CALIBRATION_HARNESS_EXPORTS = (
+    "CalibrationHarness",
+    "CalibrationResult",
+    "run_pe_parity_suite",
 )
-from microplex_us.cps_synthetic import (
-    CPSSummaryStats,
-    CPSSyntheticGenerator,
-    validate_synthetic,
+_CORE_TARGET_EXPORTS = (
+    "TargetSet",
+    "TargetSpec",
 )
-from microplex_us.data import (
-    create_sample_data,
-    get_data_info,
-    load_cps_asec,
-    load_cps_for_synthesis,
+_CPS_SYNTHETIC_EXPORTS = (
+    "CPSSummaryStats",
+    "CPSSyntheticGenerator",
+    "validate_synthetic",
 )
-
-try:
-    from microplex_us.geography import (
-        BLOCK_LEN,
-        COUNTY_LEN,
-        STATE_LEN,
-        TRACT_LEN,
-        BlockGeography,
-        derive_geographies,
-        load_block_probabilities,
-        normalize_us_state_fips,
-    )
-except ImportError:
-    BLOCK_LEN = None
-    COUNTY_LEN = None
-    STATE_LEN = None
-    TRACT_LEN = None
-    BlockGeography = None
-    derive_geographies = None
-    load_block_probabilities = None
-    normalize_us_state_fips = None
-from microplex_us.hierarchical import prepare_cps_for_hierarchical
-from microplex_us.pe_targets import (
-    PETargets,
-    create_calibration_targets,
-    get_pe_targets,
+_DATA_EXPORTS = (
+    "create_sample_data",
+    "get_data_info",
+    "load_cps_asec",
+    "load_cps_for_synthesis",
+)
+_GEOGRAPHY_EXPORTS = (
+    "BLOCK_LEN",
+    "COUNTY_LEN",
+    "STATE_LEN",
+    "TRACT_LEN",
+    "BlockGeography",
+    "derive_geographies",
+    "load_block_probabilities",
+    "normalize_us_state_fips",
+)
+_HIERARCHICAL_EXPORTS = ("prepare_cps_for_hierarchical",)
+_PE_TARGETS_EXPORTS = (
+    "PETargets",
+    "create_calibration_targets",
+    "get_pe_targets",
 )
 
 _PIPELINE_EXPORTS = (
@@ -180,13 +171,13 @@ _SOURCE_REGISTRY_EXPORTS = (
     "SourceVariablePolicySpec",
     "resolve_source_variable_capabilities",
 )
-from microplex_us.target_registry import (
-    TargetCategory,
-    TargetGroup,
-    TargetLevel,
-    TargetRegistry,
-    get_registry,
-    print_registry_summary,
+_TARGET_REGISTRY_EXPORTS = (
+    "TargetCategory",
+    "TargetGroup",
+    "TargetLevel",
+    "TargetRegistry",
+    "get_registry",
+    "print_registry_summary",
 )
 
 _TARGETS_EXPORTS = (
@@ -194,46 +185,45 @@ _TARGETS_EXPORTS = (
     "policyengine_db_target_to_canonical_spec",
     "policyengine_db_targets_to_canonical_set",
 )
-from microplex_us.unified_calibration import (
-    CalibrationTarget,
-    UnifiedCalibrator,
-    calibrate_to_pe_targets,
+_UNIFIED_CALIBRATION_EXPORTS = (
+    "CalibrationTarget",
+    "UnifiedCalibrator",
+    "calibrate_to_pe_targets",
+)
+_VALIDATION_EXPORTS = (
+    "AGI_BRACKETS",
+    "FILING_STATUSES",
+    "BaselineComparison",
+    "MetricComparison",
+    "SOITargets",
+    "ValidationResult",
+    "compute_baseline_comparison",
+    "compute_validation_metrics",
+    "export_comparison_json",
+    "get_soi_years",
+    "load_soi_targets",
+    "validate_against_soi",
 )
 
-try:
-    from microplex_us.validation import (
-        AGI_BRACKETS,
-        FILING_STATUSES,
-        BaselineComparison,
-        MetricComparison,
-        SOITargets,
-        ValidationResult,
-        compute_baseline_comparison,
-        compute_validation_metrics,
-        export_comparison_json,
-        get_soi_years,
-        load_soi_targets,
-        validate_against_soi,
-    )
-except ImportError:
-    AGI_BRACKETS = None
-    FILING_STATUSES = None
-    BaselineComparison = None
-    MetricComparison = None
-    SOITargets = None
-    ValidationResult = None
-    compute_baseline_comparison = None
-    compute_validation_metrics = None
-    export_comparison_json = None
-    get_soi_years = None
-    load_soi_targets = None
-    validate_against_soi = None
-
 _LAZY_EXPORT_MODULES: dict[str, str] = {
+    **dict.fromkeys(_CALIBRATION_HARNESS_EXPORTS, "microplex_us.calibration_harness"),
+    **dict.fromkeys(_CORE_TARGET_EXPORTS, "microplex.targets"),
+    **dict.fromkeys(_CPS_SYNTHETIC_EXPORTS, "microplex_us.cps_synthetic"),
+    **dict.fromkeys(_DATA_EXPORTS, "microplex_us.data"),
+    **dict.fromkeys(_GEOGRAPHY_EXPORTS, "microplex_us.geography"),
+    **dict.fromkeys(_HIERARCHICAL_EXPORTS, "microplex_us.hierarchical"),
+    **dict.fromkeys(_PE_TARGETS_EXPORTS, "microplex_us.pe_targets"),
     **dict.fromkeys(_PIPELINE_EXPORTS, "microplex_us.pipelines"),
     **dict.fromkeys(_POLICYENGINE_EXPORTS, "microplex_us.policyengine"),
     **dict.fromkeys(_SOURCE_REGISTRY_EXPORTS, "microplex_us.source_registry"),
+    **dict.fromkeys(_TARGET_REGISTRY_EXPORTS, "microplex_us.target_registry"),
     **dict.fromkeys(_TARGETS_EXPORTS, "microplex_us.targets"),
+    **dict.fromkeys(_UNIFIED_CALIBRATION_EXPORTS, "microplex_us.unified_calibration"),
+    **dict.fromkeys(_VALIDATION_EXPORTS, "microplex_us.validation"),
+}
+_OPTIONAL_EXPORT_MODULES = {
+    "microplex_us.geography",
+    "microplex_us.validation",
 }
 
 
@@ -242,7 +232,12 @@ def __getattr__(name: str) -> Any:
     module_name = _LAZY_EXPORT_MODULES.get(name)
     if module_name is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-    value = getattr(import_module(module_name), name)
+    try:
+        value = getattr(import_module(module_name), name)
+    except ImportError:
+        if module_name not in _OPTIONAL_EXPORT_MODULES:
+            raise
+        value = None
     globals()[name] = value
     return value
 

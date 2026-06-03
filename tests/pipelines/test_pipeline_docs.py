@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -91,6 +94,30 @@ def test_committed_pipeline_docs_fixtures_are_current() -> None:
         generated / "failed_run",
         artifact_root=failed,
         check=True,
+    )
+
+
+def test_pipeline_docs_import_does_not_eagerly_import_microplex() -> None:
+    env = os.environ.copy()
+    src_path = str(Path(__file__).parents[2] / "src")
+    if env.get("PYTHONPATH"):
+        src_path = os.pathsep.join((src_path, env["PYTHONPATH"]))
+    env["PYTHONPATH"] = src_path
+    code = "\n".join(
+        (
+            "import sys",
+            "import microplex_us.pipelines.pipeline_docs",
+            "assert 'microplex' not in sys.modules",
+            "assert 'torch' not in sys.modules",
+        )
+    )
+
+    subprocess.run(
+        [sys.executable, "-c", code],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
     )
 
 

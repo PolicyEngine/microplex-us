@@ -5,6 +5,8 @@ artifacts/
 .DS_Store
 __pycache__/
 *.pyc
+node_modules/
+pipeline_viewer/dist/
 
 # Quarto paper build output
 paper/_output/

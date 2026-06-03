@@ -77,6 +77,14 @@ packages = ["src/microplex_us"]
 [tool.hatch.metadata]
 allow-direct-references = true
 
+[tool.uv]
+required-environments = [
+    "sys_platform == 'darwin' and platform_machine == 'x86_64'",
+]
+override-dependencies = [
+    "torch; sys_platform != 'darwin' or platform_machine != 'x86_64'",
+]
+
 [tool.hatch.build.targets.wheel.force-include]
 "src/microplex_us/pipelines/pe_native_scores.py" = "microplex_us/pipelines/pe_native_scores.py"
 "src/microplex_us/pipelines/ecps_export_contract.json" = "microplex_us/pipelines/ecps_export_contract.json"

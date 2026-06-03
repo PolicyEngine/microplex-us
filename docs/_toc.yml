@@ -3,6 +3,7 @@ root: README
 chapters:
   - file: pipeline-stages
   - file: stage-contracts
+  - file: pipeline-visualization
   - file: api
   - file: architecture
   - file: source-semantics

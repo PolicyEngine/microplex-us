@@ -68,6 +68,14 @@
    :undoc-members:
 ```
 
+## Pipeline docs and overlays
+
+```{eval-rst}
+.. automodule:: microplex_us.pipelines.pipeline_docs
+   :members:
+   :undoc-members:
+```
+
 ## Stage run writer
 
 ```{eval-rst}
@@ -101,5 +109,6 @@
 ```
 
 Generic source, fusion, synthesis, and calibration primitives live in the core
-`microplex` package. See the core `microplex` API docs for those library-level
-interfaces.
+`microplex` package. This book links to the published core docs through
+intersphinx where possible and otherwise references the core repository rather
+than copying core API documentation into `microplex-us`.

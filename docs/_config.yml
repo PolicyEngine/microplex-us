@@ -13,6 +13,11 @@ sphinx:
   config:
     html_theme: sphinx_book_theme
     autodoc_member_order: bysource
+    intersphinx_mapping:
+      microplex:
+        - "https://policyengine.github.io/microplex/"
+        - null
   extra_extensions:
     - sphinx.ext.autodoc
+    - sphinx.ext.intersphinx
     - sphinx.ext.napoleon

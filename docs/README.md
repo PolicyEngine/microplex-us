@@ -3,6 +3,7 @@
 - [Architecture](./architecture.md)
 - [Canonical pipeline stages](./pipeline-stages.md)
 - [Stage contracts and manifests](./stage-contracts.md)
+- [Pipeline visualization](./pipeline-visualization.md)
 - [API reference](./api.md)
 - [Source semantics](./source-semantics.md)
 - [Imputation conditioning contract](./imputation-conditioning-contract.md)
@@ -22,7 +23,8 @@ This doc set is intentionally technical. It is meant to answer seven questions:
    compatible?
 5. How do we measure progress against `policyengine-us-data` on real targets?
 6. What is the actual roadmap for fully superseding `policyengine-us-data`?
-7. Which methodological choices are currently canonical, provisional, or open?
+7. How do saved-run overlays map run evidence onto the canonical pipeline?
+8. Which methodological choices are currently canonical, provisional, or open?
 
 The docs describe the code that exists today. They do not try to freeze a final
 paper narrative while the architecture is still moving.

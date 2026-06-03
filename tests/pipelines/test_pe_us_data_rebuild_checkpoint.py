@@ -706,6 +706,8 @@ def test_main_passes_donor_condition_selection_override(monkeypatch, capsys) -> 
             "/tmp/policy_data.db",
             "--version-id",
             "run-1",
+            "--profile",
+            "mp_ecps_2024",
             "--donor-imputer-condition-selection",
             "pe_plus_puf_native_challenger",
             "--defer-native-audit",
@@ -720,9 +722,35 @@ def test_main_passes_donor_condition_selection_override(monkeypatch, capsys) -> 
     assert captured["config_overrides"]["random_seed"] == 42
     assert captured["defer_native_audit"] is True
     assert captured["defer_imputation_ablation"] is True
+    # The CLI resolves --profile through the vintage registry and threads the
+    # resolved profile to the checkpoint (the per-year flags no longer exist).
+    assert captured["profile"].name == "mp_ecps_2024"
     stdout = capsys.readouterr().out
     assert "/tmp/artifacts/run-1" in stdout
     assert "hasRealPolicyEngineComparison" in stdout
+
+
+def test_main_rejects_unknown_profile() -> None:
+    # --profile is resolved through the vintage registry; an unknown name fails
+    # loudly rather than silently building the wrong dataset. get_profile raises
+    # before the checkpoint runs, so no checkpoint mock is needed.
+    try:
+        checkpoint_module.main(
+            [
+                "--output-root",
+                "/tmp/artifacts",
+                "--baseline-dataset",
+                "/tmp/enhanced_cps_2024.h5",
+                "--targets-db",
+                "/tmp/policy_data.db",
+                "--profile",
+                "mp_ecps_1999",
+            ]
+        )
+    except KeyError as exc:
+        assert "Unknown dataset profile" in str(exc)
+    else:
+        raise AssertionError("Expected unknown --profile to fail closed")
 
 
 def test_run_policyengine_us_data_rebuild_checkpoint_rejects_empty_provider_sequence(

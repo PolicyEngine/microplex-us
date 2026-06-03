@@ -64,6 +64,7 @@ from microplex_us.pipelines.stage_run import (
     write_us_stage_run_manifests_from_artifact_manifest,
 )
 from microplex_us.variables import prune_redundant_variables
+from microplex_us.vintages import MP_2024, DatasetProfile, get_profile
 
 if TYPE_CHECKING:
     from microplex.core import SourceProvider
@@ -1969,7 +1970,8 @@ def run_policyengine_us_data_rebuild_checkpoint(
     config_overrides: dict[str, Any] | None = None,
     providers: tuple[SourceProvider, ...] | list[SourceProvider] | None = None,
     queries: dict[str, SourceQuery] | None = None,
-    cps_source_year: int = 2023,
+    profile: DatasetProfile = MP_2024,
+    cps_source_year: int | None = None,
     cps_cache_dir: str | Path | None = None,
     cps_download: bool = True,
     puf_target_year: int | None = None,
@@ -1981,9 +1983,9 @@ def run_policyengine_us_data_rebuild_checkpoint(
     include_donor_surveys: bool = True,
     include_sipp: bool | None = None,
     include_scf: bool | None = None,
-    acs_year: int = 2024,
-    sipp_year: int = 2023,
-    scf_year: int = 2022,
+    acs_year: int | None = None,
+    sipp_year: int | None = None,
+    scf_year: int | None = None,
     donor_cache_dir: str | Path | None = None,
     policyengine_us_data_repo: str | Path | None = None,
     policyengine_us_data_python: str | Path | None = None,
@@ -2051,6 +2053,7 @@ def run_policyengine_us_data_rebuild_checkpoint(
     if providers is None:
         resolved_providers = tuple(
             default_policyengine_us_data_rebuild_source_providers(
+                profile=profile,
                 cps_source_year=cps_source_year,
                 cps_cache_dir=cps_cache_dir,
                 cps_download=cps_download,
@@ -2261,12 +2264,15 @@ def main(argv: list[str] | None = None) -> None:
             "variables. See docs/next-run-plan.md."
         ),
     )
-    parser.add_argument("--cps-source-year", type=int, default=2023)
-    parser.add_argument("--puf-target-year", type=int)
-    parser.add_argument("--puf-cps-reference-year", type=int)
-    parser.add_argument("--acs-year", type=int, default=2024)
-    parser.add_argument("--sipp-year", type=int, default=2023)
-    parser.add_argument("--scf-year", type=int, default=2022)
+    parser.add_argument(
+        "--profile",
+        default=MP_2024.name,
+        help=(
+            "Dataset vintage profile name (e.g. mp_ecps_2024). Source release "
+            "years come from this single (dataset, year) key; the per-source "
+            "--*-year flags were removed in favor of it."
+        ),
+    )
     parser.add_argument("--cps-cache-dir")
     parser.add_argument("--puf-cache-dir")
     parser.add_argument("--donor-cache-dir")
@@ -2467,11 +2473,9 @@ def main(argv: list[str] | None = None) -> None:
         calibration_target_domains=tuple(args.calibration_target_domain),
         calibration_target_geo_levels=tuple(args.calibration_target_geo_level),
         config_overrides=config_overrides,
-        cps_source_year=args.cps_source_year,
+        profile=get_profile(args.profile),
         cps_cache_dir=args.cps_cache_dir,
         cps_download=not args.no_cps_download,
-        puf_target_year=args.puf_target_year,
-        puf_cps_reference_year=args.puf_cps_reference_year,
         puf_cache_dir=args.puf_cache_dir,
         puf_path=args.puf_path,
         puf_demographics_path=args.puf_demographics_path,
@@ -2479,9 +2483,6 @@ def main(argv: list[str] | None = None) -> None:
         include_donor_surveys=args.include_donor_surveys,
         include_sipp=args.include_sipp,
         include_scf=args.include_scf,
-        acs_year=args.acs_year,
-        sipp_year=args.sipp_year,
-        scf_year=args.scf_year,
         donor_cache_dir=args.donor_cache_dir,
         policyengine_us_data_repo=args.policyengine_us_data_repo,
         policyengine_us_data_python=args.policyengine_us_data_python,

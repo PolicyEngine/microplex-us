@@ -69,6 +69,16 @@ def _run_columns(
     )
 
 
+def _write_period_h5(path: Path, columns: dict[str, list[object]]) -> Path:
+    h5py = pytest.importorskip("h5py")
+    import numpy as np
+
+    with h5py.File(path, "w") as f:
+        for column, values in columns.items():
+            f.create_dataset(f"{column}/2024", data=np.asarray(values))
+    return path
+
+
 def test_main_clean_list_returns_zero(tmp_path, contract_path):
     # required + optional, no forbidden -> pass.
     cols = ["age", "snap", "employment_income", "person_is_puf_clone"]
@@ -150,6 +160,181 @@ def test_main_h5_path_accepts_flat_datasets(tmp_path, contract_path):
     assert rc == 0
 
 
+def test_support_baseline_rejects_numeric_column_eCPS_populates(
+    tmp_path,
+    contract_path,
+):
+    candidate = _write_period_h5(
+        tmp_path / "candidate.h5",
+        {
+            "age": [34, 42, 50],
+            "snap": [False, True, False],
+            "employment_income": [0.0, 0.0, 0.0],
+        },
+    )
+    baseline = _write_period_h5(
+        tmp_path / "baseline.h5",
+        {
+            "age": [34, 42, 50],
+            "snap": [False, True, False],
+            "employment_income": [0.0, 12_000.0, 0.0],
+        },
+    )
+
+    rc = main(
+        [
+            str(candidate),
+            "--contract",
+            str(contract_path),
+            "--support-baseline",
+            str(baseline),
+        ]
+    )
+
+    assert rc == 1
+
+
+def test_support_baseline_rejects_categorical_column_eCPS_varies(
+    tmp_path,
+    contract_path,
+):
+    candidate = _write_period_h5(
+        tmp_path / "candidate.h5",
+        {
+            "age": [34, 42, 50],
+            "snap": [False, False, False],
+            "employment_income": [0.0, 12_000.0, 0.0],
+        },
+    )
+    baseline = _write_period_h5(
+        tmp_path / "baseline.h5",
+        {
+            "age": [34, 42, 50],
+            "snap": [False, True, False],
+            "employment_income": [0.0, 12_000.0, 0.0],
+        },
+    )
+
+    rc = main(
+        [
+            str(candidate),
+            "--contract",
+            str(contract_path),
+            "--support-baseline",
+            str(baseline),
+        ]
+    )
+
+    assert rc == 1
+
+
+def test_support_baseline_ignores_ecps_filler_columns(tmp_path, contract_path):
+    candidate = _write_period_h5(
+        tmp_path / "candidate.h5",
+        {
+            "age": [34, 42, 50],
+            "snap": [False, True, False],
+            "employment_income": [0.0, 0.0, 0.0],
+        },
+    )
+    baseline = _write_period_h5(
+        tmp_path / "baseline.h5",
+        {
+            "age": [34, 42, 50],
+            "snap": [False, True, False],
+            "employment_income": [0.0, 0.0, 0.0],
+        },
+    )
+
+    rc = main(
+        [
+            str(candidate),
+            "--contract",
+            str(contract_path),
+            "--support-baseline",
+            str(baseline),
+        ]
+    )
+
+    assert rc == 0
+
+
+def test_support_baseline_accepts_candidate_categorical_support_for_numeric_ecps(
+    tmp_path,
+    contract_path,
+):
+    candidate = _write_period_h5(
+        tmp_path / "candidate.h5",
+        {
+            "age": [b"34", b"42", b"50"],
+            "snap": [False, True, False],
+            "employment_income": [0.0, 12_000.0, 0.0],
+        },
+    )
+    baseline = _write_period_h5(
+        tmp_path / "baseline.h5",
+        {
+            "age": [34, 42, 50],
+            "snap": [False, True, False],
+            "employment_income": [0.0, 12_000.0, 0.0],
+        },
+    )
+
+    rc = main(
+        [
+            str(candidate),
+            "--contract",
+            str(contract_path),
+            "--support-baseline",
+            str(baseline),
+        ]
+    )
+
+    assert rc == 0
+
+
+def test_support_baseline_writes_diagnostics_and_honors_explicit_exemption(
+    tmp_path,
+    contract_path,
+):
+    candidate = _write_period_h5(
+        tmp_path / "candidate.h5",
+        {
+            "age": [34, 42, 50],
+            "snap": [False, True, False],
+            "employment_income": [0.0, 0.0, 0.0],
+        },
+    )
+    baseline = _write_period_h5(
+        tmp_path / "baseline.h5",
+        {
+            "age": [34, 42, 50],
+            "snap": [False, True, False],
+            "employment_income": [0.0, 12_000.0, 0.0],
+        },
+    )
+    diagnostics = tmp_path / "support.json"
+
+    rc = main(
+        [
+            str(candidate),
+            "--contract",
+            str(contract_path),
+            "--support-baseline",
+            str(baseline),
+            "--support-exempt-column",
+            "employment_income",
+            "--support-diagnostics-json",
+            str(diagnostics),
+        ]
+    )
+
+    assert rc == 0
+    payload = json.loads(diagnostics.read_text())
+    assert payload["issues"] == []
+    assert payload["exempt_columns"] == ["employment_income"]
+
+
 def test_main_entity_tables_path_uses_schema_columns(
     tmp_path, contract_path, monkeypatch
 ):
@@ -190,6 +375,19 @@ def test_main_requires_exactly_one_input(tmp_path, contract_path):
                 str(tmp_path / "x.h5"),
                 "--columns-json",
                 str(cols_path),
+                "--contract",
+                str(contract_path),
+            ]
+        )
+    assert exc.value.code == 2
+
+    with pytest.raises(SystemExit) as exc:
+        main(
+            [
+                "--columns-json",
+                str(cols_path),
+                "--support-baseline",
+                str(tmp_path / "baseline.h5"),
                 "--contract",
                 str(contract_path),
             ]

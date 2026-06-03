@@ -246,6 +246,7 @@ def test_write_mp300k_artifact_gate_report_passes_with_all_evidence(tmp_path):
     assert record["gates"]["compatibility"]["metrics"]["household_count"] == 2
     assert record["gates"]["compatibility"]["metrics"]["person_count"] == 3
     assert record["gates"]["column_contract"]["status"] == "pass"
+    assert record["gates"]["export_support"]["status"] == "pass"
     assert record["gates"]["artifact_size"]["status"] == "pass"
     assert record["gates"]["ecps_comparison"]["status"] == "pass"
     assert record["gates"]["arch_target_coverage"]["status"] == "pass"
@@ -329,6 +330,104 @@ def test_column_contract_gate_rejects_missing_ecps_contract_column(tmp_path):
     assert column_gate["details"]["missing_contract_columns"] == ["age"]
 
 
+def test_export_support_gate_rejects_ecps_populated_numeric_filler(tmp_path):
+    artifact_dir = tmp_path / "artifact"
+    artifact_dir.mkdir()
+    candidate_dataset = _write_minimal_policyengine_dataset(
+        artifact_dir / "candidate.h5"
+    )
+    _add_period_dataset(candidate_dataset, "hourly_wage", [0.0, 0.0, 0.0])
+    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    _add_period_dataset(baseline_dataset, "hourly_wage", [0.0, 25.0, 0.0])
+    benchmark_manifest = tmp_path / "benchmark_manifest.json"
+    _write_benchmark_manifest(benchmark_manifest)
+    _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
+
+    report_path = write_mp300k_artifact_gate_report(
+        artifact_dir,
+        ecps_comparison_payload=_sound_ecps_comparison_payload(),
+        arch_coverage_payload=_arch_coverage_payload(),
+        runtime_smoke_payload={"runtime_ratio": 1.0},
+        benchmark_manifest_path=benchmark_manifest,
+        compute_native_scores=False,
+        update_manifest=False,
+    )
+
+    record = json.loads(report_path.read_text())
+    support_gate = record["gates"]["export_support"]
+
+    assert record["summary"]["status"] == "failed"
+    assert support_gate["status"] == "fail"
+    assert support_gate["metrics"]["unsupported_populated_export_column_count"] == 1
+    assert support_gate["details"]["issues"][0]["column"] == "hourly_wage"
+    assert support_gate["details"]["issues"][0]["requirement"] == "numeric_nonzero"
+
+
+def test_export_support_gate_rejects_ecps_varied_categorical_filler(tmp_path):
+    artifact_dir = tmp_path / "artifact"
+    artifact_dir.mkdir()
+    candidate_dataset = _write_minimal_policyengine_dataset(
+        artifact_dir / "candidate.h5"
+    )
+    _add_period_dataset(candidate_dataset, "is_tipped_occupation", [False, False])
+    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    _add_period_dataset(baseline_dataset, "is_tipped_occupation", [False, True])
+    benchmark_manifest = tmp_path / "benchmark_manifest.json"
+    _write_benchmark_manifest(benchmark_manifest)
+    _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
+
+    report_path = write_mp300k_artifact_gate_report(
+        artifact_dir,
+        ecps_comparison_payload=_sound_ecps_comparison_payload(),
+        arch_coverage_payload=_arch_coverage_payload(),
+        runtime_smoke_payload={"runtime_ratio": 1.0},
+        benchmark_manifest_path=benchmark_manifest,
+        compute_native_scores=False,
+        update_manifest=False,
+    )
+
+    record = json.loads(report_path.read_text())
+    support_gate = record["gates"]["export_support"]
+
+    assert record["summary"]["status"] == "failed"
+    assert support_gate["status"] == "fail"
+    assert support_gate["details"]["issues"][0]["column"] == "is_tipped_occupation"
+    assert (
+        support_gate["details"]["issues"][0]["requirement"] == "categorical_variation"
+    )
+
+
+def test_export_support_gate_ignores_ecps_filler_columns(tmp_path):
+    artifact_dir = tmp_path / "artifact"
+    artifact_dir.mkdir()
+    candidate_dataset = _write_minimal_policyengine_dataset(
+        artifact_dir / "candidate.h5"
+    )
+    _add_period_dataset(candidate_dataset, "second_home_mortgage_interest", [0.0, 0.0])
+    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    _add_period_dataset(baseline_dataset, "second_home_mortgage_interest", [0.0, 0.0])
+    benchmark_manifest = tmp_path / "benchmark_manifest.json"
+    _write_benchmark_manifest(benchmark_manifest)
+    _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
+
+    report_path = write_mp300k_artifact_gate_report(
+        artifact_dir,
+        ecps_comparison_payload=_sound_ecps_comparison_payload(),
+        arch_coverage_payload=_arch_coverage_payload(),
+        runtime_smoke_payload={"runtime_ratio": 1.0},
+        benchmark_manifest_path=benchmark_manifest,
+        compute_native_scores=False,
+        update_manifest=False,
+    )
+
+    record = json.loads(report_path.read_text())
+    support_gate = record["gates"]["export_support"]
+
+    assert record["summary"]["status"] == "passed"
+    assert support_gate["status"] == "pass"
+    assert support_gate["metrics"]["ecps_filler_export_column_count"] == 1
+
+
 def test_column_contract_gate_rejects_extra_candidate_columns(tmp_path):
     artifact_dir = tmp_path / "artifact"
     artifact_dir.mkdir()
@@ -407,7 +506,9 @@ def test_column_contract_gate_excludes_computed_baseline_outputs(
     artifact_dir.mkdir()
     _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
     baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
-    _add_period_dataset(baseline_dataset, "traditional_ira_contributions", [0.0, 0.0, 0.0])
+    _add_period_dataset(
+        baseline_dataset, "traditional_ira_contributions", [0.0, 0.0, 0.0]
+    )
     _add_period_dataset(
         baseline_dataset,
         "self_employed_pension_contribution_ald",

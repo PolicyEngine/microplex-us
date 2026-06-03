@@ -51,9 +51,7 @@ def test_backend_dispatch_fit_transform_end_to_end() -> None:
     # Constraint: weighted count of households with income > 80k should be 1.4x current.
     mask = (data["income"] > 80_000).to_numpy(dtype=float)
     target = 1.4 * float(mask.sum())
-    constraint = LinearConstraint(
-        name="above_80k", coefficients=mask, target=target
-    )
+    constraint = LinearConstraint(name="above_80k", coefficients=mask, target=target)
 
     result = calibrator.fit_transform(
         data,
@@ -101,6 +99,9 @@ def test_pe_l0_deferred_stage_disables_sparsity_penalty() -> None:
     assert stage1.lambda_l0 == pytest.approx(1e-4)
     assert stage2.lambda_l0 == 0.0
     assert stage3.lambda_l0 == 0.0
+    assert stage1.fit_l0_weights_fn is not None
+    assert stage2.fit_l0_weights_fn is not None
+    assert stage3.fit_l0_weights_fn is not None
 
 
 def test_hardconcrete_deferred_stage_disables_sparsity_penalty() -> None:

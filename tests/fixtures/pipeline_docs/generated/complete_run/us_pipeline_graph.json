@@ -1,0 +1,1546 @@
+{
+  "contractVersion": "us-runtime-stages-v2",
+  "edges": [
+    {
+      "id": "01_run_profile__02_source_loading",
+      "label": "provider_query_plan",
+      "resourceKeys": [
+        "provider_query_plan"
+      ],
+      "source": "01_run_profile",
+      "target": "02_source_loading",
+      "viewer": {
+        "edgeKind": "stage_handoff",
+        "routing": "elk_orthogonal"
+      }
+    },
+    {
+      "id": "02_source_loading__03_source_planning",
+      "label": "stage handoff",
+      "resourceKeys": [],
+      "source": "02_source_loading",
+      "target": "03_source_planning",
+      "viewer": {
+        "edgeKind": "stage_handoff",
+        "routing": "elk_orthogonal"
+      }
+    },
+    {
+      "id": "03_source_planning__04_seed_scaffold",
+      "label": "source_plan, scaffold_selection",
+      "resourceKeys": [
+        "source_plan",
+        "scaffold_selection"
+      ],
+      "source": "03_source_planning",
+      "target": "04_seed_scaffold",
+      "viewer": {
+        "edgeKind": "stage_handoff",
+        "routing": "elk_orthogonal"
+      }
+    },
+    {
+      "id": "04_seed_scaffold__05_donor_integration_synthesis",
+      "label": "scaffold_seed_data",
+      "resourceKeys": [
+        "scaffold_seed_data"
+      ],
+      "source": "04_seed_scaffold",
+      "target": "05_donor_integration_synthesis",
+      "viewer": {
+        "edgeKind": "stage_handoff",
+        "routing": "elk_orthogonal"
+      }
+    },
+    {
+      "id": "05_donor_integration_synthesis__06_policyengine_entities",
+      "label": "synthetic_data",
+      "resourceKeys": [
+        "synthetic_data"
+      ],
+      "source": "05_donor_integration_synthesis",
+      "target": "06_policyengine_entities",
+      "viewer": {
+        "edgeKind": "stage_handoff",
+        "routing": "elk_orthogonal"
+      }
+    },
+    {
+      "id": "06_policyengine_entities__07_calibration",
+      "label": "pre_calibration_policyengine_entity_tables",
+      "resourceKeys": [
+        "pre_calibration_policyengine_entity_tables"
+      ],
+      "source": "06_policyengine_entities",
+      "target": "07_calibration",
+      "viewer": {
+        "edgeKind": "stage_handoff",
+        "routing": "elk_orthogonal"
+      }
+    },
+    {
+      "id": "07_calibration__08_dataset_assembly",
+      "label": "calibrated_data, policyengine_entity_tables",
+      "resourceKeys": [
+        "calibrated_data",
+        "policyengine_entity_tables"
+      ],
+      "source": "07_calibration",
+      "target": "08_dataset_assembly",
+      "viewer": {
+        "edgeKind": "stage_handoff",
+        "routing": "elk_orthogonal"
+      }
+    },
+    {
+      "id": "08_dataset_assembly__09_validation_benchmarking",
+      "label": "policyengine_dataset",
+      "resourceKeys": [
+        "policyengine_dataset"
+      ],
+      "source": "08_dataset_assembly",
+      "target": "09_validation_benchmarking",
+      "viewer": {
+        "edgeKind": "stage_handoff",
+        "routing": "elk_orthogonal"
+      }
+    }
+  ],
+  "generatedFrom": "microplex_us.pipelines.stage_contracts",
+  "nodes": [
+    {
+      "artifacts": [
+        {
+          "description": "Top-level artifact manifest with resolved config.",
+          "format": "json",
+          "hash_mode": "file_sha256",
+          "key": "manifest",
+          "path_hint": "manifest.json",
+          "required": true,
+          "resume_role": null
+        }
+      ],
+      "consumes": [
+        "user configuration",
+        "provider defaults",
+        "runtime overrides"
+      ],
+      "diagnostics": [
+        "resolved provider names",
+        "sample/query filters",
+        "target period",
+        "baseline dataset and target DB references"
+      ],
+      "id": "01_run_profile",
+      "inputs": [
+        {
+          "artifact_key": null,
+          "config_key": "profile",
+          "description": "Selected build profile and runtime overrides.",
+          "key": "build_profile",
+          "kind": "config",
+          "manifest_key": null,
+          "required": false,
+          "stage_id": null
+        },
+        {
+          "artifact_key": null,
+          "config_key": "policyengine_target_period",
+          "description": "Target period used by downstream PolicyEngine export and validation.",
+          "key": "policyengine_target_period",
+          "kind": "config",
+          "manifest_key": null,
+          "required": true,
+          "stage_id": null
+        },
+        {
+          "artifact_key": null,
+          "config_key": "calibration_backend",
+          "description": "Calibration backend selected for this run.",
+          "key": "calibration_backend",
+          "kind": "config",
+          "manifest_key": null,
+          "required": true,
+          "stage_id": null
+        },
+        {
+          "artifact_key": null,
+          "config_key": "source_names",
+          "description": "Requested source names or provider defaults.",
+          "key": "source_names",
+          "kind": "config",
+          "manifest_key": null,
+          "required": false,
+          "stage_id": null
+        }
+      ],
+      "order": 0,
+      "outputs": [
+        {
+          "artifact_key": "manifest",
+          "config_key": null,
+          "description": "Top-level manifest containing resolved configuration and artifact map.",
+          "key": "manifest",
+          "kind": "artifact",
+          "manifest_key": null,
+          "required": true,
+          "stage_id": "01_run_profile"
+        },
+        {
+          "artifact_key": null,
+          "config_key": null,
+          "description": "Resolved build configuration recorded for downstream stages.",
+          "key": "resolved_config",
+          "kind": "stage_output",
+          "manifest_key": null,
+          "required": true,
+          "stage_id": "01_run_profile"
+        },
+        {
+          "artifact_key": null,
+          "config_key": null,
+          "description": "Resolved provider and source-query plan for source loading.",
+          "key": "provider_query_plan",
+          "kind": "stage_output",
+          "manifest_key": null,
+          "required": true,
+          "stage_id": "01_run_profile"
+        }
+      ],
+      "produces": [
+        "resolved build config",
+        "provider/query plan"
+      ],
+      "purpose": "Resolve the build profile, runtime config, providers, queries, and run-level options.",
+      "resume": {
+        "mode": "metadata_only",
+        "notes": "The resolved config can be reused, but this stage does not contain reloadable data by itself."
+      },
+      "step": "01",
+      "title": "Run profile, config, and source bundle",
+      "validations": [
+        {
+          "description": "Check required paths and context for the selected profile.",
+          "key": "config_context",
+          "status": "planned"
+        }
+      ],
+      "viewer": {
+        "elkPartition": 0,
+        "nodeKind": "configuration",
+        "type": "stage"
+      }
+    },
+    {
+      "artifacts": [],
+      "consumes": [
+        "resolved provider/query plan",
+        "source manifests",
+        "external datasets"
+      ],
+      "diagnostics": [
+        "source row counts",
+        "entity coverage",
+        "relationship validity",
+        "cache/download provenance"
+      ],
+      "id": "02_source_loading",
+      "inputs": [
+        {
+          "artifact_key": null,
+          "config_key": null,
+          "description": "Resolved provider and source-query plan from Stage 1.",
+          "key": "provider_query_plan",
+          "kind": "stage_output",
+          "manifest_key": null,
+          "required": true,
+          "stage_id": "01_run_profile"
+        },
+        {
+          "artifact_key": null,
+          "config_key": null,
+          "description": "External source datasets requested by the provider/query plan.",
+          "key": "source_datasets",
+          "kind": "external_data",
+          "manifest_key": null,
+          "required": true,
+          "stage_id": null
+        }
+      ],
+      "order": 1,
+      "outputs": [
+        {
+          "artifact_key": null,
+          "config_key": null,
+          "description": "Saved summary of loaded Microplex observation frames with source metadata.",
+          "key": "observation_frame_summary",
+          "kind": "stage_output",
+          "manifest_key": null,
+          "required": true,
+          "stage_id": "02_source_loading"
+        },
+        {
+          "artifact_key": null,
+          "config_key": null,
+          "description": "Source descriptors attached to the loaded observation frames.",
+          "key": "source_descriptors",
+          "kind": "stage_output",
+          "manifest_key": null,
+          "required": true,
+          "stage_id": "02_source_loading"
+        },
+        {
+          "artifact_key": null,
+          "config_key": null,
+          "description": "Validated entity relationships in loaded source frames.",
+          "key": "source_relationships",
+          "kind": "stage_output",
+          "manifest_key": null,
+          "required": true,
+          "stage_id": "02_source_loading"
+        }
+      ],
+      "produces": [
+        "observation frames",
+        "source descriptors",
+        "entity relationships"
+      ],
+      "purpose": "Load external datasets into validated Microplex observation frames.",
+      "resume": {
+        "mode": "none",
+        "notes": "Full source-frame snapshotting is not implemented yet."
+      },
+      "step": "02",
+      "title": "Source contracts and source loading",
+      "validations": [
+        {
+          "description": "Validate required entity tables and relationships for each source.",
+          "key": "observation_frame_validity",
+          "status": "planned"
+        }
+      ],
+      "viewer": {
+        "elkPartition": 1,
+        "nodeKind": "source",
+        "type": "stage"
+      }
+    },
+    {
+      "artifacts": [
+        {
+          "description": "Compact JSON summary of source names, scaffold, and donor variable plan.",
+          "format": "json",
+          "hash_mode": "file_sha256",
+          "key": "source_plan",
+          "path_hint": "stage_artifacts/03_source_planning/source_plan.json",
+          "required": true,
+          "resume_role": "diagnostic"
+        }
+      ],
+      "consumes": [
+        "observation frames",
+        "source descriptors"
+      ],
+      "diagnostics": [
+        "source score summary",
+        "coverage matrix",
+        "scaffold source",
+        "donor source names"
+      ],
+      "id": "03_source_planning",
+      "inputs": [
+        {
+          "artifact_key": null,
+          "config_key": null,
+          "description": "Loaded observation frames from Stage 2.",
+          "key": "observation_frames",
+          "kind": "runtime_object",
+          "manifest_key": null,
+          "required": true,
+          "stage_id": null
+        },
+        {
+          "artifact_key": null,
+          "config_key": null,
+          "description": "Source descriptors attached to the loaded frames.",
+          "key": "source_descriptors",
+          "kind": "runtime_object",
+          "manifest_key": null,
+          "required": true,
+          "stage_id": null
+        }
+      ],
+      "order": 2,
+      "outputs": [
+        {
+          "artifact_key": "source_plan",
+          "config_key": null,
+          "description": "Saved scaffold and donor/source planning summary.",
+          "key": "source_plan",
+          "kind": "artifact",
+          "manifest_key": null,
+          "required": true,
+          "stage_id": "03_source_planning"
+        },
+        {
+          "artifact_key": null,
+          "config_key": null,
+          "description": "Selected scaffold/backbone source and donor plan.",
+          "key": "scaffold_selection",
+          "kind": "stage_output",
+          "manifest_key": null,
+          "required": true,
+          "stage_id": "03_source_planning"
+        }
+      ],
+      "produces": [
+        "fusion plan",
+        "scaffold selection",
+        "donor/source plan"
+      ],
+      "purpose": "Choose the scaffold source and map donor/source coverage before seed construction.",
+      "resume": {
+        "mode": "metadata_only",
+        "notes": "The source plan explains the build route; raw source frames are not reloadable from this artifact yet."
+      },
+      "step": "03",
+      "title": "Source planning, fusion planning, and scaffold selection",
+      "validations": [
+        {
+          "description": "Check that the scaffold has household/person observations and a valid relationship.",
+          "key": "scaffold_has_households_and_persons",
+          "status": "planned"
+        }
+      ],
+      "viewer": {
+        "elkPartition": 2,
+        "nodeKind": "planning",
+        "type": "stage"
+      }
+    },
+    {
+      "artifacts": [
+        {
+          "description": "Seed population immediately after scaffold projection and before donor integration.",
+          "format": "parquet_dataframe",
+          "hash_mode": "file_sha256",
+          "key": "scaffold_seed_data",
+          "path_hint": "stage_artifacts/04_seed_scaffold/scaffold_seed_data.parquet",
+          "required": true,
+          "resume_role": "manual_replay"
+        }
+      ],
+      "consumes": [
+        "source plan",
+        "scaffold frame",
+        "identifier rules"
+      ],
+      "diagnostics": [
+        "scaffold source",
+        "pre-donor seed rows and columns",
+        "canonical identifier coverage",
+        "required seed column defaults"
+      ],
+      "id": "04_seed_scaffold",
+      "inputs": [
+        {
+          "artifact_key": "source_plan",
+          "config_key": null,
+          "description": "Saved scaffold and donor/source planning summary from Stage 3.",
+          "key": "source_plan",
+          "kind": "artifact",
+          "manifest_key": null,
+          "required": true,
+          "stage_id": "03_source_planning"
+        },
+        {
+          "artifact_key": null,
+          "config_key": null,
+          "description": "Selected scaffold/backbone source from Stage 3.",
+          "key": "scaffold_selection",
+          "kind": "stage_output",
+          "manifest_key": null,
+          "required": true,
+          "stage_id": "03_source_planning"
+        },
+        {
+          "artifact_key": null,
+          "config_key": null,
+          "description": "Loaded source frame selected as the population scaffold.",
+          "key": "scaffold_frame",
+          "kind": "runtime_object",
+          "manifest_key": null,
+          "required": true,
+          "stage_id": null
+        }
+      ],
+      "order": 3,
+      "outputs": [
+        {
+          "artifact_key": "scaffold_seed_data",
+          "config_key": null,
+          "description": "Scaffold-projected seed population before donor integration.",
+          "key": "scaffold_seed_data",
+          "kind": "artifact",
+          "manifest_key": null,
+          "required": true,
+          "stage_id": "04_seed_scaffold"
+        },
+        {
+          "artifact_key": null,
+          "config_key": null,
+          "description": "Canonical identifier and required-column metadata for the seed.",
+          "key": "seed_schema_metadata",
+          "kind": "stage_output",
+          "manifest_key": null,
+          "required": true,
+          "stage_id": "04_seed_scaffold"
+        }
+      ],
+      "produces": [
+        "scaffold-derived seed frame",
+        "seed schema metadata"
+      ],
+      "purpose": "Project the selected scaffold source into the canonical seed structure.",
+      "resume": {
+        "mode": "manual_replay",
+        "notes": "The pre-donor seed frame is saved for diagnostics and manual replay; automatic donor-stage resume is not implemented yet."
+      },
+      "step": "04",
+      "title": "Seed/scaffold construction",
+      "validations": [
+        {
+          "description": "Check canonical identifiers and required seed columns.",
+          "key": "seed_schema",
+          "status": "planned"
+        }
+      ],
+      "viewer": {
+        "elkPartition": 3,
+        "nodeKind": "build",
+        "type": "stage"
+      }
+    },
+    {
+      "artifacts": [
+        {
+          "description": "Seed population after donor integration and semantic guards.",
+          "format": "parquet_dataframe",
+          "hash_mode": "file_sha256",
+          "key": "seed_data",
+          "path_hint": "seed_data.parquet",
+          "required": true,
+          "resume_role": "diagnostic"
+        },
+        {
+          "description": "Candidate population before final calibration.",
+          "format": "parquet_dataframe",
+          "hash_mode": "file_sha256",
+          "key": "synthetic_data",
+          "path_hint": "synthetic_data.parquet",
+          "required": true,
+          "resume_role": "manual_replay"
+        },
+        {
+          "description": "Optional fitted synthesis model.",
+          "format": "model_file",
+          "hash_mode": "file_sha256",
+          "key": "synthesizer",
+          "path_hint": "synthesizer.pt",
+          "required": false,
+          "resume_role": "diagnostic"
+        },
+        {
+          "description": "Diagnostic summary of source-level contribution weights.",
+          "format": "json",
+          "hash_mode": "file_sha256",
+          "key": "source_weight_diagnostics",
+          "path_hint": "source_weight_diagnostics.json",
+          "required": false,
+          "resume_role": "diagnostic"
+        }
+      ],
+      "consumes": [
+        "scaffold-derived seed frame",
+        "donor frames",
+        "synthesis variable plan",
+        "target support requirements"
+      ],
+      "diagnostics": [
+        "donor-integrated variables",
+        "conditioning diagnostics",
+        "authoritative override variables",
+        "synthesis backend",
+        "condition variables",
+        "target variables",
+        "support enforcement changes"
+      ],
+      "id": "05_donor_integration_synthesis",
+      "inputs": [
+        {
+          "artifact_key": "scaffold_seed_data",
+          "config_key": null,
+          "description": "Scaffold-projected seed population from Stage 4.",
+          "key": "scaffold_seed_data",
+          "kind": "artifact",
+          "manifest_key": null,
+          "required": true,
+          "stage_id": "04_seed_scaffold"
+        },
+        {
+          "artifact_key": null,
+          "config_key": null,
+          "description": "Loaded donor source frames used for variable integration.",
+          "key": "donor_frames",
+          "kind": "runtime_object",
+          "manifest_key": null,
+          "required": true,
+          "stage_id": null
+        },
+        {
+          "artifact_key": null,
+          "config_key": "synthesis_backend",
+          "description": "Configured synthesis backend.",
+          "key": "synthesis_backend",
+          "kind": "config",
+          "manifest_key": null,
+          "required": true,
+          "stage_id": null
+        },
+        {
+          "artifact_key": null,
+          "config_key": "n_synthetic",
+          "description": "Requested synthetic population size.",
+          "key": "n_synthetic",
+          "kind": "config",
+          "manifest_key": null,
+          "required": false,
+          "stage_id": null
+        },
+        {
+          "artifact_key": null,
+          "config_key": "random_seed",
+          "description": "Random seed used by donor integration and synthesis.",
+          "key": "random_seed",
+          "kind": "config",
+          "manifest_key": null,
+          "required": true,
+          "stage_id": null
+        },
+        {
+          "artifact_key": null,
+          "config_key": "synthesizer_condition_vars",
+          "description": "Configured synthesis conditioning variables.",
+          "key": "synthesizer_condition_vars",
+          "kind": "config",
+          "manifest_key": null,
+          "required": false,
+          "stage_id": null
+        },
+        {
+          "artifact_key": null,
+          "config_key": "synthesizer_target_vars",
+          "description": "Configured synthesis target variables.",
+          "key": "synthesizer_target_vars",
+          "kind": "config",
+          "manifest_key": null,
+          "required": false,
+          "stage_id": null
+        },
+        {
+          "artifact_key": null,
+          "config_key": "synthesizer_epochs",
+          "description": "Configured synthesizer training epochs.",
+          "key": "synthesizer_epochs",
+          "kind": "config",
+          "manifest_key": null,
+          "required": false,
+          "stage_id": null
+        },
+        {
+          "artifact_key": null,
+          "config_key": "synthesizer_batch_size",
+          "description": "Configured synthesizer batch size.",
+          "key": "synthesizer_batch_size",
+          "kind": "config",
+          "manifest_key": null,
+          "required": false,
+          "stage_id": null
+        },
+        {
+          "artifact_key": null,
+          "config_key": "synthesizer_learning_rate",
+          "description": "Configured synthesizer learning rate.",
+          "key": "synthesizer_learning_rate",
+          "kind": "config",
+          "manifest_key": null,
+          "required": false,
+          "stage_id": null
+        },
+        {
+          "artifact_key": null,
+          "config_key": "synthesizer_n_layers",
+          "description": "Configured synthesizer network depth.",
+          "key": "synthesizer_n_layers",
+          "kind": "config",
+          "manifest_key": null,
+          "required": false,
+          "stage_id": null
+        },
+        {
+          "artifact_key": null,
+          "config_key": "synthesizer_hidden_dim",
+          "description": "Configured synthesizer hidden dimension.",
+          "key": "synthesizer_hidden_dim",
+          "kind": "config",
+          "manifest_key": null,
+          "required": false,
+          "stage_id": null
+        },
+        {
+          "artifact_key": null,
+          "config_key": "donor_imputer_backend",
+          "description": "Configured donor imputer backend.",
+          "key": "donor_imputer_backend",
+          "kind": "config",
+          "manifest_key": null,
+          "required": false,
+          "stage_id": null
+        },
+        {
+          "artifact_key": null,
+          "config_key": "donor_imputer_condition_selection",
+          "description": "Configured donor imputer condition selection strategy.",
+          "key": "donor_imputer_condition_selection",
+          "kind": "config",
+          "manifest_key": null,
+          "required": false,
+          "stage_id": null
+        },
+        {
+          "artifact_key": null,
+          "config_key": "donor_imputer_max_condition_vars",
+          "description": "Configured donor imputer condition-variable cap.",
+          "key": "donor_imputer_max_condition_vars",
+          "kind": "config",
+          "manifest_key": null,
+          "required": false,
+          "stage_id": null
+        },
+        {
+          "artifact_key": null,
+          "config_key": "donor_imputer_excluded_variables",
+          "description": "Variables excluded from donor imputation.",
+          "key": "donor_imputer_excluded_variables",
+          "kind": "config",
+          "manifest_key": null,
+          "required": false,
+          "stage_id": null
+        },
+        {
+          "artifact_key": null,
+          "config_key": "donor_imputer_authoritative_override_variables",
+          "description": "Variables treated as authoritative donor overrides.",
+          "key": "donor_imputer_authoritative_override_variables",
+          "kind": "config",
+          "manifest_key": null,
+          "required": false,
+          "stage_id": null
+        },
+        {
+          "artifact_key": null,
+          "config_key": "bootstrap_strata_columns",
+          "description": "Bootstrap strata columns used by seed/bootstrap synthesis.",
+          "key": "bootstrap_strata_columns",
+          "kind": "config",
+          "manifest_key": null,
+          "required": false,
+          "stage_id": null
+        }
+      ],
+      "order": 4,
+      "outputs": [
+        {
+          "artifact_key": "seed_data",
+          "config_key": null,
+          "description": "Seed population after donor integration and semantic guards.",
+          "key": "seed_data",
+          "kind": "artifact",
+          "manifest_key": null,
+          "required": true,
+          "stage_id": "05_donor_integration_synthesis"
+        },
+        {
+          "artifact_key": "synthetic_data",
+          "config_key": null,
+          "description": "Candidate population before final calibration.",
+          "key": "synthetic_data",
+          "kind": "artifact",
+          "manifest_key": null,
+          "required": true,
+          "stage_id": "05_donor_integration_synthesis"
+        },
+        {
+          "artifact_key": null,
+          "config_key": null,
+          "description": "Synthesis metadata recorded in the saved manifest.",
+          "key": "synthesis_metadata",
+          "kind": "manifest",
+          "manifest_key": "synthesis",
+          "required": true,
+          "stage_id": null
+        }
+      ],
+      "produces": [
+        "donor-integrated seed frame",
+        "synthetic/candidate frame",
+        "synthesis metadata"
+      ],
+      "purpose": "Integrate donor variables and produce the candidate population that will be calibrated.",
+      "resume": {
+        "mode": "manual_replay",
+        "notes": "Existing policy-stage replay can reload synthetic_data.parquet and rerun downstream PE work."
+      },
+      "step": "05",
+      "title": "Donor integration, synthesis, and support enforcement",
+      "validations": [
+        {
+          "description": "Check that candidate rows support requested marginal target cells.",
+          "key": "candidate_support",
+          "status": "planned"
+        }
+      ],
+      "viewer": {
+        "elkPartition": 4,
+        "nodeKind": "build",
+        "type": "stage"
+      }
+    },
+    {
+      "artifacts": [
+        {
+          "description": "Reloadable pre-calibration PE entity-table bundle saved as parquet files plus metadata.",
+          "format": "policyengine_entity_bundle",
+          "hash_mode": "directory_sha256",
+          "key": "pre_calibration_policyengine_entity_tables",
+          "path_hint": "stage_artifacts/06_policyengine_entities/metadata.json",
+          "required": true,
+          "resume_role": "manual_resume"
+        }
+      ],
+      "consumes": [
+        "synthetic/candidate frame",
+        "PE input mapping rules"
+      ],
+      "diagnostics": [
+        "entity row counts",
+        "ID/link integrity",
+        "missing or filled PE inputs",
+        "direct override variables"
+      ],
+      "id": "06_policyengine_entities",
+      "inputs": [
+        {
+          "artifact_key": "synthetic_data",
+          "config_key": null,
+          "description": "Candidate population from Stage 5.",
+          "key": "synthetic_data",
+          "kind": "artifact",
+          "manifest_key": null,
+          "required": true,
+          "stage_id": "05_donor_integration_synthesis"
+        },
+        {
+          "artifact_key": null,
+          "config_key": null,
+          "description": "Rules mapping Microplex candidate rows into PolicyEngine entities.",
+          "key": "policyengine_mapping_rules",
+          "kind": "runtime_object",
+          "manifest_key": null,
+          "required": true,
+          "stage_id": null
+        }
+      ],
+      "order": 5,
+      "outputs": [
+        {
+          "artifact_key": "pre_calibration_policyengine_entity_tables",
+          "config_key": null,
+          "description": "Reloadable pre-calibration PolicyEngine entity-table checkpoint.",
+          "key": "pre_calibration_policyengine_entity_tables",
+          "kind": "artifact",
+          "manifest_key": null,
+          "required": true,
+          "stage_id": "06_policyengine_entities"
+        },
+        {
+          "artifact_key": null,
+          "config_key": null,
+          "description": "PolicyEngine-facing variables materialized for calibration/export.",
+          "key": "materialized_policyengine_inputs",
+          "kind": "stage_output",
+          "manifest_key": null,
+          "required": true,
+          "stage_id": "06_policyengine_entities"
+        }
+      ],
+      "produces": [
+        "PolicyEngine entity table bundle",
+        "materialized PE variables"
+      ],
+      "purpose": "Convert candidate rows into PE entity tables and materialize PE-facing inputs.",
+      "resume": {
+        "mode": "manual_resume",
+        "notes": "The entity-table bundle can be loaded for manual downstream calibration/export workflows."
+      },
+      "step": "06",
+      "title": "PolicyEngine entity construction and microsimulation materialization",
+      "validations": [
+        {
+          "description": "Check ID uniqueness and cross-entity links.",
+          "key": "entity_integrity",
+          "status": "planned"
+        }
+      ],
+      "viewer": {
+        "elkPartition": 5,
+        "nodeKind": "build",
+        "type": "stage"
+      }
+    },
+    {
+      "artifacts": [
+        {
+          "description": "Calibrated person-level output frame.",
+          "format": "parquet_dataframe",
+          "hash_mode": "file_sha256",
+          "key": "calibrated_data",
+          "path_hint": "calibrated_data.parquet",
+          "required": true,
+          "resume_role": "manual_replay"
+        },
+        {
+          "description": "Saved target payload used by the build.",
+          "format": "json",
+          "hash_mode": "file_sha256",
+          "key": "targets",
+          "path_hint": "targets.json",
+          "required": true,
+          "resume_role": "manual_replay"
+        },
+        {
+          "description": "Stage-local calibration summary JSON.",
+          "format": "json",
+          "hash_mode": "file_sha256",
+          "key": "calibration_summary",
+          "path_hint": "stage_artifacts/07_calibration/calibration_summary.json",
+          "required": true,
+          "resume_role": "diagnostic"
+        },
+        {
+          "description": "Calibrated PE entity-table bundle used for dataset export.",
+          "format": "policyengine_entity_bundle",
+          "hash_mode": "directory_sha256",
+          "key": "policyengine_entity_tables",
+          "path_hint": "stage_artifacts/07_calibration/policyengine_entity_tables/metadata.json",
+          "required": true,
+          "resume_role": "post_artifact_evidence"
+        }
+      ],
+      "consumes": [
+        "PE entity table bundle",
+        "target provider/query",
+        "calibration config"
+      ],
+      "diagnostics": [
+        "supported and unsupported targets",
+        "feasibility filter",
+        "calibration stages",
+        "target ledger",
+        "oracle loss",
+        "weight diagnostics"
+      ],
+      "id": "07_calibration",
+      "inputs": [
+        {
+          "artifact_key": "pre_calibration_policyengine_entity_tables",
+          "config_key": null,
+          "description": "Pre-calibration PolicyEngine entity-table checkpoint from Stage 6.",
+          "key": "pre_calibration_policyengine_entity_tables",
+          "kind": "artifact",
+          "manifest_key": null,
+          "required": true,
+          "stage_id": "06_policyengine_entities"
+        },
+        {
+          "artifact_key": null,
+          "config_key": null,
+          "description": "Target provider or target database queried for calibration.",
+          "key": "target_provider",
+          "kind": "external_data",
+          "manifest_key": null,
+          "required": true,
+          "stage_id": null
+        },
+        {
+          "artifact_key": null,
+          "config_key": "calibration_backend",
+          "description": "Configured calibration backend.",
+          "key": "calibration_backend",
+          "kind": "config",
+          "manifest_key": null,
+          "required": true,
+          "stage_id": null
+        },
+        {
+          "artifact_key": null,
+          "config_key": "calibration_tol",
+          "description": "Configured calibration tolerance.",
+          "key": "calibration_tol",
+          "kind": "config",
+          "manifest_key": null,
+          "required": false,
+          "stage_id": null
+        },
+        {
+          "artifact_key": null,
+          "config_key": "calibration_max_iter",
+          "description": "Configured maximum calibration iterations or epochs.",
+          "key": "calibration_max_iter",
+          "kind": "config",
+          "manifest_key": null,
+          "required": false,
+          "stage_id": null
+        },
+        {
+          "artifact_key": null,
+          "config_key": "target_sparsity",
+          "description": "Configured sparse-target selection pressure.",
+          "key": "target_sparsity",
+          "kind": "config",
+          "manifest_key": null,
+          "required": false,
+          "stage_id": null
+        },
+        {
+          "artifact_key": null,
+          "config_key": "policyengine_quantity_targets",
+          "description": "Configured PolicyEngine quantity targets.",
+          "key": "policyengine_quantity_targets",
+          "kind": "config",
+          "manifest_key": null,
+          "required": false,
+          "stage_id": null
+        },
+        {
+          "artifact_key": null,
+          "config_key": "policyengine_targets_db",
+          "description": "PolicyEngine target database used for calibration.",
+          "key": "policyengine_targets_db",
+          "kind": "config",
+          "manifest_key": null,
+          "required": false,
+          "stage_id": null
+        },
+        {
+          "artifact_key": null,
+          "config_key": "policyengine_calibration_target_variables",
+          "description": "Configured calibration target variables.",
+          "key": "policyengine_calibration_target_variables",
+          "kind": "config",
+          "manifest_key": null,
+          "required": false,
+          "stage_id": null
+        },
+        {
+          "artifact_key": null,
+          "config_key": "policyengine_calibration_target_domains",
+          "description": "Configured calibration target domains.",
+          "key": "policyengine_calibration_target_domains",
+          "kind": "config",
+          "manifest_key": null,
+          "required": false,
+          "stage_id": null
+        },
+        {
+          "artifact_key": null,
+          "config_key": "policyengine_calibration_geo_levels",
+          "description": "Configured calibration geography levels.",
+          "key": "policyengine_calibration_geo_levels",
+          "kind": "config",
+          "manifest_key": null,
+          "required": false,
+          "stage_id": null
+        }
+      ],
+      "order": 6,
+      "outputs": [
+        {
+          "artifact_key": "calibrated_data",
+          "config_key": null,
+          "description": "Calibrated output frame.",
+          "key": "calibrated_data",
+          "kind": "artifact",
+          "manifest_key": null,
+          "required": true,
+          "stage_id": "07_calibration"
+        },
+        {
+          "artifact_key": "targets",
+          "config_key": null,
+          "description": "Target payload used by the build.",
+          "key": "targets",
+          "kind": "artifact",
+          "manifest_key": null,
+          "required": true,
+          "stage_id": "07_calibration"
+        },
+        {
+          "artifact_key": "calibration_summary",
+          "config_key": null,
+          "description": "Stage-local calibration summary.",
+          "key": "calibration_summary",
+          "kind": "artifact",
+          "manifest_key": null,
+          "required": true,
+          "stage_id": "07_calibration"
+        },
+        {
+          "artifact_key": "policyengine_entity_tables",
+          "config_key": null,
+          "description": "Calibrated PolicyEngine entity-table bundle used for dataset export.",
+          "key": "policyengine_entity_tables",
+          "kind": "artifact",
+          "manifest_key": null,
+          "required": true,
+          "stage_id": "07_calibration"
+        },
+        {
+          "artifact_key": null,
+          "config_key": null,
+          "description": "Structured target-resolution and calibration target ledger.",
+          "key": "target_ledger",
+          "kind": "stage_output",
+          "manifest_key": null,
+          "required": true,
+          "stage_id": "07_calibration"
+        }
+      ],
+      "produces": [
+        "calibrated tables",
+        "calibration summary",
+        "target ledger"
+      ],
+      "purpose": "Resolve target constraints, solve weights, and summarize fit quality.",
+      "resume": {
+        "mode": "manual_replay",
+        "notes": "Saved calibrated outputs can be reused for export/assembly; full conditional calibration is future work."
+      },
+      "step": "07",
+      "title": "Target resolution, selection, and calibration",
+      "validations": [
+        {
+          "description": "Check convergence, selected target errors, and weight diagnostics.",
+          "key": "calibration_fit",
+          "status": "planned"
+        }
+      ],
+      "viewer": {
+        "elkPartition": 6,
+        "nodeKind": "calibration",
+        "type": "stage"
+      }
+    },
+    {
+      "artifacts": [
+        {
+          "description": "PolicyEngine-readable H5 dataset.",
+          "format": "h5_dataset",
+          "hash_mode": "file_sha256",
+          "key": "policyengine_dataset",
+          "path_hint": "policyengine_us.h5",
+          "required": true,
+          "resume_role": "post_artifact_evidence"
+        },
+        {
+          "description": "Optional synthetic capital-gains lot sidecar database.",
+          "format": "sqlite",
+          "hash_mode": "file_sha256",
+          "key": "capital_gains_lots",
+          "path_hint": "capital_gains_lots.sqlite",
+          "required": false,
+          "resume_role": "diagnostic"
+        },
+        {
+          "description": "Canonical stage manifest for the saved run.",
+          "format": "json",
+          "hash_mode": "file_sha256",
+          "key": "stage_manifest",
+          "path_hint": "stage_manifest.json",
+          "required": true,
+          "resume_role": null
+        },
+        {
+          "description": "Site-facing saved-run pipeline snapshot.",
+          "format": "json",
+          "hash_mode": "file_sha256",
+          "key": "data_flow_snapshot",
+          "path_hint": "data_flow_snapshot.json",
+          "required": true,
+          "resume_role": null
+        },
+        {
+          "description": "Stage-owned artifact inventory with existence, role, and hash metadata.",
+          "format": "json",
+          "hash_mode": "none",
+          "key": "artifact_inventory",
+          "path_hint": "stage_artifacts/artifact_inventory.json",
+          "required": true,
+          "resume_role": "diagnostic"
+        },
+        {
+          "description": "Conditional-readiness report for manual reuse decisions.",
+          "format": "json",
+          "hash_mode": "none",
+          "key": "conditional_readiness",
+          "path_hint": "stage_artifacts/conditional_readiness.json",
+          "required": true,
+          "resume_role": "diagnostic"
+        }
+      ],
+      "consumes": [
+        "calibrated entity tables",
+        "export variable maps",
+        "period config"
+      ],
+      "diagnostics": [
+        "exported variable maps",
+        "excluded variables",
+        "H5 loadability",
+        "row counts and weight totals"
+      ],
+      "id": "08_dataset_assembly",
+      "inputs": [
+        {
+          "artifact_key": "calibrated_data",
+          "config_key": null,
+          "description": "Calibrated output frame from Stage 7.",
+          "key": "calibrated_data",
+          "kind": "artifact",
+          "manifest_key": null,
+          "required": true,
+          "stage_id": "07_calibration"
+        },
+        {
+          "artifact_key": "policyengine_entity_tables",
+          "config_key": null,
+          "description": "Calibrated PolicyEngine entity-table checkpoint from Stage 7.",
+          "key": "policyengine_entity_tables",
+          "kind": "artifact",
+          "manifest_key": null,
+          "required": true,
+          "stage_id": "07_calibration"
+        },
+        {
+          "artifact_key": null,
+          "config_key": "policyengine_dataset_year",
+          "description": "PolicyEngine dataset period used during H5 export.",
+          "key": "policyengine_dataset_year",
+          "kind": "config",
+          "manifest_key": null,
+          "required": false,
+          "stage_id": null
+        }
+      ],
+      "order": 7,
+      "outputs": [
+        {
+          "artifact_key": "policyengine_dataset",
+          "config_key": null,
+          "description": "PolicyEngine-readable H5 dataset.",
+          "key": "policyengine_dataset",
+          "kind": "artifact",
+          "manifest_key": null,
+          "required": true,
+          "stage_id": "08_dataset_assembly"
+        },
+        {
+          "artifact_key": "stage_manifest",
+          "config_key": null,
+          "description": "Canonical saved-run stage manifest.",
+          "key": "stage_manifest",
+          "kind": "artifact",
+          "manifest_key": null,
+          "required": true,
+          "stage_id": "08_dataset_assembly"
+        },
+        {
+          "artifact_key": "data_flow_snapshot",
+          "config_key": null,
+          "description": "Site-facing saved-run pipeline snapshot.",
+          "key": "data_flow_snapshot",
+          "kind": "artifact",
+          "manifest_key": null,
+          "required": true,
+          "stage_id": "08_dataset_assembly"
+        },
+        {
+          "artifact_key": "artifact_inventory",
+          "config_key": null,
+          "description": "Stage-owned artifact inventory.",
+          "key": "artifact_inventory",
+          "kind": "artifact",
+          "manifest_key": null,
+          "required": true,
+          "stage_id": "08_dataset_assembly"
+        },
+        {
+          "artifact_key": "conditional_readiness",
+          "config_key": null,
+          "description": "Conditional-readiness report.",
+          "key": "conditional_readiness",
+          "kind": "artifact",
+          "manifest_key": null,
+          "required": true,
+          "stage_id": "08_dataset_assembly"
+        }
+      ],
+      "produces": [
+        "PolicyEngine H5 dataset",
+        "artifact manifest",
+        "data-flow snapshot"
+      ],
+      "purpose": "Assemble the calibrated output into the distributable PE dataset artifact.",
+      "resume": {
+        "mode": "post_artifact_evidence",
+        "notes": "The assembled dataset is the input for validation and benchmarking evidence backfills."
+      },
+      "step": "08",
+      "title": "Dataset assembly and publication",
+      "validations": [
+        {
+          "description": "Check that the assembled H5 can be opened and contains expected arrays.",
+          "key": "dataset_loadability",
+          "status": "planned"
+        }
+      ],
+      "viewer": {
+        "elkPartition": 7,
+        "nodeKind": "publication",
+        "type": "stage"
+      }
+    },
+    {
+      "artifacts": [
+        {
+          "description": "PolicyEngine harness comparison payload.",
+          "format": "json",
+          "hash_mode": "file_sha256",
+          "key": "policyengine_harness",
+          "path_hint": "policyengine_harness.json",
+          "required": false,
+          "resume_role": "diagnostic"
+        },
+        {
+          "description": "PE-US-data native score comparison payload.",
+          "format": "json",
+          "hash_mode": "file_sha256",
+          "key": "policyengine_native_scores",
+          "path_hint": "policyengine_native_scores.json",
+          "required": false,
+          "resume_role": "diagnostic"
+        },
+        {
+          "description": "PE-US-data native score audit payload.",
+          "format": "json",
+          "hash_mode": "file_sha256",
+          "key": "policyengine_native_audit",
+          "path_hint": "pe_us_data_rebuild_native_audit.json",
+          "required": false,
+          "resume_role": "diagnostic"
+        },
+        {
+          "description": "Full PE-US-data native per-target diagnostics payload.",
+          "format": "json",
+          "hash_mode": "file_sha256",
+          "key": "policyengine_native_target_diagnostics",
+          "path_hint": "pe_native_target_diagnostics.json",
+          "required": false,
+          "resume_role": "diagnostic"
+        },
+        {
+          "description": "Imputation ablation benchmark payload.",
+          "format": "json",
+          "hash_mode": "file_sha256",
+          "key": "imputation_ablation",
+          "path_hint": "imputation_ablation.json",
+          "required": false,
+          "resume_role": "diagnostic"
+        },
+        {
+          "description": "Child tax-unit AGI drift diagnostic payload.",
+          "format": "json",
+          "hash_mode": "file_sha256",
+          "key": "child_tax_unit_agi_drift",
+          "path_hint": "child_tax_unit_agi_drift.json",
+          "required": false,
+          "resume_role": "diagnostic"
+        },
+        {
+          "description": "Stage-local evidence manifest for validation sidecars.",
+          "format": "json",
+          "hash_mode": "file_sha256",
+          "key": "validation_evidence",
+          "path_hint": "stage_artifacts/09_validation_benchmarking/evidence_manifest.json",
+          "required": true,
+          "resume_role": "diagnostic"
+        }
+      ],
+      "consumes": [
+        "PolicyEngine H5 dataset",
+        "baseline dataset",
+        "target provider/query"
+      ],
+      "diagnostics": [
+        "harness deltas",
+        "native score deltas",
+        "target win rates",
+        "audit verdicts",
+        "ablation summaries"
+      ],
+      "id": "09_validation_benchmarking",
+      "inputs": [
+        {
+          "artifact_key": "policyengine_dataset",
+          "config_key": null,
+          "description": "PolicyEngine-readable H5 dataset from Stage 8.",
+          "key": "policyengine_dataset",
+          "kind": "artifact",
+          "manifest_key": null,
+          "required": true,
+          "stage_id": "08_dataset_assembly"
+        },
+        {
+          "artifact_key": null,
+          "config_key": null,
+          "description": "Baseline dataset used by validation or comparison harnesses.",
+          "key": "baseline_dataset",
+          "kind": "external_data",
+          "manifest_key": null,
+          "required": false,
+          "stage_id": null
+        },
+        {
+          "artifact_key": null,
+          "config_key": null,
+          "description": "Target provider or target database used for benchmark evidence.",
+          "key": "target_provider",
+          "kind": "external_data",
+          "manifest_key": null,
+          "required": false,
+          "stage_id": null
+        },
+        {
+          "artifact_key": null,
+          "config_key": "policyengine_dataset_year",
+          "description": "PolicyEngine dataset period used during validation.",
+          "key": "policyengine_dataset_year",
+          "kind": "config",
+          "manifest_key": null,
+          "required": false,
+          "stage_id": null
+        }
+      ],
+      "order": 8,
+      "outputs": [
+        {
+          "artifact_key": "validation_evidence",
+          "config_key": null,
+          "description": "Stage-local evidence manifest for validation sidecars.",
+          "key": "validation_evidence",
+          "kind": "artifact",
+          "manifest_key": null,
+          "required": true,
+          "stage_id": "09_validation_benchmarking"
+        },
+        {
+          "artifact_key": null,
+          "config_key": null,
+          "description": "Saved summary of validation and benchmark evidence attached to the run.",
+          "key": "benchmark_summary",
+          "kind": "stage_output",
+          "manifest_key": null,
+          "required": true,
+          "stage_id": "09_validation_benchmarking"
+        },
+        {
+          "artifact_key": "policyengine_harness",
+          "config_key": null,
+          "description": "PolicyEngine harness comparison payload.",
+          "key": "policyengine_harness",
+          "kind": "artifact",
+          "manifest_key": null,
+          "required": false,
+          "stage_id": "09_validation_benchmarking"
+        },
+        {
+          "artifact_key": "policyengine_native_scores",
+          "config_key": null,
+          "description": "PE-US-data native score comparison payload.",
+          "key": "policyengine_native_scores",
+          "kind": "artifact",
+          "manifest_key": null,
+          "required": false,
+          "stage_id": "09_validation_benchmarking"
+        },
+        {
+          "artifact_key": "policyengine_native_audit",
+          "config_key": null,
+          "description": "PE-US-data native score audit payload.",
+          "key": "policyengine_native_audit",
+          "kind": "artifact",
+          "manifest_key": null,
+          "required": false,
+          "stage_id": "09_validation_benchmarking"
+        },
+        {
+          "artifact_key": "policyengine_native_target_diagnostics",
+          "config_key": null,
+          "description": "Full PE-US-data native per-target diagnostics payload.",
+          "key": "policyengine_native_target_diagnostics",
+          "kind": "artifact",
+          "manifest_key": null,
+          "required": false,
+          "stage_id": "09_validation_benchmarking"
+        }
+      ],
+      "produces": [
+        "harness evidence",
+        "native scores",
+        "audits",
+        "run registry/index evidence"
+      ],
+      "purpose": "Evaluate the assembled dataset and attach benchmark evidence.",
+      "resume": {
+        "mode": "post_artifact_evidence",
+        "notes": "Benchmark evidence can be rerun or backfilled against the Stage 8 dataset artifact."
+      },
+      "step": "09",
+      "title": "Validation and benchmarking",
+      "validations": [
+        {
+          "description": "Check that configured benchmark evidence was produced.",
+          "key": "benchmark_completeness",
+          "status": "planned"
+        }
+      ],
+      "viewer": {
+        "elkPartition": 8,
+        "nodeKind": "validation",
+        "type": "stage"
+      }
+    }
+  ],
+  "pipeline": "us_microplex",
+  "schemaVersion": 1
+}

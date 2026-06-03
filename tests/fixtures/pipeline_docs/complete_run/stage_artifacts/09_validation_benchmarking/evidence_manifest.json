@@ -1,0 +1,14 @@
+{
+  "evidence": [
+    {
+      "exists": true,
+      "key": "policyengine_harness",
+      "path": "policyengine_harness.json"
+    }
+  ],
+  "formatVersion": 1,
+  "stageId": "09_validation_benchmarking",
+  "summaries": {
+    "candidate_mean_abs_relative_error": 0.2
+  }
+}

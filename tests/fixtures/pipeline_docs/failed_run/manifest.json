@@ -1,0 +1,26 @@
+{
+  "artifacts": {
+    "manifest": "manifest.json",
+    "scaffold_seed_data": "stage_artifacts/04_seed_scaffold/scaffold_seed_data.parquet",
+    "seed_data": "seed_data.parquet"
+  },
+  "calibration": {},
+  "config": {
+    "calibration_backend": "entropy",
+    "n_synthetic": 100
+  },
+  "created_at": "2026-06-03T00:00:00+00:00",
+  "rows": {
+    "seed": 100
+  },
+  "stage_output_manifests": {
+    "05_donor_integration_synthesis": "stage_artifacts/manifests/05_donor_integration_synthesis.json"
+  },
+  "synthesis": {
+    "backend": "seed",
+    "scaffold_source": "cps_asec_2023",
+    "source_names": [
+      "cps_asec_2023"
+    ]
+  }
+}

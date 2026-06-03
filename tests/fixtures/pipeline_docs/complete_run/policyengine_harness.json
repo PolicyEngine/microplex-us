@@ -1,0 +1,7 @@
+{
+  "summary": {
+    "baseline_mean_abs_relative_error": 0.4,
+    "candidate_mean_abs_relative_error": 0.2,
+    "mean_abs_relative_error_delta": -0.2
+  }
+}

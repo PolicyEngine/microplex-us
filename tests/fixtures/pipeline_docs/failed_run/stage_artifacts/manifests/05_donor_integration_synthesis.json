@@ -1,0 +1,65 @@
+{
+  "complete": false,
+  "contractVersion": "us-runtime-stages-v2",
+  "deferredReason": null,
+  "diagnostics": {
+    "stage_summary": {
+      "description": "Failed donor integration summary.",
+      "path": null,
+      "summary": {
+        "source_names": [
+          "cps_asec_2023"
+        ]
+      }
+    }
+  },
+  "events": [
+    {
+      "event": "stage_started",
+      "timestamp": "2026-06-03T00:01:00+00:00"
+    },
+    {
+      "details": {
+        "errorType": "RuntimeError"
+      },
+      "event": "stage_failed",
+      "timestamp": "2026-06-03T00:02:00+00:00"
+    }
+  ],
+  "failedAt": "2026-06-03T00:02:00+00:00",
+  "failure": {
+    "errorType": "RuntimeError",
+    "message": "synthetic backend failed",
+    "traceback": null
+  },
+  "inputOverrides": [],
+  "inputStageManifest": "stage_artifacts/manifests/04_seed_scaffold.json",
+  "lifecycleStatus": "failed",
+  "metadata": {},
+  "missingRequiredOutputs": [
+    "synthetic_data"
+  ],
+  "outputs": {
+    "seed_data": {
+      "assume_exists": false,
+      "category": "required_output",
+      "exists": true,
+      "format": "parquet_dataframe",
+      "key": "seed_data",
+      "path": "seed_data.parquet",
+      "required": true,
+      "resume_role": "manual_replay"
+    },
+    "source_weight_diagnostics": null,
+    "synthetic_data": null,
+    "synthesis_metadata": {}
+  },
+  "requiredOutputs": [
+    "seed_data",
+    "synthetic_data"
+  ],
+  "schemaVersion": 2,
+  "stageId": "05_donor_integration_synthesis",
+  "startedAt": "2026-06-03T00:01:00+00:00",
+  "updatedAt": "2026-06-03T00:02:00+00:00"
+}

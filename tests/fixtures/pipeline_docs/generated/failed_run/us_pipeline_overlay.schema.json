@@ -1,0 +1,102 @@
+{
+  "$defs": {
+    "stage": {
+      "properties": {
+        "artifacts": {
+          "type": "array"
+        },
+        "benchmarkSummary": {
+          "type": "object"
+        },
+        "diagnostics": {
+          "type": "array"
+        },
+        "id": {
+          "type": "string"
+        },
+        "lifecycleStatus": {
+          "type": "string"
+        },
+        "metrics": {
+          "type": "array"
+        },
+        "outputManifest": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "resume": {
+          "type": "object"
+        },
+        "status": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "validations": {
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "status",
+        "lifecycleStatus",
+        "artifacts",
+        "diagnostics",
+        "validations",
+        "metrics",
+        "resume",
+        "benchmarkSummary"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://policyengine.org/schemas/microplex-us/pipeline-overlay-v1.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "artifactRoot": {
+      "type": "string"
+    },
+    "contractVersion": {
+      "type": "string"
+    },
+    "generatedAt": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "graphSchemaVersion": {
+      "const": 1
+    },
+    "manifest": {
+      "type": "string"
+    },
+    "pipeline": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "stages": {
+      "items": {
+        "$ref": "#/$defs/stage"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "graphSchemaVersion",
+    "contractVersion",
+    "pipeline",
+    "artifactRoot",
+    "manifest",
+    "stages"
+  ],
+  "title": "Microplex-US pipeline overlay",
+  "type": "object"
+}

@@ -1,0 +1,105 @@
+{
+  "$defs": {
+    "edge": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "resourceKeys": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "source": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "viewer": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "source",
+        "target",
+        "label",
+        "viewer"
+      ],
+      "type": "object"
+    },
+    "node": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "order": {
+          "type": "integer"
+        },
+        "purpose": {
+          "type": "string"
+        },
+        "step": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "viewer": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "order",
+        "title",
+        "purpose",
+        "viewer"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://policyengine.org/schemas/microplex-us/pipeline-graph-v1.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "contractVersion": {
+      "type": "string"
+    },
+    "edges": {
+      "items": {
+        "$ref": "#/$defs/edge"
+      },
+      "type": "array"
+    },
+    "generatedFrom": {
+      "type": "string"
+    },
+    "nodes": {
+      "items": {
+        "$ref": "#/$defs/node"
+      },
+      "type": "array"
+    },
+    "pipeline": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": 1
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "contractVersion",
+    "generatedFrom",
+    "pipeline",
+    "nodes",
+    "edges"
+  ],
+  "title": "Microplex-US pipeline graph",
+  "type": "object"
+}

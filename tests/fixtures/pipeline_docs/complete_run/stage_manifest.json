@@ -1,0 +1,9 @@
+{
+  "artifactRoot": ".",
+  "contractVersion": "us-runtime-stages-v2",
+  "generatedAt": "2026-06-03T00:00:00+00:00",
+  "manifest": "manifest.json",
+  "pipeline": "us_microplex",
+  "schemaVersion": 3,
+  "stages": []
+}

@@ -1,0 +1,765 @@
+{
+  "artifactRoot": "failed_run",
+  "contractVersion": "us-runtime-stages-v2",
+  "generatedAt": "2026-06-03T00:00:00+00:00",
+  "graphSchemaVersion": 1,
+  "manifest": "manifest.json",
+  "pipeline": "us_microplex",
+  "schemaVersion": 1,
+  "stages": [
+    {
+      "artifacts": [
+        {
+          "description": "Top-level artifact manifest with resolved config.",
+          "exists": true,
+          "format": "json",
+          "key": "manifest",
+          "path": "manifest.json",
+          "referenced": true,
+          "required": true,
+          "resumeRole": null
+        }
+      ],
+      "benchmarkSummary": {},
+      "completedAt": null,
+      "deferredReason": null,
+      "diagnostics": [
+        {
+          "key": "resolved provider names"
+        },
+        {
+          "key": "sample/query filters"
+        },
+        {
+          "key": "target period"
+        },
+        {
+          "key": "baseline dataset and target DB references"
+        }
+      ],
+      "failedAt": null,
+      "failure": null,
+      "id": "01_run_profile",
+      "lifecycleStatus": "complete",
+      "metrics": [
+        {
+          "label": "Target period",
+          "value": null
+        },
+        {
+          "label": "Backend",
+          "value": "entropy"
+        }
+      ],
+      "outputManifest": null,
+      "resume": {
+        "mode": "metadata_only",
+        "notes": "The resolved config can be reused, but this stage does not contain reloadable data by itself."
+      },
+      "startedAt": null,
+      "status": "ready",
+      "title": "Run profile, config, and source bundle",
+      "updatedAt": null,
+      "validations": [
+        {
+          "description": "Check required paths and context for the selected profile.",
+          "key": "config_context",
+          "status": "planned"
+        }
+      ]
+    },
+    {
+      "artifacts": [],
+      "benchmarkSummary": {},
+      "completedAt": null,
+      "deferredReason": null,
+      "diagnostics": [
+        {
+          "key": "source row counts"
+        },
+        {
+          "key": "entity coverage"
+        },
+        {
+          "key": "relationship validity"
+        },
+        {
+          "key": "cache/download provenance"
+        }
+      ],
+      "failedAt": null,
+      "failure": null,
+      "id": "02_source_loading",
+      "lifecycleStatus": "pending",
+      "metrics": [
+        {
+          "label": "Sources",
+          "value": 1
+        }
+      ],
+      "outputManifest": null,
+      "resume": {
+        "mode": "none",
+        "notes": "Full source-frame snapshotting is not implemented yet."
+      },
+      "startedAt": null,
+      "status": "metadata_only",
+      "title": "Source contracts and source loading",
+      "updatedAt": null,
+      "validations": [
+        {
+          "description": "Validate required entity tables and relationships for each source.",
+          "key": "observation_frame_validity",
+          "status": "planned"
+        }
+      ]
+    },
+    {
+      "artifacts": [
+        {
+          "description": "Compact JSON summary of source names, scaffold, and donor variable plan.",
+          "exists": false,
+          "format": "json",
+          "key": "source_plan",
+          "path": "stage_artifacts/03_source_planning/source_plan.json",
+          "referenced": false,
+          "required": true,
+          "resumeRole": "diagnostic"
+        }
+      ],
+      "benchmarkSummary": {},
+      "completedAt": null,
+      "deferredReason": null,
+      "diagnostics": [
+        {
+          "key": "source score summary"
+        },
+        {
+          "key": "coverage matrix"
+        },
+        {
+          "key": "scaffold source"
+        },
+        {
+          "key": "donor source names"
+        }
+      ],
+      "failedAt": null,
+      "failure": null,
+      "id": "03_source_planning",
+      "lifecycleStatus": "pending",
+      "metrics": [
+        {
+          "label": "Scaffold",
+          "value": "cps_asec_2023"
+        }
+      ],
+      "outputManifest": null,
+      "resume": {
+        "mode": "metadata_only",
+        "notes": "The source plan explains the build route; raw source frames are not reloadable from this artifact yet."
+      },
+      "startedAt": null,
+      "status": "incomplete",
+      "title": "Source planning, fusion planning, and scaffold selection",
+      "updatedAt": null,
+      "validations": [
+        {
+          "description": "Check that the scaffold has household/person observations and a valid relationship.",
+          "key": "scaffold_has_households_and_persons",
+          "status": "planned"
+        }
+      ]
+    },
+    {
+      "artifacts": [
+        {
+          "description": "Seed population immediately after scaffold projection and before donor integration.",
+          "exists": true,
+          "format": "parquet_dataframe",
+          "key": "scaffold_seed_data",
+          "path": "stage_artifacts/04_seed_scaffold/scaffold_seed_data.parquet",
+          "referenced": true,
+          "required": true,
+          "resumeRole": "manual_replay"
+        }
+      ],
+      "benchmarkSummary": {},
+      "completedAt": null,
+      "deferredReason": null,
+      "diagnostics": [
+        {
+          "key": "scaffold source"
+        },
+        {
+          "key": "pre-donor seed rows and columns"
+        },
+        {
+          "key": "canonical identifier coverage"
+        },
+        {
+          "key": "required seed column defaults"
+        }
+      ],
+      "failedAt": null,
+      "failure": null,
+      "id": "04_seed_scaffold",
+      "lifecycleStatus": "complete",
+      "metrics": [
+        {
+          "label": "Seed rows",
+          "value": 100
+        },
+        {
+          "label": "Scaffold",
+          "value": "cps_asec_2023"
+        }
+      ],
+      "outputManifest": null,
+      "resume": {
+        "mode": "manual_replay",
+        "notes": "The pre-donor seed frame is saved for diagnostics and manual replay; automatic donor-stage resume is not implemented yet."
+      },
+      "startedAt": null,
+      "status": "ready",
+      "title": "Seed/scaffold construction",
+      "updatedAt": null,
+      "validations": [
+        {
+          "description": "Check canonical identifiers and required seed columns.",
+          "key": "seed_schema",
+          "status": "planned"
+        }
+      ]
+    },
+    {
+      "artifacts": [
+        {
+          "description": "Seed population after donor integration and semantic guards.",
+          "exists": true,
+          "format": "parquet_dataframe",
+          "key": "seed_data",
+          "path": "seed_data.parquet",
+          "referenced": true,
+          "required": true,
+          "resumeRole": "diagnostic"
+        },
+        {
+          "description": "Candidate population before final calibration.",
+          "exists": false,
+          "format": "parquet_dataframe",
+          "key": "synthetic_data",
+          "path": "synthetic_data.parquet",
+          "referenced": false,
+          "required": true,
+          "resumeRole": "manual_replay"
+        },
+        {
+          "description": "Optional fitted synthesis model.",
+          "exists": false,
+          "format": "model_file",
+          "key": "synthesizer",
+          "path": "synthesizer.pt",
+          "referenced": false,
+          "required": false,
+          "resumeRole": "diagnostic"
+        },
+        {
+          "description": "Diagnostic summary of source-level contribution weights.",
+          "exists": false,
+          "format": "json",
+          "key": "source_weight_diagnostics",
+          "path": "source_weight_diagnostics.json",
+          "referenced": false,
+          "required": false,
+          "resumeRole": "diagnostic"
+        }
+      ],
+      "benchmarkSummary": {},
+      "completedAt": null,
+      "deferredReason": null,
+      "diagnostics": [
+        {
+          "key": "donor-integrated variables"
+        },
+        {
+          "key": "conditioning diagnostics"
+        },
+        {
+          "key": "authoritative override variables"
+        },
+        {
+          "key": "synthesis backend"
+        },
+        {
+          "key": "condition variables"
+        },
+        {
+          "key": "target variables"
+        },
+        {
+          "key": "support enforcement changes"
+        }
+      ],
+      "failedAt": "2026-06-03T00:02:00+00:00",
+      "failure": {
+        "errorType": "RuntimeError",
+        "message": "synthetic backend failed",
+        "traceback": null
+      },
+      "id": "05_donor_integration_synthesis",
+      "lifecycleStatus": "failed",
+      "metrics": [
+        {
+          "label": "Seed rows",
+          "value": 100
+        },
+        {
+          "label": "Integrated vars",
+          "value": 0
+        },
+        {
+          "label": "Backend",
+          "value": "seed"
+        },
+        {
+          "label": "Synthetic rows",
+          "value": null
+        }
+      ],
+      "outputManifest": "stage_artifacts/manifests/05_donor_integration_synthesis.json",
+      "resume": {
+        "mode": "manual_replay",
+        "notes": "Existing policy-stage replay can reload synthetic_data.parquet and rerun downstream PE work."
+      },
+      "startedAt": "2026-06-03T00:01:00+00:00",
+      "status": "incomplete",
+      "title": "Donor integration, synthesis, and support enforcement",
+      "updatedAt": "2026-06-03T00:02:00+00:00",
+      "validations": [
+        {
+          "description": "Check that candidate rows support requested marginal target cells.",
+          "key": "candidate_support",
+          "status": "planned"
+        }
+      ]
+    },
+    {
+      "artifacts": [
+        {
+          "description": "Reloadable pre-calibration PE entity-table bundle saved as parquet files plus metadata.",
+          "exists": false,
+          "format": "policyengine_entity_bundle",
+          "key": "pre_calibration_policyengine_entity_tables",
+          "path": "stage_artifacts/06_policyengine_entities/metadata.json",
+          "referenced": false,
+          "required": true,
+          "resumeRole": "manual_resume"
+        }
+      ],
+      "benchmarkSummary": {},
+      "completedAt": null,
+      "deferredReason": null,
+      "diagnostics": [
+        {
+          "key": "entity row counts"
+        },
+        {
+          "key": "ID/link integrity"
+        },
+        {
+          "key": "missing or filled PE inputs"
+        },
+        {
+          "key": "direct override variables"
+        }
+      ],
+      "failedAt": null,
+      "failure": null,
+      "id": "06_policyengine_entities",
+      "lifecycleStatus": "pending",
+      "metrics": [
+        {
+          "label": "Entity bundle",
+          "value": null
+        }
+      ],
+      "outputManifest": null,
+      "resume": {
+        "mode": "manual_resume",
+        "notes": "The entity-table bundle can be loaded for manual downstream calibration/export workflows."
+      },
+      "startedAt": null,
+      "status": "incomplete",
+      "title": "PolicyEngine entity construction and microsimulation materialization",
+      "updatedAt": null,
+      "validations": [
+        {
+          "description": "Check ID uniqueness and cross-entity links.",
+          "key": "entity_integrity",
+          "status": "planned"
+        }
+      ]
+    },
+    {
+      "artifacts": [
+        {
+          "description": "Calibrated person-level output frame.",
+          "exists": false,
+          "format": "parquet_dataframe",
+          "key": "calibrated_data",
+          "path": "calibrated_data.parquet",
+          "referenced": false,
+          "required": true,
+          "resumeRole": "manual_replay"
+        },
+        {
+          "description": "Saved target payload used by the build.",
+          "exists": false,
+          "format": "json",
+          "key": "targets",
+          "path": "targets.json",
+          "referenced": false,
+          "required": true,
+          "resumeRole": "manual_replay"
+        },
+        {
+          "description": "Stage-local calibration summary JSON.",
+          "exists": false,
+          "format": "json",
+          "key": "calibration_summary",
+          "path": "stage_artifacts/07_calibration/calibration_summary.json",
+          "referenced": false,
+          "required": true,
+          "resumeRole": "diagnostic"
+        },
+        {
+          "description": "Calibrated PE entity-table bundle used for dataset export.",
+          "exists": false,
+          "format": "policyengine_entity_bundle",
+          "key": "policyengine_entity_tables",
+          "path": "stage_artifacts/07_calibration/policyengine_entity_tables/metadata.json",
+          "referenced": false,
+          "required": true,
+          "resumeRole": "post_artifact_evidence"
+        }
+      ],
+      "benchmarkSummary": {},
+      "completedAt": null,
+      "deferredReason": null,
+      "diagnostics": [
+        {
+          "key": "supported and unsupported targets"
+        },
+        {
+          "key": "feasibility filter"
+        },
+        {
+          "key": "calibration stages"
+        },
+        {
+          "key": "target ledger"
+        },
+        {
+          "key": "oracle loss"
+        },
+        {
+          "key": "weight diagnostics"
+        }
+      ],
+      "failedAt": null,
+      "failure": null,
+      "id": "07_calibration",
+      "lifecycleStatus": "pending",
+      "metrics": [
+        {
+          "label": "Backend",
+          "value": null
+        },
+        {
+          "label": "Supported",
+          "value": null
+        },
+        {
+          "label": "Converged",
+          "value": null
+        }
+      ],
+      "outputManifest": null,
+      "resume": {
+        "mode": "manual_replay",
+        "notes": "Saved calibrated outputs can be reused for export/assembly; full conditional calibration is future work."
+      },
+      "startedAt": null,
+      "status": "incomplete",
+      "title": "Target resolution, selection, and calibration",
+      "updatedAt": null,
+      "validations": [
+        {
+          "description": "Check convergence, selected target errors, and weight diagnostics.",
+          "key": "calibration_fit",
+          "status": "planned"
+        }
+      ]
+    },
+    {
+      "artifacts": [
+        {
+          "description": "PolicyEngine-readable H5 dataset.",
+          "exists": false,
+          "format": "h5_dataset",
+          "key": "policyengine_dataset",
+          "path": "policyengine_us.h5",
+          "referenced": false,
+          "required": true,
+          "resumeRole": "post_artifact_evidence"
+        },
+        {
+          "description": "Optional synthetic capital-gains lot sidecar database.",
+          "exists": false,
+          "format": "sqlite",
+          "key": "capital_gains_lots",
+          "path": "capital_gains_lots.sqlite",
+          "referenced": false,
+          "required": false,
+          "resumeRole": "diagnostic"
+        },
+        {
+          "description": "Canonical stage manifest for the saved run.",
+          "exists": false,
+          "format": "json",
+          "key": "stage_manifest",
+          "path": "stage_manifest.json",
+          "referenced": false,
+          "required": true,
+          "resumeRole": null
+        },
+        {
+          "description": "Site-facing saved-run pipeline snapshot.",
+          "exists": false,
+          "format": "json",
+          "key": "data_flow_snapshot",
+          "path": "data_flow_snapshot.json",
+          "referenced": false,
+          "required": true,
+          "resumeRole": null
+        },
+        {
+          "description": "Stage-owned artifact inventory with existence, role, and hash metadata.",
+          "exists": false,
+          "format": "json",
+          "key": "artifact_inventory",
+          "path": "stage_artifacts/artifact_inventory.json",
+          "referenced": false,
+          "required": true,
+          "resumeRole": "diagnostic"
+        },
+        {
+          "description": "Conditional-readiness report for manual reuse decisions.",
+          "exists": false,
+          "format": "json",
+          "key": "conditional_readiness",
+          "path": "stage_artifacts/conditional_readiness.json",
+          "referenced": false,
+          "required": true,
+          "resumeRole": "diagnostic"
+        }
+      ],
+      "benchmarkSummary": {},
+      "completedAt": null,
+      "deferredReason": null,
+      "diagnostics": [
+        {
+          "key": "exported variable maps"
+        },
+        {
+          "key": "excluded variables"
+        },
+        {
+          "key": "H5 loadability"
+        },
+        {
+          "key": "row counts and weight totals"
+        }
+      ],
+      "failedAt": null,
+      "failure": null,
+      "id": "08_dataset_assembly",
+      "lifecycleStatus": "pending",
+      "metrics": [
+        {
+          "label": "Dataset",
+          "value": null
+        }
+      ],
+      "outputManifest": null,
+      "resume": {
+        "mode": "post_artifact_evidence",
+        "notes": "The assembled dataset is the input for validation and benchmarking evidence backfills."
+      },
+      "startedAt": null,
+      "status": "incomplete",
+      "title": "Dataset assembly and publication",
+      "updatedAt": null,
+      "validations": [
+        {
+          "description": "Check that the assembled H5 can be opened and contains expected arrays.",
+          "key": "dataset_loadability",
+          "status": "planned"
+        }
+      ]
+    },
+    {
+      "artifacts": [
+        {
+          "description": "PolicyEngine harness comparison payload.",
+          "exists": false,
+          "format": "json",
+          "key": "policyengine_harness",
+          "path": "policyengine_harness.json",
+          "referenced": false,
+          "required": false,
+          "resumeRole": "diagnostic"
+        },
+        {
+          "description": "PE-US-data native score comparison payload.",
+          "exists": false,
+          "format": "json",
+          "key": "policyengine_native_scores",
+          "path": "policyengine_native_scores.json",
+          "referenced": false,
+          "required": false,
+          "resumeRole": "diagnostic"
+        },
+        {
+          "description": "PE-US-data native score audit payload.",
+          "exists": false,
+          "format": "json",
+          "key": "policyengine_native_audit",
+          "path": "pe_us_data_rebuild_native_audit.json",
+          "referenced": false,
+          "required": false,
+          "resumeRole": "diagnostic"
+        },
+        {
+          "description": "Full PE-US-data native per-target diagnostics payload.",
+          "exists": false,
+          "format": "json",
+          "key": "policyengine_native_target_diagnostics",
+          "path": "pe_native_target_diagnostics.json",
+          "referenced": false,
+          "required": false,
+          "resumeRole": "diagnostic"
+        },
+        {
+          "description": "Imputation ablation benchmark payload.",
+          "exists": false,
+          "format": "json",
+          "key": "imputation_ablation",
+          "path": "imputation_ablation.json",
+          "referenced": false,
+          "required": false,
+          "resumeRole": "diagnostic"
+        },
+        {
+          "description": "Child tax-unit AGI drift diagnostic payload.",
+          "exists": false,
+          "format": "json",
+          "key": "child_tax_unit_agi_drift",
+          "path": "child_tax_unit_agi_drift.json",
+          "referenced": false,
+          "required": false,
+          "resumeRole": "diagnostic"
+        },
+        {
+          "description": "Stage-local evidence manifest for validation sidecars.",
+          "exists": false,
+          "format": "json",
+          "key": "validation_evidence",
+          "path": "stage_artifacts/09_validation_benchmarking/evidence_manifest.json",
+          "referenced": false,
+          "required": true,
+          "resumeRole": "diagnostic"
+        }
+      ],
+      "benchmarkSummary": {
+        "Capped full oracle loss": null,
+        "Full oracle loss": null,
+        "Harness delta": null,
+        "Imputation F1": null,
+        "Imputation MAE": null,
+        "Native delta": null,
+        "Win rate": null
+      },
+      "completedAt": null,
+      "deferredReason": null,
+      "diagnostics": [
+        {
+          "key": "harness deltas"
+        },
+        {
+          "key": "native score deltas"
+        },
+        {
+          "key": "target win rates"
+        },
+        {
+          "key": "audit verdicts"
+        },
+        {
+          "key": "ablation summaries"
+        }
+      ],
+      "failedAt": null,
+      "failure": null,
+      "id": "09_validation_benchmarking",
+      "lifecycleStatus": "pending",
+      "metrics": [
+        {
+          "label": "Capped full oracle loss",
+          "value": null
+        },
+        {
+          "label": "Full oracle loss",
+          "value": null
+        },
+        {
+          "label": "Harness delta",
+          "value": null
+        },
+        {
+          "label": "Native delta",
+          "value": null
+        },
+        {
+          "label": "Win rate",
+          "value": null
+        },
+        {
+          "label": "Imputation MAE",
+          "value": null
+        },
+        {
+          "label": "Imputation F1",
+          "value": null
+        }
+      ],
+      "outputManifest": null,
+      "resume": {
+        "mode": "post_artifact_evidence",
+        "notes": "Benchmark evidence can be rerun or backfilled against the Stage 8 dataset artifact."
+      },
+      "startedAt": null,
+      "status": "missing",
+      "title": "Validation and benchmarking",
+      "updatedAt": null,
+      "validations": [
+        {
+          "description": "Check that configured benchmark evidence was produced.",
+          "key": "benchmark_completeness",
+          "status": "planned"
+        }
+      ]
+    }
+  ]
+}

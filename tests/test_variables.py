@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pandas as pd
+import pytest
 from microplex.core import EntityType
 
 from microplex_us.variables import (
@@ -57,10 +58,39 @@ def test_normalize_dividend_columns_coalesces_sparse_total_aliases_by_row():
 
     normalized = normalize_dividend_columns(frame)
 
-    assert normalized["qualified_dividend_income"].tolist() == [0.0, 5.0, 0.0]
-    assert normalized["non_qualified_dividend_income"].tolist() == [80.0, 25.0, 0.0]
+    # Row 0 carries only a dividend total (80) with no observed split, so it is
+    # allocated by the SOI qualified share instead of defaulting 100% to
+    # non-qualified. Rows 1-2 keep their observed components unchanged.
+    assert normalized["qualified_dividend_income"].tolist() == pytest.approx(
+        [62.4, 5.0, 0.0]
+    )
+    assert normalized["non_qualified_dividend_income"].tolist() == pytest.approx(
+        [17.6, 25.0, 0.0]
+    )
     assert normalized["ordinary_dividend_income"].tolist() == [80.0, 30.0, 0.0]
     assert normalized["dividend_income"].tolist() == [80.0, 30.0, 0.0]
+
+
+def test_normalize_dividend_columns_splits_unsplit_total_by_qualified_share():
+    # A row with only a dividend total (e.g. CPS DIV_VAL) and no qualified /
+    # non-qualified components must be split by the SOI qualified share, not
+    # left entirely non-qualified (which zeroed qualified dividends nationally
+    # and inverted the split vs the SOI targets).
+    frame = pd.DataFrame(
+        {
+            "qualified_dividend_income": [0.0],
+            "non_qualified_dividend_income": [0.0],
+            "dividend_income": [1_000.0],
+        }
+    )
+
+    normalized = normalize_dividend_columns(frame)
+
+    assert normalized["qualified_dividend_income"].tolist() == pytest.approx([780.0])
+    assert normalized["non_qualified_dividend_income"].tolist() == pytest.approx(
+        [220.0]
+    )
+    assert normalized["dividend_income"].tolist() == pytest.approx([1_000.0])
 
 
 def test_normalize_social_security_columns_tracks_unclassified_residual():

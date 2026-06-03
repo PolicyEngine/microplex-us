@@ -642,6 +642,16 @@ def _nonnegative_series(frame: pd.DataFrame, column: str) -> pd.Series:
     )
 
 
+# Share of a dividend total that is qualified when no observed qualified/
+# non-qualified breakdown is available (e.g. CPS DIV_VAL, which reports only a
+# total). Basis: SOI 2015 PUF E00650/E00600 = $204.0B/$260.9B = 0.782 qualified.
+# Splitting an unsplit total by this share avoids zeroing
+# qualified_dividend_income on every CPS-native dividend row (which previously
+# dumped 100% into non-qualified and inverted the national qualified vs
+# non-qualified split relative to the SOI targets).
+UNSPLIT_DIVIDEND_QUALIFIED_SHARE = 0.78
+
+
 def normalize_dividend_columns(frame: pd.DataFrame) -> pd.DataFrame:
     """Normalize dividends onto an atomic basis, then derive totals."""
     result = frame.copy()
@@ -660,7 +670,14 @@ def normalize_dividend_columns(frame: pd.DataFrame) -> pd.DataFrame:
     if has_qualified and has_non_qualified:
         component_total = qualified + non_qualified
         total_only = component_total.eq(0.0) & total.gt(0.0)
-        non_qualified = non_qualified.where(~total_only, total)
+        # Allocate an unsplit total by the SOI qualified share rather than
+        # defaulting the whole amount to non-qualified.
+        qualified = qualified.where(
+            ~total_only, total * UNSPLIT_DIVIDEND_QUALIFIED_SHARE
+        )
+        non_qualified = non_qualified.where(
+            ~total_only, total * (1.0 - UNSPLIT_DIVIDEND_QUALIFIED_SHARE)
+        )
         component_total = qualified + non_qualified
         normalized_total = component_total.where(component_total.ne(0.0), total)
     elif has_qualified:
@@ -686,8 +703,8 @@ def normalize_dividend_columns(frame: pd.DataFrame) -> pd.DataFrame:
         normalized_total = pd.Series(normalized_total, index=result.index, dtype=float)
     else:
         normalized_total = total.astype(float)
-        non_qualified = normalized_total.copy()
-        qualified = pd.Series(0.0, index=result.index, dtype=float)
+        qualified = normalized_total * UNSPLIT_DIVIDEND_QUALIFIED_SHARE
+        non_qualified = normalized_total * (1.0 - UNSPLIT_DIVIDEND_QUALIFIED_SHARE)
 
     result["qualified_dividend_income"] = qualified.astype(float)
     result["non_qualified_dividend_income"] = non_qualified.astype(float)

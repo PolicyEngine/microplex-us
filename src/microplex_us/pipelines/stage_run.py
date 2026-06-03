@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field, fields, is_dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Any, Literal
 
@@ -31,11 +32,16 @@ from microplex_us.pipelines.stage_manifest import (
     write_us_stage_manifest,
     write_us_validation_evidence_manifest,
 )
+from microplex_us.pipelines.stage_manifest_types import (
+    USStageFailureRecord,
+    USStageLifecycleStatus,
+    USStageRuntimeEventRecord,
+)
 from microplex_us.pipelines.stage_readiness import (
     write_us_conditional_readiness_report,
 )
 
-US_STAGE_OUTPUT_MANIFEST_SCHEMA_VERSION = 1
+US_STAGE_OUTPUT_MANIFEST_SCHEMA_VERSION = 2
 
 USArtifactCategory = Literal[
     "required_output",
@@ -188,6 +194,14 @@ class USStageOutputManifest:
     auxiliary_artifacts: Mapping[str, USAuxiliaryArtifact] = field(default_factory=dict)
     metadata: Mapping[str, Any] = field(default_factory=dict)
     complete: bool = True
+    lifecycle_status: USStageLifecycleStatus | None = None
+    started_at: str | None = None
+    updated_at: str | None = None
+    completed_at: str | None = None
+    failed_at: str | None = None
+    deferred_reason: str | None = None
+    failure: USStageFailureRecord | None = None
+    events: tuple[USStageRuntimeEventRecord, ...] = ()
     stage_id: str = field(default="", init=False)
 
     def required_output_keys(self) -> tuple[str, ...]:
@@ -247,6 +261,14 @@ class USStageOutputManifest:
                 "auxiliary_artifacts",
                 "metadata",
                 "complete",
+                "lifecycle_status",
+                "started_at",
+                "updated_at",
+                "completed_at",
+                "failed_at",
+                "deferred_reason",
+                "failure",
+                "events",
                 "stage_id",
             }
         }
@@ -255,6 +277,14 @@ class USStageOutputManifest:
             "contractVersion": self.contract_version,
             "stageId": self.stage_id,
             "complete": self.complete,
+            "lifecycleStatus": self.resolved_lifecycle_status(),
+            "startedAt": self.started_at,
+            "updatedAt": self.updated_at,
+            "completedAt": self.completed_at,
+            "failedAt": self.failed_at,
+            "deferredReason": self.deferred_reason,
+            "failure": self.failure,
+            "events": [_serialize_value(event, artifact_root) for event in self.events],
             "inputStageManifest": input_stage_manifest
             or _optional_str(self.input_stage_manifest),
             "inputOverrides": [
@@ -271,6 +301,13 @@ class USStageOutputManifest:
             "auxiliaryArtifacts": auxiliary,
             "metadata": dict(self.metadata),
         }
+
+    def resolved_lifecycle_status(self) -> USStageLifecycleStatus:
+        """Return explicit lifecycle state or the legacy completion default."""
+
+        if self.lifecycle_status is not None:
+            return self.lifecycle_status
+        return "complete" if self.complete else "pending"
 
 
 @dataclass(frozen=True)
@@ -315,7 +352,7 @@ class USDonorSynthesisOutputs(USStageOutputManifest):
 @dataclass(frozen=True)
 class USPolicyEngineEntityOutputs(USStageOutputManifest):
     stage_id: str = field(default="06_policyengine_entities", init=False)
-    policyengine_entity_tables: USArtifactRef | None = None
+    pre_calibration_policyengine_entity_tables: USArtifactRef | None = None
     materialized_policyengine_inputs: Mapping[str, Any] = field(default_factory=dict)
 
 
@@ -325,6 +362,7 @@ class USCalibrationOutputs(USStageOutputManifest):
     calibrated_data: USArtifactRef | None = None
     targets: USArtifactRef | None = None
     calibration_summary: USArtifactRef | None = None
+    policyengine_entity_tables: USArtifactRef | None = None
     target_ledger: Mapping[str, Any] = field(default_factory=dict)
 
 
@@ -908,18 +946,23 @@ def build_us_stage_output_manifests_from_artifact_manifest(
             ),
         ),
         USPolicyEngineEntityOutputs(
-            policyengine_entity_tables=_artifact_ref(
+            pre_calibration_policyengine_entity_tables=_artifact_ref(
                 root,
                 artifacts,
-                "policyengine_entity_tables",
+                "pre_calibration_policyengine_entity_tables",
                 "06_policyengine_entities",
             ),
             materialized_policyengine_inputs=_policyengine_entity_metadata_summary(
                 root,
                 artifacts,
+                artifact_key="pre_calibration_policyengine_entity_tables",
             ),
             diagnostics=_diagnostics("06_policyengine_entities", manifest),
-            complete=_artifact_exists(root, artifacts, "policyengine_entity_tables"),
+            complete=_artifact_exists(
+                root,
+                artifacts,
+                "pre_calibration_policyengine_entity_tables",
+            ),
         ),
         USCalibrationOutputs(
             calibrated_data=_artifact_ref(
@@ -933,11 +976,23 @@ def build_us_stage_output_manifests_from_artifact_manifest(
                 "07_calibration",
                 category="diagnostic",
             ),
+            policyengine_entity_tables=_artifact_ref(
+                root,
+                artifacts,
+                "policyengine_entity_tables",
+                "07_calibration",
+            ),
             target_ledger={"target_count": manifest.get("targets", {})},
             diagnostics=_diagnostics("07_calibration", manifest),
             complete=all(
                 _artifact_exists(root, artifacts, key)
-                for key in ("calibrated_data", "targets", "calibration_summary")
+                for key in (
+                    "pre_calibration_policyengine_entity_tables",
+                    "calibrated_data",
+                    "targets",
+                    "calibration_summary",
+                    "policyengine_entity_tables",
+                )
             ),
         ),
         USDatasetAssemblyOutputs(
@@ -1027,6 +1082,16 @@ def build_us_stage_output_manifests_from_artifact_manifest(
                 stage_summary=benchmark_summary,
             ),
             complete=bool(has_benchmark),
+            lifecycle_status=(
+                "complete" if has_benchmark else "deferred" if has_dataset else None
+            ),
+            deferred_reason=(
+                None
+                if has_benchmark
+                else "Stage 8 dataset exists, but validation or benchmark evidence is not attached."
+                if has_dataset
+                else None
+            ),
         ),
     )
 
@@ -1191,8 +1256,10 @@ def _path_for_manifest(path: Path, artifact_root: Path) -> str:
 def _policyengine_entity_metadata_summary(
     artifact_root: Path,
     artifacts: Mapping[str, Any],
+    *,
+    artifact_key: str = "policyengine_entity_tables",
 ) -> dict[str, Any]:
-    declared = artifacts.get("policyengine_entity_tables")
+    declared = artifacts.get(artifact_key)
     if declared is None:
         return {}
     path = Path(str(declared))
@@ -1286,7 +1353,9 @@ def _default_stage_diagnostic_summary(
             "backend": synthesis.get("backend"),
         }
     if stage_id == "06_policyengine_entities":
-        return {"entity_tables": artifacts.get("policyengine_entity_tables")}
+        return {
+            "entity_tables": artifacts.get("pre_calibration_policyengine_entity_tables")
+        }
     if stage_id == "07_calibration":
         return {
             "calibrated_rows": rows.get("calibrated"),
@@ -1382,6 +1451,8 @@ def _serialize_value(value: Any, artifact_root: str | Path | None) -> Any:
         return value.to_dict(artifact_root)
     if isinstance(value, Path):
         return str(value)
+    if isinstance(value, Enum):
+        return value.value
     if isinstance(value, Mapping):
         return {
             str(key): _serialize_value(item, artifact_root)
@@ -1464,7 +1535,10 @@ __all__ = [
     "USStageInputOverride",
     "USStageInputValidationSettings",
     "USStageInputValidator",
+    "USStageFailureRecord",
+    "USStageLifecycleStatus",
     "USStageOutputManifest",
+    "USStageRuntimeEventRecord",
     "USStageRunWriter",
     "USValidationBenchmarkingOutputs",
     "build_us_stage_output_manifests_from_artifact_manifest",

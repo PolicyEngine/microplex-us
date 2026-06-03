@@ -91,6 +91,7 @@ def test_default_policyengine_us_data_rebuild_config_uses_incumbent_defaults() -
     assert config.donor_imputer_condition_selection == "pe_prespecified"
     assert config.donor_imputer_excluded_variables == ()
     assert config.puf_support_clone_enabled is True
+    assert config.puf_support_clone_output_mode == "collapse_to_scaffold"
     assert config.policyengine_direct_override_variables == (
         "health_savings_account_ald",
         "non_sch_d_capital_gains",

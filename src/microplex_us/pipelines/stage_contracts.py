@@ -712,8 +712,8 @@ def default_us_pipeline_stage_contracts() -> tuple[USPipelineStageContract, ...]
             ),
             outputs=(
                 _artifact_resource(
-                    "policyengine_entity_tables",
-                    "Reloadable PolicyEngine entity-table checkpoint.",
+                    "pre_calibration_policyengine_entity_tables",
+                    "Reloadable pre-calibration PolicyEngine entity-table checkpoint.",
                     stage_id="06_policyengine_entities",
                 ),
                 _stage_output_resource(
@@ -724,8 +724,8 @@ def default_us_pipeline_stage_contracts() -> tuple[USPipelineStageContract, ...]
             ),
             artifacts=(
                 USStageArtifactContract(
-                    key="policyengine_entity_tables",
-                    description="Reloadable PE entity-table bundle saved as parquet files plus metadata.",
+                    key="pre_calibration_policyengine_entity_tables",
+                    description="Reloadable pre-calibration PE entity-table bundle saved as parquet files plus metadata.",
                     path_hint="stage_artifacts/06_policyengine_entities/metadata.json",
                     required=True,
                     resume_role="manual_resume",
@@ -761,8 +761,8 @@ def default_us_pipeline_stage_contracts() -> tuple[USPipelineStageContract, ...]
             produces=("calibrated tables", "calibration summary", "target ledger"),
             inputs=(
                 _artifact_resource(
-                    "policyengine_entity_tables",
-                    "PolicyEngine entity-table checkpoint from Stage 6.",
+                    "pre_calibration_policyengine_entity_tables",
+                    "Pre-calibration PolicyEngine entity-table checkpoint from Stage 6.",
                     stage_id="06_policyengine_entities",
                 ),
                 _external_resource(
@@ -830,11 +830,15 @@ def default_us_pipeline_stage_contracts() -> tuple[USPipelineStageContract, ...]
                     "Stage-local calibration summary.",
                     stage_id="07_calibration",
                 ),
+                _artifact_resource(
+                    "policyengine_entity_tables",
+                    "Calibrated PolicyEngine entity-table bundle used for dataset export.",
+                    stage_id="07_calibration",
+                ),
                 _stage_output_resource(
                     "target_ledger",
-                    "Calibration target ledger summary.",
+                    "Structured target-resolution and calibration target ledger.",
                     stage_id="07_calibration",
-                    required=False,
                 ),
             ),
             artifacts=(
@@ -864,6 +868,15 @@ def default_us_pipeline_stage_contracts() -> tuple[USPipelineStageContract, ...]
                     resume_role="diagnostic",
                     format="json",
                     hash_mode="file_sha256",
+                ),
+                USStageArtifactContract(
+                    key="policyengine_entity_tables",
+                    description="Calibrated PE entity-table bundle used for dataset export.",
+                    path_hint="stage_artifacts/07_calibration/policyengine_entity_tables/metadata.json",
+                    required=True,
+                    resume_role="post_artifact_evidence",
+                    format="policyengine_entity_bundle",
+                    hash_mode="directory_sha256",
                 ),
             ),
             diagnostics=(
@@ -906,8 +919,8 @@ def default_us_pipeline_stage_contracts() -> tuple[USPipelineStageContract, ...]
                 ),
                 _artifact_resource(
                     "policyengine_entity_tables",
-                    "PolicyEngine entity-table checkpoint from Stage 6.",
-                    stage_id="06_policyengine_entities",
+                    "Calibrated PolicyEngine entity-table checkpoint from Stage 7.",
+                    stage_id="07_calibration",
                 ),
                 _config_resource(
                     "policyengine_dataset_year",

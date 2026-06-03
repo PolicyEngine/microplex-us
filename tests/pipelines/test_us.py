@@ -1354,6 +1354,7 @@ class TestUSMicroplexPipeline:
     ):
         scalar_calls: list[tuple[str, int]] = []
         medicaid_calls: list[int] = []
+        pregnancy_calls: list[int] = []
         eitc_calls: list[int] = []
         voluntary_calls: list[int] = []
 
@@ -1371,6 +1372,10 @@ class TestUSMicroplexPipeline:
         def fake_load_medicaid_rates(year: int) -> dict[str, float]:
             medicaid_calls.append(year)
             return {"CA": 0.0, "TX": 1.0}
+
+        def fake_load_pregnancy_rates(year: int) -> dict[str, float]:
+            pregnancy_calls.append(year)
+            return {"CA": 1.0, "TX": 0.0}
 
         def fake_load_eitc_rates(year: int) -> dict[int, float]:
             eitc_calls.append(year)
@@ -1397,6 +1402,11 @@ class TestUSMicroplexPipeline:
             us_pipeline_module,
             "_load_microplex_medicaid_takeup_rates",
             fake_load_medicaid_rates,
+        )
+        monkeypatch.setattr(
+            us_pipeline_module,
+            "_load_microplex_pregnancy_rates",
+            fake_load_pregnancy_rates,
         )
         monkeypatch.setattr(
             us_pipeline_module,
@@ -1443,6 +1453,7 @@ class TestUSMicroplexPipeline:
             True,
             True,
         ]
+        assert persons["is_pregnant"].tolist() == [True, False, False]
 
         tax_units = tables.tax_units.sort_values("household_id").reset_index(drop=True)
         assert tax_units["takes_up_aca_if_eligible"].tolist() == [True, True]
@@ -1462,8 +1473,69 @@ class TestUSMicroplexPipeline:
             ("tanf", 2024),
         ]
         assert medicaid_calls == [2024]
+        assert pregnancy_calls == [2024]
         assert eitc_calls == [2024]
         assert voluntary_calls == [2024]
+
+    def test_attach_policyengine_pregnancy_inputs_assigns_eligible_females(
+        self,
+        monkeypatch,
+    ):
+        class FakeRng:
+            def random(self, size: int) -> np.ndarray:
+                return np.zeros(size)
+
+        monkeypatch.setattr(
+            us_pipeline_module,
+            "_load_microplex_pregnancy_rates",
+            lambda year: {"CA": 0.10, "NY": 0.0},
+        )
+        monkeypatch.setattr(
+            us_pipeline_module,
+            "_microplex_seeded_rng",
+            lambda variable_name, *, salt=None: FakeRng(),
+        )
+        pipeline = USMicroplexPipeline(
+            USMicroplexBuildConfig(policyengine_dataset_year=2024)
+        )
+        persons = pd.DataFrame(
+            {
+                "age": [20, 44, 45, 30, 20],
+                "sex": [2, 2, 2, 1, 2],
+                "state_fips": [6, 36, 6, 6, 99],
+            }
+        )
+
+        result = pipeline._attach_policyengine_pregnancy_inputs(persons)
+
+        assert result["is_pregnant"].tolist() == [
+            True,
+            False,
+            False,
+            False,
+            True,
+        ]
+
+    def test_attach_policyengine_pregnancy_inputs_preserves_explicit_column(
+        self,
+        monkeypatch,
+    ):
+        def fail_rates(year: int) -> dict[str, float]:
+            raise AssertionError(f"unexpected pregnancy rate load: {year}")
+
+        monkeypatch.setattr(
+            us_pipeline_module,
+            "_load_microplex_pregnancy_rates",
+            fail_rates,
+        )
+        pipeline = USMicroplexPipeline(
+            USMicroplexBuildConfig(policyengine_dataset_year=2024)
+        )
+        persons = pd.DataFrame({"is_pregnant": [1, 0, True, False]})
+
+        result = pipeline._attach_policyengine_pregnancy_inputs(persons)
+
+        assert result["is_pregnant"].tolist() == [True, False, True, False]
 
     def test_build_policyengine_entity_tables_adds_wic_takeup_inputs(
         self,
@@ -1503,6 +1575,16 @@ class TestUSMicroplexPipeline:
             us_pipeline_module,
             "_load_microplex_wic_nutritional_risk_rates",
             fake_wic_risk_rates,
+        )
+        monkeypatch.setattr(
+            us_pipeline_module,
+            "_load_microplex_pregnancy_rates",
+            lambda year: {},
+        )
+        monkeypatch.setattr(
+            us_pipeline_module,
+            "_microplex_seeded_rng",
+            lambda variable_name, *, salt=None: np.random.default_rng(0),
         )
         pipeline = USMicroplexPipeline(
             USMicroplexBuildConfig(policyengine_dataset_year=2024)
@@ -1547,6 +1629,9 @@ class TestUSMicroplexPipeline:
         def fail_medicaid_rates(year: int) -> dict[str, float]:
             raise AssertionError(f"unexpected Medicaid rate load: {year}")
 
+        def fail_pregnancy_rates(year: int) -> dict[str, float]:
+            raise AssertionError(f"unexpected pregnancy rate load: {year}")
+
         def fail_eitc_rates(year: int) -> dict[int, float]:
             raise AssertionError(f"unexpected EITC rate load: {year}")
 
@@ -1568,6 +1653,11 @@ class TestUSMicroplexPipeline:
             us_pipeline_module,
             "_load_microplex_medicaid_takeup_rates",
             fail_medicaid_rates,
+        )
+        monkeypatch.setattr(
+            us_pipeline_module,
+            "_load_microplex_pregnancy_rates",
+            fail_pregnancy_rates,
         )
         monkeypatch.setattr(
             us_pipeline_module,
@@ -1604,6 +1694,7 @@ class TestUSMicroplexPipeline:
                 "relationship_to_head": [0, 2],
                 "state_fips": [6, 6],
                 "takes_up_medicaid_if_eligible": [False, True],
+                "is_pregnant": [False, True],
                 "takes_up_head_start_if_eligible": [False, True],
                 "takes_up_early_head_start_if_eligible": [True, False],
                 "takes_up_aca_if_eligible": [False, True],
@@ -1621,6 +1712,7 @@ class TestUSMicroplexPipeline:
 
         persons = tables.persons.sort_values("person_id").reset_index(drop=True)
         assert persons["takes_up_medicaid_if_eligible"].tolist() == [False, True]
+        assert persons["is_pregnant"].tolist() == [False, True]
         assert persons["takes_up_head_start_if_eligible"].tolist() == [False, True]
         assert persons["takes_up_early_head_start_if_eligible"].tolist() == [
             True,
@@ -3995,6 +4087,262 @@ class TestUSMicroplexPipeline:
         assert generated_lengths[-1] == (("ssi_reported",), 4)
         assert "ssi_reported" in result.columns
 
+    def test_finalize_puf_support_clone_can_collapse_donor_only_values_to_cps_rows(
+        self,
+    ):
+        pipeline = USMicroplexPipeline(
+            USMicroplexBuildConfig(
+                synthesis_backend="seed",
+                puf_support_clone_enabled=True,
+                puf_support_clone_output_mode="collapse_to_scaffold",
+                puf_support_clone_both_halves_override_variables=(),
+            )
+        )
+        original = pd.DataFrame(
+            {
+                "person_id": [10, 20],
+                "household_id": [1, 2],
+                "age": [45, 62],
+                "self_employment_income": [75.0, 50.0],
+            }
+        )
+        clone = pd.DataFrame(
+            {
+                "person_id": [30, 40],
+                "household_id": [3, 4],
+                "age": [45, 62],
+                "self_employment_income": [-250.0, 500.0],
+                "taxable_interest_income": [10.0, 20.0],
+                "partnership_s_corp_income": [-700.0, 1_200.0],
+                "state_income_tax_paid": [400.0, 50.0],
+                "tax_unit_id": [101, 102],
+            }
+        )
+
+        result, summary = pipeline._finalize_puf_support_clone_frame(
+            original=original,
+            imputed_clone=clone,
+            donor_source_name="irs_soi_puf_2024",
+            integrated_variables=[
+                "self_employment_income",
+                "taxable_interest_income",
+                "partnership_s_corp_income",
+                "state_income_tax_paid",
+                "tax_unit_id",
+            ],
+            preclone_columns=set(original.columns),
+            donor_seed_columns=set(clone.columns),
+            donor_observed=set(clone.columns),
+        )
+
+        assert result.index.tolist() == [0, 1]
+        assert result["person_is_puf_clone"].tolist() == [0.0, 0.0]
+        assert result["person_id"].tolist() == [10, 20]
+        assert result["household_id"].tolist() == [1, 2]
+        assert result["self_employment_income"].tolist() == [75.0, 50.0]
+        assert result["taxable_interest_income"].tolist() == [10.0, 20.0]
+        assert result["partnership_s_corp_income"].tolist() == [-700.0, 1_200.0]
+        assert result["state_income_tax_paid"].tolist() == [400.0, 50.0]
+        assert "tax_unit_id" not in result.columns
+        assert summary["output_mode"] == "collapse_to_scaffold"
+        assert summary["clone_row_count"] == 2
+        assert summary["emitted_clone_row_count"] == 0
+        assert summary["final_row_count"] == 2
+        assert summary["dropped_generated_entity_id_columns"] == ["tax_unit_id"]
+        assert "self_employment_income" not in summary["collapse_copy_variables"]
+        assert summary["collapse_copy_variables"] == [
+            "partnership_s_corp_income",
+            "state_income_tax_paid",
+            "taxable_interest_income",
+        ]
+
+    def test_integrate_donor_sources_collapses_puf_support_clone_before_later_donors(
+        self, monkeypatch
+    ):
+        generated_lengths: list[tuple[tuple[str, ...], int]] = []
+
+        class FakeSynthesizer:
+            def __init__(self, *, target_vars, condition_vars, **kwargs):
+                _ = condition_vars, kwargs
+                self.target_vars = tuple(target_vars)
+
+            def fit(self, *args, **kwargs):
+                _ = args, kwargs
+
+            def generate(self, frame, seed=None):
+                _ = seed
+                generated_lengths.append((self.target_vars, len(frame)))
+                result = frame.copy()
+                for target in self.target_vars:
+                    result[target] = np.linspace(1.0, float(len(result)), len(result))
+                return result
+
+        monkeypatch.setattr("microplex_us.pipelines.us.Synthesizer", FakeSynthesizer)
+
+        def frame_for(name, households, persons, capabilities):
+            return ObservationFrame(
+                source=SourceDescriptor(
+                    name=name,
+                    shareability=Shareability.PUBLIC
+                    if name.startswith("cps")
+                    else Shareability.RESTRICTED,
+                    time_structure=TimeStructure.REPEATED_CROSS_SECTION,
+                    observations=(
+                        EntityObservation(
+                            entity=EntityType.HOUSEHOLD,
+                            key_column="household_id",
+                            variable_names=("state_fips", "tenure"),
+                            weight_column="hh_weight",
+                        ),
+                        EntityObservation(
+                            entity=EntityType.PERSON,
+                            key_column="person_id",
+                            variable_names=tuple(
+                                column
+                                for column in persons.columns
+                                if column != "person_id"
+                            ),
+                        ),
+                    ),
+                    variable_capabilities={
+                        variable: SourceVariableCapability(
+                            authoritative=True,
+                            usable_as_condition=True,
+                        )
+                        for variable in capabilities
+                    },
+                ),
+                tables={
+                    EntityType.HOUSEHOLD: households,
+                    EntityType.PERSON: persons,
+                },
+                relationships=(
+                    EntityRelationship(
+                        parent_entity=EntityType.HOUSEHOLD,
+                        child_entity=EntityType.PERSON,
+                        parent_key="household_id",
+                        child_key="household_id",
+                        cardinality=RelationshipCardinality.ONE_TO_MANY,
+                    ),
+                ),
+            )
+
+        cps_households = pd.DataFrame(
+            {
+                "household_id": [1, 2],
+                "hh_weight": [100.0, 200.0],
+                "state_fips": [6, 36],
+                "tenure": [1, 2],
+            }
+        )
+        cps_persons = pd.DataFrame(
+            {
+                "person_id": [10, 20],
+                "household_id": [1, 2],
+                "age": [45, 62],
+                "sex": [1, 2],
+                "education": [3, 4],
+                "employment_status": [1, 0],
+                "income": [60_000.0, 12_000.0],
+                "self_employment_income": [75.0, 50.0],
+                "taxpayer_id_type": [1, 2],
+            }
+        )
+        puf_households = pd.DataFrame(
+            {
+                "household_id": [101, 102],
+                "hh_weight": [80.0, 90.0],
+                "state_fips": [6, 36],
+                "tenure": [1, 2],
+            }
+        )
+        puf_persons = pd.DataFrame(
+            {
+                "person_id": [1001, 1002],
+                "household_id": [101, 102],
+                "age": [44, 61],
+                "sex": [1, 2],
+                "education": [3, 4],
+                "employment_status": [1, 0],
+                "income": [58_000.0, 13_000.0],
+                "self_employment_income": [-250.0, 500.0],
+                "taxable_interest_income": [10.0, 20.0],
+                "state_income_tax_paid": [400.0, 50.0],
+            }
+        )
+        sipp_households = pd.DataFrame(
+            {
+                "household_id": [201, 202],
+                "hh_weight": [70.0, 75.0],
+                "state_fips": [6, 36],
+                "tenure": [1, 2],
+            }
+        )
+        sipp_persons = pd.DataFrame(
+            {
+                "person_id": [2001, 2002],
+                "household_id": [201, 202],
+                "age": [45, 62],
+                "sex": [1, 2],
+                "education": [3, 4],
+                "employment_status": [1, 0],
+                "income": [59_000.0, 14_000.0],
+                "ssi_reported": [0.0, 100.0],
+            }
+        )
+
+        pipeline = USMicroplexPipeline(
+            USMicroplexBuildConfig(
+                n_synthetic=4,
+                synthesis_backend="seed",
+                puf_support_clone_enabled=True,
+                puf_support_clone_output_mode="collapse_to_scaffold",
+                puf_support_clone_overlap_variables=("self_employment_income",),
+                puf_support_clone_both_halves_override_variables=(),
+            )
+        )
+        cps_input = pipeline.prepare_source_input(
+            frame_for(
+                "cps_asec_test", cps_households, cps_persons, ("taxpayer_id_type",)
+            )
+        )
+        puf_input = pipeline.prepare_source_input(
+            frame_for(
+                "irs_soi_puf_2024",
+                puf_households,
+                puf_persons,
+                (
+                    "self_employment_income",
+                    "taxable_interest_income",
+                    "state_income_tax_paid",
+                ),
+            )
+        )
+        sipp_input = pipeline.prepare_source_input(
+            frame_for("sipp_2023", sipp_households, sipp_persons, ("ssi_reported",))
+        )
+        seed_data = pipeline.prepare_seed_data_from_source(cps_input)
+
+        integration = pipeline._integrate_donor_sources(
+            seed_data,
+            scaffold_input=cps_input,
+            donor_inputs=[sipp_input, puf_input],
+        )
+        result = integration["seed_data"]
+
+        assert result.index.tolist() == [0, 1]
+        assert result["person_is_puf_clone"].tolist() == [0.0, 0.0]
+        assert result["hh_weight"].tolist() == [100.0, 200.0]
+        assert result["self_employment_income"].tolist() == [75.0, 50.0]
+        assert result["taxable_interest_income"].tolist() == [10.0, 20.0]
+        assert sorted(result["state_income_tax_paid"].tolist()) == [50.0, 400.0]
+        assert integration["puf_support_clone_summary"]["output_mode"] == (
+            "collapse_to_scaffold"
+        )
+        assert integration["puf_support_clone_summary"]["final_row_count"] == 2
+        assert integration["puf_support_clone_summary"]["emitted_clone_row_count"] == 0
+        assert generated_lengths[-1] == (("ssi_reported",), 2)
+
     def test_puf_support_clone_refresh_rematches_cps_only_disability_to_puf_income(
         self,
     ):
@@ -4790,6 +5138,27 @@ class TestUSMicroplexPipeline:
 
         assert augmented["non_sch_d_capital_gains"].tolist() == [250.0]
 
+    def test_augment_policyengine_person_inputs_aliases_rent_to_pre_subsidy_rent(
+        self,
+    ):
+        pipeline = USMicroplexPipeline(USMicroplexBuildConfig())
+        persons = pd.DataFrame(
+            {
+                "rent": [14_400.0, 0.0, 9_600.0],
+                "pre_subsidy_rent": [0.0, 7_200.0, None],
+                "age": [45, 70, 12],
+                "sex": [1, 2, 1],
+            }
+        )
+
+        augmented = pipeline._augment_policyengine_person_inputs(persons)
+
+        assert augmented["pre_subsidy_rent"].tolist() == [
+            14_400.0,
+            7_200.0,
+            9_600.0,
+        ]
+
     def test_augment_policyengine_person_inputs_zeros_part_b_without_medicare(
         self,
     ):
@@ -4975,6 +5344,66 @@ class TestUSMicroplexPipeline:
         assert augmented["self_employed_health_insurance_ald"].tolist() == [15.0]
         assert augmented["self_employed_pension_contribution_ald"].tolist() == [10.0]
 
+    def test_augment_policyengine_person_inputs_materializes_export_support_aliases(
+        self,
+    ):
+        pipeline = USMicroplexPipeline(USMicroplexBuildConfig())
+        persons = pd.DataFrame(
+            {
+                "age": [45, 50],
+                "sex": [1, 2],
+                "w2_wages_from_qualified_business": [1_000.0, 0.0],
+                "unadjusted_basis_qualified_property": [10_000.0, 0.0],
+                "business_is_sstb": [1, 0],
+                "sstb_self_employment_income": [300.0, 0.0],
+                "sstb_w2_wages_from_qualified_business": [200.0, 0.0],
+                "sstb_unadjusted_basis_qualified_property": [2_000.0, 0.0],
+                "self_employment_income_would_be_qualified": [1, 0],
+                "sstb_self_employment_income_would_be_qualified": [1, 0],
+                "qualified_reit_and_ptp_income": [75.0, 0.0],
+                "qualified_bdc_income": [25.0, 0.0],
+                "deductible_mortgage_interest": [900.0, 0.0],
+                "investment_income_elected_form_4952": [40.0, 0.0],
+                "health_insurance_premiums_without_medicare_part_b": [120.0, 0.0],
+                "hours_worked": [37.5, 0.0],
+            }
+        )
+
+        augmented = pipeline._augment_policyengine_person_inputs(persons)
+
+        assert augmented["w2_wages_from_qualified_business"].tolist() == [1_000.0, 0.0]
+        assert augmented["unadjusted_basis_qualified_property"].tolist() == [
+            10_000.0,
+            0.0,
+        ]
+        assert augmented["business_is_sstb"].tolist() == [True, False]
+        assert augmented["sstb_self_employment_income_before_lsr"].tolist() == [
+            300.0,
+            0.0,
+        ]
+        assert augmented["sstb_w2_wages_from_qualified_business"].tolist() == [
+            200.0,
+            0.0,
+        ]
+        assert augmented["sstb_unadjusted_basis_qualified_property"].tolist() == [
+            2_000.0,
+            0.0,
+        ]
+        assert augmented["self_employment_income_would_be_qualified"].tolist() == [
+            True,
+            False,
+        ]
+        assert augmented["sstb_self_employment_income_would_be_qualified"].tolist() == [
+            True,
+            False,
+        ]
+        assert augmented["qualified_reit_and_ptp_income"].tolist() == [75.0, 0.0]
+        assert augmented["qualified_bdc_income"].tolist() == [25.0, 0.0]
+        assert augmented["home_mortgage_interest"].tolist() == [900.0, 0.0]
+        assert augmented["investment_interest_expense"].tolist() == [40.0, 0.0]
+        assert augmented["other_health_insurance_premiums"].tolist() == [120.0, 0.0]
+        assert augmented["weekly_hours_worked_before_lsr"].tolist() == [37.5, 0.0]
+
     def test_augment_policyengine_person_inputs_coalesces_sparse_source_aliases_by_row(
         self,
     ):
@@ -5020,6 +5449,44 @@ class TestUSMicroplexPipeline:
             60.0,
             -10.0,
         ]
+
+    def test_attach_policyengine_tax_unit_source_inputs_derives_mortgage_structure(
+        self,
+    ):
+        pipeline = USMicroplexPipeline(
+            USMicroplexBuildConfig(policyengine_dataset_year=2024)
+        )
+        tax_units = pd.DataFrame(
+            {
+                "tax_unit_id": [1, 2],
+                "deductible_mortgage_interest": [600.0, 0.0],
+                "interest_deduction": [700.0, 0.0],
+                "scf_mortgage_debt": [8_000.0, 0.0],
+            }
+        )
+
+        augmented = pipeline._attach_policyengine_tax_unit_source_inputs(tax_units)
+
+        assert augmented["first_home_mortgage_interest"].tolist() == [600.0, 0.0]
+        assert augmented["interest_deduction"].tolist() == [700.0, 0.0]
+        assert augmented["first_home_mortgage_balance"].tolist() == [10_000.0, 0.0]
+        assert augmented["first_home_mortgage_origination_year"].tolist() == [2014, 0]
+
+    def test_build_policyengine_households_preserves_vehicle_exports(self):
+        pipeline = USMicroplexPipeline(USMicroplexBuildConfig())
+        persons = pd.DataFrame(
+            {
+                "household_id": [10, 10, 20],
+                "weight": [1.0, 1.0, 2.0],
+                "household_vehicles_owned": [2.0, 2.0, 1.0],
+                "household_vehicles_value": [12_000.0, 12_000.0, 6_000.0],
+            }
+        )
+
+        households = pipeline._build_policyengine_households(persons)
+
+        assert households["household_vehicles_owned"].tolist() == [2.0, 1.0]
+        assert households["household_vehicles_value"].tolist() == [12_000.0, 6_000.0]
 
     def test_augment_policyengine_person_inputs_derives_marital_status_flags_from_cps_codes(
         self,

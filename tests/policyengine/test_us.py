@@ -2644,6 +2644,55 @@ class TestPolicyEngineUSProjection:
             "is_hispanic": "is_hispanic",
         }.items() <= export_maps["person"].items()
 
+    def test_build_policyengine_us_export_variable_maps_aliases_rent_to_pre_subsidy_rent(
+        self,
+    ):
+        class FakeEntity:
+            def __init__(self, key):
+                self.key = key
+
+        class FakeVariable:
+            def __init__(self, entity, formulas=None):
+                self.entity = FakeEntity(entity)
+                self.formulas = formulas or {}
+
+        class FakeSystem:
+            variables = {
+                "pre_subsidy_rent": FakeVariable("person"),
+                "rent": FakeVariable("person", formulas={"2024": object()}),
+            }
+
+        tables = PolicyEngineUSEntityTableBundle(
+            households=pd.DataFrame(
+                {
+                    "household_id": [10, 20],
+                    "household_weight": [1.0, 1.0],
+                }
+            ),
+            persons=pd.DataFrame(
+                {
+                    "person_id": [1, 2],
+                    "household_id": [10, 20],
+                    "rent": [14_400.0, 0.0],
+                }
+            ),
+        )
+
+        export_maps = build_policyengine_us_export_variable_maps(
+            tables,
+            tax_benefit_system=FakeSystem(),
+        )
+        arrays = build_policyengine_us_time_period_arrays(
+            tables,
+            period=2024,
+            person_variable_map=export_maps["person"],
+        )
+
+        assert export_maps["person"]["rent"] == "pre_subsidy_rent"
+        assert "pre_subsidy_rent" not in export_maps["person"]
+        assert "rent" not in export_maps["person"].values()
+        assert arrays["pre_subsidy_rent"]["2024"].tolist() == [14_400.0, 0.0]
+
     def test_build_policyengine_us_export_variable_maps_includes_absent_export_defaults(
         self,
     ):
@@ -2748,6 +2797,7 @@ class TestPolicyEngineUSProjection:
                 "hours_worked_last_week": FakeVariable("person"),
                 "in_nyc": FakeVariable("household", formulas={"2024": object()}),
                 "meets_ssi_disability_criteria": FakeVariable("person"),
+                "weekly_hours_worked_before_lsr": FakeVariable("person"),
             }
 
         tables = PolicyEngineUSEntityTableBundle(
@@ -2800,6 +2850,10 @@ class TestPolicyEngineUSProjection:
         assert arrays["has_tin"]["2024"].tolist() == [False, True]
         assert arrays["has_itin"]["2024"].tolist() == [False, True]
         assert arrays["hours_worked_last_week"]["2024"].tolist() == [0.0, 50.0]
+        assert arrays["weekly_hours_worked_before_lsr"]["2024"].tolist() == [
+            0.0,
+            50.0,
+        ]
         assert arrays["meets_ssi_disability_criteria"]["2024"].tolist() == [
             True,
             False,
@@ -2815,6 +2869,7 @@ class TestPolicyEngineUSProjection:
             "hours_worked_last_week",
             "in_nyc",
             "meets_ssi_disability_criteria",
+            "weekly_hours_worked_before_lsr",
         }.issubset(columns)
 
     def test_projects_frame_and_writes_time_period_dataset(self, tmp_path):

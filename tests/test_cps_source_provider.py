@@ -47,7 +47,11 @@ def test_cps_parquet_source_provider_loads_observation_frame(tmp_path):
 
     assert isinstance(provider, SourceProvider)
     assert set(frame.tables) == {EntityType.HOUSEHOLD, EntityType.PERSON}
-    assert frame.tables[EntityType.PERSON]["person_id"].tolist() == ["1:1", "1:2", "2:1"]
+    assert frame.tables[EntityType.PERSON]["person_id"].tolist() == [
+        "1:1",
+        "1:2",
+        "2:1",
+    ]
     assert frame.tables[EntityType.HOUSEHOLD]["year"].tolist() == [2024, 2024]
     assert frame.source.archetype is SourceArchetype.HOUSEHOLD_INCOME
 
@@ -110,7 +114,11 @@ def test_cps_parquet_source_provider_derives_tax_unit_roles_from_tax_id(tmp_path
 
     provider = CPSASECParquetSourceProvider(data_dir=tmp_path, year=2024)
     frame = provider.load_frame(SourceQuery(period=2024))
-    result = frame.tables[EntityType.PERSON].sort_values("person_number").reset_index(drop=True)
+    result = (
+        frame.tables[EntityType.PERSON]
+        .sort_values("person_number")
+        .reset_index(drop=True)
+    )
 
     assert result["tax_unit_id"].tolist() == [100, 100, 100, 101]
     assert result["tax_unit_is_joint"].tolist() == [1.0, 1.0, 1.0, 0.0]
@@ -271,7 +279,9 @@ def test_cps_parquet_source_provider_sampling_respects_household_weights(tmp_pat
     assert frame.tables[EntityType.PERSON]["household_id"].tolist() == [3]
 
 
-def test_cps_parquet_source_provider_applies_generic_atomic_variable_semantics(tmp_path):
+def test_cps_parquet_source_provider_applies_generic_atomic_variable_semantics(
+    tmp_path,
+):
     households = pd.DataFrame(
         {
             "household_id": [1],
@@ -391,6 +401,7 @@ def test_load_cps_asec_caches_household_geography_on_persons(tmp_path):
     assert "social_security_survivors" in first.persons.columns
     assert "social_security_dependents" in first.persons.columns
     assert "receives_wic" in first.persons.columns
+    assert "spm_unit_pre_subsidy_childcare_expenses" in first.persons.columns
     assert "has_marketplace_health_coverage" in first.persons.columns
     assert "has_esi" in first.persons.columns
     assert "tax_unit_id" in first.persons.columns
@@ -409,7 +420,16 @@ def test_load_cps_asec_caches_household_geography_on_persons(tmp_path):
     assert cached_persons["social_security_survivors"].to_list() == [0.0, 0.0, 0.0]
     assert cached_persons["social_security_dependents"].to_list() == [0.0, 0.0, 0.0]
     assert cached_persons["receives_wic"].to_list() == [True, False, False]
-    assert cached_persons["has_marketplace_health_coverage"].to_list() == [True, False, False]
+    assert cached_persons["spm_unit_pre_subsidy_childcare_expenses"].to_list() == [
+        0.0,
+        0.0,
+        0.0,
+    ]
+    assert cached_persons["has_marketplace_health_coverage"].to_list() == [
+        True,
+        False,
+        False,
+    ]
     assert cached_persons["has_esi"].to_list() == [False, True, False]
     assert cached_persons["tax_unit_id"].to_list() == [100, 100, 200]
     assert cached_persons["spm_unit_id"].to_list() == [10, 10, 20]
@@ -458,7 +478,11 @@ def test_load_cps_asec_derives_policyengine_value_inputs(tmp_path):
         archive.writestr("pppub23.csv", person_rows.to_csv(index=False))
 
     dataset = load_cps_asec(year=2023, cache_dir=tmp_path, download=False)
-    persons = dataset.persons.to_pandas().sort_values("person_number").reset_index(drop=True)
+    persons = (
+        dataset.persons.to_pandas()
+        .sort_values(["household_id", "person_number"])
+        .reset_index(drop=True)
+    )
 
     assert persons["alimony_income"].tolist() == [1200, 0]
     assert persons["child_support_received"].tolist() == [300, 0]
@@ -476,10 +500,69 @@ def test_load_cps_asec_derives_policyengine_value_inputs(tmp_path):
     assert persons["takes_up_housing_assistance_if_eligible"].tolist() == [True, False]
     assert persons["spm_unit_energy_subsidy"].tolist() == [90, 0]
     assert persons["spm_unit_pre_subsidy_childcare_expenses"].tolist() == [1500, 0]
-    assert persons["health_insurance_premiums_without_medicare_part_b"].tolist() == [900, 0]
+    assert persons["health_insurance_premiums_without_medicare_part_b"].tolist() == [
+        900,
+        0,
+    ]
     assert persons["over_the_counter_health_expenses"].tolist() == [120, 0]
     assert persons["other_medical_expenses"].tolist() == [450, 0]
     assert persons["medicare_part_b_premiums"].tolist() == [600, 0]
+
+
+def test_load_cps_asec_attaches_previous_year_income_from_prior_asec(tmp_path):
+    current_person_rows = pd.DataFrame(
+        {
+            "PERIDNUM": ["A", "B", "C", "D"],
+            "PH_SEQ": [1, 1, 2, 2],
+            "A_LINENO": [1, 2, 1, 2],
+            "A_AGE": [34, 31, 45, 17],
+            "A_FNLWGT": [100, 100, 200, 200],
+            "WSAL_VAL": [60_000, 10_000, 20_000, 0],
+            "SEMP_VAL": [5_000, 0, 3_000, 0],
+            "I_ERNVAL": [0, 1, 0, 0],
+            "I_SEVAL": [0, 0, 0, 0],
+        }
+    )
+    previous_person_rows = pd.DataFrame(
+        {
+            "PERIDNUM": ["A", "B", "C"],
+            "WSAL_VAL": [50_000, 8_000, 25_000],
+            "SEMP_VAL": [6_000, 1_000, 2_500],
+            "I_ERNVAL": [0, 0, 0],
+            "I_SEVAL": [0, 0, 1],
+        }
+    )
+    with zipfile.ZipFile(tmp_path / "cps_asec_2023.zip", "w") as archive:
+        archive.writestr("pppub23.csv", current_person_rows.to_csv(index=False))
+    with zipfile.ZipFile(tmp_path / "cps_asec_2022.zip", "w") as archive:
+        archive.writestr("pppub22.csv", previous_person_rows.to_csv(index=False))
+
+    dataset = load_cps_asec(year=2023, cache_dir=tmp_path, download=False)
+    persons = (
+        dataset.persons.to_pandas()
+        .sort_values(["household_id", "person_number"])
+        .reset_index(drop=True)
+    )
+
+    assert persons["employment_income_last_year"].tolist() == [
+        50_000.0,
+        8_000.0,
+        -1.0,
+        -1.0,
+    ]
+    assert persons["self_employment_income_last_year"].tolist() == [
+        6_000.0,
+        1_000.0,
+        -1.0,
+        -1.0,
+    ]
+    assert persons["previous_year_income_available"].tolist() == [
+        True,
+        False,
+        False,
+        False,
+    ]
+
 
 def test_load_cps_asec_derives_survivor_and_dependent_social_security(tmp_path):
     person_rows = pd.DataFrame(
@@ -497,7 +580,9 @@ def test_load_cps_asec_derives_survivor_and_dependent_social_security(tmp_path):
         archive.writestr("pppub23.csv", person_rows.to_csv(index=False))
 
     dataset = load_cps_asec(year=2023, cache_dir=tmp_path, download=False)
-    persons = dataset.persons.to_pandas().sort_values("person_number").reset_index(drop=True)
+    persons = (
+        dataset.persons.to_pandas().sort_values("person_number").reset_index(drop=True)
+    )
 
     assert persons["social_security_survivors"].tolist() == [1000.0, 1100.0, 0.0, 0.0]
     assert persons["social_security_dependents"].tolist() == [0.0, 0.0, 1200.0, 1300.0]
@@ -535,6 +620,7 @@ def test_cps_source_provider_repeat_loads_are_deterministic_for_cached_processed
             "other_medical_expenses": [0.0] * 5,
             "over_the_counter_health_expenses": [0.0] * 5,
             "medicare_part_b_premiums": [0.0] * 5,
+            "spm_unit_pre_subsidy_childcare_expenses": [0.0] * 5,
             "year": [2023, 2023, 2023, 2023, 2023],
         }
     )
@@ -553,13 +639,21 @@ def test_cps_source_provider_repeat_loads_are_deterministic_for_cached_processed
     first_persons = first.tables[EntityType.PERSON]
     second_persons = second.tables[EntityType.PERSON]
 
-    assert first_households["household_id"].tolist() == second_households["household_id"].tolist()
+    assert (
+        first_households["household_id"].tolist()
+        == second_households["household_id"].tolist()
+    )
     assert first_persons["person_id"].tolist() == second_persons["person_id"].tolist()
-    assert first_households["household_weight"].tolist() == second_households["household_weight"].tolist()
+    assert (
+        first_households["household_weight"].tolist()
+        == second_households["household_weight"].tolist()
+    )
     assert first_persons["weight"].tolist() == second_persons["weight"].tolist()
 
 
-def test_load_cps_asec_rebuilds_stale_processed_cache_without_pe_presim_inputs(tmp_path):
+def test_load_cps_asec_rebuilds_stale_processed_cache_without_pe_presim_inputs(
+    tmp_path,
+):
     stale_processed = pl.DataFrame(
         {
             "household_id": [1, 1, 2],
@@ -623,16 +717,19 @@ def test_load_cps_asec_rebuilds_stale_processed_cache_without_pe_presim_inputs(t
     assert dataset.persons["cps_race"].to_list() == [4, 4, 1]
     assert dataset.persons["is_hispanic"].to_list() == [False, True, False]
     assert dataset.persons["is_disabled"].to_list() == [False, True, False]
-    assert dataset.persons["has_marketplace_health_coverage"].to_list() == [True, False, False]
+    assert dataset.persons["has_marketplace_health_coverage"].to_list() == [
+        True,
+        False,
+        False,
+    ]
     assert dataset.persons["has_esi"].to_list() == [False, True, False]
     assert dataset.persons["alimony_income"].to_list() == [1200, 0, 0]
     assert dataset.persons["child_support_received"].to_list() == [300, 0, 0]
     assert dataset.persons["child_support_expense"].to_list() == [700, 0, 0]
     assert dataset.persons["disability_benefits"].to_list() == [550, 0, 0]
-    assert (
-        dataset.persons["health_insurance_premiums_without_medicare_part_b"].to_list()
-        == [900, 0, 0]
-    )
+    assert dataset.persons[
+        "health_insurance_premiums_without_medicare_part_b"
+    ].to_list() == [900, 0, 0]
     assert dataset.persons["other_medical_expenses"].to_list() == [450, 0, 0]
     assert dataset.persons["over_the_counter_health_expenses"].to_list() == [120, 0, 0]
     assert dataset.persons["medicare_part_b_premiums"].to_list() == [600, 0, 0]
@@ -661,9 +758,7 @@ def test_cps_sampling_falls_back_to_uniform_when_weighted_sampling_is_infeasible
 
     def flaky_sample(self, *args, **kwargs):
         if kwargs.get("weights") is not None:
-            raise ValueError(
-                "Weighted sampling cannot be achieved with replace=False."
-            )
+            raise ValueError("Weighted sampling cannot be achieved with replace=False.")
         return original_sample(self, *args, **kwargs)
 
     monkeypatch.setattr(pd.DataFrame, "sample", flaky_sample)
@@ -710,10 +805,14 @@ def test_sample_households_and_persons_state_floor_preserves_state_coverage() ->
 
     assert len(sampled_households) == 3
     assert sampled_households["state_fips"].nunique() == 3
-    assert set(sampled_persons["household_id"]) == set(sampled_households["household_id"])
+    assert set(sampled_persons["household_id"]) == set(
+        sampled_households["household_id"]
+    )
 
 
-def test_sample_households_and_persons_state_age_floor_preserves_age_band_coverage() -> None:
+def test_sample_households_and_persons_state_age_floor_preserves_age_band_coverage() -> (
+    None
+):
     households = pd.DataFrame(
         {
             "household_id": [1, 2, 3, 4, 5, 6],
@@ -759,4 +858,6 @@ def test_sample_households_and_persons_state_age_floor_preserves_age_band_covera
 
     assert len(sampled_households) == 4
     assert observed_keys.issubset(sampled_keys)
-    assert set(sampled_persons["household_id"]) == set(sampled_households["household_id"])
+    assert set(sampled_persons["household_id"]) == set(
+        sampled_households["household_id"]
+    )

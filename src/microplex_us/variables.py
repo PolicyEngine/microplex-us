@@ -246,6 +246,18 @@ VARIABLE_SEMANTIC_SPECS: dict[str, VariableSemanticSpec] = {
     "state_fips": VariableSemanticSpec(native_entity=EntityType.HOUSEHOLD),
     "tenure": VariableSemanticSpec(native_entity=EntityType.HOUSEHOLD),
     "state": VariableSemanticSpec(native_entity=EntityType.HOUSEHOLD),
+    "household_vehicles_owned": VariableSemanticSpec(
+        native_entity=EntityType.HOUSEHOLD,
+        projection_aggregation=ProjectionAggregation.MAX,
+        support_family=VariableSupportFamily.SUPPORT_SENSITIVE,
+        notes="Household vehicle count from the SIPP asset donor.",
+    ),
+    "household_vehicles_value": VariableSemanticSpec(
+        native_entity=EntityType.HOUSEHOLD,
+        projection_aggregation=ProjectionAggregation.MAX,
+        support_family=VariableSupportFamily.SUPPORT_SENSITIVE,
+        notes="Household vehicle value from the SIPP asset donor.",
+    ),
     "dividend_income": VariableSemanticSpec(
         native_entity=EntityType.PERSON,
         condition_entities=(

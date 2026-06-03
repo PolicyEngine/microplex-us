@@ -76,6 +76,14 @@
    :undoc-members:
 ```
 
+## Stage runtime writer
+
+```{eval-rst}
+.. automodule:: microplex_us.pipelines.stage_runtime
+   :members:
+   :undoc-members:
+```
+
 ## Artifact helpers
 
 ```{eval-rst}

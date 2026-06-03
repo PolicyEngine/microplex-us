@@ -48,6 +48,8 @@ _DEFAULT_REQUIRED_GATES = (
     "candidate_artifact",
     "compatibility",
     "column_contract",
+    "export_support",
+    "export_lineage",
     "artifact_size",
     "runtime",
     "source_weight_diagnostics",
@@ -212,6 +214,15 @@ def build_mp300k_artifact_gate_report(
         baseline_dataset=baseline_dataset,
         period=period,
     )
+    export_support_gate = _export_support_gate(
+        candidate_dataset,
+        baseline_dataset=baseline_dataset,
+        period=period,
+    )
+    export_lineage_gate = _export_lineage_gate(
+        baseline_dataset=baseline_dataset,
+        period=period,
+    )
     artifact_size_gate = _artifact_size_gate(
         candidate_dataset,
         baseline_dataset=baseline_dataset,
@@ -253,6 +264,8 @@ def build_mp300k_artifact_gate_report(
         "candidate_artifact": candidate_gate,
         "compatibility": compatibility_gate,
         "column_contract": column_contract_gate,
+        "export_support": export_support_gate,
+        "export_lineage": export_lineage_gate,
         "artifact_size": artifact_size_gate,
         "runtime": runtime_gate,
         "source_weight_diagnostics": source_weight_diagnostics_gate,
@@ -512,6 +525,128 @@ def _column_contract_gate(
         "pass",
         "candidate H5 leaf-input column set matches the pinned eCPS contract",
         metrics=metrics,
+        details=details,
+    )
+
+
+def _export_support_gate(
+    candidate_dataset: Path,
+    *,
+    baseline_dataset: Path | None,
+    period: int,
+) -> dict[str, Any]:
+    if baseline_dataset is None:
+        return _gate(
+            "unmeasured",
+            "pinned eCPS baseline H5 has not been attached for export-support comparison",
+        )
+    if not candidate_dataset.exists() or not baseline_dataset.exists():
+        missing = [
+            str(path)
+            for path in (candidate_dataset, baseline_dataset)
+            if not path.exists()
+        ]
+        return _gate(
+            "fail",
+            "export-support comparison files are missing",
+            details={"missing": missing},
+        )
+
+    period_key = str(int(period))
+    baseline_columns = _h5_period_columns(baseline_dataset, period_key=period_key)
+    excluded_baseline_computed_columns = sorted(
+        _computed_policyengine_us_export_columns(baseline_columns)
+    )
+    required_columns = set(baseline_columns) - set(excluded_baseline_computed_columns)
+    from microplex_us.pipelines.check_export_columns import (
+        compute_support_diff,
+        support_diff_to_dict,
+    )
+
+    support_diff = compute_support_diff(
+        candidate_dataset,
+        baseline_h5=baseline_dataset,
+        period=period,
+        required_columns=required_columns,
+    )
+    metrics = {
+        "period": int(period),
+        "checked_export_column_count": len(support_diff.checked_columns),
+        "ecps_populated_export_column_count": len(
+            support_diff.baseline_populated_columns
+        ),
+        "ecps_filler_export_column_count": len(support_diff.baseline_filler_columns),
+        "unsupported_populated_export_column_count": len(support_diff.issues),
+        "excluded_baseline_computed_column_count": len(
+            excluded_baseline_computed_columns
+        ),
+    }
+    details = {
+        **support_diff_to_dict(support_diff),
+        "excluded_baseline_computed_columns": excluded_baseline_computed_columns,
+    }
+    if support_diff.issues:
+        return _gate(
+            "fail",
+            "candidate export columns lack support for eCPS-populated columns",
+            metrics=metrics,
+            details=details,
+        )
+    return _gate(
+        "pass",
+        "candidate export columns have support for every eCPS-populated export",
+        metrics=metrics,
+        details=details,
+    )
+
+
+def _export_lineage_gate(
+    *,
+    baseline_dataset: Path | None,
+    period: int,
+) -> dict[str, Any]:
+    if baseline_dataset is None:
+        return _gate(
+            "unmeasured",
+            "pinned eCPS baseline H5 has not been attached for export-lineage comparison",
+        )
+    if not baseline_dataset.exists():
+        return _gate(
+            "fail",
+            "export-lineage comparison file is missing",
+            details={"missing": [str(baseline_dataset)]},
+        )
+
+    from microplex_us.pipelines.export_lineage_manifest import (
+        build_export_lineage_manifest,
+    )
+
+    manifest = build_export_lineage_manifest(
+        support_baseline=baseline_dataset,
+        period=period,
+    )
+    summary = dict(manifest["summary"])
+    columns = list(manifest["columns"])
+    default_only_columns = [
+        column["column"]
+        for column in columns
+        if column["export_path_status"] == "default_only"
+    ]
+    details = {
+        "issues": manifest["issues"],
+        "default_only_columns": default_only_columns,
+    }
+    if manifest["issues"]:
+        return _gate(
+            "fail",
+            "required eCPS-populated exports lack source/code lineage",
+            metrics=summary,
+            details=details,
+        )
+    return _gate(
+        "pass",
+        "every eCPS-populated required export has source/code lineage",
+        metrics=summary,
         details=details,
     )
 

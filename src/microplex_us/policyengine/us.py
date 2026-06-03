@@ -161,8 +161,14 @@ _PIPELINE_CHECKPOINT_TABLES: tuple[str, ...] = (
     "marital_units",
 )
 
+USPipelineCheckpointStage = Literal[
+    "post_imputation",
+    "post_microsim",
+    "post_calibration",
+]
+
 _ALLOWED_CHECKPOINT_STAGES: frozenset[str] = frozenset(
-    {"post_imputation", "post_microsim"}
+    {"post_imputation", "post_microsim", "post_calibration"}
 )
 
 
@@ -170,7 +176,7 @@ def save_us_pipeline_checkpoint(
     bundle: PolicyEngineUSEntityTableBundle,
     path: str | Path,
     *,
-    stage: Literal["post_imputation", "post_microsim"],
+    stage: USPipelineCheckpointStage,
 ) -> Path:
     """Persist a pipeline-stage bundle to ``path`` as parquet + metadata.
 
@@ -183,6 +189,7 @@ def save_us_pipeline_checkpoint(
       microsim + calibration.
     * ``"post_microsim"`` — after microsim materialization, before the
       calibration fit loop. Resuming from here reruns only calibration.
+    * ``"post_calibration"`` — after calibration, ready for dataset export.
     """
     import json
     import shutil
@@ -216,7 +223,7 @@ def save_us_pipeline_checkpoint(
 def load_us_pipeline_checkpoint(
     path: str | Path,
     *,
-    expected_stage: Literal["post_imputation", "post_microsim"] | None = None,
+    expected_stage: USPipelineCheckpointStage | None = None,
 ) -> tuple[PolicyEngineUSEntityTableBundle, dict[str, Any]]:
     """Load a pipeline-stage bundle previously saved by ``save_us_pipeline_checkpoint``.
 
@@ -446,6 +453,11 @@ POLICYENGINE_US_EXPORT_COLUMN_ALIASES: dict[str, str] = {
     # the persisted leaf input when no explicit last-week field is present.
     "hours_worked": "hours_worked_last_week",
     "race": "cps_race",
+    # PE-US computes ``rent`` from the persisted source input
+    # ``pre_subsidy_rent``. Microplex's ACS donor block restores the
+    # user-facing ``rent`` column, so export it through the storable leaf input
+    # rather than dropping it as formula-owned.
+    "rent": "pre_subsidy_rent",
 }
 
 POLICYENGINE_US_STRUCTURAL_EXPORT_COLUMNS: frozenset[str] = frozenset(
@@ -3602,6 +3614,22 @@ def _with_policyengine_person_export_derivatives(
         and "hours_worked" in person_table.columns
     ):
         person_table["hours_worked_last_week"] = pd.to_numeric(
+            person_table["hours_worked"],
+            errors="coerce",
+        ).fillna(0.0)
+    if (
+        "weekly_hours_worked_before_lsr" not in person_table.columns
+        and "hours_worked_last_week" in person_table.columns
+    ):
+        person_table["weekly_hours_worked_before_lsr"] = pd.to_numeric(
+            person_table["hours_worked_last_week"],
+            errors="coerce",
+        ).fillna(0.0)
+    elif (
+        "weekly_hours_worked_before_lsr" not in person_table.columns
+        and "hours_worked" in person_table.columns
+    ):
+        person_table["weekly_hours_worked_before_lsr"] = pd.to_numeric(
             person_table["hours_worked"],
             errors="coerce",
         ).fillna(0.0)

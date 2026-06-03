@@ -38,6 +38,9 @@ def test_build_us_stage_manifest_reports_nine_stage_statuses(tmp_path):
     calibration_path = tmp_path / "stage_artifacts" / "07_calibration"
     calibration_path.mkdir(parents=True)
     (calibration_path / "calibration_summary.json").write_text("{}")
+    final_entity_path = calibration_path / "policyengine_entity_tables"
+    final_entity_path.mkdir(parents=True)
+    (final_entity_path / "metadata.json").write_text("{}")
     (tmp_path / "stage_manifest.json").write_text("{}")
     (tmp_path / "data_flow_snapshot.json").write_text("{}")
     (tmp_path / "stage_artifacts" / "artifact_inventory.json").write_text("{}")
@@ -62,11 +65,14 @@ def test_build_us_stage_manifest_reports_nine_stage_statuses(tmp_path):
             "calibrated_data": "calibrated_data.parquet",
             "targets": "targets.json",
             "source_plan": "stage_artifacts/03_source_planning/source_plan.json",
-            "policyengine_entity_tables": (
+            "pre_calibration_policyengine_entity_tables": (
                 "stage_artifacts/06_policyengine_entities/metadata.json"
             ),
             "calibration_summary": (
                 "stage_artifacts/07_calibration/calibration_summary.json"
+            ),
+            "policyengine_entity_tables": (
+                "stage_artifacts/07_calibration/policyengine_entity_tables/metadata.json"
             ),
             "policyengine_dataset": "policyengine_us.h5",
             "stage_manifest": "stage_manifest.json",
@@ -78,7 +84,7 @@ def test_build_us_stage_manifest_reports_nine_stage_statuses(tmp_path):
 
     payload = build_us_stage_manifest(tmp_path, manifest_payload=manifest)
 
-    assert payload["schemaVersion"] == 2
+    assert payload["schemaVersion"] == 3
     assert payload["generatedAt"] == "2026-05-28T00:00:00+00:00"
     assert [stage["id"] for stage in payload["stages"]] == [
         "01_run_profile",
@@ -111,7 +117,7 @@ def test_build_us_stage_manifest_reports_nine_stage_statuses(tmp_path):
     assert stage5_artifacts["synthetic_data"]["hash_mode"] == "file_sha256"
 
 
-def test_load_us_stage_manifest_accepts_v1_and_v2(tmp_path):
+def test_load_us_stage_manifest_accepts_v1_v2_and_v3(tmp_path):
     v1_path = tmp_path / "stage_manifest_v1.json"
     v1_path.write_text(
         json.dumps(
@@ -140,9 +146,24 @@ def test_load_us_stage_manifest_accepts_v1_and_v2(tmp_path):
             }
         )
     )
+    v3_path = tmp_path / "stage_manifest_v3.json"
+    v3_path.write_text(
+        json.dumps(
+            {
+                "schemaVersion": 3,
+                "contractVersion": "us-runtime-stages-v2",
+                "generatedAt": None,
+                "pipeline": "us_microplex",
+                "artifactRoot": ".",
+                "manifest": "manifest.json",
+                "stages": [],
+            }
+        )
+    )
 
     assert load_us_stage_manifest(v1_path)["schemaVersion"] == 1
     assert load_us_stage_manifest(v2_path)["schemaVersion"] == 2
+    assert load_us_stage_manifest(v3_path)["schemaVersion"] == 3
 
 
 def test_build_us_stage_manifest_keeps_empty_validation_index_deferred(tmp_path):
@@ -283,7 +304,9 @@ def test_write_us_stage_manifest_and_resolve_artifact_path(tmp_path):
     )
 
     assert dataset_path == tmp_path / "policyengine_us.h5"
-    assert stage_summary_for_data_flow_snapshot(loaded)[7]["id"] == "08_dataset_assembly"
+    assert (
+        stage_summary_for_data_flow_snapshot(loaded)[7]["id"] == "08_dataset_assembly"
+    )
 
 
 def test_policyengine_entity_stage_artifact_round_trips_partial_bundle(tmp_path):

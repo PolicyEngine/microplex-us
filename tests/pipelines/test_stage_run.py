@@ -8,17 +8,24 @@ import pytest
 from microplex_us.pipelines.stage_contracts import (
     US_CANONICAL_STAGE_IDS,
     get_us_pipeline_stage_contract,
+    get_us_stage_artifact_contract,
 )
 from microplex_us.pipelines.stage_run import (
     US_STAGE_OUTPUT_MANIFEST_TYPES,
     USArtifactRef,
     USAuxiliaryArtifact,
+    USCalibrationOutputs,
+    USDatasetAssemblyOutputs,
     USDiagnosticOutput,
+    USDonorSynthesisOutputs,
+    USPolicyEngineEntityOutputs,
     USRunProfileOutputs,
+    USSeedScaffoldOutputs,
     USSourceLoadingOutputs,
     USSourcePlanningOutputs,
     USStageInputOverride,
     USStageRunWriter,
+    USValidationBenchmarkingOutputs,
     build_us_stage_output_manifests_from_artifact_manifest,
     parse_us_stage_input_override,
     write_us_stage_run_manifests_from_artifact_manifest,
@@ -32,6 +39,14 @@ _BASE_STAGE_MANIFEST_FIELDS = {
     "auxiliary_artifacts",
     "metadata",
     "complete",
+    "lifecycle_status",
+    "started_at",
+    "updated_at",
+    "completed_at",
+    "failed_at",
+    "deferred_reason",
+    "failure",
+    "events",
     "stage_id",
 }
 
@@ -103,6 +118,58 @@ def test_stage_run_writer_records_typed_stage_manifests(tmp_path):
     assert stage5_manifest["inputStageManifest"] == (
         "stage_artifacts/manifests/04_seed_scaffold.json"
     )
+
+
+@pytest.mark.parametrize(
+    ("previous_stage_id", "stage_id"),
+    zip(US_CANONICAL_STAGE_IDS, US_CANONICAL_STAGE_IDS[1:]),
+)
+def test_adjacent_stage_serialized_outputs_satisfy_next_stage_inputs(
+    tmp_path,
+    previous_stage_id,
+    stage_id,
+):
+    _write_mock_stage_prefix(tmp_path, previous_stage_id)
+
+    current_output = _mock_stage_output(
+        stage_id,
+        input_stage_manifest=_stage_manifest_ref(previous_stage_id),
+    )
+    current_writer = USStageRunWriter(tmp_path)
+
+    current_writer.record_stage(current_output)
+
+    assert current_writer.recorded_stages == (current_output,)
+
+
+def test_adjacent_stage_serialized_output_schema_breaks_next_stage_input(tmp_path):
+    seams = [
+        (previous_stage_id, stage_id, resource.key)
+        for previous_stage_id, stage_id in zip(
+            US_CANONICAL_STAGE_IDS,
+            US_CANONICAL_STAGE_IDS[1:],
+        )
+        for resource in get_us_pipeline_stage_contract(stage_id).inputs
+        if resource.required and resource.stage_id == previous_stage_id
+    ]
+    assert seams
+
+    for previous_stage_id, stage_id, missing_key in seams:
+        seam_root = tmp_path / f"{previous_stage_id}-to-{stage_id}-{missing_key}"
+        _write_mock_stage_prefix(
+            seam_root,
+            previous_stage_id,
+            missing_stage_id=previous_stage_id,
+            missing_output_key=missing_key,
+        )
+
+        current_output = _mock_stage_output(
+            stage_id,
+            input_stage_manifest=_stage_manifest_ref(previous_stage_id),
+        )
+
+        with pytest.raises(ValueError, match=missing_key):
+            USStageRunWriter(seam_root).record_stage(current_output)
 
 
 def test_stage_run_writer_rejects_missing_diagnostics(tmp_path):
@@ -467,6 +534,200 @@ def test_stage_run_writer_preserves_existing_validation_evidence_summary(
     )
 
 
+def _write_mock_stage_prefix(
+    root,
+    through_stage_id,
+    *,
+    missing_stage_id=None,
+    missing_output_key=None,
+):
+    writer = USStageRunWriter(root)
+    for stage_id in US_CANONICAL_STAGE_IDS[
+        : US_CANONICAL_STAGE_IDS.index(through_stage_id) + 1
+    ]:
+        writer.record_stage(
+            _mock_stage_output(
+                stage_id,
+                missing_output_key=(
+                    missing_output_key if stage_id == missing_stage_id else None
+                ),
+                complete=stage_id != missing_stage_id,
+            )
+        )
+    writer.write_manifest_files()
+
+
+def _mock_stage_output(
+    stage_id,
+    *,
+    input_stage_manifest=None,
+    missing_output_key=None,
+    complete=True,
+):
+    diagnostics = {
+        "stage_summary": USDiagnosticOutput(
+            key="stage_summary",
+            summary={"stage_id": stage_id},
+        )
+    }
+    common = {
+        "input_stage_manifest": input_stage_manifest,
+        "diagnostics": diagnostics,
+        "complete": complete,
+    }
+    values = _mock_stage_output_values(stage_id)
+    if missing_output_key is not None:
+        values[missing_output_key] = _missing_output_value(values[missing_output_key])
+    return _mock_stage_output_type(stage_id)(**common, **values)
+
+
+def _mock_stage_output_type(stage_id):
+    return {
+        "01_run_profile": USRunProfileOutputs,
+        "02_source_loading": USSourceLoadingOutputs,
+        "03_source_planning": USSourcePlanningOutputs,
+        "04_seed_scaffold": USSeedScaffoldOutputs,
+        "05_donor_integration_synthesis": USDonorSynthesisOutputs,
+        "06_policyengine_entities": USPolicyEngineEntityOutputs,
+        "07_calibration": USCalibrationOutputs,
+        "08_dataset_assembly": USDatasetAssemblyOutputs,
+        "09_validation_benchmarking": USValidationBenchmarkingOutputs,
+    }[stage_id]
+
+
+def _mock_stage_output_values(stage_id):
+    if stage_id == "01_run_profile":
+        return {
+            "manifest": _mock_artifact_ref("01_run_profile", "manifest"),
+            "resolved_config": {"n_synthetic": 10},
+            "provider_query_plan": {"source_names": ["source"]},
+        }
+    if stage_id == "02_source_loading":
+        return {
+            "observation_frame_summary": {"source_count": 1},
+            "source_descriptors": ("source",),
+            "source_relationships": {"status": "valid"},
+        }
+    if stage_id == "03_source_planning":
+        return {
+            "source_plan": _mock_artifact_ref("03_source_planning", "source_plan"),
+            "scaffold_selection": {"scaffold_source": "source"},
+        }
+    if stage_id == "04_seed_scaffold":
+        return {
+            "scaffold_seed_data": _mock_artifact_ref(
+                "04_seed_scaffold",
+                "scaffold_seed_data",
+            ),
+            "seed_schema_metadata": {"required_columns": ["person_id"]},
+        }
+    if stage_id == "05_donor_integration_synthesis":
+        return {
+            "seed_data": _mock_artifact_ref(
+                "05_donor_integration_synthesis",
+                "seed_data",
+            ),
+            "synthetic_data": _mock_artifact_ref(
+                "05_donor_integration_synthesis",
+                "synthetic_data",
+            ),
+            "synthesis_metadata": {"backend": "mock"},
+            "source_weight_diagnostics": _mock_artifact_ref(
+                "05_donor_integration_synthesis",
+                "source_weight_diagnostics",
+                category="diagnostic",
+            ),
+        }
+    if stage_id == "06_policyengine_entities":
+        return {
+            "pre_calibration_policyengine_entity_tables": _mock_artifact_ref(
+                "06_policyengine_entities",
+                "pre_calibration_policyengine_entity_tables",
+            ),
+            "materialized_policyengine_inputs": {"tables": {"households": {"rows": 1}}},
+        }
+    if stage_id == "07_calibration":
+        return {
+            "calibrated_data": _mock_artifact_ref(
+                "07_calibration",
+                "calibrated_data",
+            ),
+            "targets": _mock_artifact_ref("07_calibration", "targets"),
+            "calibration_summary": _mock_artifact_ref(
+                "07_calibration",
+                "calibration_summary",
+                category="diagnostic",
+            ),
+            "policyengine_entity_tables": _mock_artifact_ref(
+                "07_calibration",
+                "policyengine_entity_tables",
+            ),
+            "target_ledger": {"target_count": 1},
+        }
+    if stage_id == "08_dataset_assembly":
+        return {
+            "policyengine_dataset": _mock_artifact_ref(
+                "08_dataset_assembly",
+                "policyengine_dataset",
+            ),
+            "stage_manifest": _mock_artifact_ref(
+                "08_dataset_assembly",
+                "stage_manifest",
+                category="derived",
+            ),
+            "data_flow_snapshot": _mock_artifact_ref(
+                "08_dataset_assembly",
+                "data_flow_snapshot",
+                category="derived",
+            ),
+            "artifact_inventory": _mock_artifact_ref(
+                "08_dataset_assembly",
+                "artifact_inventory",
+                category="derived",
+            ),
+            "conditional_readiness": _mock_artifact_ref(
+                "08_dataset_assembly",
+                "conditional_readiness",
+                category="derived",
+            ),
+        }
+    if stage_id == "09_validation_benchmarking":
+        return {
+            "validation_evidence": _mock_artifact_ref(
+                "09_validation_benchmarking",
+                "validation_evidence",
+            ),
+            "benchmark_summary": {"loss_delta": -0.1},
+            "policyengine_native_scores": _mock_artifact_ref(
+                "09_validation_benchmarking",
+                "policyengine_native_scores",
+                category="diagnostic",
+            ),
+        }
+    raise KeyError(stage_id)
+
+
+def _mock_artifact_ref(stage_id, artifact_key, *, category="required_output"):
+    contract = get_us_stage_artifact_contract(stage_id, artifact_key)
+    return USArtifactRef(
+        key=artifact_key,
+        path=contract.path_hint or f"stage_artifacts/{stage_id}/{artifact_key}",
+        format=contract.format,
+        required=contract.required,
+        category=category,
+        resume_role=contract.resume_role,
+        assume_exists=True,
+    )
+
+
+def _missing_output_value(value):
+    return None if isinstance(value, USArtifactRef) else type(value)()
+
+
+def _stage_manifest_ref(stage_id):
+    return f"stage_artifacts/manifests/{stage_id}.json"
+
+
 def _write_artifact_bundle_files(root):
     for relative in (
         "seed_data.parquet",
@@ -480,6 +741,7 @@ def _write_artifact_bundle_files(root):
         "stage_artifacts/04_seed_scaffold/scaffold_seed_data.parquet",
         "stage_artifacts/06_policyengine_entities/metadata.json",
         "stage_artifacts/07_calibration/calibration_summary.json",
+        "stage_artifacts/07_calibration/policyengine_entity_tables/metadata.json",
     ):
         path = root / relative
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -553,8 +815,11 @@ def _artifact_manifest():
             "scaffold_seed_data": (
                 "stage_artifacts/04_seed_scaffold/scaffold_seed_data.parquet"
             ),
-            "policyengine_entity_tables": (
+            "pre_calibration_policyengine_entity_tables": (
                 "stage_artifacts/06_policyengine_entities/metadata.json"
+            ),
+            "policyengine_entity_tables": (
+                "stage_artifacts/07_calibration/policyengine_entity_tables/metadata.json"
             ),
             "calibration_summary": (
                 "stage_artifacts/07_calibration/calibration_summary.json"

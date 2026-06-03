@@ -212,11 +212,14 @@ def test_save_versioned_us_microplex_artifacts_accepts_path_config_values(tmp_pa
     targets_db = tmp_path / "policy_data.db"
     baseline_dataset = tmp_path / "baseline.h5"
     _create_policyengine_targets_db(targets_db)
-    _write_baseline_dataset(baseline_dataset, _make_result(
-        targets_db=targets_db,
-        baseline_dataset=baseline_dataset,
-        snap_values=(100.0, 50.0),
-    ).policyengine_tables)
+    _write_baseline_dataset(
+        baseline_dataset,
+        _make_result(
+            targets_db=targets_db,
+            baseline_dataset=baseline_dataset,
+            snap_values=(100.0, 50.0),
+        ).policyengine_tables,
+    )
 
     result = _make_result(
         targets_db=targets_db,
@@ -233,7 +236,9 @@ def test_save_versioned_us_microplex_artifacts_accepts_path_config_values(tmp_pa
         policyengine_target_variables=("snap", "household_count"),
     )
 
-    artifact_paths = save_versioned_us_microplex_artifacts(result, tmp_path / "artifacts")
+    artifact_paths = save_versioned_us_microplex_artifacts(
+        result, tmp_path / "artifacts"
+    )
     manifest = json.loads(artifact_paths.manifest.read_text())
 
     assert manifest["config"]["policyengine_targets_db"] == str(targets_db)
@@ -369,7 +374,11 @@ def test_save_versioned_us_microplex_artifacts_uses_explicit_version(tmp_path):
         paths.output_dir / "stage_artifacts" / "03_source_planning" / "source_plan.json"
     )
     assert paths.policyengine_entity_tables == (
-        paths.output_dir / "stage_artifacts" / "06_policyengine_entities" / "metadata.json"
+        paths.output_dir
+        / "stage_artifacts"
+        / "07_calibration"
+        / "policyengine_entity_tables"
+        / "metadata.json"
     )
     assert paths.calibration_summary == (
         paths.output_dir
@@ -611,7 +620,9 @@ def test_build_and_save_versioned_us_microplex_from_source_provider(tmp_path):
             "income": [55_000.0, 0.0, 72_000.0, 40_000.0, 18_000.0, 65_000.0],
         }
     )
-    provider = _make_source_provider(name="test_cps", households=households, persons=persons)
+    provider = _make_source_provider(
+        name="test_cps", households=households, persons=persons
+    )
 
     saved = build_and_save_versioned_us_microplex_from_source_provider(
         provider,
@@ -721,6 +732,25 @@ def test_build_and_save_versioned_us_microplex_from_source_providers(tmp_path):
     assert saved.build_result.fusion_plan.source_names == ("test_cps", "test_puf")
     assert saved.current_entry is not None
     assert saved.frontier_delta == 0.0
+    manifest = json.loads(saved.artifact_paths.manifest.read_text())
+    stage_output_manifests = manifest["stage_output_manifests"]
+    assert tuple(stage_output_manifests) == (
+        "01_run_profile",
+        "02_source_loading",
+        "03_source_planning",
+        "04_seed_scaffold",
+        "05_donor_integration_synthesis",
+        "06_policyengine_entities",
+        "07_calibration",
+        "08_dataset_assembly",
+        "09_validation_benchmarking",
+    )
+    for stage_id, manifest_path in stage_output_manifests.items():
+        stage_manifest = json.loads(
+            (saved.artifact_paths.output_dir / manifest_path).read_text()
+        )
+        assert stage_manifest["lifecycleStatus"] in {"complete", "deferred"}
+        assert stage_manifest["events"]
 
 
 def test_build_and_save_versioned_us_microplex_from_data_dir(tmp_path):

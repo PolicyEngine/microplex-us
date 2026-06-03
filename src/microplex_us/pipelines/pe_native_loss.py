@@ -218,6 +218,13 @@ def infer_pe_native_target_unit(target_name: str) -> str:
         return "households"
     if any(part in {"amount", "total"} for part in parts):
         return "dollars"
+    if (
+        len(parts) >= 3
+        and parts[0] == "nation"
+        and parts[1] == "cbo"
+        and parts[2] == "income_by_source"
+    ):
+        return "dollars"
     if any(part in {"count", "returns", "filers"} for part in parts):
         return "returns"
     if "spending" in normalized or "cost" in normalized or "tax" in normalized:

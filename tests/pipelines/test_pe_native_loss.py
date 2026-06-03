@@ -7,6 +7,7 @@ import pytest
 
 from microplex_us.pipelines.pe_native_loss import (
     build_pe_native_loss_arrays,
+    infer_pe_native_target_unit,
     pe_native_huber_loss,
     pe_native_huber_loss_terms,
 )
@@ -30,6 +31,28 @@ def test_bucketed_loss_downweights_tiny_baseline_outlier() -> None:
     assert loss_arrays.target_weight[1] > loss_arrays.target_weight[0]
     assert terms[0] / terms.sum() < 0.05
     assert terms[1] > terms[0]
+
+
+def test_cbo_income_by_source_filers_targets_are_dollars() -> None:
+    assert (
+        infer_pe_native_target_unit(
+            "nation/cbo/income_by_source/self_employment_income/filers"
+        )
+        == "dollars"
+    )
+    assert (
+        infer_pe_native_target_unit(
+            "nation/cbo/income_by_source/taxable_interest_income+"
+            "non_qualified_dividend_income/filers"
+        )
+        == "dollars"
+    )
+    assert (
+        infer_pe_native_target_unit(
+            "nation/irs/adjusted gross income/count/AGI in 0-25k/taxable/All"
+        )
+        == "returns"
+    )
 
 
 def test_robust_pe_native_optimizer_uses_huber_objective() -> None:

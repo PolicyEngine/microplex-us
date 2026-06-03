@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import inspect
+import os
+import sys
 from collections.abc import Callable
 from os import PathLike
+from pathlib import Path
 from typing import Any, Self
 
 import numpy as np
@@ -14,6 +18,75 @@ from microplex.calibration import (
     _validate_calibration_inputs,
 )
 from scipy import sparse as sp
+
+_PE_US_DATA_REPO_ENV = "MICROPLEX_US_POLICYENGINE_US_DATA_REPO"
+
+
+def make_policyengine_us_data_fit_l0_weights_fn(
+    repo_root: str | PathLike[str] | None = None,
+) -> Callable[..., np.ndarray]:
+    """Return a lazy wrapper around PE-US-data's L0 weight optimizer.
+
+    Microplex passes adapter-specific diagnostics such as ``target_names`` and
+    ``initial_weights``. The incumbent PE-US-data function accepts a narrower
+    signature, so this wrapper keeps the public hook stable while delegating
+    only supported arguments.
+    """
+
+    def _fit_l0_weights(**kwargs: Any) -> np.ndarray:
+        fit_l0_weights = _load_policyengine_us_data_fit_l0_weights(repo_root)
+        accepted_parameters = set(inspect.signature(fit_l0_weights).parameters)
+        call_kwargs = {
+            key: value for key, value in kwargs.items() if key in accepted_parameters
+        }
+        return np.asarray(fit_l0_weights(**call_kwargs), dtype=float)
+
+    return _fit_l0_weights
+
+
+def _load_policyengine_us_data_fit_l0_weights(
+    repo_root: str | PathLike[str] | None = None,
+) -> Callable[..., np.ndarray]:
+    resolved_repo = _resolve_policyengine_us_data_repo_root(repo_root)
+    inserted_path: str | None = None
+    if resolved_repo is not None:
+        inserted_path = str(resolved_repo)
+        if inserted_path not in sys.path:
+            sys.path.insert(0, inserted_path)
+    try:
+        from policyengine_us_data.calibration.unified_calibration import (
+            fit_l0_weights,
+        )
+    except ImportError as exc:
+        location = (
+            f" at {resolved_repo}"
+            if resolved_repo is not None
+            else " from the active Python environment"
+        )
+        raise RuntimeError(
+            "The pe_l0 backend requires policyengine-us-data's "
+            f"fit_l0_weights{location}. Set "
+            f"{_PE_US_DATA_REPO_ENV} or install policyengine-us-data."
+        ) from exc
+    finally:
+        if inserted_path is not None and sys.path[0] == inserted_path:
+            sys.path.pop(0)
+    return fit_l0_weights
+
+
+def _resolve_policyengine_us_data_repo_root(
+    repo_root: str | PathLike[str] | None = None,
+) -> Path | None:
+    candidate = repo_root or os.environ.get(_PE_US_DATA_REPO_ENV)
+    if candidate is None:
+        return None
+    resolved = Path(candidate).expanduser().resolve()
+    if not (resolved / "policyengine_us_data").exists():
+        raise RuntimeError(
+            "policyengine-us-data repo root does not contain "
+            f"policyengine_us_data/: {resolved}"
+        )
+    return resolved
 
 
 class PolicyEngineL0Calibrator:

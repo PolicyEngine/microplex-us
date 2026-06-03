@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import sys
+import types
+
 import numpy as np
 import pandas as pd
 import pytest
 from microplex.calibration import LinearConstraint
 
-from microplex_us.pipelines.pe_l0 import PolicyEngineL0Calibrator
+from microplex_us.pipelines.pe_l0 import (
+    PolicyEngineL0Calibrator,
+    make_policyengine_us_data_fit_l0_weights_fn,
+)
 
 
 def _install_fake_policyengine_l0(weights: np.ndarray):
@@ -127,3 +133,70 @@ def test_policyengine_l0_requires_explicit_fit_function_for_nonzero_l0():
             weight_col="weight",
             linear_constraints=constraints,
         )
+
+
+def test_policyengine_l0_can_wrap_policyengine_us_data_fit_function(monkeypatch):
+    calls: dict[str, object] = {}
+
+    def fake_policyengine_fit_l0_weights(
+        *,
+        X_sparse,
+        targets,
+        lambda_l0,
+        epochs=100,
+        device="cpu",
+        verbose_freq=None,
+        target_groups=None,
+    ):
+        kwargs = {
+            "X_sparse": X_sparse,
+            "targets": targets,
+            "lambda_l0": lambda_l0,
+            "epochs": epochs,
+            "device": device,
+            "verbose_freq": verbose_freq,
+            "target_groups": target_groups,
+        }
+        calls.update(kwargs)
+        return np.array([4.0, 5.0])
+
+    package = types.ModuleType("policyengine_us_data")
+    package.__path__ = []
+    calibration_package = types.ModuleType("policyengine_us_data.calibration")
+    calibration_package.__path__ = []
+    unified = types.ModuleType("policyengine_us_data.calibration.unified_calibration")
+    unified.fit_l0_weights = fake_policyengine_fit_l0_weights
+    monkeypatch.setitem(sys.modules, "policyengine_us_data", package)
+    monkeypatch.setitem(
+        sys.modules,
+        "policyengine_us_data.calibration",
+        calibration_package,
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "policyengine_us_data.calibration.unified_calibration",
+        unified,
+    )
+
+    fit_l0_weights = make_policyengine_us_data_fit_l0_weights_fn()
+    result = fit_l0_weights(
+        X_sparse="matrix",
+        targets=np.array([1.0]),
+        lambda_l0=1e-8,
+        epochs=2,
+        device="cpu",
+        verbose_freq=1,
+        initial_weights=np.array([1.0, 1.0]),
+        target_names=["target"],
+    )
+
+    assert result.tolist() == [4.0, 5.0]
+    assert calls["X_sparse"] == "matrix"
+    np.testing.assert_array_equal(calls["targets"], np.array([1.0]))
+    assert calls["lambda_l0"] == pytest.approx(1e-8)
+    assert calls["epochs"] == 2
+    assert calls["device"] == "cpu"
+    assert calls["verbose_freq"] == 1
+    assert calls["target_groups"] is None
+    assert "initial_weights" not in calls
+    assert "target_names" not in calls

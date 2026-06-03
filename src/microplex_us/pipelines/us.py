@@ -69,7 +69,10 @@ from microplex_us.pipelines.donor_imputers import (
     ColumnwiseQRFDonorImputer,
     RegimeAwareDonorImputer,
 )
-from microplex_us.pipelines.pe_l0 import PolicyEngineL0Calibrator
+from microplex_us.pipelines.pe_l0 import (
+    PolicyEngineL0Calibrator,
+    make_policyengine_us_data_fit_l0_weights_fn,
+)
 from microplex_us.pipelines.pe_native_optimization import (
     optimize_policyengine_us_native_loss_dataset,
 )
@@ -3244,6 +3247,7 @@ class USMicroplexPipeline:
                 epochs=max(self.config.calibration_max_iter, 100),
                 device=self.config.device,
                 tol=self.config.calibration_tol,
+                fit_l0_weights_fn=make_policyengine_us_data_fit_l0_weights_fn(),
             )
         if self.config.calibration_backend == "microcalibrate":
             from microplex_us.calibration import (

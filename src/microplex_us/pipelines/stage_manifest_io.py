@@ -54,6 +54,7 @@ def load_us_stage_manifest(path: str | Path) -> USStageManifest:
 def write_json_atomically(path: Path, payload: Mapping[str, Any]) -> None:
     """Write JSON atomically through a sibling temporary file."""
 
+    path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
     temporary.write_text(json.dumps(payload, indent=2, sort_keys=True))
     temporary.replace(path)

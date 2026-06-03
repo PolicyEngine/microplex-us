@@ -61,7 +61,7 @@ def stage_status(
     if stage_id == "06_policyengine_entities":
         if artifact_missing(artifacts):
             return "incomplete"
-        if artifact_exists(artifacts, "policyengine_entity_tables"):
+        if artifact_exists(artifacts, "pre_calibration_policyengine_entity_tables"):
             return "ready"
         if manifest_artifact_exists(
             manifest,

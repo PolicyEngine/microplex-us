@@ -1314,7 +1314,7 @@ def _load_checkpoint_versioned_artifacts(
             artifact_root,
             artifacts,
             "policyengine_entity_tables",
-            stage_id="06_policyengine_entities",
+            stage_id="07_calibration",
         ),
         calibration_summary=_resolve_saved_stage_artifact_path(
             artifact_root,

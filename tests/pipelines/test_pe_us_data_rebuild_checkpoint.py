@@ -1231,6 +1231,10 @@ def test_load_checkpoint_versioned_artifacts_hydrates_stage_sidecar_paths(
         stage_artifacts / "04_seed_scaffold" / "scaffold_seed_data.parquet",
         stage_artifacts / "06_policyengine_entities" / "metadata.json",
         stage_artifacts / "07_calibration" / "calibration_summary.json",
+        stage_artifacts
+        / "07_calibration"
+        / "policyengine_entity_tables"
+        / "metadata.json",
         stage_artifacts / "09_validation_benchmarking" / "evidence_manifest.json",
         stage_artifacts / "artifact_inventory.json",
         stage_artifacts / "conditional_readiness.json",
@@ -1252,8 +1256,11 @@ def test_load_checkpoint_versioned_artifacts_hydrates_stage_sidecar_paths(
             "scaffold_seed_data": (
                 "stage_artifacts/04_seed_scaffold/scaffold_seed_data.parquet"
             ),
-            "policyengine_entity_tables": (
+            "pre_calibration_policyengine_entity_tables": (
                 "stage_artifacts/06_policyengine_entities/metadata.json"
+            ),
+            "policyengine_entity_tables": (
+                "stage_artifacts/07_calibration/policyengine_entity_tables/metadata.json"
             ),
             "calibration_summary": (
                 "stage_artifacts/07_calibration/calibration_summary.json"
@@ -1287,7 +1294,10 @@ def test_load_checkpoint_versioned_artifacts_hydrates_stage_sidecar_paths(
         stage_artifacts / "04_seed_scaffold" / "scaffold_seed_data.parquet"
     )
     assert paths.policyengine_entity_tables == (
-        stage_artifacts / "06_policyengine_entities" / "metadata.json"
+        stage_artifacts
+        / "07_calibration"
+        / "policyengine_entity_tables"
+        / "metadata.json"
     )
     assert paths.calibration_summary == (
         stage_artifacts / "07_calibration" / "calibration_summary.json"

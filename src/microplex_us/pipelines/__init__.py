@@ -295,9 +295,12 @@ _EXPORT_MODULES: dict[str, str] = {
         (
             "USDataFlowStageSummary",
             "USStageArtifactRecord",
+            "USStageFailureRecord",
+            "USStageLifecycleStatus",
             "USStageManifest",
             "USStageMetric",
             "USStageRecord",
+            "USStageRuntimeEventRecord",
             "USStageStatus",
             "USValidationEvidenceManifest",
             "USValidationEvidenceRecord",
@@ -338,6 +341,8 @@ _EXPORT_MODULES: dict[str, str] = {
             "USSourceLoadingOutputs",
             "USSourcePlanningOutputs",
             "USStageInputOverride",
+            "USStageInputValidationSettings",
+            "USStageInputValidator",
             "USStageOutputManifest",
             "USStageRunWriter",
             "USValidationBenchmarkingOutputs",
@@ -345,6 +350,20 @@ _EXPORT_MODULES: dict[str, str] = {
             "parse_us_stage_input_override",
             "resolve_us_manifest_or_contract_artifact_path",
             "write_us_stage_run_manifests_from_artifact_manifest",
+        ),
+    ),
+    **_exports(
+        "microplex_us.pipelines.stage_runtime",
+        (
+            "RuntimeUpdateSection",
+            "USStageRuntimeWriter",
+        ),
+    ),
+    **_exports(
+        "microplex_us.pipelines.stage9_replay",
+        (
+            "USStage9ReplayResult",
+            "replay_us_stage9_validation_benchmarking",
         ),
     ),
     **_exports(
@@ -356,21 +375,15 @@ _EXPORT_MODULES: dict[str, str] = {
     ),
     **_exports(
         "microplex_us.pipelines.summarize_pe_native_regressions",
-        (
-            "summarize_us_pe_native_regressions",
-        ),
+        ("summarize_us_pe_native_regressions",),
     ),
     **_exports(
         "microplex_us.pipelines.summarize_policyengine_oracle_regressions",
-        (
-            "summarize_us_policyengine_oracle_regressions",
-        ),
+        ("summarize_us_policyengine_oracle_regressions",),
     ),
     **_exports(
         "microplex_us.pipelines.summarize_policyengine_oracle_target_drilldown",
-        (
-            "summarize_us_policyengine_oracle_target_drilldown",
-        ),
+        ("summarize_us_policyengine_oracle_target_drilldown",),
     ),
     **_exports(
         "microplex_us.pipelines.source_stage_parity",

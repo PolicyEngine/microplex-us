@@ -50,7 +50,7 @@ def stage_metrics(stage_id: str, *, manifest: dict[str, Any]) -> list[USStageMet
         return [
             {
                 "label": "Entity bundle",
-                "value": artifacts.get("policyengine_entity_tables"),
+                "value": artifacts.get("pre_calibration_policyengine_entity_tables"),
             }
         ]
     if stage_id == "07_calibration":

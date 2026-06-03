@@ -101,6 +101,8 @@ def _sipp_assets_tables(**_kwargs) -> DonorSurveyTables:
             "bank_account_assets": [2_500.0, 10_000.0],
             "stock_assets": [0.0, 4_000.0],
             "bond_assets": [0.0, 1_500.0],
+            "household_vehicles_owned": [2.0, 1.0],
+            "household_vehicles_value": [12_000.0, 6_000.0],
             "weight": [80.0, 90.0],
             "year": [2023, 2023],
         }
@@ -694,6 +696,8 @@ def test_sipp_assets_provider_uses_manifest_backed_raw_loader(
             "TVAL_BANK": [1.0, 2.0, 3.0],
             "TVAL_STMF": [4.0, 5.0, 6.0],
             "TVAL_BOND": [7.0, 8.0, 9.0],
+            "TVEH_NUM": [0.0, 2.0, 1.0],
+            "THVAL_VEH": [0.0, 12_000.0, 6_000.0],
         }
     ).to_csv(path, index=False, sep="|")
 
@@ -712,3 +716,5 @@ def test_sipp_assets_provider_uses_manifest_backed_raw_loader(
     assert persons["is_female"].tolist() == [1.0, 1.0]
     assert persons["is_married"].tolist() == [1.0, 0.0]
     assert persons["count_under_18"].tolist() == [0.0, 0.0]
+    assert persons["household_vehicles_owned"].tolist() == [2.0, 1.0]
+    assert persons["household_vehicles_value"].tolist() == [12_000.0, 6_000.0]

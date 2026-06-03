@@ -167,7 +167,9 @@
           "TPTOTINC",
           "TVAL_BANK",
           "TVAL_STMF",
-          "TVAL_BOND"
+          "TVAL_BOND",
+          "TVEH_NUM",
+          "THVAL_VEH"
         ],
         "direct_columns": {
           "age": "TAGE",
@@ -176,7 +178,9 @@
           "weight": "WPFINWGT",
           "bank_account_assets": "TVAL_BANK",
           "stock_assets": "TVAL_STMF",
-          "bond_assets": "TVAL_BOND"
+          "bond_assets": "TVAL_BOND",
+          "household_vehicles_owned": "TVEH_NUM",
+          "household_vehicles_value": "THVAL_VEH"
         },
         "sum_columns_contains": {},
         "indicator_columns": {
@@ -214,12 +218,16 @@
         "count_under_18",
         "bank_account_assets",
         "stock_assets",
-        "bond_assets"
+        "bond_assets",
+        "household_vehicles_owned",
+        "household_vehicles_value"
       ],
       "target_variables": [
         "bank_account_assets",
         "stock_assets",
-        "bond_assets"
+        "bond_assets",
+        "household_vehicles_owned",
+        "household_vehicles_value"
       ],
       "predictors": [
         "employment_income",

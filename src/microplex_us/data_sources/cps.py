@@ -8,6 +8,7 @@ demographic information for ~100K households.
 Data source: https://www.census.gov/data/datasets/time-series/demo/cps/cps-asec.html
 """
 
+import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -38,7 +39,107 @@ from microplex_us.source_registry import resolve_source_variable_capabilities
 
 # Default cache directory
 DEFAULT_CACHE_DIR = Path.home() / ".cache" / "microplex"
-CPS_ASEC_PROCESSED_CACHE_VERSION = "20260602_childcare_input"
+CPS_ASEC_PROCESSED_CACHE_VERSION = "20260603_ecps_export_support_prior_year"
+
+CURRENT_HEALTH_COVERAGE_REPORTED_VAR_MAP = {
+    "reported_has_direct_purchase_health_coverage_at_interview": "NOW_DIR",
+    "reported_has_marketplace_health_coverage_at_interview": "NOW_MRK",
+    "reported_has_subsidized_marketplace_health_coverage_at_interview": "NOW_MRKS",
+    "reported_has_unsubsidized_marketplace_health_coverage_at_interview": "NOW_MRKUN",
+    "reported_has_non_marketplace_direct_purchase_health_coverage_at_interview": (
+        "NOW_NONM"
+    ),
+    "reported_has_employer_sponsored_health_coverage_at_interview": "NOW_GRP",
+    "reported_has_medicare_health_coverage_at_interview": "NOW_MCARE",
+    "reported_has_medicaid_health_coverage_at_interview": "NOW_CAID",
+    "reported_has_means_tested_health_coverage_at_interview": "NOW_MCAID",
+    "reported_has_chip_health_coverage_at_interview": "NOW_PCHIP",
+    "reported_has_other_means_tested_health_coverage_at_interview": "NOW_OTHMT",
+    "reported_has_tricare_health_coverage_at_interview": "NOW_MIL",
+    "reported_has_champva_health_coverage_at_interview": "NOW_CHAMPVA",
+    "reported_has_va_health_coverage_at_interview": "NOW_VACARE",
+    "reported_has_indian_health_service_coverage_at_interview": "NOW_IHSFLG",
+}
+
+CURRENT_HEALTH_COVERAGE_RULE_INPUT_ALIAS_MAP = {
+    "has_marketplace_health_coverage_at_interview": (
+        "reported_has_marketplace_health_coverage_at_interview"
+    ),
+    "has_non_marketplace_direct_purchase_health_coverage_at_interview": (
+        "reported_has_non_marketplace_direct_purchase_health_coverage_at_interview"
+    ),
+    "has_medicaid_health_coverage_at_interview": (
+        "reported_has_medicaid_health_coverage_at_interview"
+    ),
+    "has_other_means_tested_health_coverage_at_interview": (
+        "reported_has_other_means_tested_health_coverage_at_interview"
+    ),
+    "has_tricare_health_coverage_at_interview": (
+        "reported_has_tricare_health_coverage_at_interview"
+    ),
+    "has_champva_health_coverage_at_interview": (
+        "reported_has_champva_health_coverage_at_interview"
+    ),
+    "has_va_health_coverage_at_interview": (
+        "reported_has_va_health_coverage_at_interview"
+    ),
+    "has_indian_health_service_coverage_at_interview": (
+        "reported_has_indian_health_service_coverage_at_interview"
+    ),
+}
+
+CENSUS_OCCUPATION_CODE_TO_TTOC = {
+    725: 502,
+    2350: 507,
+    2633: 502,
+    2752: 206,
+    2755: 207,
+    2770: 208,
+    2910: 503,
+    3602: 501,
+    3630: 602,
+    4000: 105,
+    4010: 106,
+    4030: 106,
+    4040: 101,
+    4055: 107,
+    4110: 102,
+    4120: 103,
+    4130: 104,
+    4140: 108,
+    4150: 109,
+    4160: 106,
+    4230: 304,
+    4251: 402,
+    4350: 506,
+    4420: 210,
+    4500: 603,
+    4510: 603,
+    4521: 605,
+    4522: 601,
+    4600: 508,
+    4621: 607,
+    4655: 501,
+    5130: 203,
+    5300: 303,
+    6355: 403,
+    6442: 404,
+    7120: 401,
+    7200: 409,
+    7315: 405,
+    7320: 406,
+    7340: 401,
+    7540: 408,
+    7610: 401,
+    7800: 110,
+    8510: 401,
+    9122: 806,
+    9141: 803,
+    9142: 802,
+    9350: 801,
+    9610: 805,
+    9620: 809,
+}
 
 # CPS ASEC data URLs by year
 CPS_URLS = {
@@ -74,6 +175,12 @@ PERSON_VARIABLES = {
     "A_CLSWKR": "class_of_worker",
     "A_WKSTAT": "work_status",
     "A_HRS1": "hours_worked",
+    "A_HSCOL": "_high_school_or_college_status",
+    "A_HRLYWK": "_is_paid_hourly_code",
+    "A_HRSPAY": "_hourly_pay_cents",
+    "A_UNMEM": "_union_member_code",
+    "POCCU2": "detailed_occupation_recode",
+    "PEIOOCC": "_detailed_census_occupation_code",
     # Income (annual)
     "WSAL_VAL": "wage_income",
     "SEMP_VAL": "self_employment_income",
@@ -85,9 +192,22 @@ PERSON_VARIABLES = {
     "INT_VAL": "interest_income",
     "DIV_VAL": "dividend_income",
     "RNT_VAL": "rental_income",
+    "ANN_VAL": "_annuity_income",
+    "PNSN_VAL": "_pension_income",
     "SS_VAL": "social_security",
     "SSI_VAL": "ssi",
     "UC_VAL": "unemployment_compensation",
+    "LKWEEKS": "weeks_unemployed",
+    "VET_VAL": "veterans_benefits",
+    "WC_VAL": "workers_compensation",
+    "DST_SC1": "_retirement_distribution_code_1",
+    "DST_SC2": "_retirement_distribution_code_2",
+    "DST_SC1_YNG": "_retirement_distribution_code_1_yng",
+    "DST_SC2_YNG": "_retirement_distribution_code_2_yng",
+    "DST_VAL1": "_retirement_distribution_value_1",
+    "DST_VAL2": "_retirement_distribution_value_2",
+    "DST_VAL1_YNG": "_retirement_distribution_value_1_yng",
+    "DST_VAL2_YNG": "_retirement_distribution_value_2_yng",
     # CPS-derived direct income copies (mirror eCPS cps.py:1493-1495).
     "SRVS_VAL": "survivor_benefits",
     "ED_VAL": "educational_assistance",
@@ -103,6 +223,13 @@ PERSON_VARIABLES = {
     "MCAID": "has_medicaid",
     "NOW_GRP": "has_esi",
     "NOW_MRK": "has_marketplace_health_coverage",
+    **{
+        census_name: f"_{leaf}"
+        for leaf, census_name in CURRENT_HEALTH_COVERAGE_REPORTED_VAR_MAP.items()
+    },
+    "NOW_PRIV": "_reported_has_private_health_coverage_at_interview",
+    "NOW_PUB": "_reported_has_public_health_coverage_at_interview",
+    "NOW_COV": "_reported_current_health_coverage_code",
     # Employer-sponsored insurance policyholder + premium inputs (eCPS
     # cps.py:197-275). NOW_OWNGRP flags own-name current group (ESI) coverage;
     # NOW_HIPAID is who pays the premium; NOW_GRPFTYP is family vs self-only
@@ -204,6 +331,23 @@ PERSON_NONNEGATIVE_VALUE_COLUMNS = (
     "social_security_dependents",
     "spm_unit_energy_subsidy",
     "spm_unit_pre_subsidy_childcare_expenses",
+    "hourly_wage",
+    "taxable_private_pension_income",
+    "tax_exempt_private_pension_income",
+    "taxable_401k_distributions",
+    "tax_exempt_401k_distributions",
+    "taxable_403b_distributions",
+    "tax_exempt_403b_distributions",
+    "regular_ira_distributions",
+    "roth_ira_distributions",
+    "tax_exempt_ira_distributions",
+    "taxable_sep_distributions",
+    "tax_exempt_sep_distributions",
+    "other_type_retirement_account_distributions",
+    "keogh_distributions",
+    "veterans_benefits",
+    "workers_compensation",
+    "weeks_unemployed",
 )
 
 PERSON_ZERO_DEFAULT_VALUE_COLUMNS = (
@@ -221,6 +365,23 @@ PERSON_ZERO_DEFAULT_VALUE_COLUMNS = (
     "social_security_dependents",
     "spm_unit_energy_subsidy",
     "spm_unit_pre_subsidy_childcare_expenses",
+    "hourly_wage",
+    "taxable_private_pension_income",
+    "tax_exempt_private_pension_income",
+    "taxable_401k_distributions",
+    "tax_exempt_401k_distributions",
+    "taxable_403b_distributions",
+    "tax_exempt_403b_distributions",
+    "regular_ira_distributions",
+    "roth_ira_distributions",
+    "tax_exempt_ira_distributions",
+    "taxable_sep_distributions",
+    "tax_exempt_sep_distributions",
+    "other_type_retirement_account_distributions",
+    "keogh_distributions",
+    "veterans_benefits",
+    "workers_compensation",
+    "weeks_unemployed",
 )
 
 PERSON_CACHE_REQUIRED_COLUMNS = (
@@ -245,6 +406,18 @@ PERSON_CACHE_REQUIRED_COLUMNS = (
     "social_security_dependents",
     "receives_wic",
     "spm_unit_pre_subsidy_childcare_expenses",
+    "tax_exempt_private_pension_income",
+    "regular_ira_distributions",
+    "roth_ira_distributions",
+    "tax_exempt_ira_distributions",
+    "taxable_401k_distributions",
+    "taxable_403b_distributions",
+    "taxable_sep_distributions",
+    "other_type_retirement_account_distributions",
+    "keogh_distributions",
+    "veterans_benefits",
+    "workers_compensation",
+    "weeks_unemployed",
 )
 
 PERSON_CPS_DISABILITY_COLUMNS = (
@@ -273,6 +446,7 @@ PERSON_CPS_DIFFICULTY_LEAVES = {
 
 WORKERS_COMP_DISABILITY_CODE = 1
 ALIMONY_OTHER_INCOME_CODE = 20
+STRIKE_BENEFITS_OTHER_INCOME_CODE = 12
 SOCIAL_SECURITY_RETIREMENT_REASON_CODE = 1
 SOCIAL_SECURITY_DISABILITY_REASON_CODE = 2
 SOCIAL_SECURITY_SURVIVOR_REASON_CODES = (3, 5)
@@ -294,6 +468,10 @@ SE_PENSION_SHARE_OF_RETIREMENT_CONTRIBUTIONS = 0.046
 DC_SHARE_OF_RETIREMENT_CONTRIBUTIONS = 0.908
 ROTH_SHARE_OF_DC_CONTRIBUTIONS = 0.15
 TRADITIONAL_SHARE_OF_IRA_CONTRIBUTIONS = 0.392
+TAXABLE_PENSION_FRACTION = 0.590
+TAXABLE_401K_DISTRIBUTION_FRACTION = 1.0
+TAXABLE_403B_DISTRIBUTION_FRACTION = 1.0
+TAXABLE_SEP_DISTRIBUTION_FRACTION = 1.0
 
 # Census CPS ASEC 2024 technical documentation, PERRP (relationship to
 # household reference person). Codes 43/44/46/47 mark an unmarried partner of
@@ -325,6 +503,17 @@ ESI_PLAN_PRIORS_2024 = {
 PE_CPS_UNDOCUMENTED_TARGET = 13e6
 PE_CPS_UNDOCUMENTED_WORKERS_TARGET = 8.3e6
 PE_CPS_UNDOCUMENTED_STUDENTS_TARGET = 0.21 * 1.9e6
+
+
+def derive_treasury_tipped_occupation_code(
+    census_occupation_codes: pd.Series | np.ndarray,
+) -> np.ndarray:
+    """Map CPS detailed occupation codes to Treasury tipped occupation codes."""
+    values = pd.Series(census_occupation_codes, copy=False)
+    values = pd.to_numeric(values, errors="coerce").fillna(-1).astype(int)
+    return (
+        values.map(CENSUS_OCCUPATION_CODE_TO_TTOC).fillna(0).astype(np.int16).to_numpy()
+    )
 
 
 def processed_cps_asec_cache_path(*, year: int, cache_dir: Path) -> Path:
@@ -1098,6 +1287,169 @@ def download_cps_asec(
     return cache_path
 
 
+def _read_cps_asec_raw_files(
+    zip_path: Path,
+) -> tuple[pl.DataFrame, pl.DataFrame | None]:
+    # Schema overrides for columns with large IDs that overflow int64.
+    schema_overrides = {
+        "PERIDNUM": pl.Utf8,
+        "H_IDNUM": pl.Utf8,
+        "OCCURNUM": pl.Utf8,
+        "QSTNUM": pl.Utf8,
+    }
+
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        person_file = None
+        household_file = None
+
+        for name in zf.namelist():
+            lower = name.lower()
+            if "pppub" in lower and lower.endswith(".csv"):
+                person_file = name
+            elif "hhpub" in lower and lower.endswith(".csv"):
+                household_file = name
+
+        if person_file is None:
+            raise ValueError(f"Could not find person file in {zip_path}")
+
+        with zf.open(person_file) as f:
+            persons_raw = pl.read_csv(
+                f,
+                infer_schema_length=10000,
+                schema_overrides=schema_overrides,
+            )
+
+        if household_file is None:
+            households_raw = None
+        else:
+            with zf.open(household_file) as f:
+                households_raw = pl.read_csv(
+                    f,
+                    infer_schema_length=10000,
+                    schema_overrides=schema_overrides,
+                )
+
+    return persons_raw, households_raw
+
+
+def _load_previous_cps_asec_persons_raw(
+    *,
+    year: int,
+    cache_dir: Path,
+    download: bool,
+) -> pl.DataFrame | None:
+    previous_year = int(year) - 1
+    if previous_year not in CPS_URLS:
+        return None
+
+    zip_path = cache_dir / f"cps_asec_{previous_year}.zip"
+    if not zip_path.exists():
+        if not download:
+            return None
+        try:
+            zip_path = download_cps_asec(previous_year, cache_dir)
+        except Exception as exc:
+            print(f"Could not load previous CPS ASEC {previous_year}: {exc}")
+            return None
+
+    try:
+        persons_raw, _ = _read_cps_asec_raw_files(zip_path)
+    except Exception as exc:
+        print(f"Could not parse previous CPS ASEC {previous_year}: {exc}")
+        return None
+    return persons_raw
+
+
+def _attach_previous_year_income(
+    *,
+    persons: pl.DataFrame,
+    current_persons_raw: pl.DataFrame,
+    previous_persons_raw: pl.DataFrame | None,
+) -> pl.DataFrame:
+    default_exprs = [
+        pl.lit(-1.0).alias("employment_income_last_year"),
+        pl.lit(-1.0).alias("self_employment_income_last_year"),
+        pl.lit(False).alias("previous_year_income_available"),
+    ]
+    current_required = {"PERIDNUM", "I_ERNVAL", "I_SEVAL"}
+    previous_required = {"PERIDNUM", "WSAL_VAL", "SEMP_VAL", "I_ERNVAL", "I_SEVAL"}
+    if previous_persons_raw is None:
+        return persons.with_columns(default_exprs)
+    if not current_required.issubset(set(current_persons_raw.columns)):
+        return persons.with_columns(default_exprs)
+    if not previous_required.issubset(set(previous_persons_raw.columns)):
+        return persons.with_columns(default_exprs)
+    if len(persons) != len(current_persons_raw):
+        return persons.with_columns(default_exprs)
+
+    current = current_persons_raw.select(sorted(current_required)).to_pandas()
+    current["_mp_row_order"] = np.arange(len(current))
+    previous = previous_persons_raw.select(sorted(previous_required)).to_pandas()
+    previous = previous.rename(
+        columns={
+            "WSAL_VAL": "employment_income_last_year",
+            "SEMP_VAL": "self_employment_income_last_year",
+            "I_ERNVAL": "_previous_year_wage_imputation_flag",
+            "I_SEVAL": "_previous_year_self_employment_imputation_flag",
+        }
+    )
+
+    for column in (
+        "I_ERNVAL",
+        "I_SEVAL",
+        "_previous_year_wage_imputation_flag",
+        "_previous_year_self_employment_imputation_flag",
+        "employment_income_last_year",
+        "self_employment_income_last_year",
+    ):
+        if column in current.columns:
+            current[column] = pd.to_numeric(current[column], errors="coerce")
+        if column in previous.columns:
+            previous[column] = pd.to_numeric(previous[column], errors="coerce")
+
+    previous = previous[
+        previous["_previous_year_wage_imputation_flag"].eq(0)
+        & previous["_previous_year_self_employment_imputation_flag"].eq(0)
+    ]
+    previous = previous.drop(
+        [
+            "_previous_year_wage_imputation_flag",
+            "_previous_year_self_employment_imputation_flag",
+        ],
+        axis=1,
+    )
+    joined = (
+        current.set_index("PERIDNUM")
+        .join(previous.set_index("PERIDNUM"), how="left")
+        .sort_values("_mp_row_order")
+    )
+    previous_year_income_available = (
+        joined["employment_income_last_year"].notna()
+        & joined["self_employment_income_last_year"].notna()
+        & joined["I_ERNVAL"].eq(0)
+        & joined["I_SEVAL"].eq(0)
+    )
+    employment_income_last_year = (
+        joined["employment_income_last_year"].fillna(-1.0).to_numpy(dtype=float)
+    )
+    self_employment_income_last_year = (
+        joined["self_employment_income_last_year"].fillna(-1.0).to_numpy(dtype=float)
+    )
+    return persons.with_columns(
+        [
+            pl.Series("employment_income_last_year", employment_income_last_year),
+            pl.Series(
+                "self_employment_income_last_year",
+                self_employment_income_last_year,
+            ),
+            pl.Series(
+                "previous_year_income_available",
+                previous_year_income_available.to_numpy(dtype=bool),
+            ),
+        ]
+    )
+
+
 def load_cps_asec(
     year: int = 2023,
     cache_dir: Path | None = None,
@@ -1114,8 +1466,6 @@ def load_cps_asec(
     Returns:
         CPSDataset with persons and households DataFrames
     """
-    import zipfile
-
     if cache_dir is None:
         cache_dir = DEFAULT_CACHE_DIR
 
@@ -1160,50 +1510,20 @@ def load_cps_asec(
     # Extract and parse
     print(f"Parsing CPS ASEC {year}...")
 
-    with zipfile.ZipFile(zip_path, "r") as zf:
-        # Find the person file (pppub*.csv)
-        person_file = None
-        household_file = None
-
-        for name in zf.namelist():
-            lower = name.lower()
-            if "pppub" in lower and lower.endswith(".csv"):
-                person_file = name
-            elif "hhpub" in lower and lower.endswith(".csv"):
-                household_file = name
-
-        if person_file is None:
-            raise ValueError(f"Could not find person file in {zip_path}")
-
-        # Schema overrides for columns with large IDs that overflow int64
-        schema_overrides = {
-            "PERIDNUM": pl.Utf8,  # Person ID - too large for int64
-            "H_IDNUM": pl.Utf8,  # Household ID - too large for int64
-            "OCCURNUM": pl.Utf8,  # Occurrence number
-            "QSTNUM": pl.Utf8,  # Questionnaire number
-        }
-
-        # Read person data
-        with zf.open(person_file) as f:
-            persons_raw = pl.read_csv(
-                f,
-                infer_schema_length=10000,
-                schema_overrides=schema_overrides,
-            )
-
-        # Read household data if available
-        if household_file:
-            with zf.open(household_file) as f:
-                households_raw = pl.read_csv(
-                    f,
-                    infer_schema_length=10000,
-                    schema_overrides=schema_overrides,
-                )
-        else:
-            households_raw = None
+    persons_raw, households_raw = _read_cps_asec_raw_files(zip_path)
+    previous_persons_raw = _load_previous_cps_asec_persons_raw(
+        year=year,
+        cache_dir=cache_dir,
+        download=download,
+    )
 
     # Process person data
     persons = _process_persons(persons_raw, year)
+    persons = _attach_previous_year_income(
+        persons=persons,
+        current_persons_raw=persons_raw,
+        previous_persons_raw=previous_persons_raw,
+    )
 
     # Process or derive household data
     if households_raw is not None:
@@ -1271,16 +1591,262 @@ def _process_persons(df: pl.DataFrame, year: int) -> pl.DataFrame:
         result = result.with_columns(
             (pl.col("_cps_hispanic_code") != 0).alias("is_hispanic")
         ).drop("_cps_hispanic_code")
+
+    health_staging_columns = [
+        f"_{leaf}" for leaf in CURRENT_HEALTH_COVERAGE_REPORTED_VAR_MAP
+    ]
+    available_health_staging = [
+        column for column in health_staging_columns if column in result.columns
+    ]
+    if available_health_staging:
+        result = result.with_columns(
+            [
+                (pl.col(f"_{leaf}") == 1).alias(leaf)
+                for leaf in CURRENT_HEALTH_COVERAGE_REPORTED_VAR_MAP
+                if f"_{leaf}" in result.columns and leaf not in result.columns
+            ]
+        )
+        result = result.with_columns(
+            [
+                pl.col(reported_leaf).alias(leaf)
+                for leaf, reported_leaf in CURRENT_HEALTH_COVERAGE_RULE_INPUT_ALIAS_MAP.items()
+                if reported_leaf in result.columns and leaf not in result.columns
+            ]
+        )
+        if (
+            "_reported_has_private_health_coverage_at_interview" in result.columns
+            and "reported_has_private_health_coverage_at_interview"
+            not in result.columns
+        ):
+            result = result.with_columns(
+                (
+                    pl.col("_reported_has_private_health_coverage_at_interview") == 1
+                ).alias("reported_has_private_health_coverage_at_interview")
+            )
+        if (
+            "_reported_has_public_health_coverage_at_interview" in result.columns
+            and "reported_has_public_health_coverage_at_interview" not in result.columns
+        ):
+            result = result.with_columns(
+                (
+                    pl.col("_reported_has_public_health_coverage_at_interview") == 1
+                ).alias("reported_has_public_health_coverage_at_interview")
+            )
+        if "_reported_current_health_coverage_code" in result.columns:
+            if "reported_is_insured_at_interview" not in result.columns:
+                result = result.with_columns(
+                    (pl.col("_reported_current_health_coverage_code") == 1).alias(
+                        "reported_is_insured_at_interview"
+                    )
+                )
+            if "reported_is_uninsured_at_interview" not in result.columns:
+                result = result.with_columns(
+                    (pl.col("_reported_current_health_coverage_code") != 1).alias(
+                        "reported_is_uninsured_at_interview"
+                    )
+                )
+        coverage_family_columns = [
+            "reported_has_employer_sponsored_health_coverage_at_interview",
+            "reported_has_marketplace_health_coverage_at_interview",
+            "reported_has_non_marketplace_direct_purchase_health_coverage_at_interview",
+            "reported_has_medicare_health_coverage_at_interview",
+            "reported_has_means_tested_health_coverage_at_interview",
+            "reported_has_tricare_health_coverage_at_interview",
+            "reported_has_champva_health_coverage_at_interview",
+            "reported_has_va_health_coverage_at_interview",
+            "reported_has_indian_health_service_coverage_at_interview",
+        ]
+        available_coverage_family_columns = [
+            column for column in coverage_family_columns if column in result.columns
+        ]
+        if (
+            available_coverage_family_columns
+            and "reported_has_multiple_health_coverage_at_interview"
+            not in result.columns
+        ):
+            result = result.with_columns(
+                (
+                    pl.sum_horizontal(
+                        *[
+                            pl.col(column).cast(pl.Int8)
+                            for column in available_coverage_family_columns
+                        ]
+                    )
+                    > 1
+                ).alias("reported_has_multiple_health_coverage_at_interview")
+            )
+        if (
+            "reported_has_marketplace_health_coverage_at_interview" in result.columns
+            and "has_marketplace_health_coverage" not in result.columns
+        ):
+            result = result.with_columns(
+                pl.col("reported_has_marketplace_health_coverage_at_interview").alias(
+                    "has_marketplace_health_coverage"
+                )
+            )
+        if (
+            "reported_has_employer_sponsored_health_coverage_at_interview"
+            in result.columns
+            and "has_esi" not in result.columns
+        ):
+            result = result.with_columns(
+                pl.col(
+                    "reported_has_employer_sponsored_health_coverage_at_interview"
+                ).alias("has_esi")
+            )
+        result = result.drop(
+            [
+                column
+                for column in (
+                    *available_health_staging,
+                    "_reported_has_private_health_coverage_at_interview",
+                    "_reported_has_public_health_coverage_at_interview",
+                    "_reported_current_health_coverage_code",
+                )
+                if column in result.columns
+            ]
+        )
+
+    if (
+        "_high_school_or_college_status" in result.columns
+        and "is_full_time_college_student" not in result.columns
+    ):
+        result = result.with_columns(
+            (pl.col("_high_school_or_college_status") == 2).alias(
+                "is_full_time_college_student"
+            )
+        ).drop("_high_school_or_college_status")
+    elif "_high_school_or_college_status" in result.columns:
+        result = result.drop("_high_school_or_college_status")
+
+    if "_is_paid_hourly_code" in result.columns:
+        if "is_paid_hourly" not in result.columns:
+            result = result.with_columns(
+                (pl.col("_is_paid_hourly_code") == 1).alias("is_paid_hourly")
+            )
+        if (
+            "_hourly_pay_cents" in result.columns
+            and "hourly_wage" not in result.columns
+        ):
+            result = result.with_columns(
+                pl.when(
+                    (pl.col("_is_paid_hourly_code") == 1)
+                    & (pl.col("_hourly_pay_cents") > 0)
+                )
+                .then(pl.col("_hourly_pay_cents") / 100)
+                .otherwise(0.0)
+                .alias("hourly_wage")
+            )
+        result = result.drop(
+            [
+                column
+                for column in ("_is_paid_hourly_code", "_hourly_pay_cents")
+                if column in result.columns
+            ]
+        )
+    elif "_hourly_pay_cents" in result.columns:
+        result = result.drop("_hourly_pay_cents")
+
+    if (
+        "_union_member_code" in result.columns
+        and "is_union_member_or_covered" not in result.columns
+    ):
+        result = result.with_columns(
+            (pl.col("_union_member_code") == 1).alias("is_union_member_or_covered")
+        ).drop("_union_member_code")
+    elif "_union_member_code" in result.columns:
+        result = result.drop("_union_member_code")
+
+    if "detailed_occupation_recode" in result.columns:
+        occupation = pl.col("detailed_occupation_recode")
+        occupation_exprs: list[pl.Expr] = []
+        if "has_never_worked" not in result.columns:
+            occupation_exprs.append((occupation == 53).alias("has_never_worked"))
+        if "is_military" not in result.columns:
+            occupation_exprs.append((occupation == 52).alias("is_military"))
+        if "is_computer_scientist" not in result.columns:
+            occupation_exprs.append((occupation == 8).alias("is_computer_scientist"))
+        if "is_farmer_fisher" not in result.columns:
+            occupation_exprs.append((occupation == 41).alias("is_farmer_fisher"))
+        if "is_executive_administrative_professional" not in result.columns:
+            occupation_exprs.append(
+                occupation.is_in(
+                    [
+                        1,
+                        2,
+                        3,
+                        5,
+                        6,
+                        7,
+                        9,
+                        10,
+                        11,
+                        12,
+                        13,
+                        14,
+                        15,
+                        16,
+                        18,
+                        19,
+                        25,
+                        26,
+                        27,
+                        28,
+                        29,
+                        34,
+                        36,
+                        38,
+                        39,
+                        40,
+                        42,
+                        50,
+                    ]
+                ).alias("is_executive_administrative_professional")
+            )
+        if occupation_exprs:
+            result = result.with_columns(occupation_exprs)
+
+    if "_detailed_census_occupation_code" in result.columns:
+        if "treasury_tipped_occupation_code" not in result.columns:
+            tipped_codes = derive_treasury_tipped_occupation_code(
+                result["_detailed_census_occupation_code"].to_pandas()
+            )
+            result = result.with_columns(
+                pl.Series("treasury_tipped_occupation_code", tipped_codes)
+            )
+        if (
+            "treasury_tipped_occupation_code" in result.columns
+            and "is_tipped_occupation" not in result.columns
+        ):
+            result = result.with_columns(
+                (pl.col("treasury_tipped_occupation_code") > 0).alias(
+                    "is_tipped_occupation"
+                )
+            )
+        result = result.drop("_detailed_census_occupation_code")
+
     if {
         "_other_income_code",
         "_other_income_value",
     }.issubset(set(result.columns)) and "alimony_income" not in result.columns:
-        result = result.with_columns(
+        other_income_exprs = [
             pl.when(pl.col("_other_income_code") == ALIMONY_OTHER_INCOME_CODE)
             .then(pl.col("_other_income_value"))
             .otherwise(0)
             .alias("alimony_income")
-        ).drop(["_other_income_code", "_other_income_value"])
+        ]
+        if "strike_benefits" not in result.columns:
+            other_income_exprs.append(
+                pl.when(
+                    pl.col("_other_income_code") == STRIKE_BENEFITS_OTHER_INCOME_CODE
+                )
+                .then(pl.col("_other_income_value"))
+                .otherwise(0)
+                .alias("strike_benefits")
+            )
+        result = result.with_columns(other_income_exprs).drop(
+            ["_other_income_code", "_other_income_value"]
+        )
     else:
         drop_columns = [
             column
@@ -1389,6 +1955,138 @@ def _process_persons(df: pl.DataFrame, year: int) -> pl.DataFrame:
         ]
         if drop_columns:
             result = result.drop(drop_columns)
+
+    private_pension_staging = [
+        column
+        for column in ("_pension_income", "_annuity_income")
+        if column in result.columns
+    ]
+    if private_pension_staging:
+        private_pension_total = pl.sum_horizontal(
+            *[pl.col(column) for column in private_pension_staging]
+        )
+        pension_exprs: list[pl.Expr] = []
+        if "pension_income" not in result.columns:
+            pension_exprs.append(private_pension_total.alias("pension_income"))
+        if "taxable_private_pension_income" not in result.columns:
+            pension_exprs.append(
+                (private_pension_total * TAXABLE_PENSION_FRACTION).alias(
+                    "taxable_private_pension_income"
+                )
+            )
+        if "tax_exempt_private_pension_income" not in result.columns:
+            pension_exprs.append(
+                (private_pension_total * (1 - TAXABLE_PENSION_FRACTION)).alias(
+                    "tax_exempt_private_pension_income"
+                )
+            )
+        if "taxable_pension_income" not in result.columns:
+            pension_exprs.append(
+                (private_pension_total * TAXABLE_PENSION_FRACTION).alias(
+                    "taxable_pension_income"
+                )
+            )
+        result = result.with_columns(pension_exprs).drop(private_pension_staging)
+
+    retirement_distribution_pairs = [
+        ("_retirement_distribution_code_1", "_retirement_distribution_value_1"),
+        ("_retirement_distribution_code_2", "_retirement_distribution_value_2"),
+        (
+            "_retirement_distribution_code_1_yng",
+            "_retirement_distribution_value_1_yng",
+        ),
+        (
+            "_retirement_distribution_code_2_yng",
+            "_retirement_distribution_value_2_yng",
+        ),
+    ]
+    available_retirement_distribution_pairs = [
+        (code_column, value_column)
+        for code_column, value_column in retirement_distribution_pairs
+        if code_column in result.columns and value_column in result.columns
+    ]
+    if available_retirement_distribution_pairs:
+        distribution_by_code = {}
+        for code in range(1, 8):
+            distribution_by_code[code] = pl.sum_horizontal(
+                *[
+                    pl.when(pl.col(code_column) == code)
+                    .then(pl.col(value_column))
+                    .otherwise(0.0)
+                    for code_column, value_column in available_retirement_distribution_pairs
+                ]
+            )
+        retirement_distribution_exprs: list[pl.Expr] = []
+        if "taxable_401k_distributions" not in result.columns:
+            retirement_distribution_exprs.append(
+                (distribution_by_code[1] * TAXABLE_401K_DISTRIBUTION_FRACTION).alias(
+                    "taxable_401k_distributions"
+                )
+            )
+        if "tax_exempt_401k_distributions" not in result.columns:
+            retirement_distribution_exprs.append(
+                (
+                    distribution_by_code[1] * (1 - TAXABLE_401K_DISTRIBUTION_FRACTION)
+                ).alias("tax_exempt_401k_distributions")
+            )
+        if "taxable_403b_distributions" not in result.columns:
+            retirement_distribution_exprs.append(
+                (distribution_by_code[2] * TAXABLE_403B_DISTRIBUTION_FRACTION).alias(
+                    "taxable_403b_distributions"
+                )
+            )
+        if "tax_exempt_403b_distributions" not in result.columns:
+            retirement_distribution_exprs.append(
+                (
+                    distribution_by_code[2] * (1 - TAXABLE_403B_DISTRIBUTION_FRACTION)
+                ).alias("tax_exempt_403b_distributions")
+            )
+        if "roth_ira_distributions" not in result.columns:
+            retirement_distribution_exprs.append(
+                distribution_by_code[3].alias("roth_ira_distributions")
+            )
+        if "regular_ira_distributions" not in result.columns:
+            retirement_distribution_exprs.append(
+                distribution_by_code[4].alias("regular_ira_distributions")
+            )
+        if "taxable_ira_distributions" not in result.columns:
+            retirement_distribution_exprs.append(
+                distribution_by_code[4].alias("taxable_ira_distributions")
+            )
+        if "tax_exempt_ira_distributions" not in result.columns:
+            retirement_distribution_exprs.append(
+                distribution_by_code[3].alias("tax_exempt_ira_distributions")
+            )
+        if "keogh_distributions" not in result.columns:
+            retirement_distribution_exprs.append(
+                distribution_by_code[5].alias("keogh_distributions")
+            )
+        if "taxable_sep_distributions" not in result.columns:
+            retirement_distribution_exprs.append(
+                (distribution_by_code[6] * TAXABLE_SEP_DISTRIBUTION_FRACTION).alias(
+                    "taxable_sep_distributions"
+                )
+            )
+        if "tax_exempt_sep_distributions" not in result.columns:
+            retirement_distribution_exprs.append(
+                (
+                    distribution_by_code[6] * (1 - TAXABLE_SEP_DISTRIBUTION_FRACTION)
+                ).alias("tax_exempt_sep_distributions")
+            )
+        if "other_type_retirement_account_distributions" not in result.columns:
+            retirement_distribution_exprs.append(
+                distribution_by_code[7].alias(
+                    "other_type_retirement_account_distributions"
+                )
+            )
+        result = result.with_columns(retirement_distribution_exprs).drop(
+            [
+                column
+                for pair in available_retirement_distribution_pairs
+                for column in pair
+            ]
+        )
+
     # Split the bundled CPS retirement-contribution total (RETCB_VAL, staged
     # as _retirement_contributions) into the five account-type-specific
     # desired contribution leaves the eCPS contract requires. This mirrors
@@ -1659,6 +2357,13 @@ def _process_persons(df: pl.DataFrame, year: int) -> pl.DataFrame:
         result = result.with_columns(
             pl.col("has_medicare").alias("takes_up_medicare_if_eligible")
         )
+    if "weeks_unemployed" in result.columns:
+        result = result.with_columns(
+            pl.when(pl.col("weeks_unemployed") == -1)
+            .then(0)
+            .otherwise(pl.col("weeks_unemployed"))
+            .alias("weeks_unemployed")
+        )
     for col in PERSON_NONNEGATIVE_VALUE_COLUMNS:
         if col in result.columns:
             result = result.with_columns(
@@ -1708,6 +2413,7 @@ def _attach_cps_ssn_card_type(
     required_person_columns = {
         "PRCITSHP",
         "PEINUSYR",
+        "PENATVTY",
         "A_HSCOL",
         "A_AGE",
         "A_MARITL",
@@ -1801,6 +2507,7 @@ def _attach_cps_ssn_card_type(
 
     prcitshp = numeric_series("PRCITSHP").astype(int)
     peinusyr = numeric_series("PEINUSYR").astype(int)
+    birth_country = numeric_series("PENATVTY").astype(int)
     age = numeric_series("A_AGE").astype(int)
     marital = numeric_series("A_MARITL").astype(int)
     spouse_pointer = numeric_series("A_SPOUSE").astype(int)
@@ -1942,12 +2649,104 @@ def _attach_cps_ssn_card_type(
         2: "NON_CITIZEN_VALID_EAD",
         3: "OTHER_NON_CITIZEN",
     }
-    return persons.with_columns(
-        pl.Series(
-            "ssn_card_type",
-            pd.Series(ssn_card_type).map(code_to_str).tolist(),
-        )
+    has_valid_ssn = ssn_card_type == 1
+    taxpayer_id_type = np.where(
+        has_valid_ssn,
+        "VALID_SSN",
+        np.where(ssn_card_type != 0, "OTHER_TIN", "NONE"),
     )
+    immigration_status = _derive_cps_immigration_status(
+        ssn_card_type=ssn_card_type,
+        birth_country=birth_country.to_numpy(),
+        peinusyr=peinusyr.to_numpy(),
+        age=age.to_numpy(),
+        year=int(persons["year"][0])
+        if "year" in persons.columns and len(persons) > 0
+        else 2024,
+    )
+    return persons.with_columns(
+        [
+            pl.Series(
+                "ssn_card_type",
+                pd.Series(ssn_card_type).map(code_to_str).tolist(),
+            ),
+            pl.Series("has_valid_ssn", has_valid_ssn),
+            pl.Series("taxpayer_id_type", taxpayer_id_type.tolist()),
+            pl.Series("immigration_status_str", immigration_status.tolist()),
+        ]
+    )
+
+
+def _derive_cps_immigration_status(
+    *,
+    ssn_card_type: np.ndarray,
+    birth_country: np.ndarray,
+    peinusyr: np.ndarray,
+    age: np.ndarray,
+    year: int,
+) -> np.ndarray:
+    """Approximate eCPS immigration-status tags from CPS ASEC citizenship inputs."""
+
+    arrival_year_map = {
+        1: 1950,
+        2: 1955,
+        3: 1960,
+        4: 1965,
+        5: 1970,
+        6: 1975,
+        7: 1980,
+        8: 1982,
+        9: 1984,
+        10: 1986,
+        11: 1988,
+        12: 1990,
+        13: 1992,
+        14: 1994,
+        15: 1996,
+        16: 1998,
+        17: 2000,
+        18: 2002,
+        19: 2004,
+        20: 2006,
+        21: 2008,
+        22: 2010,
+        23: 2012,
+        24: 2014,
+        25: 2017,
+        26: 2019,
+        27: 2021,
+        28: 2023,
+        29: 2024,
+    }
+    arrival_years = pd.Series(peinusyr).map(arrival_year_map).fillna(2024).to_numpy()
+    years_in_us = year - arrival_years
+    age_at_entry = np.maximum(0, age - years_in_us)
+
+    result = np.full(len(ssn_card_type), "LEGAL_PERMANENT_RESIDENT", dtype="U32")
+    result[ssn_card_type == 1] = "CITIZEN"
+
+    arrived_before_1982 = np.isin(peinusyr, [1, 2, 3, 4, 5, 6, 7])
+    result[(ssn_card_type == 0) & ~arrived_before_1982] = "UNDOCUMENTED"
+
+    cofa_birth_country_codes = {511, 512}
+    cuban_haitian_birth_country_codes = {327, 332}
+    result[
+        (ssn_card_type != 0) & np.isin(birth_country, list(cofa_birth_country_codes))
+    ] = "LEGAL_PERMANENT_RESIDENT"
+    result[
+        (ssn_card_type != 0)
+        & np.isin(birth_country, list(cuban_haitian_birth_country_codes))
+        & (arrival_years >= 1980)
+    ] = "CUBAN_HAITIAN_ENTRANT"
+    result[
+        (ssn_card_type == 2)
+        & (arrival_years <= 2007)
+        & (age_at_entry < 16)
+        & (age >= 15)
+    ] = "DACA"
+    result[(ssn_card_type == 3) & (years_in_us <= 5)] = "REFUGEE"
+    result[(ssn_card_type == 2) & (result == "LEGAL_PERMANENT_RESIDENT")] = "TPS"
+    return result
 
 
 def _processed_persons_have_household_geography(persons: pl.DataFrame) -> bool:

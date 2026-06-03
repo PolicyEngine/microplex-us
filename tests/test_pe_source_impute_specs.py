@@ -25,6 +25,8 @@ def test_load_pe_source_impute_block_specs_reads_manifest() -> None:
         "bank_account_assets",
         "stock_assets",
         "bond_assets",
+        "household_vehicles_owned",
+        "household_vehicles_value",
     )
     assert specs["sipp_tips"].raw_loader is not None
     assert specs["sipp_tips"].raw_loader.filename == "pu2023_slim.csv"
@@ -83,7 +85,9 @@ def test_resolve_sipp_source_impute_block_spec_and_named_lookup() -> None:
     assert tips.matches_source_name("sipp_2023") is False
 
 
-def test_prepare_pe_source_impute_condition_frame_derives_manifest_backed_predictors() -> None:
+def test_prepare_pe_source_impute_condition_frame_derives_manifest_backed_predictors() -> (
+    None
+):
     spec = get_pe_source_impute_block_spec("acs")
     frame = pd.DataFrame(
         {

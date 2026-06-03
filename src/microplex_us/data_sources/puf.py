@@ -229,10 +229,58 @@ PE_STYLE_SOCIAL_SECURITY_QRF_PREDICTORS = (
 )
 MIN_PE_STYLE_SOCIAL_SECURITY_QRF_TRAINING_RECORDS = 100
 PE_PUF_PERSON_EXPANSION_RANDOM_SEED = 64
+QBI_PUF_RANDOM_SEED = 64
+QBI_SIMULATION_RANDOM_SEED = 42
+
+QBI_QUALIFICATION_PROBABILITIES = {
+    "self_employment_income": 0.8,
+    "farm_operations_income": 0.95,
+    "farm_rent_income": 0.5,
+    "rental_income": 0.4,
+    "estate_income": 0.5,
+    "partnership_s_corp_income": 0.85,
+}
+QBI_SSTB_PROBABILITY_BY_RAW_COLUMN = {
+    "E00900": 0.20,
+    "E26270": 0.15,
+    "E26390": 0.10,
+    "E26400": 0.10,
+}
+QBI_REIT_PTP_PROBABILITY = 0.07
+QBI_REIT_PTP_LOG_NORMAL_MU = 8.04
+QBI_REIT_PTP_LOG_NORMAL_SIGMA = 1.20
+QBI_BDC_PROBABILITY = 0.003
+QBI_BDC_LOG_NORMAL_MU = 8.71
+QBI_BDC_LOG_NORMAL_SIGMA = 1.00
+QBI_PROFIT_MARGIN_BETA_A = 2.0
+QBI_PROFIT_MARGIN_BETA_B = 3.0
+QBI_PROFIT_MARGIN_SCALE = 0.20
+QBI_PROFIT_MARGIN_SHIFT = 0.05
+QBI_HAS_EMPLOYEES_LOGIT_INTERCEPT = -3.1
+QBI_HAS_EMPLOYEES_LOGIT_SLOPE_PER_DOLLAR = 1.2e-6
+QBI_RENTAL_LABOR_RATIO_BETA_A = 1.5
+QBI_RENTAL_LABOR_RATIO_BETA_B = 8.0
+QBI_RENTAL_LABOR_RATIO_SCALE = 0.08
+QBI_NON_RENTAL_LABOR_RATIO_BETA_A = 2.0
+QBI_NON_RENTAL_LABOR_RATIO_BETA_B = 2.0
+QBI_NON_RENTAL_LABOR_RATIO_SCALE = 0.25
+QBI_DEPRECIATION_PROXY_SIGMA = 0.8
+QBI_UBIA_MULTIPLE_OF_QBI = 4.0
+QBI_UBIA_SIGMA = 1.0
+QBI_QUALIFICATION_COLUMNS = tuple(
+    f"{variable}_would_be_qualified" for variable in QBI_QUALIFICATION_PROBABILITIES
+)
+QBI_BOOLEAN_COLUMNS = (
+    "business_is_sstb",
+    "sstb_self_employment_income_would_be_qualified",
+    *QBI_QUALIFICATION_COLUMNS,
+)
 
 JOINT_HEAD_SHARE_ALLOCATION = {
     "employment_income": 0.6,
     "self_employment_income": 0.6,
+    "sstb_self_employment_income": 0.6,
+    "sstb_self_employment_income_before_lsr": 0.6,
 }
 
 JOINT_EQUAL_SHARE_ALLOCATION = (
@@ -262,6 +310,12 @@ JOINT_EQUAL_SHARE_ALLOCATION = (
     "charitable_noncash",
     "ira_deduction",
     "student_loan_interest",
+    "w2_wages_from_qualified_business",
+    "unadjusted_basis_qualified_property",
+    "sstb_w2_wages_from_qualified_business",
+    "sstb_unadjusted_basis_qualified_property",
+    "qualified_reit_and_ptp_income",
+    "qualified_bdc_income",
 )
 
 PUF_DEMOGRAPHIC_HELPER_COLUMNS = (
@@ -296,6 +350,7 @@ PUF_PERSON_EXPANSION_PRESERVE_COLUMNS = {
     "pension_income",
     "social_security",
     "social_security_retirement",
+    *QBI_BOOLEAN_COLUMNS,
     *PUF_DEMOGRAPHIC_HELPER_COLUMNS,
 }
 
@@ -1171,6 +1226,11 @@ def map_puf_variables(
     if medical_expense_floor is not None:
         for variable, fraction in MEDICAL_EXPENSE_CATEGORY_BREAKDOWNS.items():
             result[variable] = medical_expense_floor.fillna(0) * fraction
+    result = _add_puf_qbi_simulation_columns(
+        result,
+        raw_puf=puf,
+        random_seed=random_seed,
+    )
 
     # Map filing status code to string
     filing_status_map = {
@@ -1458,6 +1518,187 @@ def _numeric_series(df: pd.DataFrame, column: str) -> pd.Series:
     if column not in df.columns:
         return pd.Series(0.0, index=df.index, dtype=float)
     return df[column].fillna(0).astype(float)
+
+
+def _bernoulli_lognormal_sample(
+    n: int,
+    *,
+    probability: float,
+    log_mean: float,
+    log_sigma: float,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    positive = rng.binomial(1, probability, size=n).astype(bool)
+    return np.where(
+        positive,
+        rng.lognormal(mean=log_mean, sigma=log_sigma, size=n),
+        0.0,
+    )
+
+
+def _conditional_lognormal_sample(
+    flag: np.ndarray,
+    target_mean: pd.Series | np.ndarray,
+    *,
+    log_sigma: float,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    flag_array = np.asarray(flag, dtype=bool)
+    target = np.maximum(np.asarray(target_mean, dtype=float), 0.0)
+    positive_target = target > 0.0
+    mu = np.zeros_like(target, dtype=float)
+    mu[positive_target] = np.log(target[positive_target]) - (log_sigma**2 / 2.0)
+    draws = rng.lognormal(mean=mu, sigma=log_sigma, size=len(target))
+    return np.where(flag_array & positive_target, draws, 0.0)
+
+
+def _simulate_qbi_w2_wages_and_ubia(
+    puf: pd.DataFrame,
+    *,
+    seed: int = QBI_SIMULATION_RANDOM_SEED,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Simulate PE-US-data-style Section 199A W-2 wages and UBIA support."""
+    rng = np.random.default_rng(seed)
+    qbi = sum(
+        _numeric_series(puf, income_type) * probability
+        for income_type, probability in QBI_QUALIFICATION_PROBABILITIES.items()
+    ).to_numpy(dtype=float)
+
+    margins = (
+        rng.beta(QBI_PROFIT_MARGIN_BETA_A, QBI_PROFIT_MARGIN_BETA_B, qbi.size)
+        * QBI_PROFIT_MARGIN_SCALE
+        + QBI_PROFIT_MARGIN_SHIFT
+    )
+    revenues = np.maximum(qbi, 0.0) / margins
+    logit = (
+        QBI_HAS_EMPLOYEES_LOGIT_INTERCEPT
+        + QBI_HAS_EMPLOYEES_LOGIT_SLOPE_PER_DOLLAR * revenues
+    )
+    employee_probability = np.where(
+        revenues == 0.0,
+        0.0,
+        1.0 / (1.0 + np.exp(-logit)),
+    )
+    has_employees = rng.binomial(1, employee_probability)
+
+    rental_income = _numeric_series(puf, "rental_income")
+    is_rental = rental_income.to_numpy(dtype=float) > 0.0
+    labor_ratios = np.where(
+        is_rental,
+        rng.beta(
+            QBI_RENTAL_LABOR_RATIO_BETA_A,
+            QBI_RENTAL_LABOR_RATIO_BETA_B,
+            qbi.size,
+        )
+        * QBI_RENTAL_LABOR_RATIO_SCALE,
+        rng.beta(
+            QBI_NON_RENTAL_LABOR_RATIO_BETA_A,
+            QBI_NON_RENTAL_LABOR_RATIO_BETA_B,
+            qbi.size,
+        )
+        * QBI_NON_RENTAL_LABOR_RATIO_SCALE,
+    )
+    w2_wages = revenues * labor_ratios * has_employees
+
+    depreciation_proxy = _conditional_lognormal_sample(
+        is_rental,
+        rental_income,
+        log_sigma=QBI_DEPRECIATION_PROXY_SIGMA,
+        rng=rng,
+    )
+    is_capital_intensive = is_rental | (depreciation_proxy > 0.0)
+    ubia = _conditional_lognormal_sample(
+        is_capital_intensive,
+        QBI_UBIA_MULTIPLE_OF_QBI * np.maximum(qbi, 0.0),
+        log_sigma=QBI_UBIA_SIGMA,
+        rng=rng,
+    )
+    return w2_wages, ubia
+
+
+def _add_puf_qbi_simulation_columns(
+    mapped_puf: pd.DataFrame,
+    *,
+    raw_puf: pd.DataFrame,
+    random_seed: int,
+) -> pd.DataFrame:
+    """Populate PE-US-data-style Section 199A support columns from PUF."""
+    result = mapped_puf.copy()
+    rng = np.random.default_rng(QBI_PUF_RANDOM_SEED + int(random_seed))
+    for variable, probability in QBI_QUALIFICATION_PROBABILITIES.items():
+        result[f"{variable}_would_be_qualified"] = rng.random(len(result)) < probability
+
+    w2_wages, ubia = _simulate_qbi_w2_wages_and_ubia(
+        result,
+        seed=QBI_SIMULATION_RANDOM_SEED,
+    )
+    result["w2_wages_from_qualified_business"] = w2_wages
+    result["unadjusted_basis_qualified_property"] = ubia
+
+    raw_sstb_sources = pd.DataFrame(
+        {
+            column: pd.to_numeric(raw_puf[column], errors="coerce").fillna(0.0)
+            if column in raw_puf.columns
+            else pd.Series(0.0, index=result.index, dtype=float)
+            for column in QBI_SSTB_PROBABILITY_BY_RAW_COLUMN
+        },
+        index=result.index,
+    )
+    largest_qbi_source = raw_sstb_sources.idxmax(axis=1)
+    has_any_qbi_source = raw_sstb_sources.abs().sum(axis=1).gt(0.0)
+    probability_sstb = (
+        largest_qbi_source.map(QBI_SSTB_PROBABILITY_BY_RAW_COLUMN)
+        .fillna(0.0)
+        .where(has_any_qbi_source, 0.0)
+    )
+    is_sstb = rng.binomial(n=1, p=probability_sstb).astype(bool)
+    result["business_is_sstb"] = is_sstb
+
+    legacy_self_employment_income = _numeric_series(result, "self_employment_income")
+    result["sstb_self_employment_income_before_lsr"] = np.where(
+        is_sstb,
+        legacy_self_employment_income,
+        0.0,
+    )
+    result["sstb_self_employment_income"] = result[
+        "sstb_self_employment_income_before_lsr"
+    ]
+    result["self_employment_income"] = np.where(
+        is_sstb,
+        0.0,
+        legacy_self_employment_income,
+    )
+    result["sstb_self_employment_income_would_be_qualified"] = np.where(
+        is_sstb,
+        result["self_employment_income_would_be_qualified"].astype(bool),
+        False,
+    )
+    result["sstb_w2_wages_from_qualified_business"] = np.where(
+        is_sstb,
+        w2_wages,
+        0.0,
+    )
+    result["sstb_unadjusted_basis_qualified_property"] = np.where(
+        is_sstb,
+        ubia,
+        0.0,
+    )
+
+    result["qualified_reit_and_ptp_income"] = _bernoulli_lognormal_sample(
+        len(result),
+        probability=QBI_REIT_PTP_PROBABILITY,
+        log_mean=QBI_REIT_PTP_LOG_NORMAL_MU,
+        log_sigma=QBI_REIT_PTP_LOG_NORMAL_SIGMA,
+        rng=rng,
+    )
+    result["qualified_bdc_income"] = _bernoulli_lognormal_sample(
+        len(result),
+        probability=QBI_BDC_PROBABILITY,
+        log_mean=QBI_BDC_LOG_NORMAL_MU,
+        log_sigma=QBI_BDC_LOG_NORMAL_SIGMA,
+        rng=rng,
+    )
+    return result
 
 
 def _default_cps_reference_year(target_year: int) -> int:
@@ -1942,6 +2183,10 @@ def _add_derived_income_columns(df: pd.DataFrame) -> pd.DataFrame:
     result = normalize_dividend_columns(result)
     employment_income = _numeric_series(result, "employment_income")
     self_employment_income = _numeric_series(result, "self_employment_income")
+    sstb_self_employment_income = _numeric_series(
+        result,
+        "sstb_self_employment_income",
+    )
     taxable_interest_income = _numeric_series(result, "taxable_interest_income")
     ordinary_dividend_income = _numeric_series(result, "ordinary_dividend_income")
     short_term_capital_gains = _numeric_series(result, "short_term_capital_gains")
@@ -1970,6 +2215,7 @@ def _add_derived_income_columns(df: pd.DataFrame) -> pd.DataFrame:
     result["income"] = (
         employment_income
         + self_employment_income
+        + sstb_self_employment_income
         + result["interest_income"]
         + result["dividend_income"]
         + rental_income

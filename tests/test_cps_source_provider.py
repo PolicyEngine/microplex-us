@@ -479,7 +479,9 @@ def test_load_cps_asec_derives_policyengine_value_inputs(tmp_path):
 
     dataset = load_cps_asec(year=2023, cache_dir=tmp_path, download=False)
     persons = (
-        dataset.persons.to_pandas().sort_values("person_number").reset_index(drop=True)
+        dataset.persons.to_pandas()
+        .sort_values(["household_id", "person_number"])
+        .reset_index(drop=True)
     )
 
     assert persons["alimony_income"].tolist() == [1200, 0]
@@ -505,6 +507,61 @@ def test_load_cps_asec_derives_policyengine_value_inputs(tmp_path):
     assert persons["over_the_counter_health_expenses"].tolist() == [120, 0]
     assert persons["other_medical_expenses"].tolist() == [450, 0]
     assert persons["medicare_part_b_premiums"].tolist() == [600, 0]
+
+
+def test_load_cps_asec_attaches_previous_year_income_from_prior_asec(tmp_path):
+    current_person_rows = pd.DataFrame(
+        {
+            "PERIDNUM": ["A", "B", "C", "D"],
+            "PH_SEQ": [1, 1, 2, 2],
+            "A_LINENO": [1, 2, 1, 2],
+            "A_AGE": [34, 31, 45, 17],
+            "A_FNLWGT": [100, 100, 200, 200],
+            "WSAL_VAL": [60_000, 10_000, 20_000, 0],
+            "SEMP_VAL": [5_000, 0, 3_000, 0],
+            "I_ERNVAL": [0, 1, 0, 0],
+            "I_SEVAL": [0, 0, 0, 0],
+        }
+    )
+    previous_person_rows = pd.DataFrame(
+        {
+            "PERIDNUM": ["A", "B", "C"],
+            "WSAL_VAL": [50_000, 8_000, 25_000],
+            "SEMP_VAL": [6_000, 1_000, 2_500],
+            "I_ERNVAL": [0, 0, 0],
+            "I_SEVAL": [0, 0, 1],
+        }
+    )
+    with zipfile.ZipFile(tmp_path / "cps_asec_2023.zip", "w") as archive:
+        archive.writestr("pppub23.csv", current_person_rows.to_csv(index=False))
+    with zipfile.ZipFile(tmp_path / "cps_asec_2022.zip", "w") as archive:
+        archive.writestr("pppub22.csv", previous_person_rows.to_csv(index=False))
+
+    dataset = load_cps_asec(year=2023, cache_dir=tmp_path, download=False)
+    persons = (
+        dataset.persons.to_pandas()
+        .sort_values(["household_id", "person_number"])
+        .reset_index(drop=True)
+    )
+
+    assert persons["employment_income_last_year"].tolist() == [
+        50_000.0,
+        8_000.0,
+        -1.0,
+        -1.0,
+    ]
+    assert persons["self_employment_income_last_year"].tolist() == [
+        6_000.0,
+        1_000.0,
+        -1.0,
+        -1.0,
+    ]
+    assert persons["previous_year_income_available"].tolist() == [
+        True,
+        False,
+        False,
+        False,
+    ]
 
 
 def test_load_cps_asec_derives_survivor_and_dependent_social_security(tmp_path):

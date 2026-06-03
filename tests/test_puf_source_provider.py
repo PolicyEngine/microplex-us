@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 import types
 
+import numpy as np
 import pandas as pd
 import pytest
 from microplex.core import EntityType, SourceArchetype, SourceProvider, SourceQuery
@@ -369,6 +370,32 @@ def test_expand_to_persons_derives_retirement_social_security_for_older_records(
 
     assert persons["social_security"].tolist() == [40.0, 25.0]
     assert persons["social_security_retirement"].tolist() == [40.0, 0.0]
+
+
+def test_expand_to_persons_preserves_qbi_boolean_flags_for_joint_units():
+    tax_units = pd.DataFrame(
+        {
+            "filing_status": ["JOINT"],
+            "business_is_sstb": [True],
+            "self_employment_income_would_be_qualified": [True],
+            "sstb_self_employment_income_would_be_qualified": [True],
+            "weight": [1.0],
+            "household_id": ["joint-household"],
+            "year": [2024],
+        }
+    )
+
+    persons = expand_to_persons(tax_units)
+
+    assert persons["business_is_sstb"].tolist() == [True, True]
+    assert persons["self_employment_income_would_be_qualified"].tolist() == [
+        True,
+        True,
+    ]
+    assert persons["sstb_self_employment_income_would_be_qualified"].tolist() == [
+        True,
+        True,
+    ]
 
 
 def test_impute_puf_social_security_components_uses_grouped_cps_shares():
@@ -981,6 +1008,56 @@ def test_map_puf_variables_uses_pe_puf_business_and_farm_income_formulas():
     assert mapped.loc[0, "farm_income"] == 700.0
     assert mapped.loc[0, "farm_operations_income"] == 300.0
     assert mapped.loc[0, "farm_rent_income"] == 125.0
+
+
+def test_map_puf_variables_adds_qbi_export_support_columns():
+    n = 800
+    raw = pd.DataFrame(
+        {
+            "RECID": range(1, n + 1),
+            "MARS": np.where(np.arange(n) % 3 == 0, 2, 1),
+            "XTOT": np.where(np.arange(n) % 3 == 0, 2, 1),
+            "S006": np.full(n, 100.0),
+            "E00900": np.linspace(1_000.0, 200_000.0, n),
+            "E02100": np.linspace(0.0, 40_000.0, n),
+            "E26270": np.linspace(0.0, 60_000.0, n),
+            "E26390": np.linspace(0.0, 8_000.0, n),
+            "E26400": np.zeros(n),
+            "E25850": np.linspace(0.0, 30_000.0, n),
+            "E25860": np.zeros(n),
+        }
+    )
+
+    mapped = map_puf_variables(raw)
+
+    expected_columns = {
+        "business_is_sstb",
+        "w2_wages_from_qualified_business",
+        "unadjusted_basis_qualified_property",
+        "sstb_self_employment_income_before_lsr",
+        "sstb_self_employment_income_would_be_qualified",
+        "sstb_w2_wages_from_qualified_business",
+        "sstb_unadjusted_basis_qualified_property",
+        "qualified_reit_and_ptp_income",
+        "qualified_bdc_income",
+        "self_employment_income_would_be_qualified",
+        "farm_operations_income_would_be_qualified",
+        "farm_rent_income_would_be_qualified",
+        "rental_income_would_be_qualified",
+        "estate_income_would_be_qualified",
+        "partnership_s_corp_income_would_be_qualified",
+    }
+    assert expected_columns <= set(mapped.columns)
+    assert mapped["w2_wages_from_qualified_business"].sum() > 0.0
+    assert mapped["unadjusted_basis_qualified_property"].sum() > 0.0
+    assert mapped["qualified_reit_and_ptp_income"].sum() > 0.0
+    assert mapped["business_is_sstb"].any()
+    assert mapped["self_employment_income_would_be_qualified"].nunique() == 2
+    np.testing.assert_allclose(
+        mapped["self_employment_income"]
+        + mapped["sstb_self_employment_income_before_lsr"],
+        raw["E00900"],
+    )
 
 
 def test_map_puf_variables_adds_pe_exact_irs_inputs():

@@ -143,6 +143,11 @@ PUF_SUPPORT_CLONE_IMPUTED_VARIABLES: tuple[str, ...] = (
     "w2_wages_from_qualified_business",
     "unadjusted_basis_qualified_property",
     "business_is_sstb",
+    "sstb_self_employment_income_before_lsr",
+    "sstb_self_employment_income",
+    "sstb_self_employment_income_would_be_qualified",
+    "sstb_w2_wages_from_qualified_business",
+    "sstb_unadjusted_basis_qualified_property",
     "short_term_capital_gains",
     "qualified_dividend_income",
     "charitable_cash_donations",
@@ -187,6 +192,9 @@ PUF_SUPPORT_CLONE_IMPUTED_VARIABLES: tuple[str, ...] = (
     "unreported_payroll_tax",
     "recapture_of_investment_credit",
     "deductible_mortgage_interest",
+    "home_mortgage_interest",
+    "investment_interest_expense",
+    "other_health_insurance_premiums",
     "qualified_reit_and_ptp_income",
     "qualified_bdc_income",
     "farm_operations_income",
@@ -341,6 +349,7 @@ DEFAULT_WIC_NUTRITIONAL_RISK_RATES = {
     WIC_TAKEUP_CATEGORY_CHILD: 0.752,
     WIC_TAKEUP_CATEGORY_NONE: 0.0,
 }
+DEFAULT_PREGNANCY_RATE = 0.041
 EITC_TAKEUP_CHILD_COUNT_HELPER_COLUMN = "_mp_eitc_child_count_for_takeup"
 VOLUNTARY_FILING_AGE_HEAD_HELPER_COLUMN = "_mp_voluntary_filing_age_head"
 VOLUNTARY_FILING_WAGE_INCOME_HELPER_COLUMN = "_mp_voluntary_filing_wage_income"
@@ -419,6 +428,25 @@ def _load_microplex_wic_nutritional_risk_rates(year: int) -> dict[str, float]:
     return dict(DEFAULT_WIC_NUTRITIONAL_RISK_RATES)
 
 
+def _load_microplex_pregnancy_rates(year: int) -> dict[str, float]:
+    """Load pregnancy rates by state abbreviation, matching PE-US-data when present."""
+    _ = year
+    try:
+        from policyengine_us_data.db.etl_pregnancy import (
+            get_state_pregnancy_rates,
+        )
+
+        rates = get_state_pregnancy_rates()
+    except Exception:
+        LOGGER.warning(
+            "Failed to load state pregnancy rates; using national fallback",
+            exc_info=True,
+        )
+        return {}
+
+    return {str(state).upper(): float(rate) for state, rate in rates.items()}
+
+
 PUF_SUPPORT_CLONE_OVERRIDDEN_VARIABLES: tuple[str, ...] = (
     "partnership_s_corp_income",
     "interest_deduction",
@@ -427,6 +455,11 @@ PUF_SUPPORT_CLONE_OVERRIDDEN_VARIABLES: tuple[str, ...] = (
     "w2_wages_from_qualified_business",
     "unadjusted_basis_qualified_property",
     "business_is_sstb",
+    "sstb_self_employment_income_before_lsr",
+    "sstb_self_employment_income",
+    "sstb_self_employment_income_would_be_qualified",
+    "sstb_w2_wages_from_qualified_business",
+    "sstb_unadjusted_basis_qualified_property",
     "charitable_cash_donations",
     "self_employed_pension_contribution_ald",
     "unrecaptured_section_1250_gain",
@@ -461,6 +494,9 @@ PUF_SUPPORT_CLONE_OVERRIDDEN_VARIABLES: tuple[str, ...] = (
     "unreported_payroll_tax",
     "recapture_of_investment_credit",
     "deductible_mortgage_interest",
+    "home_mortgage_interest",
+    "investment_interest_expense",
+    "other_health_insurance_premiums",
     "qualified_reit_and_ptp_income",
     "qualified_bdc_income",
     "farm_operations_income",
@@ -469,6 +505,7 @@ PUF_SUPPORT_CLONE_OVERRIDDEN_VARIABLES: tuple[str, ...] = (
     "farm_rent_income_would_be_qualified",
     "partnership_s_corp_income_would_be_qualified",
     "rental_income_would_be_qualified",
+    "self_employment_income_would_be_qualified",
 )
 
 PUF_SUPPORT_CLONE_SPECIAL_VARIABLES: tuple[str, ...] = ("weeks_unemployed",)
@@ -4955,6 +4992,7 @@ class USMicroplexPipeline:
 
         households = self._build_policyengine_households(persons)
         tax_units, persons = self._build_policyengine_tax_units(persons)
+        tax_units = self._attach_policyengine_tax_unit_source_inputs(tax_units)
         tax_units = self._attach_policyengine_tax_unit_takeup_inputs(tax_units)
         persons = self._construct_aotc_eligibility_inputs(persons)
         persons = self._assign_family_and_spm_units(persons)
@@ -7544,6 +7582,8 @@ class USMicroplexPipeline:
                 "net_worth",
                 "auto_loan_balance",
                 "auto_loan_interest",
+                "household_vehicles_owned",
+                "household_vehicles_value",
             )
             if column in persons.columns
         ]
@@ -8840,6 +8880,38 @@ class USMicroplexPipeline:
             )
         head_age = age.loc[head_mask].iloc[0] if bool(head_mask.any()) else age.iloc[0]
         aggregated[VOLUNTARY_FILING_AGE_HEAD_HELPER_COLUMN] = float(head_age)
+        for column in (
+            "interest_deduction",
+            "deductible_mortgage_interest",
+            "mortgage_interest_paid",
+            "first_home_mortgage_interest",
+            "second_home_mortgage_interest",
+        ):
+            if column not in unit_persons.columns:
+                continue
+            values = pd.to_numeric(unit_persons[column], errors="coerce").fillna(0.0)
+            aggregated[column] = float(values.clip(lower=0.0).sum())
+        for column in (
+            "first_home_mortgage_balance",
+            "second_home_mortgage_balance",
+            "scf_mortgage_debt",
+            "imputed_first_home_mortgage_balance_hint",
+            "imputed_second_home_mortgage_balance_hint",
+        ):
+            if column not in unit_persons.columns:
+                continue
+            values = pd.to_numeric(unit_persons[column], errors="coerce").fillna(0.0)
+            aggregated[column] = float(values.clip(lower=0.0).max())
+        for column in (
+            "first_home_mortgage_origination_year",
+            "second_home_mortgage_origination_year",
+        ):
+            if column not in unit_persons.columns:
+                continue
+            values = pd.to_numeric(unit_persons[column], errors="coerce").fillna(0.0)
+            positive = values.loc[values.gt(0.0)]
+            if not positive.empty:
+                aggregated[column] = int(positive.iloc[0])
         for boolean_column in (
             "takes_up_aca_if_eligible",
             "takes_up_dc_ptc",
@@ -8852,6 +8924,90 @@ class USMicroplexPipeline:
             if value is not None:
                 aggregated[boolean_column] = value
         return aggregated
+
+    def _attach_policyengine_tax_unit_source_inputs(
+        self,
+        tax_units: pd.DataFrame,
+    ) -> pd.DataFrame:
+        """Attach structural tax-unit inputs derived from source columns."""
+        result = tax_units.copy()
+        zero = pd.Series(0.0, index=result.index, dtype=float)
+
+        def first_nonzero_or_present(*columns: str) -> pd.Series:
+            values = zero.copy()
+            found = False
+            for column in columns:
+                if column not in result.columns:
+                    continue
+                candidate = (
+                    pd.to_numeric(result[column], errors="coerce")
+                    .fillna(0.0)
+                    .astype(float)
+                )
+                if not found:
+                    values = candidate.copy()
+                    found = True
+                    continue
+                values = values.where(values.ne(0.0), candidate)
+            return values if found else zero.copy()
+
+        mortgage_interest = first_nonzero_or_present(
+            "first_home_mortgage_interest",
+            "deductible_mortgage_interest",
+            "mortgage_interest_paid",
+        ).clip(lower=0.0)
+        if (
+            "first_home_mortgage_interest" in result.columns
+            or "deductible_mortgage_interest" in result.columns
+            or "mortgage_interest_paid" in result.columns
+        ):
+            result["first_home_mortgage_interest"] = mortgage_interest
+
+        if "interest_deduction" in result.columns:
+            interest_deduction = first_nonzero_or_present(
+                "interest_deduction",
+                "first_home_mortgage_interest",
+            ).clip(lower=0.0)
+            result["interest_deduction"] = np.maximum(
+                interest_deduction,
+                mortgage_interest,
+            )
+
+        balance_hint = first_nonzero_or_present(
+            "first_home_mortgage_balance",
+            "imputed_first_home_mortgage_balance_hint",
+            "scf_mortgage_debt",
+        ).clip(lower=0.0)
+        if (
+            "first_home_mortgage_balance" in result.columns
+            or "imputed_first_home_mortgage_balance_hint" in result.columns
+            or "scf_mortgage_debt" in result.columns
+            or bool(mortgage_interest.gt(0.0).any())
+        ):
+            interest_implied_balance = mortgage_interest / 0.06
+            result["first_home_mortgage_balance"] = np.maximum(
+                balance_hint,
+                interest_implied_balance,
+            ).where(mortgage_interest.gt(0.0) | balance_hint.gt(0.0), 0.0)
+
+        origination_year = first_nonzero_or_present(
+            "first_home_mortgage_origination_year",
+        )
+        if "first_home_mortgage_origination_year" in result.columns or bool(
+            mortgage_interest.gt(0.0).any()
+        ):
+            target_year = int(
+                self.config.policyengine_dataset_year
+                or self.config.policyengine_target_period
+                or 2024
+            )
+            fallback_year = max(1988, target_year - 10)
+            result["first_home_mortgage_origination_year"] = (
+                origination_year.where(origination_year.gt(0.0), fallback_year)
+                .where(mortgage_interest.gt(0.0), 0.0)
+                .astype(int)
+            )
+        return result
 
     def _infer_policyengine_bool_for_group(
         self,
@@ -9073,6 +9229,7 @@ class USMicroplexPipeline:
     ) -> pd.DataFrame:
         """Attach eCPS-style person stochastic inputs before materialization."""
         result = self._attach_policyengine_medicaid_takeup(persons)
+        result = self._attach_policyengine_pregnancy_inputs(result)
         for column, rate_key in (
             ("takes_up_head_start_if_eligible", "head_start"),
             ("takes_up_early_head_start_if_eligible", "early_head_start"),
@@ -9124,6 +9281,48 @@ class USMicroplexPipeline:
         )
         rng = _microplex_seeded_rng(column)
         result[column] = rng.random(len(result)) < takeup_rate.to_numpy(dtype=float)
+        return result
+
+    def _attach_policyengine_pregnancy_inputs(
+        self,
+        persons: pd.DataFrame,
+    ) -> pd.DataFrame:
+        result = persons.copy()
+        column = "is_pregnant"
+        if column in result.columns:
+            result[column] = self._normal_bool_series(
+                result[column], index=result.index
+            )
+            return result
+
+        index = result.index
+        age = pd.to_numeric(
+            result.get("age", pd.Series(0.0, index=index)),
+            errors="coerce",
+        ).fillna(0.0)
+        if "is_female" in result.columns:
+            female = self._normal_bool_series(result["is_female"], index=index)
+        elif "sex" in result.columns:
+            female = (
+                pd.to_numeric(result["sex"], errors="coerce")
+                .fillna(0)
+                .astype(int)
+                .eq(2)
+            )
+        else:
+            female = pd.Series(False, index=index)
+
+        year = self._policyengine_takeup_year()
+        rates = _load_microplex_pregnancy_rates(year)
+        states = self._person_state_abbreviation(result)
+        pregnancy_rate = states.map(
+            lambda state: rates.get(str(state).upper(), DEFAULT_PREGNANCY_RATE)
+        ).fillna(DEFAULT_PREGNANCY_RATE)
+        eligible = female & age.ge(15.0) & age.le(44.0)
+        rng = _microplex_seeded_rng(column)
+        result[column] = eligible.to_numpy(dtype=bool) & (
+            rng.random(len(result)) < pregnancy_rate.to_numpy(dtype=float)
+        )
         return result
 
     def _attach_policyengine_wic_inputs(
@@ -10428,6 +10627,43 @@ class USMicroplexPipeline:
         result["farm_operations_income"] = first_present("farm_operations_income")
         result["farm_rent_income"] = first_present("farm_rent_income")
         result["rental_income"] = first_present("rental_income")
+        result["w2_wages_from_qualified_business"] = first_present(
+            "w2_wages_from_qualified_business"
+        ).clip(lower=0.0)
+        result["unadjusted_basis_qualified_property"] = first_present(
+            "unadjusted_basis_qualified_property"
+        ).clip(lower=0.0)
+        result["qualified_reit_and_ptp_income"] = first_present(
+            "qualified_reit_and_ptp_income"
+        ).clip(lower=0.0)
+        result["qualified_bdc_income"] = first_present("qualified_bdc_income").clip(
+            lower=0.0
+        )
+        result["sstb_self_employment_income_before_lsr"] = first_nonzero_or_present(
+            "sstb_self_employment_income_before_lsr",
+            "sstb_self_employment_income",
+        )
+        result["sstb_w2_wages_from_qualified_business"] = first_present(
+            "sstb_w2_wages_from_qualified_business"
+        ).clip(lower=0.0)
+        result["sstb_unadjusted_basis_qualified_property"] = first_present(
+            "sstb_unadjusted_basis_qualified_property"
+        ).clip(lower=0.0)
+        for qbi_bool_column in (
+            "business_is_sstb",
+            "self_employment_income_would_be_qualified",
+            "sstb_self_employment_income_would_be_qualified",
+            "farm_operations_income_would_be_qualified",
+            "farm_rent_income_would_be_qualified",
+            "partnership_s_corp_income_would_be_qualified",
+            "rental_income_would_be_qualified",
+            "estate_income_would_be_qualified",
+        ):
+            if qbi_bool_column in result.columns:
+                result[qbi_bool_column] = self._normal_bool_series(
+                    result[qbi_bool_column],
+                    index=result.index,
+                )
         result["health_savings_account_ald"] = first_present(
             "health_savings_account_ald"
         )
@@ -10467,6 +10703,19 @@ class USMicroplexPipeline:
             "state_income_tax_paid",
         )
         result["student_loan_interest"] = first_present("student_loan_interest")
+        result["home_mortgage_interest"] = first_nonzero_or_present(
+            "home_mortgage_interest",
+            "deductible_mortgage_interest",
+            "mortgage_interest_paid",
+        ).clip(lower=0.0)
+        result["investment_interest_expense"] = first_nonzero_or_present(
+            "investment_interest_expense",
+            "investment_income_elected_form_4952",
+        ).clip(lower=0.0)
+        result["other_health_insurance_premiums"] = first_nonzero_or_present(
+            "other_health_insurance_premiums",
+            "health_insurance_premiums_without_medicare_part_b",
+        ).clip(lower=0.0)
         return result
 
     def _resolve_policyengine_tax_benefit_system(self) -> Any:

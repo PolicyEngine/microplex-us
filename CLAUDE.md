@@ -99,3 +99,27 @@ To check whether embeddings exist, inspect `.gitnexus/meta.json` — the `stats.
 | Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
 
 <!-- gitnexus:end -->
+
+## Pipeline docs regeneration
+
+Regenerate the committed canonical pipeline graph and schema files whenever
+stage contracts, stage manifest schemas, pipeline overlay schemas, graph
+generation code, or viewer fixtures change:
+
+```bash
+microplex-us-generate-pipeline-docs --output-dir docs/generated
+microplex-us-generate-pipeline-docs --output-dir docs/generated --check
+```
+
+The pipeline viewer lives in `pipeline_viewer/` and is separate from the
+existing target diagnostics dashboard in `dashboard/`.
+
+```bash
+cd pipeline_viewer
+npm ci
+npm run build
+```
+
+Use the generated graph and overlay JSON as the source of truth for visual
+pipeline docs. Do not use Mermaid for this diagram; the viewer relies on
+ELK-routed edges so stage handoffs remain legible as overlays change.

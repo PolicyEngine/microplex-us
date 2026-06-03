@@ -32,5 +32,37 @@ jobs:
         with:
           version: "0.11.14"
 
+      - name: Check generated pipeline docs
+        run: |
+          uv run --python 3.13 --extra docs \
+            microplex-us-generate-pipeline-docs --output-dir docs/generated --check
+
       - name: Build docs
         run: uv run --python 3.13 --extra docs jupyter-book build docs
+
+  build-pipeline-viewer:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: microplex-us/pipeline_viewer
+    steps:
+      - name: Check out microplex-us
+        uses: actions/checkout@v4
+        with:
+          path: microplex-us
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: microplex-us/pipeline_viewer/package-lock.json
+
+      - name: Install viewer dependencies
+        run: npm ci
+
+      - name: Audit viewer dependencies
+        run: npm audit --audit-level=high
+
+      - name: Build pipeline viewer
+        run: npm run build

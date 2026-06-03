@@ -61,6 +61,34 @@ When reviewing recent changes here, check:
 - Ruff: `uv run ruff check src tests`
 - Focused comparison/harness tests: `uv run pytest -q tests/policyengine/test_comparison.py tests/policyengine/test_harness.py`
 - Local reweighting tests: `uv run pytest -q tests/pipelines/test_local_reweighting.py`
+- Pipeline docs check: `uv run --python 3.13 --extra docs microplex-us-generate-pipeline-docs --output-dir docs/generated --check`
+- Pipeline viewer build: `cd pipeline_viewer && npm ci && npm run build`
+
+## Pipeline docs regeneration
+
+Regenerate pipeline docs when changing stage contracts, stage manifest schemas,
+pipeline overlay schemas, graph generation, or viewer fixtures:
+
+```bash
+microplex-us-generate-pipeline-docs --output-dir docs/generated
+```
+
+Regenerate test fixtures after intentional graph or overlay schema changes:
+
+```bash
+microplex-us-generate-pipeline-docs \
+  --output-dir tests/fixtures/pipeline_docs/generated
+microplex-us-generate-pipeline-docs \
+  --output-dir tests/fixtures/pipeline_docs/generated/complete_run \
+  --artifact-root tests/fixtures/pipeline_docs/complete_run
+microplex-us-generate-pipeline-docs \
+  --output-dir tests/fixtures/pipeline_docs/generated/failed_run \
+  --artifact-root tests/fixtures/pipeline_docs/failed_run
+```
+
+The pipeline diagram must use the generated graph/overlay JSON and ELK-style
+edge routing. Do not replace it with Mermaid; Mermaid does not provide the edge
+routing control this diagram needs.
 
 ## Claude/Codex review shortcut
 

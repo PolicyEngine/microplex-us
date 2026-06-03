@@ -9,6 +9,7 @@ built on top of the generic `microplex` engine.
 - [Architecture](./docs/architecture.md)
 - [Canonical pipeline stages](./docs/pipeline-stages.md)
 - [Stage contracts and manifests](./docs/stage-contracts.md)
+- [Pipeline visualization](./docs/pipeline-visualization.md)
 - [API reference](./docs/api.md)
 - [Source semantics](./docs/source-semantics.md)
 - [Imputation conditioning contract](./docs/imputation-conditioning-contract.md)
@@ -36,6 +37,23 @@ The dashboard uses the exported PolicyEngine design tokens from
 to verify the local browser-readable token copy is still synced.
 When a PolicyEngine target DB is available, the JSON annotates PE-native legacy
 labels with structured target IDs and flags legacy-only gaps.
+
+## Pipeline viewer
+
+The separate `pipeline_viewer/` app renders generated pipeline graph and overlay
+JSON with ELK-routed React Flow edges. Regenerate the public graph data with:
+
+```bash
+microplex-us-generate-pipeline-docs --output-dir docs/generated
+```
+
+Run the viewer locally with:
+
+```bash
+cd pipeline_viewer
+npm install
+npm run dev
+```
 
 ## Current focus
 

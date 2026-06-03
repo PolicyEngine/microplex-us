@@ -207,34 +207,37 @@ def test_build_policyengine_us_data_rebuild_pipeline_returns_configured_pipeline
     assert pipeline.config.calibration_backend == "entropy"
 
 
-def test_source_provider_year_defaults_derive_from_mp_2024_profile() -> None:
-    # Year defaults come from the single-source-of-truth vintage profile, so a
-    # stale literal cannot silently return. The CPS spine default is the profile's
-    # ASEC release (2025 = income year 2024), not the 2023 that used to require a
-    # CLI override to be correct.
+def test_source_provider_years_resolve_from_profile_not_literals() -> None:
+    # The year params no longer carry literal defaults: they default to None and
+    # resolve from the dataset profile, so a stale literal cannot silently return.
+    # Both the provider and the checkpoint take a `profile` and None-default years.
     import inspect
 
-    from microplex_us.vintages import MP_2024
-
-    params = inspect.signature(
-        default_policyengine_us_data_rebuild_source_providers
-    ).parameters
-    assert params["cps_source_year"].default == MP_2024.cps_asec.release == 2025
-    assert params["acs_year"].default == MP_2024.acs.release
-    assert params["sipp_year"].default == MP_2024.sipp.release
-    assert params["scf_year"].default == MP_2024.scf.release
-    assert params["puf_target_year"].default == MP_2024.model_year
-
-    # The checkpoint signature is the second of the three sites the stale literal
-    # used to live in; guard it too so a revert there cannot pass silently.
     from microplex_us.pipelines.pe_us_data_rebuild_checkpoint import (
         run_policyengine_us_data_rebuild_checkpoint,
     )
+    from microplex_us.vintages import MP_2024
 
+    provider_params = inspect.signature(
+        default_policyengine_us_data_rebuild_source_providers
+    ).parameters
     checkpoint_params = inspect.signature(
         run_policyengine_us_data_rebuild_checkpoint
     ).parameters
-    assert checkpoint_params["cps_source_year"].default == MP_2024.cps_asec.release
-    assert checkpoint_params["acs_year"].default == MP_2024.acs.release
-    assert checkpoint_params["sipp_year"].default == MP_2024.sipp.release
-    assert checkpoint_params["scf_year"].default == MP_2024.scf.release
+    for params in (provider_params, checkpoint_params):
+        assert "profile" in params
+        for year in (
+            "cps_source_year",
+            "puf_target_year",
+            "acs_year",
+            "sipp_year",
+            "scf_year",
+        ):
+            assert params[year].default is None, year
+
+    # With the default profile, the resolved providers carry MP_2024's years.
+    providers = default_policyengine_us_data_rebuild_source_providers(cps_download=False)
+    years = MP_2024.source_years()
+    assert providers[0].year == years["cps_source_year"] == 2025
+    assert providers[1].target_year == years["puf_target_year"] == 2024
+    assert providers[2].year == years["acs_year"] == 2024

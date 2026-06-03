@@ -7,7 +7,7 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from microplex_us.vintages import MP_2024
+from microplex_us.vintages import MP_2024, DatasetProfile
 
 if TYPE_CHECKING:
     from microplex.core import SourceProvider
@@ -97,10 +97,11 @@ def default_policyengine_us_data_rebuild_config(
 
 def default_policyengine_us_data_rebuild_source_providers(
     *,
-    cps_source_year: int = MP_2024.cps_asec.release,
+    profile: DatasetProfile = MP_2024,
+    cps_source_year: int | None = None,
     cps_cache_dir: str | Path | None = None,
     cps_download: bool = True,
-    puf_target_year: int = MP_2024.model_year,
+    puf_target_year: int | None = None,
     puf_cps_reference_year: int | None = None,
     puf_cache_dir: str | Path | None = None,
     puf_path: str | Path | None = None,
@@ -109,14 +110,31 @@ def default_policyengine_us_data_rebuild_source_providers(
     include_donor_surveys: bool = True,
     include_sipp: bool | None = None,
     include_scf: bool | None = None,
-    acs_year: int = MP_2024.acs.release,
-    sipp_year: int = MP_2024.sipp.release,
-    scf_year: int = MP_2024.scf.release,
+    acs_year: int | None = None,
+    sipp_year: int | None = None,
+    scf_year: int | None = None,
     donor_cache_dir: str | Path | None = None,
     policyengine_us_data_repo: str | Path | None = None,
     policyengine_us_data_python: str | Path | None = None,
 ) -> tuple[SourceProvider, ...]:
-    """Return the canonical CPS+PUF provider bundle for the rebuild track."""
+    """Return the canonical CPS+PUF provider bundle for one dataset ``profile``.
+
+    Source years derive from ``profile`` -- a single ``(dataset, model_year)``
+    key. The per-source ``*_year`` arguments remain only as explicit overrides
+    (``None`` means "take it from the profile"), so there are no stale literal
+    defaults to drift from the profile.
+    """
+
+    _years = profile.source_years()
+    cps_source_year = (
+        _years["cps_source_year"] if cps_source_year is None else cps_source_year
+    )
+    puf_target_year = (
+        _years["puf_target_year"] if puf_target_year is None else puf_target_year
+    )
+    acs_year = _years["acs_year"] if acs_year is None else acs_year
+    sipp_year = _years["sipp_year"] if sipp_year is None else sipp_year
+    scf_year = _years["scf_year"] if scf_year is None else scf_year
 
     from microplex_us.data_sources.cps import CPSASECSourceProvider
     from microplex_us.data_sources.donor_surveys import (

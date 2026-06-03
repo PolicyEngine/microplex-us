@@ -794,6 +794,47 @@ POLICYENGINE_US_ALLOWED_COMPUTED_EXPORT_VARIABLES: frozenset[str] = (
     | POLICYENGINE_US_DATA_OVERRIDABLE_COMPUTED_EXPORT_VARIABLES
 )
 
+MARKETPLACE_PLAN_BENCHMARK_RATIO_MIN = 0.5
+MARKETPLACE_PLAN_BENCHMARK_RATIO_MAX = 1.5
+MARKETPLACE_PLAN_BENCHMARK_RATIO_COLUMN = "selected_marketplace_plan_benchmark_ratio"
+MARKETPLACE_PLAN_BENCHMARK_RATIO_SOURCE_COLUMNS: frozenset[str] = frozenset(
+    {
+        "health_insurance_premiums_without_medicare_part_b",
+        "aca_ptc",
+        "slcsp",
+        "takes_up_aca_if_eligible",
+    }
+)
+
+
+def compute_marketplace_plan_benchmark_ratio(
+    *,
+    reported_premium: Any,
+    aca_ptc: Any,
+    slcsp: Any,
+    takes_up_aca: Any,
+) -> np.ndarray:
+    """Back out selected Marketplace plan cost relative to SLCSP.
+
+    ``selected_marketplace_plan_benchmark_ratio`` is a persisted eCPS input,
+    not SLCSP itself. PE-US still computes SLCSP from geography and family
+    composition; this ratio carries the selected-plan-to-benchmark adjustment
+    for tax units modeled as taking up Marketplace coverage.
+    """
+    reported = np.asarray(reported_premium, dtype=float)
+    ptc = np.asarray(aca_ptc, dtype=float)
+    benchmark = np.asarray(slcsp, dtype=float)
+    takeup = np.asarray(takes_up_aca, dtype=bool)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        raw = (reported + ptc) / np.where(benchmark > 0, benchmark, 1.0)
+    clipped = np.clip(
+        raw,
+        MARKETPLACE_PLAN_BENCHMARK_RATIO_MIN,
+        MARKETPLACE_PLAN_BENCHMARK_RATIO_MAX,
+    )
+    applicable = takeup & (benchmark > 0)
+    return np.where(applicable, clipped, 1.0)
+
 
 def compute_policyengine_us_definition_hash(
     constraints: tuple[PolicyEngineUSConstraint, ...] | list[PolicyEngineUSConstraint],
@@ -3050,6 +3091,7 @@ def build_policyengine_us_export_variable_maps(
     )
     household_table = _with_policyengine_household_export_derivatives(tables.households)
     person_table = _with_policyengine_person_export_derivatives(tables.persons)
+    tax_unit_table = _with_policyengine_tax_unit_export_derivatives(tables.tax_units)
     table_specs = (
         (
             "household",
@@ -3057,7 +3099,7 @@ def build_policyengine_us_export_variable_maps(
             {"household_id", "household_weight", "weight"},
         ),
         ("person", person_table, {"person_id", "household_id"}),
-        ("tax_unit", tables.tax_units, {"tax_unit_id", "household_id"}),
+        ("tax_unit", tax_unit_table, {"tax_unit_id", "household_id"}),
         ("spm_unit", tables.spm_units, {"spm_unit_id", "household_id"}),
         ("family", tables.families, {"family_id", "household_id"}),
     )
@@ -3141,6 +3183,7 @@ def build_policyengine_us_time_period_arrays(
         tables.persons,
         period=int(period),
     )
+    tax_unit_table = _with_policyengine_tax_unit_export_derivatives(tables.tax_units)
     persons = _prepare_person_export_table(
         person_table,
         person_id_column=person_id_column,
@@ -3184,7 +3227,7 @@ def build_policyengine_us_time_period_arrays(
         (
             "tax_unit",
             "tax_unit_id",
-            tables.tax_units,
+            tax_unit_table,
             tax_unit_variable_map,
             "household",
         ),
@@ -3649,6 +3692,35 @@ def _with_policyengine_person_export_derivatives(
         if fsla_premium is not None:
             person_table["fsla_overtime_premium"] = fsla_premium
     return person_table
+
+
+def _with_policyengine_tax_unit_export_derivatives(
+    tax_units: pd.DataFrame | None,
+) -> pd.DataFrame | None:
+    if tax_units is None:
+        return tax_units
+
+    if not MARKETPLACE_PLAN_BENCHMARK_RATIO_SOURCE_COLUMNS.issubset(tax_units.columns):
+        return tax_units
+
+    tax_unit_table = tax_units.copy()
+    tax_unit_table[MARKETPLACE_PLAN_BENCHMARK_RATIO_COLUMN] = (
+        compute_marketplace_plan_benchmark_ratio(
+            reported_premium=pd.to_numeric(
+                tax_unit_table["health_insurance_premiums_without_medicare_part_b"],
+                errors="coerce",
+            ).fillna(0.0),
+            aca_ptc=pd.to_numeric(tax_unit_table["aca_ptc"], errors="coerce").fillna(
+                0.0
+            ),
+            slcsp=pd.to_numeric(tax_unit_table["slcsp"], errors="coerce").fillna(0.0),
+            takes_up_aca=_truthy_series(
+                tax_unit_table["takes_up_aca_if_eligible"],
+                index=tax_unit_table.index,
+            ),
+        )
+    )
+    return tax_unit_table
 
 
 def _derive_has_tin_for_export(persons: pd.DataFrame) -> pd.Series:

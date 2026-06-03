@@ -36,6 +36,7 @@ from microplex_us.policyengine.us import (
     build_policyengine_us_export_variable_maps,
     build_policyengine_us_time_period_arrays,
     compile_policyengine_us_household_linear_constraints,
+    compute_marketplace_plan_benchmark_ratio,
     compute_policyengine_us_definition_hash,
     detect_policyengine_pseudo_inputs,
     materialize_policyengine_us_variables,
@@ -2954,6 +2955,62 @@ class TestPolicyEngineUSProjection:
 
         assert arrays["ssn_card_type"]["2024"].tolist() == [b"NONE", b"CITIZEN"]
 
+    def test_compute_marketplace_plan_benchmark_ratio_clips_marketplace_takers(self):
+        ratio = compute_marketplace_plan_benchmark_ratio(
+            reported_premium=np.array([300.0, 50.0, 500.0, 500.0]),
+            aca_ptc=np.array([700.0, 0.0, 0.0, 500.0]),
+            slcsp=np.array([1_000.0, 1_000.0, 0.0, 1_000.0]),
+            takes_up_aca=np.array([True, True, True, False]),
+        )
+
+        np.testing.assert_allclose(ratio, np.array([1.0, 0.5, 1.0, 1.0]))
+
+    def test_build_time_period_arrays_derives_marketplace_plan_ratio(self):
+        tables = PolicyEngineUSEntityTableBundle(
+            households=pd.DataFrame(
+                {
+                    "household_id": [10, 20, 30],
+                    "household_weight": [1.0, 1.0, 1.0],
+                }
+            ),
+            persons=pd.DataFrame(
+                {
+                    "person_id": [1, 2, 3],
+                    "household_id": [10, 20, 30],
+                    "tax_unit_id": [100, 200, 300],
+                }
+            ),
+            tax_units=pd.DataFrame(
+                {
+                    "tax_unit_id": [100, 200, 300],
+                    "household_id": [10, 20, 30],
+                    "health_insurance_premiums_without_medicare_part_b": [
+                        300.0,
+                        50.0,
+                        200.0,
+                    ],
+                    "aca_ptc": [700.0, 0.0, 100.0],
+                    "slcsp": [1_000.0, 1_000.0, 0.0],
+                    "takes_up_aca_if_eligible": [True, True, True],
+                }
+            ),
+        )
+
+        arrays = build_policyengine_us_time_period_arrays(
+            tables,
+            period=2024,
+            tax_unit_variable_map={
+                "selected_marketplace_plan_benchmark_ratio": (
+                    "selected_marketplace_plan_benchmark_ratio"
+                )
+            },
+        )
+
+        np.testing.assert_allclose(
+            arrays["selected_marketplace_plan_benchmark_ratio"]["2024"],
+            np.array([1.0, 0.5, 1.0]),
+        )
+
     def test_build_time_period_arrays_defaults_absent_export_inputs(self):
         tables = PolicyEngineUSEntityTableBundle(
             households=pd.DataFrame(
@@ -2999,6 +3056,9 @@ class TestPolicyEngineUSProjection:
             },
             tax_unit_variable_map={
                 "first_home_mortgage_balance": "first_home_mortgage_balance",
+                "selected_marketplace_plan_benchmark_ratio": (
+                    "selected_marketplace_plan_benchmark_ratio"
+                ),
                 "takes_up_aca_if_eligible": "takes_up_aca_if_eligible",
                 "takes_up_eitc": "takes_up_eitc",
                 "would_file_taxes_voluntarily": "would_file_taxes_voluntarily",
@@ -3021,6 +3081,9 @@ class TestPolicyEngineUSProjection:
         assert arrays["weeks_unemployed"]["2024"].tolist() == [0]
         assert arrays["would_claim_wic"]["2024"].tolist() == [True]
         assert arrays["first_home_mortgage_balance"]["2024"].tolist() == [0.0]
+        assert arrays["selected_marketplace_plan_benchmark_ratio"]["2024"].tolist() == [
+            1.0
+        ]
         assert arrays["takes_up_aca_if_eligible"]["2024"].tolist() == [True]
         assert arrays["takes_up_eitc"]["2024"].tolist() == [True]
         assert arrays["would_file_taxes_voluntarily"]["2024"].tolist() == [False]

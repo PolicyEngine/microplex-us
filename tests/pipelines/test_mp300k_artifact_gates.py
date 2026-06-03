@@ -437,14 +437,14 @@ def test_export_lineage_gate_rejects_ecps_populated_default_only_column(tmp_path
     )
     _add_period_dataset(
         candidate_dataset,
-        "selected_marketplace_plan_benchmark_ratio",
-        [1.0, 1.0],
+        "is_wic_at_nutritional_risk",
+        [False, True],
     )
     baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
     _add_period_dataset(
         baseline_dataset,
-        "selected_marketplace_plan_benchmark_ratio",
-        [0.8, 1.2],
+        "is_wic_at_nutritional_risk",
+        [False, True],
     )
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
     _write_benchmark_manifest(benchmark_manifest)
@@ -469,8 +469,8 @@ def test_export_lineage_gate_rejects_ecps_populated_default_only_column(tmp_path
     assert lineage_gate["status"] == "fail"
     assert lineage_gate["details"]["issues"] == [
         {
-            "column": "selected_marketplace_plan_benchmark_ratio",
-            "ecps_support_requirement": "numeric_nonzero",
+            "column": "is_wic_at_nutritional_risk",
+            "ecps_support_requirement": "categorical_variation",
             "export_path_status": "default_only",
             "issue": "ecps_populated_export_has_no_source_lineage",
         }

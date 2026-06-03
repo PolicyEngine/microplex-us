@@ -1230,6 +1230,7 @@ class TestUSMicroplexPipeline:
                 "unemployment_compensation": [0.0, 150.0],
                 "medicaid": [0.0, 1_250.0],
                 "medicaid_enrolled": [False, True],
+                "health_insurance_premiums_without_medicare_part_b": [120.0, 80.0],
                 "state_income_tax_paid": [400.0, 50.0],
                 "filing_status": ["JOINT", "JOINT"],
                 "relationship_to_head": [0, 1],
@@ -1240,6 +1241,9 @@ class TestUSMicroplexPipeline:
 
         tables = pipeline.build_policyengine_entity_tables(population)
         person_rows = tables.persons.sort_values("person_id").reset_index(drop=True)
+        tax_unit_rows = tables.tax_units.sort_values("household_id").reset_index(
+            drop=True
+        )
 
         assert person_rows["employment_income_before_lsr"].tolist() == [
             50_000.0,
@@ -1268,6 +1272,10 @@ class TestUSMicroplexPipeline:
         assert person_rows["is_hispanic"].tolist() == [False, True]
         assert person_rows["medicaid"].tolist() == [0.0, 1_250.0]
         assert person_rows["medicaid_enrolled"].tolist() == [False, True]
+        assert (
+            tax_unit_rows["health_insurance_premiums_without_medicare_part_b"].sum()
+            == 200.0
+        )
         assert person_rows["state_income_tax_reported"].tolist() == [400.0, 50.0]
 
     def test_build_policyengine_entity_tables_adds_deterministic_aca_takeup(
@@ -1347,6 +1355,86 @@ class TestUSMicroplexPipeline:
 
         tax_units = tables.tax_units.sort_values("household_id").reset_index(drop=True)
         assert tax_units["takes_up_aca_if_eligible"].tolist() == [True, False]
+
+    def test_attach_policyengine_marketplace_ratio_materializes_intermediates(
+        self,
+        monkeypatch,
+    ):
+        pipeline = USMicroplexPipeline(
+            USMicroplexBuildConfig(policyengine_dataset_year=2024)
+        )
+        tables = PolicyEngineUSEntityTableBundle(
+            households=pd.DataFrame(
+                {
+                    "household_id": [10, 20],
+                    "household_weight": [1.0, 1.0],
+                }
+            ),
+            persons=pd.DataFrame(
+                {
+                    "person_id": [1, 2],
+                    "household_id": [10, 20],
+                    "tax_unit_id": [100, 200],
+                }
+            ),
+            tax_units=pd.DataFrame(
+                {
+                    "tax_unit_id": [100, 200],
+                    "household_id": [10, 20],
+                    "health_insurance_premiums_without_medicare_part_b": [
+                        300.0,
+                        50.0,
+                    ],
+                    "takes_up_aca_if_eligible": [True, True],
+                }
+            ),
+        )
+
+        captured_variables: list[tuple[str, ...]] = []
+
+        def fake_materialize(tables_arg, *, variables, **kwargs):
+            captured_variables.append(tuple(variables))
+            tax_units = tables_arg.tax_units.copy()
+            tax_units["aca_ptc"] = [700.0, 0.0]
+            tax_units["slcsp"] = [1_000.0, 1_000.0]
+            return PolicyEngineUSVariableMaterializationResult(
+                tables=PolicyEngineUSEntityTableBundle(
+                    households=tables_arg.households,
+                    persons=tables_arg.persons,
+                    tax_units=tax_units,
+                    spm_units=tables_arg.spm_units,
+                    families=tables_arg.families,
+                    marital_units=tables_arg.marital_units,
+                ),
+                bindings={
+                    "aca_ptc": PolicyEngineUSVariableBinding(
+                        entity=EntityType.TAX_UNIT,
+                        column="aca_ptc",
+                    ),
+                    "slcsp": PolicyEngineUSVariableBinding(
+                        entity=EntityType.TAX_UNIT,
+                        column="slcsp",
+                    ),
+                },
+                materialized_variables=tuple(variables),
+            )
+
+        monkeypatch.setattr(
+            us_pipeline_module,
+            "materialize_policyengine_us_variables_safely",
+            fake_materialize,
+        )
+
+        updated = pipeline._attach_policyengine_marketplace_plan_benchmark_ratio(
+            tables,
+            target_period=2024,
+        )
+
+        assert captured_variables == [("aca_ptc", "slcsp")]
+        np.testing.assert_allclose(
+            updated.tax_units["selected_marketplace_plan_benchmark_ratio"],
+            np.array([1.0, 0.5]),
+        )
 
     def test_build_policyengine_entity_tables_adds_ecps_stochastic_takeup_inputs(
         self,

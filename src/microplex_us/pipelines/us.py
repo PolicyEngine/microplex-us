@@ -116,6 +116,7 @@ from microplex_us.policyengine.us import (
     build_policyengine_us_export_variable_maps,
     build_policyengine_us_time_period_arrays,
     compile_supported_policyengine_us_household_linear_constraints,
+    compute_marketplace_plan_benchmark_ratio,
     filter_supported_policyengine_us_targets,
     infer_policyengine_us_variable_bindings,
     load_us_pipeline_checkpoint,
@@ -5736,6 +5737,10 @@ class USMicroplexPipeline:
         tables = result.policyengine_tables or self.build_policyengine_entity_tables(
             result.calibrated_data
         )
+        tables = self._attach_policyengine_marketplace_plan_benchmark_ratio(
+            tables,
+            target_period=export_period,
+        )
         tax_benefit_system = self._resolve_policyengine_tax_benefit_system()
         export_maps = build_policyengine_us_export_variable_maps(
             tables,
@@ -9329,6 +9334,11 @@ class USMicroplexPipeline:
                 aggregated[column] = float(nonzero_values.iloc[0])
                 continue
             aggregated[column] = float(values.sum())
+        for column in ("health_insurance_premiums_without_medicare_part_b",):
+            if column not in unit_persons.columns:
+                continue
+            values = pd.to_numeric(unit_persons[column], errors="coerce").fillna(0.0)
+            aggregated[column] = float(values.clip(lower=0.0).sum())
         for child_count_column in ("eitc_children", "eitc_child_count"):
             if child_count_column not in unit_persons.columns:
                 continue
@@ -9538,6 +9548,75 @@ class USMicroplexPipeline:
         )
         result = self._attach_policyengine_eitc_takeup(result)
         return self._attach_policyengine_voluntary_filing(result)
+
+    def _attach_policyengine_marketplace_plan_benchmark_ratio(
+        self,
+        tables: PolicyEngineUSEntityTableBundle,
+        *,
+        target_period: int,
+    ) -> PolicyEngineUSEntityTableBundle:
+        """Derive eCPS's persisted selected Marketplace plan ratio input."""
+        tax_units = tables.tax_units
+        if tax_units is None or tax_units.empty:
+            return tables
+        if not {
+            "health_insurance_premiums_without_medicare_part_b",
+            "takes_up_aca_if_eligible",
+        }.issubset(tax_units.columns):
+            return tables
+
+        missing_intermediates = {
+            column for column in ("aca_ptc", "slcsp") if column not in tax_units.columns
+        }
+        materialized_tables = tables
+        if missing_intermediates:
+            materialization_result = materialize_policyengine_us_variables_safely(
+                tables,
+                variables=tuple(sorted(missing_intermediates)),
+                period=target_period,
+                dataset_year=self.config.policyengine_dataset_year or target_period,
+                simulation_cls=self.config.policyengine_simulation_cls,
+                direct_override_variables=self.config.policyengine_direct_override_variables,
+                batch_size=self.config.policyengine_materialize_batch_size,
+            )
+            materialized_tables = materialization_result.tables
+            tax_units = materialized_tables.tax_units
+            if tax_units is None:
+                return tables
+            still_missing = sorted(missing_intermediates - set(tax_units.columns))
+            if still_missing:
+                LOGGER.warning(
+                    "Could not derive selected Marketplace plan benchmark ratio; "
+                    "missing PE intermediate(s): %s",
+                    ", ".join(still_missing),
+                )
+                return materialized_tables
+
+        tax_units = tax_units.copy()
+        tax_units["selected_marketplace_plan_benchmark_ratio"] = (
+            compute_marketplace_plan_benchmark_ratio(
+                reported_premium=pd.to_numeric(
+                    tax_units["health_insurance_premiums_without_medicare_part_b"],
+                    errors="coerce",
+                ).fillna(0.0),
+                aca_ptc=pd.to_numeric(tax_units["aca_ptc"], errors="coerce").fillna(
+                    0.0
+                ),
+                slcsp=pd.to_numeric(tax_units["slcsp"], errors="coerce").fillna(0.0),
+                takes_up_aca=self._normal_bool_series(
+                    tax_units["takes_up_aca_if_eligible"],
+                    index=tax_units.index,
+                ),
+            )
+        )
+        return PolicyEngineUSEntityTableBundle(
+            households=materialized_tables.households,
+            persons=materialized_tables.persons,
+            tax_units=tax_units,
+            spm_units=materialized_tables.spm_units,
+            families=materialized_tables.families,
+            marital_units=materialized_tables.marital_units,
+        )
 
     def _attach_policyengine_simple_tax_unit_takeup(
         self,

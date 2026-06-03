@@ -2036,6 +2036,10 @@ class USMicroplexBuildConfig:
     puf_support_clone_zero_initial_weight: bool = True
     puf_support_clone_flag_column: str = PUF_SUPPORT_CLONE_FLAG_COLUMN
     puf_support_clone_prior_weight_share: float = 0.05
+    puf_support_clone_output_mode: Literal[
+        "append",
+        "collapse_to_scaffold",
+    ] = "append"
     puf_support_clone_overlap_variables: tuple[str, ...] = (
         PUF_SUPPORT_CLONE_IMPUTED_VARIABLES
         + PUF_SUPPORT_CLONE_SPECIAL_VARIABLES
@@ -2185,6 +2189,14 @@ class USMicroplexBuildConfig:
             if not (0.0 <= self.puf_support_clone_prior_weight_share < 1.0):
                 raise ValueError(
                     "puf_support_clone_prior_weight_share must be in [0, 1)"
+                )
+            if self.puf_support_clone_output_mode not in {
+                "append",
+                "collapse_to_scaffold",
+            }:
+                raise ValueError(
+                    "puf_support_clone_output_mode must be 'append' or "
+                    "'collapse_to_scaffold'"
                 )
         if (
             self.policyengine_calibration_rescale_to_input_weight_sum
@@ -5708,7 +5720,7 @@ class USMicroplexPipeline:
         donor_seed_columns: set[str],
         donor_observed: set[str],
     ) -> tuple[pd.DataFrame, dict[str, Any]]:
-        """Concatenate original CPS support and its PUF-imputed support clone."""
+        """Finalize the PUF donor surface against the CPS scaffold."""
         flag_column = self.config.puf_support_clone_flag_column
         original = original.copy()
         clone = imputed_clone.copy()
@@ -5738,15 +5750,6 @@ class USMicroplexPipeline:
         if generated_entity_id_columns:
             clone = clone.drop(columns=generated_entity_id_columns)
 
-        for column in sorted(set(clone.columns) - set(original.columns)):
-            original[column] = 0.0
-        for column in sorted(set(original.columns) - set(clone.columns)):
-            clone[column] = original[column].to_numpy(copy=True)
-        original = original.loc[:, clone.columns]
-
-        combined = pd.concat([original, clone], ignore_index=True, sort=False)
-        combined = combined.reset_index(drop=True)
-
         overlap_variables = sorted(integrated_set & preclone_columns)
         donor_only_variables = sorted(integrated_set - preclone_columns)
         ecps_surface = (
@@ -5775,11 +5778,35 @@ class USMicroplexPipeline:
                 )
                 break
 
+        output_mode = self.config.puf_support_clone_output_mode
+        collapse_copy_variables: list[str] = []
+        if output_mode == "collapse_to_scaffold":
+            collapse_candidates = (
+                (integrated_set - preclone_columns) | both_halves_override
+            ) - set(generated_entity_id_columns)
+            for variable in sorted(collapse_candidates):
+                if variable in clone.columns:
+                    original[variable] = clone[variable].to_numpy(copy=True)
+                    collapse_copy_variables.append(variable)
+            combined = original.reset_index(drop=True)
+            emitted_clone_row_count = 0
+        else:
+            for column in sorted(set(clone.columns) - set(original.columns)):
+                original[column] = 0.0
+            for column in sorted(set(original.columns) - set(clone.columns)):
+                clone[column] = original[column].to_numpy(copy=True)
+            original = original.loc[:, clone.columns]
+            combined = pd.concat([original, clone], ignore_index=True, sort=False)
+            combined = combined.reset_index(drop=True)
+            emitted_clone_row_count = int(len(clone))
+
         summary = {
             "enabled": True,
             "donor_source_name": donor_source_name,
+            "output_mode": output_mode,
             "original_row_count": int(len(original)),
             "clone_row_count": int(len(clone)),
+            "emitted_clone_row_count": emitted_clone_row_count,
             "final_row_count": int(len(combined)),
             "clone_initial_weight_sum": clone_weight_sum,
             "integrated_variable_count": int(len(integrated_set)),
@@ -5788,6 +5815,7 @@ class USMicroplexPipeline:
             "overlap_variables": overlap_variables,
             "donor_only_variables": donor_only_variables,
             "both_halves_override_variables": sorted(both_halves_override),
+            "collapse_copy_variables": collapse_copy_variables,
             "cps_only_refresh": cps_refresh_summary,
             "dropped_generated_entity_id_columns": generated_entity_id_columns,
             "variable_surface": {

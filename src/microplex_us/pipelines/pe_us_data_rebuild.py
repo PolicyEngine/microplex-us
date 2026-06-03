@@ -83,6 +83,7 @@ def default_policyengine_us_data_rebuild_config(
         donor_imputer_qrf_zero_threshold=0.05,
         donor_imputer_excluded_variables=(),
         puf_support_clone_enabled=True,
+        puf_support_clone_output_mode="collapse_to_scaffold",
         prefer_cached_cps_asec_source=False,
         policyengine_direct_override_variables=(
             "health_savings_account_ald",

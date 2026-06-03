@@ -88,6 +88,46 @@ def test_default_policyengine_us_data_rebuild_checkpoint_config_preserves_explic
     assert config.policyengine_calibration_target_variables == ("snap",)
 
 
+def test_default_policyengine_us_data_rebuild_checkpoint_config_uses_arch_source_backed_calibration_scope() -> (
+    None
+):
+    config = default_policyengine_us_data_rebuild_checkpoint_config(
+        policyengine_baseline_dataset="/tmp/enhanced_cps_2024.h5",
+        policyengine_targets_db="/tmp/policy_data.db",
+        arch_targets_db=(
+            "/tmp/arch/fixtures/consumer_facts.jsonl",
+            "/tmp/arch/macro/targets.db",
+        ),
+        calibration_target_source="arch",
+    )
+
+    assert config.policyengine_target_profile == "pe_native_broad"
+    assert (
+        config.policyengine_calibration_target_profile
+        == "pe_native_broad_source_backed"
+    )
+    assert config.calibration_target_source == "arch"
+    assert config.arch_targets_db == (
+        "/tmp/arch/fixtures/consumer_facts.jsonl",
+        "/tmp/arch/macro/targets.db",
+    )
+
+
+def test_default_policyengine_us_data_rebuild_checkpoint_config_requires_arch_targets_for_arch_calibration() -> (
+    None
+):
+    try:
+        default_policyengine_us_data_rebuild_checkpoint_config(
+            policyengine_baseline_dataset="/tmp/enhanced_cps_2024.h5",
+            policyengine_targets_db="/tmp/policy_data.db",
+            calibration_target_source="arch",
+        )
+    except ValueError as exc:
+        assert "arch_targets_db is required" in str(exc)
+    else:
+        raise AssertionError("Expected arch calibration without targets DB to fail")
+
+
 def test_default_policyengine_us_data_rebuild_checkpoint_config_infers_total_weight_targets(
     monkeypatch,
 ) -> None:
@@ -723,6 +763,61 @@ def test_main_passes_donor_condition_selection_override(monkeypatch, capsys) -> 
     stdout = capsys.readouterr().out
     assert "/tmp/artifacts/run-1" in stdout
     assert "hasRealPolicyEngineComparison" in stdout
+
+
+def test_main_passes_arch_calibration_target_source(monkeypatch, capsys) -> None:
+    captured: dict[str, Any] = {}
+    artifact_dir = Path("/tmp/artifacts/run-1")
+    parity_path = artifact_dir / "pe_us_data_rebuild_parity.json"
+
+    def fake_run_policyengine_us_data_rebuild_checkpoint(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(
+            artifacts=SimpleNamespace(
+                artifact_paths=SimpleNamespace(output_dir=artifact_dir)
+            ),
+            parity_path=parity_path,
+            parity_payload={
+                "verdict": {"hasRealPolicyEngineComparison": True},
+            },
+        )
+
+    monkeypatch.setattr(
+        checkpoint_module,
+        "run_policyengine_us_data_rebuild_checkpoint",
+        fake_run_policyengine_us_data_rebuild_checkpoint,
+    )
+
+    checkpoint_module.main(
+        [
+            "--output-root",
+            "/tmp/artifacts",
+            "--baseline-dataset",
+            "/tmp/enhanced_cps_2024.h5",
+            "--targets-db",
+            "/tmp/policy_data.db",
+            "--version-id",
+            "run-1",
+            "--calibration-target-source",
+            "arch",
+            "--arch-targets-db",
+            "/tmp/arch/fixtures/consumer_facts.jsonl",
+            "--arch-targets-db",
+            "/tmp/arch/macro/targets.db",
+            "--defer-native-audit",
+            "--defer-imputation-ablation",
+        ]
+    )
+
+    assert captured["target_profile"] == "pe_native_broad"
+    assert captured["calibration_target_profile"] is None
+    assert captured["calibration_target_source"] == "arch"
+    assert captured["arch_targets_db"] == (
+        "/tmp/arch/fixtures/consumer_facts.jsonl",
+        "/tmp/arch/macro/targets.db",
+    )
+    stdout = capsys.readouterr().out
+    assert "/tmp/artifacts/run-1" in stdout
 
 
 def test_run_policyengine_us_data_rebuild_checkpoint_rejects_empty_provider_sequence(

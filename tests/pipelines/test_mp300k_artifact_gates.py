@@ -247,6 +247,7 @@ def test_write_mp300k_artifact_gate_report_passes_with_all_evidence(tmp_path):
     assert record["gates"]["compatibility"]["metrics"]["person_count"] == 3
     assert record["gates"]["column_contract"]["status"] == "pass"
     assert record["gates"]["export_support"]["status"] == "pass"
+    assert record["gates"]["export_lineage"]["status"] == "pass"
     assert record["gates"]["artifact_size"]["status"] == "pass"
     assert record["gates"]["ecps_comparison"]["status"] == "pass"
     assert record["gates"]["arch_target_coverage"]["status"] == "pass"
@@ -426,6 +427,54 @@ def test_export_support_gate_ignores_ecps_filler_columns(tmp_path):
     assert record["summary"]["status"] == "passed"
     assert support_gate["status"] == "pass"
     assert support_gate["metrics"]["ecps_filler_export_column_count"] == 1
+
+
+def test_export_lineage_gate_rejects_ecps_populated_default_only_column(tmp_path):
+    artifact_dir = tmp_path / "artifact"
+    artifact_dir.mkdir()
+    candidate_dataset = _write_minimal_policyengine_dataset(
+        artifact_dir / "candidate.h5"
+    )
+    _add_period_dataset(
+        candidate_dataset,
+        "selected_marketplace_plan_benchmark_ratio",
+        [1.0, 1.0],
+    )
+    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    _add_period_dataset(
+        baseline_dataset,
+        "selected_marketplace_plan_benchmark_ratio",
+        [0.8, 1.2],
+    )
+    benchmark_manifest = tmp_path / "benchmark_manifest.json"
+    _write_benchmark_manifest(benchmark_manifest)
+    _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
+
+    report_path = write_mp300k_artifact_gate_report(
+        artifact_dir,
+        ecps_comparison_payload=_sound_ecps_comparison_payload(),
+        arch_coverage_payload=_arch_coverage_payload(),
+        runtime_smoke_payload={"runtime_ratio": 1.0},
+        benchmark_manifest_path=benchmark_manifest,
+        compute_native_scores=False,
+        update_manifest=False,
+    )
+
+    record = json.loads(report_path.read_text())
+    support_gate = record["gates"]["export_support"]
+    lineage_gate = record["gates"]["export_lineage"]
+
+    assert record["summary"]["status"] == "failed"
+    assert support_gate["status"] == "pass"
+    assert lineage_gate["status"] == "fail"
+    assert lineage_gate["details"]["issues"] == [
+        {
+            "column": "selected_marketplace_plan_benchmark_ratio",
+            "ecps_support_requirement": "numeric_nonzero",
+            "export_path_status": "default_only",
+            "issue": "ecps_populated_export_has_no_source_lineage",
+        }
+    ]
 
 
 def test_column_contract_gate_rejects_extra_candidate_columns(tmp_path):

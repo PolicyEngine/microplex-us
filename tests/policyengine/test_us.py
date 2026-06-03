@@ -2797,6 +2797,7 @@ class TestPolicyEngineUSProjection:
                 "hours_worked_last_week": FakeVariable("person"),
                 "in_nyc": FakeVariable("household", formulas={"2024": object()}),
                 "meets_ssi_disability_criteria": FakeVariable("person"),
+                "weekly_hours_worked_before_lsr": FakeVariable("person"),
             }
 
         tables = PolicyEngineUSEntityTableBundle(
@@ -2849,6 +2850,10 @@ class TestPolicyEngineUSProjection:
         assert arrays["has_tin"]["2024"].tolist() == [False, True]
         assert arrays["has_itin"]["2024"].tolist() == [False, True]
         assert arrays["hours_worked_last_week"]["2024"].tolist() == [0.0, 50.0]
+        assert arrays["weekly_hours_worked_before_lsr"]["2024"].tolist() == [
+            0.0,
+            50.0,
+        ]
         assert arrays["meets_ssi_disability_criteria"]["2024"].tolist() == [
             True,
             False,
@@ -2864,6 +2869,7 @@ class TestPolicyEngineUSProjection:
             "hours_worked_last_week",
             "in_nyc",
             "meets_ssi_disability_criteria",
+            "weekly_hours_worked_before_lsr",
         }.issubset(columns)
 
     def test_projects_frame_and_writes_time_period_dataset(self, tmp_path):

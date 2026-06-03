@@ -2,10 +2,12 @@
 
 import json
 import sqlite3
+from dataclasses import replace
 from pathlib import Path
 
 import duckdb
 import pandas as pd
+import pytest
 from microplex.core import (
     EntityObservation,
     EntityRelationship,
@@ -18,6 +20,7 @@ from microplex.core import (
     TimeStructure,
 )
 
+import microplex_us.pipelines.versioned_artifacts as versioned_artifacts_module
 from microplex_us.pipelines import (
     build_and_save_versioned_us_microplex,
     build_and_save_versioned_us_microplex_from_data_dir,
@@ -403,6 +406,140 @@ def test_save_versioned_us_microplex_artifacts_uses_explicit_version(tmp_path):
         assert conn.execute("SELECT COUNT(*) FROM runs").fetchone()[0] == 1
         assert conn.execute("SELECT COUNT(*) FROM slice_metrics").fetchone()[0] >= 1
         assert conn.execute("SELECT COUNT(*) FROM target_metrics").fetchone()[0] == 2
+
+
+def test_save_versioned_artifacts_allows_configured_checkpoint_contents(tmp_path):
+    result = _make_result(
+        targets_db=tmp_path / "targets.db",
+        baseline_dataset=tmp_path / "baseline.h5",
+        snap_values=(100.0, 50.0),
+    )
+    root = tmp_path / "builds"
+    output_dir = root / "run-1"
+    post_imputation_checkpoint = output_dir / "checkpoints" / "post_imputation"
+    post_microsim_checkpoint = output_dir / "checkpoints" / "post_microsim"
+    post_imputation_checkpoint.mkdir(parents=True)
+    post_microsim_checkpoint.mkdir(parents=True)
+    (post_imputation_checkpoint / "metadata.json").write_text("{}")
+    (post_microsim_checkpoint / "metadata.json").write_text("{}")
+    result.config = replace(
+        result.config,
+        pipeline_checkpoint_save_post_imputation_path=str(post_imputation_checkpoint),
+        pipeline_checkpoint_save_post_microsim_path=str(post_microsim_checkpoint),
+    )
+
+    version_id, allocated_output_dir = (
+        versioned_artifacts_module._allocate_versioned_output_dir(
+            root,
+            version_id="run-1",
+            result=result,
+        )
+    )
+
+    assert version_id == "run-1"
+    assert allocated_output_dir == output_dir
+
+
+def test_save_versioned_artifacts_allows_configured_checkpoint_parent(tmp_path):
+    result = _make_result(
+        targets_db=tmp_path / "targets.db",
+        baseline_dataset=tmp_path / "baseline.h5",
+        snap_values=(100.0, 50.0),
+    )
+    root = tmp_path / "builds"
+    output_dir = root / "run-1"
+    checkpoint_parent = output_dir / "checkpoints"
+    checkpoint_parent.mkdir(parents=True)
+    result.config = replace(
+        result.config,
+        pipeline_checkpoint_save_post_imputation_path=str(
+            checkpoint_parent / "post_imputation"
+        ),
+        pipeline_checkpoint_save_post_microsim_path=str(
+            checkpoint_parent / "post_microsim"
+        ),
+    )
+
+    version_id, allocated_output_dir = (
+        versioned_artifacts_module._allocate_versioned_output_dir(
+            root,
+            version_id="run-1",
+            result=result,
+        )
+    )
+
+    assert version_id == "run-1"
+    assert allocated_output_dir == output_dir
+
+
+def test_save_versioned_artifacts_rejects_unrelated_existing_version_dir(tmp_path):
+    result = _make_result(
+        targets_db=tmp_path / "targets.db",
+        baseline_dataset=tmp_path / "baseline.h5",
+        snap_values=(100.0, 50.0),
+    )
+    root = tmp_path / "builds"
+    output_dir = root / "run-1"
+    post_imputation_checkpoint = output_dir / "checkpoints" / "post_imputation"
+    post_imputation_checkpoint.mkdir(parents=True)
+    (post_imputation_checkpoint / "metadata.json").write_text("{}")
+    (output_dir / "manifest.json").write_text("{}")
+    result.config = replace(
+        result.config,
+        pipeline_checkpoint_save_post_imputation_path=str(post_imputation_checkpoint),
+    )
+
+    with pytest.raises(FileExistsError, match="Versioned artifact directory"):
+        versioned_artifacts_module._allocate_versioned_output_dir(
+            root,
+            version_id="run-1",
+            result=result,
+        )
+
+
+def test_save_versioned_artifacts_rejects_unconfigured_checkpoint_contents(tmp_path):
+    result = _make_result(
+        targets_db=tmp_path / "targets.db",
+        baseline_dataset=tmp_path / "baseline.h5",
+        snap_values=(100.0, 50.0),
+    )
+    root = tmp_path / "builds"
+    output_dir = root / "run-1"
+    checkpoint_dir = output_dir / "checkpoints" / "post_imputation"
+    checkpoint_dir.mkdir(parents=True)
+    (checkpoint_dir / "metadata.json").write_text("{}")
+
+    with pytest.raises(FileExistsError, match="Versioned artifact directory"):
+        versioned_artifacts_module._allocate_versioned_output_dir(
+            root,
+            version_id="run-1",
+            result=result,
+        )
+
+
+def test_save_versioned_artifacts_rejects_existing_version_file(tmp_path):
+    result = _make_result(
+        targets_db=tmp_path / "targets.db",
+        baseline_dataset=tmp_path / "baseline.h5",
+        snap_values=(100.0, 50.0),
+    )
+    root = tmp_path / "builds"
+    output_path = root / "run-1"
+    output_path.parent.mkdir(parents=True)
+    output_path.write_text("not a directory")
+    result.config = replace(
+        result.config,
+        pipeline_checkpoint_save_post_imputation_path=str(
+            output_path / "checkpoints" / "post_imputation"
+        ),
+    )
+
+    with pytest.raises(FileExistsError, match="Versioned artifact directory"):
+        versioned_artifacts_module._allocate_versioned_output_dir(
+            root,
+            version_id="run-1",
+            result=result,
+        )
 
 
 def test_frontier_helpers_select_best_versioned_run(tmp_path):

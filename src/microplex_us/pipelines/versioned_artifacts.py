@@ -88,6 +88,7 @@ def save_versioned_us_microplex_artifacts(
     child_tax_unit_agi_drift_variables: tuple[str, ...] | None = None,
     allow_stage_input_overrides: bool = False,
     stage_input_overrides: tuple[USStageInputOverride, ...] = (),
+    stage_runtime_writer: USStageRuntimeWriter | None = None,
 ) -> USMicroplexArtifactPaths:
     """Persist a build under a stable versioned directory beneath one output root."""
     output_root = Path(output_root)
@@ -118,6 +119,7 @@ def save_versioned_us_microplex_artifacts(
         child_tax_unit_agi_drift_variables=child_tax_unit_agi_drift_variables,
         allow_stage_input_overrides=allow_stage_input_overrides,
         stage_input_overrides=stage_input_overrides,
+        stage_runtime_writer=stage_runtime_writer,
     )
     return replace(paths, version_id=resolved_version_id)
 
@@ -560,6 +562,8 @@ def _allocate_versioned_output_dir_for_config(
     if version_id is not None:
         output_dir = output_root / version_id
         if output_dir.exists():
+            if _version_dir_contains_only_configured_checkpoints(output_dir, config):
+                return version_id, output_dir
             raise FileExistsError(
                 f"Versioned artifact directory already exists: {output_dir}"
             )
@@ -576,6 +580,70 @@ def _allocate_versioned_output_dir_for_config(
         output_dir = output_root / candidate_version_id
         suffix += 1
     return candidate_version_id, output_dir
+
+
+def _version_dir_contains_only_configured_checkpoints(
+    output_dir: Path,
+    config: Mapping[str, Any],
+) -> bool:
+    if not output_dir.is_dir():
+        return False
+
+    resolved_output_dir = output_dir.expanduser().resolve(strict=False)
+    checkpoint_roots = _configured_checkpoint_roots_inside_version_dir(
+        resolved_output_dir,
+        config,
+    )
+    if not checkpoint_roots:
+        return False
+
+    return all(
+        _path_is_allowed_checkpoint_tree_member(path, checkpoint_roots)
+        for path in output_dir.rglob("*")
+    )
+
+
+def _configured_checkpoint_roots_inside_version_dir(
+    output_dir: Path,
+    config: Mapping[str, Any],
+) -> tuple[Path, ...]:
+    roots: list[Path] = []
+    for key in (
+        "pipeline_checkpoint_save_post_imputation_path",
+        "pipeline_checkpoint_save_post_microsim_path",
+    ):
+        checkpoint_path = config.get(key)
+        if checkpoint_path is None:
+            continue
+        resolved_checkpoint_path = Path(checkpoint_path).expanduser().resolve(
+            strict=False
+        )
+        if (
+            resolved_checkpoint_path != output_dir
+            and _path_is_relative_to(resolved_checkpoint_path, output_dir)
+        ):
+            roots.append(resolved_checkpoint_path)
+    return tuple(roots)
+
+
+def _path_is_allowed_checkpoint_tree_member(
+    path: Path,
+    checkpoint_roots: tuple[Path, ...],
+) -> bool:
+    resolved_path = path.expanduser().resolve(strict=False)
+    return any(
+        _path_is_relative_to(resolved_path, checkpoint_root)
+        or _path_is_relative_to(checkpoint_root, resolved_path)
+        for checkpoint_root in checkpoint_roots
+    )
+
+
+def _path_is_relative_to(path: Path, other: Path) -> bool:
+    try:
+        path.relative_to(other)
+    except ValueError:
+        return False
+    return True
 
 
 def _short_config_hash(config: dict[str, Any]) -> str:

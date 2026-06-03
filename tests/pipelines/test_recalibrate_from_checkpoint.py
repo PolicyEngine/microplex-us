@@ -11,17 +11,17 @@ These tests drive:
 
 1. The helper loads a post-imputation checkpoint and dispatches the
    bundle to a fresh pipeline's calibrate method.
-2. The helper rejects post-microsim checkpoints in v1 (resume from that
-   stage needs pickled constraints, which is a follow-up).
+2. The helper also accepts post-microsim checkpoints, where materialized
+   target columns already exist on the bundle.
 3. The helper raises a clear error if the checkpoint directory is
    missing.
 """
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock
 
 import numpy as np
 import pandas as pd
@@ -71,7 +71,9 @@ class TestRecalibrateFromPipelineCheckpoint:
         orchestrates the load and hand-off, so the parametrized test
         covers both paths.
         """
-        from microplex_us.pipelines.us import recalibrate_policyengine_us_from_checkpoint
+        from microplex_us.pipelines.us import (
+            recalibrate_policyengine_us_from_checkpoint,
+        )
 
         bundle = _make_bundle(n=40)
         save_us_pipeline_checkpoint(
@@ -114,7 +116,9 @@ class TestRecalibrateFromPipelineCheckpoint:
 
     def test_unsupported_stage_raises(self, tmp_path: Path) -> None:
         """A metadata.json with an unknown stage is rejected."""
-        from microplex_us.pipelines.us import recalibrate_policyengine_us_from_checkpoint
+        from microplex_us.pipelines.us import (
+            recalibrate_policyengine_us_from_checkpoint,
+        )
 
         (tmp_path / "checkpoint").mkdir()
         import json
@@ -127,8 +131,133 @@ class TestRecalibrateFromPipelineCheckpoint:
             recalibrate_policyengine_us_from_checkpoint(cfg, tmp_path / "checkpoint")
 
     def test_missing_checkpoint_raises(self, tmp_path: Path) -> None:
-        from microplex_us.pipelines.us import recalibrate_policyengine_us_from_checkpoint
+        from microplex_us.pipelines.us import (
+            recalibrate_policyengine_us_from_checkpoint,
+        )
 
         cfg = USMicroplexBuildConfig(policyengine_targets_db=tmp_path / "targets.db")
         with pytest.raises(FileNotFoundError):
             recalibrate_policyengine_us_from_checkpoint(cfg, tmp_path / "nope")
+
+
+class TestRecalibrateFromCheckpointCli:
+    def test_prepare_output_root_accepts_existing_empty_directory(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        from microplex_us.pipelines.pe_us_recalibrate_from_checkpoint import (
+            _prepare_output_root,
+        )
+
+        output_root = tmp_path / "output"
+        output_root.mkdir()
+
+        assert _prepare_output_root(output_root) == output_root
+        assert output_root.is_dir()
+        assert list(output_root.iterdir()) == []
+
+    def test_prepare_output_root_rejects_missing_directory(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        from microplex_us.pipelines.pe_us_recalibrate_from_checkpoint import (
+            _prepare_output_root,
+        )
+
+        output_root = tmp_path / "output"
+
+        with pytest.raises(FileNotFoundError, match="--output-root does not exist"):
+            _prepare_output_root(output_root)
+        assert not output_root.exists()
+
+    def test_prepare_output_root_rejects_unwritable_directory(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        from microplex_us.pipelines.pe_us_recalibrate_from_checkpoint import (
+            _prepare_output_root,
+        )
+
+        output_root = tmp_path / "output"
+        output_root.mkdir()
+        original_mode = output_root.stat().st_mode
+        try:
+            output_root.chmod(0o500)
+            if os.access(output_root, os.W_OK | os.X_OK):
+                pytest.skip("current platform still reports chmod 0500 as writable")
+            with pytest.raises(PermissionError, match="--output-root is not writable"):
+                _prepare_output_root(output_root)
+        finally:
+            output_root.chmod(original_mode)
+
+    def test_main_rejects_output_file_before_recalibration(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        import microplex_us.pipelines.pe_us_recalibrate_from_checkpoint as cli
+
+        called = False
+
+        def _fail_if_called(*args: Any, **kwargs: Any) -> None:
+            nonlocal called
+            called = True
+            raise AssertionError("recalibration should not start")
+
+        monkeypatch.setattr(
+            cli,
+            "recalibrate_policyengine_us_from_checkpoint",
+            _fail_if_called,
+        )
+        output_root = tmp_path / "output"
+        output_root.write_text("not a directory")
+
+        with pytest.raises(NotADirectoryError, match="--output-root is not a directory"):
+            cli.main(
+                [
+                    "--checkpoint-path",
+                    str(tmp_path / "checkpoint"),
+                    "--output-root",
+                    str(output_root),
+                    "--targets-db",
+                    str(tmp_path / "targets.db"),
+                ]
+            )
+
+        assert called is False
+
+    def test_main_rejects_missing_output_directory_before_recalibration(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        import microplex_us.pipelines.pe_us_recalibrate_from_checkpoint as cli
+
+        called = False
+
+        def _fail_if_called(*args: Any, **kwargs: Any) -> None:
+            nonlocal called
+            called = True
+            raise AssertionError("recalibration should not start")
+
+        monkeypatch.setattr(
+            cli,
+            "recalibrate_policyengine_us_from_checkpoint",
+            _fail_if_called,
+        )
+        output_root = tmp_path / "output"
+
+        with pytest.raises(FileNotFoundError, match="--output-root does not exist"):
+            cli.main(
+                [
+                    "--checkpoint-path",
+                    str(tmp_path / "checkpoint"),
+                    "--output-root",
+                    str(output_root),
+                    "--targets-db",
+                    str(tmp_path / "targets.db"),
+                ]
+            )
+
+        assert called is False
+        assert not output_root.exists()

@@ -19,14 +19,25 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 from microplex_us.pipelines.us import (
     USMicroplexBuildConfig,
     recalibrate_policyengine_us_from_checkpoint,
 )
+
+
+def _prepare_output_root(output_root: Path) -> Path:
+    if not output_root.exists():
+        raise FileNotFoundError(f"--output-root does not exist: {output_root}")
+    if not output_root.is_dir():
+        raise NotADirectoryError(f"--output-root is not a directory: {output_root}")
+    if not os.access(output_root, os.W_OK | os.X_OK):
+        raise PermissionError(f"--output-root is not writable: {output_root}")
+    return output_root
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -51,7 +62,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--output-root",
         type=Path,
         required=True,
-        help="Output directory for the recalibrated bundle and summary.",
+        help="Existing output directory for the recalibrated bundle and summary.",
     )
     parser.add_argument(
         "--targets-db",
@@ -96,6 +107,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         ),
     )
     args = parser.parse_args(argv)
+    output_root = _prepare_output_root(args.output_root)
 
     config_kwargs: dict[str, object] = {
         "calibration_backend": args.calibration_backend,
@@ -116,20 +128,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     config = USMicroplexBuildConfig(**config_kwargs)
     result = recalibrate_policyengine_us_from_checkpoint(config, args.checkpoint_path)
 
-    args.output_root.mkdir(parents=True, exist_ok=True)
-    result.calibrated_data.to_parquet(args.output_root / "calibrated_data.parquet")
+    result.calibrated_data.to_parquet(output_root / "calibrated_data.parquet")
     result.policyengine_tables.households.to_parquet(
-        args.output_root / "households.parquet"
+        output_root / "households.parquet"
     )
     if result.policyengine_tables.persons is not None:
         result.policyengine_tables.persons.to_parquet(
-            args.output_root / "persons.parquet"
+            output_root / "persons.parquet"
         )
-    (args.output_root / "calibration_summary.json").write_text(
+    (output_root / "calibration_summary.json").write_text(
         json.dumps(result.calibration_summary, indent=2, default=str)
     )
     print(
-        f"Recalibrated from {args.checkpoint_path} → {args.output_root} "
+        f"Recalibrated from {args.checkpoint_path} → {output_root} "
         f"(stage={result.loaded_stage}, "
         f"rows={len(result.calibrated_data)})"
     )

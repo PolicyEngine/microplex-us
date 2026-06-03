@@ -7,6 +7,7 @@ from microplex_us.vintages import (
     DatasetProfile,
     Release,
     get_profile,
+    resolve_profile,
 )
 
 
@@ -18,7 +19,7 @@ def _release(**overrides) -> Release:
 
 def _profile(**overrides) -> DatasetProfile:
     base = dict(
-        name="test",
+        dataset="test",
         model_year=2024,
         cps_asec=Release(release=2025, income_year=2024),
         puf=Release(release=2015, income_year=2015, age_to=2024, factors="soi"),
@@ -59,16 +60,12 @@ def test_release_cannot_age_backward():
 # --- DatasetProfile coherence ---------------------------------------------
 
 
-def test_mp_2024_is_coherent_with_only_the_acs_gap_declared():
+def test_mp_2024_is_coherent_and_has_no_gaps():
     assert MP_2024.model_year == 2024
-    # No *undeclared* incoherence. The ACS donor is an explicitly declared gap
-    # (pinned to its 2022 release, not yet aged to the model year).
     assert MP_2024.incoherent_sources() == {}
-    assert set(MP_2024.declared_gaps()) == {"acs"}
-    # Every non-gapped source's dollars land on the model year.
+    assert MP_2024.declared_gaps() == {}
+    # Every source's dollars land on the model year.
     for name, release in MP_2024.sources().items():
-        if name in MP_2024.declared_gaps():
-            continue
         assert release.effective_year == 2024, name
 
 
@@ -78,13 +75,14 @@ def test_release_rejects_empty_gap_reason():
 
 
 def test_mp_2024_donor_releases_match_source_manifest():
-    # The profile's donor release years must equal what the build's donor loaders
-    # actually use (the pe_source_impute manifest ``default_year``), or the profile
-    # asserts a vintage the build does not load. This guard catches exactly the ACS
-    # 2024-vs-ACS_2022 mismatch the profile is meant to surface.
+    # SIPP/SCF donor release years must equal what the build's donor loaders use
+    # (the pe_source_impute manifest ``default_year``), or the profile asserts a
+    # vintage the build does not load. ACS is intentionally excluded: MP loads a
+    # newer local acs_2024.h5 via the #184 donor H5 fallback, beyond the module's
+    # ACS_2022 baseline default_year, so the manifest is not authoritative for ACS.
     from microplex_us.pe_source_impute_specs import get_pe_source_impute_block_spec
 
-    for source, block in [("acs", "acs"), ("sipp", "sipp_tips"), ("scf", "scf")]:
+    for source, block in [("sipp", "sipp_tips"), ("scf", "scf")]:
         spec = get_pe_source_impute_block_spec(block)
         assert MP_2024.sources()[source].release == spec.default_year, source
 
@@ -119,6 +117,35 @@ def test_aged_source_reaching_wrong_year_is_incoherent():
 
 
 def test_get_profile_returns_known_and_raises_unknown():
-    assert get_profile("mp_2024") is MP_2024
+    assert get_profile("mp_ecps_2024") is MP_2024
     with pytest.raises(KeyError, match="Unknown dataset profile"):
-        get_profile("mp_1999")
+        get_profile("mp_ecps_1999")
+
+
+def test_profile_is_keyed_on_dataset_and_year():
+    assert MP_2024.dataset == "mp_ecps"
+    assert MP_2024.model_year == 2024
+    assert MP_2024.name == "mp_ecps_2024"
+    assert MP_2024.key == ("mp_ecps", 2024)
+    assert resolve_profile("mp_ecps", 2024) is MP_2024
+
+
+def test_source_years_derive_from_the_profile():
+    # The years a build threads through its providers come from one place.
+    assert MP_2024.source_years() == {
+        "cps_source_year": 2025,
+        "puf_target_year": 2024,
+        "acs_year": 2024,
+        "sipp_year": 2023,
+        "scf_year": 2022,
+    }
+
+
+def test_version_id_is_derived_so_name_years_cannot_drift():
+    vid = MP_2024.version_id(
+        variant="puf-support-clone", commit="abc1234", build_date="20260602"
+    )
+    # ASEC + calendar years are pulled from the profile, not typed into the name.
+    assert vid == (
+        "mp-ecps-shaped-asec2025-calendar2024-puf-support-clone-abc1234-20260602"
+    )

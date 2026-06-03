@@ -138,10 +138,9 @@ def test_default_policyengine_us_data_rebuild_source_providers_use_pe_style_bund
         SOCIAL_SECURITY_SPLIT_STRATEGY_PE_QRF
     )
     assert isinstance(providers[2], ACSSourceProvider)
-    # ACS is pinned to its 2022 release (manifest ACS_2022, not aged); the default
-    # derives from MP_2024.acs.release. The prior 2024 here disagreed with the
-    # loader -- see the declared ACS gap in the vintage profile.
-    assert providers[2].year == 2022
+    # ACS uses the native 2024 release (MP_2024.acs.release); MP loads acs_2024.h5
+    # via the #184 donor H5 fallback.
+    assert providers[2].year == 2024
     assert isinstance(providers[3], SIPPSourceProvider)
     assert providers[3].block == "tips"
     assert providers[3].target_year == 2024

@@ -88,13 +88,23 @@ class DatasetProfile:
     (or declare a ``gap_reason``).
     """
 
-    name: str
+    dataset: str
     model_year: int
     cps_asec: Release
     puf: Release
     acs: Release
     sipp: Release
     scf: Release
+
+    @property
+    def name(self) -> str:
+        """Stable profile name ``{dataset}_{model_year}`` (e.g. ``mp_ecps_2024``)."""
+        return f"{self.dataset}_{self.model_year}"
+
+    @property
+    def key(self) -> tuple[str, int]:
+        """The ``(dataset, model_year)`` identity a build is addressed by."""
+        return (self.dataset, self.model_year)
 
     def sources(self) -> dict[str, Release]:
         return {
@@ -104,6 +114,28 @@ class DatasetProfile:
             "sipp": self.sipp,
             "scf": self.scf,
         }
+
+    def source_years(self) -> dict[str, int]:
+        """The release/target years the source providers consume, derived once from
+        this profile so callers pass the profile rather than loose per-source years.
+        Keyed by the existing provider/checkpoint parameter names."""
+        return {
+            "cps_source_year": self.cps_asec.release,
+            "puf_target_year": self.model_year,
+            "acs_year": self.acs.release,
+            "sipp_year": self.sipp.release,
+            "scf_year": self.scf.release,
+        }
+
+    def version_id(self, *, variant: str, commit: str, build_date: str) -> str:
+        """Derive the canonical build/version id from the profile so the ASEC and
+        calendar years in the name cannot disagree with the data. Example:
+        ``mp-ecps-shaped-asec2025-calendar2024-<variant>-<commit>-<build_date>``."""
+        prefix = self.dataset.replace("_", "-")
+        return (
+            f"{prefix}-shaped-asec{self.cps_asec.release}-"
+            f"calendar{self.model_year}-{variant}-{commit}-{build_date}"
+        )
 
     def incoherent_sources(self) -> dict[str, str]:
         """Map each source that fails to reach ``model_year`` (and has not
@@ -144,25 +176,19 @@ class DatasetProfile:
 # via SOI factors; SIPP/SCF aging to 2024 landed in #185; ACS donor is now the
 # native-2024 release).
 MP_2024 = DatasetProfile(
-    name="mp_2024",
+    dataset="mp_ecps",
     model_year=2024,
     # CPS ASEC survey year 2025 == income/calendar year 2024: native 2024 spine.
     cps_asec=Release(release=2025, income_year=2024),
     # Public-use PUF base is 2015 (latest released); aged to 2024 via SOI factors.
     puf=Release(release=2015, income_year=2015, age_to=2024, factors="soi"),
-    # ACS donor is pinned to the 2022 release (manifest block ACS_2022,
-    # default_year=2022) and is not in TARGET_YEAR_UPRATED_SURVEYS, so it is not
-    # aged to the model year. The provider default had drifted to 2024 while the
-    # loader stayed at 2022; declare the real release and flag the gap so the
-    # ACS-2024 migration is explicit rather than silently assumed done.
-    acs=Release(
-        release=2022,
-        income_year=2022,
-        gap_reason=(
-            "ACS donor loads the 2022 release (manifest ACS_2022) and is not aged "
-            "to the model year; reconcile when ACS moves to the 2024 release."
-        ),
-    ),
+    # ACS donor uses the native 2024 release (income year 2024 == model year,
+    # no aging). The PE-US-data Python module still only exposes ACS_2022, so MP
+    # loads a local acs_2024.h5 via the donor-provider H5 fallback added in #184;
+    # the provider default is 2024. The manifest block's default_year=2022 is the
+    # module baseline, not MP's intended vintage, so ACS is excluded from the
+    # manifest-tie check below.
+    acs=Release(release=2024, income_year=2024),
     # SIPP/SCF donors aged from their latest releases to 2024.
     sipp=Release(release=2023, income_year=2023, age_to=2024, factors="pe_growfactors"),
     scf=Release(release=2022, income_year=2022, age_to=2024, factors="pe_growfactors"),
@@ -173,7 +199,7 @@ PROFILES: dict[str, DatasetProfile] = {MP_2024.name: MP_2024}
 
 
 def get_profile(name: str) -> DatasetProfile:
-    """Return the named dataset profile, or raise with the known names."""
+    """Return the dataset profile by name (``{dataset}_{model_year}``)."""
     try:
         return PROFILES[name]
     except KeyError:
@@ -181,3 +207,9 @@ def get_profile(name: str) -> DatasetProfile:
         raise KeyError(
             f"Unknown dataset profile {name!r}; known profiles: {known}"
         ) from None
+
+
+def resolve_profile(dataset: str, model_year: int) -> DatasetProfile:
+    """Resolve a build's profile from its ``(dataset, model_year)`` key -- the
+    single identifier a build is keyed on."""
+    return get_profile(f"{dataset}_{model_year}")

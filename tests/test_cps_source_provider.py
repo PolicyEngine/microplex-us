@@ -509,7 +509,11 @@ def test_load_cps_asec_derives_policyengine_value_inputs(tmp_path):
     assert persons["medicare_part_b_premiums"].tolist() == [600, 0]
 
 
-def test_load_cps_asec_attaches_previous_year_income_from_prior_asec(tmp_path):
+def test_load_cps_asec_falls_back_last_year_income_to_current_earnings(tmp_path):
+    # The prior-year-earnings lookback (EITC/CTC prior-year election) expired,
+    # so last-year income is a placeholder set to current-year earnings
+    # (WSAL_VAL / SEMP_VAL) with no prior-ASEC dependency.
+    # previous_year_income_available tracks whether the row has any earnings.
     current_person_rows = pd.DataFrame(
         {
             "PERIDNUM": ["A", "B", "C", "D"],
@@ -523,19 +527,8 @@ def test_load_cps_asec_attaches_previous_year_income_from_prior_asec(tmp_path):
             "I_SEVAL": [0, 0, 0, 0],
         }
     )
-    previous_person_rows = pd.DataFrame(
-        {
-            "PERIDNUM": ["A", "B", "C"],
-            "WSAL_VAL": [50_000, 8_000, 25_000],
-            "SEMP_VAL": [6_000, 1_000, 2_500],
-            "I_ERNVAL": [0, 0, 0],
-            "I_SEVAL": [0, 0, 1],
-        }
-    )
     with zipfile.ZipFile(tmp_path / "cps_asec_2023.zip", "w") as archive:
         archive.writestr("pppub23.csv", current_person_rows.to_csv(index=False))
-    with zipfile.ZipFile(tmp_path / "cps_asec_2022.zip", "w") as archive:
-        archive.writestr("pppub22.csv", previous_person_rows.to_csv(index=False))
 
     dataset = load_cps_asec(year=2023, cache_dir=tmp_path, download=False)
     persons = (
@@ -545,21 +538,21 @@ def test_load_cps_asec_attaches_previous_year_income_from_prior_asec(tmp_path):
     )
 
     assert persons["employment_income_last_year"].tolist() == [
-        50_000.0,
-        8_000.0,
-        -1.0,
-        -1.0,
+        60_000.0,
+        10_000.0,
+        20_000.0,
+        0.0,
     ]
     assert persons["self_employment_income_last_year"].tolist() == [
-        6_000.0,
-        1_000.0,
-        -1.0,
-        -1.0,
+        5_000.0,
+        0.0,
+        3_000.0,
+        0.0,
     ]
     assert persons["previous_year_income_available"].tolist() == [
         True,
-        False,
-        False,
+        True,
+        True,
         False,
     ]
 

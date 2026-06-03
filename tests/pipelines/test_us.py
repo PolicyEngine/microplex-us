@@ -5365,6 +5365,7 @@ class TestUSMicroplexPipeline:
                 "deductible_mortgage_interest": [900.0, 0.0],
                 "investment_income_elected_form_4952": [40.0, 0.0],
                 "health_insurance_premiums_without_medicare_part_b": [120.0, 0.0],
+                "hours_worked": [37.5, 0.0],
             }
         )
 
@@ -5401,6 +5402,7 @@ class TestUSMicroplexPipeline:
         assert augmented["home_mortgage_interest"].tolist() == [900.0, 0.0]
         assert augmented["investment_interest_expense"].tolist() == [40.0, 0.0]
         assert augmented["other_health_insurance_premiums"].tolist() == [120.0, 0.0]
+        assert augmented["weekly_hours_worked_before_lsr"].tolist() == [37.5, 0.0]
 
     def test_augment_policyengine_person_inputs_coalesces_sparse_source_aliases_by_row(
         self,

@@ -3610,6 +3610,22 @@ def _with_policyengine_person_export_derivatives(
             person_table["hours_worked"],
             errors="coerce",
         ).fillna(0.0)
+    if (
+        "weekly_hours_worked_before_lsr" not in person_table.columns
+        and "hours_worked_last_week" in person_table.columns
+    ):
+        person_table["weekly_hours_worked_before_lsr"] = pd.to_numeric(
+            person_table["hours_worked_last_week"],
+            errors="coerce",
+        ).fillna(0.0)
+    elif (
+        "weekly_hours_worked_before_lsr" not in person_table.columns
+        and "hours_worked" in person_table.columns
+    ):
+        person_table["weekly_hours_worked_before_lsr"] = pd.to_numeric(
+            person_table["hours_worked"],
+            errors="coerce",
+        ).fillna(0.0)
     if "has_tin" not in person_table.columns:
         person_table["has_tin"] = _derive_has_tin_for_export(person_table)
     if "has_itin" not in person_table.columns:

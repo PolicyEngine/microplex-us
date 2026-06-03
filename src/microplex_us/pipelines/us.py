@@ -10444,6 +10444,16 @@ class USMicroplexPipeline:
                 "pre_subsidy_rent",
                 "rent",
             ).clip(lower=0.0)
+        if has_any(
+            "weekly_hours_worked_before_lsr",
+            "hours_worked_last_week",
+            "hours_worked",
+        ):
+            result["weekly_hours_worked_before_lsr"] = first_nonzero_or_present(
+                "weekly_hours_worked_before_lsr",
+                "hours_worked_last_week",
+                "hours_worked",
+            ).clip(lower=0.0)
 
         marital_status = (
             pd.to_numeric(result["marital_status"], errors="coerce")

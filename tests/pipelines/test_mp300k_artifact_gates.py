@@ -364,6 +364,49 @@ def test_export_support_gate_rejects_ecps_populated_numeric_filler(tmp_path):
     assert support_gate["details"]["issues"][0]["requirement"] == "numeric_positive"
 
 
+def test_export_support_gate_requires_signed_self_employment_support(tmp_path):
+    artifact_dir = tmp_path / "artifact"
+    artifact_dir.mkdir()
+    candidate_dataset = _write_minimal_policyengine_dataset(
+        artifact_dir / "candidate.h5"
+    )
+    _add_period_dataset(
+        candidate_dataset,
+        "self_employment_income_before_lsr",
+        [0.0, 5_000.0, 0.0],
+    )
+    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    _add_period_dataset(
+        baseline_dataset,
+        "self_employment_income_before_lsr",
+        [-2_000.0, 5_000.0, 0.0],
+    )
+    benchmark_manifest = tmp_path / "benchmark_manifest.json"
+    _write_benchmark_manifest(benchmark_manifest)
+    _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
+
+    report_path = write_mp300k_artifact_gate_report(
+        artifact_dir,
+        ecps_comparison_payload=_sound_ecps_comparison_payload(),
+        arch_coverage_payload=_arch_coverage_payload(),
+        runtime_smoke_payload={"runtime_ratio": 1.0},
+        benchmark_manifest_path=benchmark_manifest,
+        compute_native_scores=False,
+        update_manifest=False,
+    )
+
+    record = json.loads(report_path.read_text())
+    support_gate = record["gates"]["export_support"]
+
+    assert record["summary"]["status"] == "failed"
+    assert support_gate["status"] == "fail"
+    assert support_gate["metrics"]["unsupported_populated_export_column_count"] == 1
+    assert support_gate["details"]["issues"][0]["column"] == (
+        "self_employment_income_before_lsr"
+    )
+    assert support_gate["details"]["issues"][0]["requirement"] == "numeric_signed"
+
+
 def test_export_support_gate_rejects_ecps_varied_categorical_filler(tmp_path):
     artifact_dir = tmp_path / "artifact"
     artifact_dir.mkdir()

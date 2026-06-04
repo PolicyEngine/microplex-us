@@ -308,6 +308,20 @@ def optimize_pe_native_loss_weights(
 ) -> tuple[np.ndarray, dict[str, Any]]:
     """Optimize nonnegative household weights directly on the PE-native loss matrix.
 
+    Algorithm: **projected (proximal) gradient descent** on the least-squares
+    PE-native loss ``||matrix.T @ w - target||^2`` (plus an optional L2 term
+    toward the initial weights). Each iteration takes a gradient step and
+    projects onto the nonnegative budget simplex (``_project_to_budget_simplex``)
+    with a Lipschitz-derived step size, backtracking line search, and
+    monotone-descent acceptance.
+
+    NOTE on naming: commit history calls this the "APG refit", but it is **not**
+    Nesterov-accelerated — there is no momentum/extrapolation term, so it is
+    plain projected GD, not accelerated proximal gradient (APG). It is also
+    distinct from the dataset-build weight calibration (microcalibrate /
+    entropy / pe_l0); this routine is used for the eCPS-replacement PE-native
+    *refit and scoring* (symmetric refit). See docs/calibrator-decision.md.
+
     If *target_total_weight* is provided, the simplex projection targets that
     total instead of the initial weight sum.  This allows the optimizer to
     rescale the weight budget (e.g. to match a known population total) while

@@ -2089,6 +2089,10 @@ def _process_persons(df: pl.DataFrame, year: int) -> pl.DataFrame:
             .otherwise(0.0)
         )
         ira_pool = pl.when(has_earned_income).then(remaining - dc_pool).otherwise(0.0)
+        traditional_401k_desired = dc_pool * (1 - ROTH_SHARE_OF_DC_CONTRIBUTIONS)
+        roth_401k_desired = dc_pool * ROTH_SHARE_OF_DC_CONTRIBUTIONS
+        traditional_ira_desired = ira_pool * TRADITIONAL_SHARE_OF_IRA_CONTRIBUTIONS
+        roth_ira_desired = ira_pool * (1 - TRADITIONAL_SHARE_OF_IRA_CONTRIBUTIONS)
 
         derived_retirement_columns: list[pl.Expr] = []
         if "self_employed_pension_contributions_desired" not in result.columns:
@@ -2098,28 +2102,20 @@ def _process_persons(df: pl.DataFrame, year: int) -> pl.DataFrame:
         # DC pool: traditional/Roth 401(k) split.
         if "traditional_401k_contributions_desired" not in result.columns:
             derived_retirement_columns.append(
-                (dc_pool * (1 - ROTH_SHARE_OF_DC_CONTRIBUTIONS)).alias(
-                    "traditional_401k_contributions_desired"
-                )
+                traditional_401k_desired.alias("traditional_401k_contributions_desired")
             )
         if "roth_401k_contributions_desired" not in result.columns:
             derived_retirement_columns.append(
-                (dc_pool * ROTH_SHARE_OF_DC_CONTRIBUTIONS).alias(
-                    "roth_401k_contributions_desired"
-                )
+                roth_401k_desired.alias("roth_401k_contributions_desired")
             )
         # IRA pool: traditional/Roth IRA split.
         if "traditional_ira_contributions_desired" not in result.columns:
             derived_retirement_columns.append(
-                (ira_pool * TRADITIONAL_SHARE_OF_IRA_CONTRIBUTIONS).alias(
-                    "traditional_ira_contributions_desired"
-                )
+                traditional_ira_desired.alias("traditional_ira_contributions_desired")
             )
         if "roth_ira_contributions_desired" not in result.columns:
             derived_retirement_columns.append(
-                (ira_pool * (1 - TRADITIONAL_SHARE_OF_IRA_CONTRIBUTIONS)).alias(
-                    "roth_ira_contributions_desired"
-                )
+                roth_ira_desired.alias("roth_ira_contributions_desired")
             )
         limit_year = max(
             min(year, max(RETIREMENT_CONTRIBUTION_LIMITS_BY_YEAR)),
@@ -2133,52 +2129,41 @@ def _process_persons(df: pl.DataFrame, year: int) -> pl.DataFrame:
         limit_ira = pl.lit(float(limits["ira"])) + (
             catch_up_eligible * float(limits["ira_catch_up"])
         )
-        capped_se_pension = (
-            pl.when(has_se).then(retirement_contributions).otherwise(0.0)
-        )
-        capped_remaining_after_se = pl.max_horizontal(
-            retirement_contributions - capped_se_pension,
-            pl.lit(0.0),
-        )
+        capped_se_pension = se_pension
         capped_traditional_401k = (
             pl.when(has_wages)
-            .then(pl.min_horizontal(capped_remaining_after_se, limit_401k))
+            .then(pl.min_horizontal(traditional_401k_desired, limit_401k))
             .otherwise(0.0)
         )
-        capped_remaining_after_traditional_401k = pl.max_horizontal(
-            capped_remaining_after_se - capped_traditional_401k,
+        capped_remaining_401k_limit = pl.max_horizontal(
+            limit_401k - capped_traditional_401k,
             pl.lit(0.0),
         )
         capped_roth_401k = (
             pl.when(has_wages)
             .then(
                 pl.min_horizontal(
-                    capped_remaining_after_traditional_401k,
-                    limit_401k,
+                    roth_401k_desired,
+                    capped_remaining_401k_limit,
                 )
             )
             .otherwise(0.0)
         )
-        capped_remaining_after_roth_401k = pl.max_horizontal(
-            capped_remaining_after_traditional_401k - capped_roth_401k,
-            pl.lit(0.0),
-        )
         capped_traditional_ira = (
-            pl.when(has_wages)
-            .then(pl.min_horizontal(capped_remaining_after_roth_401k, limit_ira))
+            pl.when(has_earned_income)
+            .then(pl.min_horizontal(traditional_ira_desired, limit_ira))
             .otherwise(0.0)
         )
-        capped_remaining_after_traditional_ira = pl.max_horizontal(
-            capped_remaining_after_roth_401k - capped_traditional_ira,
+        capped_remaining_ira_limit = pl.max_horizontal(
+            limit_ira - capped_traditional_ira,
             pl.lit(0.0),
         )
-        capped_roth_ira_limit = limit_ira - capped_traditional_ira
         capped_roth_ira = (
-            pl.when(has_wages)
+            pl.when(has_earned_income)
             .then(
                 pl.min_horizontal(
-                    capped_remaining_after_traditional_ira,
-                    capped_roth_ira_limit,
+                    roth_ira_desired,
+                    capped_remaining_ira_limit,
                 )
             )
             .otherwise(0.0)

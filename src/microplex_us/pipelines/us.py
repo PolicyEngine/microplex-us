@@ -42,6 +42,10 @@ from microplex.hierarchical import TaxUnitOptimizer
 from microplex.synthesizer import Synthesizer
 from microplex.targets import TargetQuery, TargetSpec
 
+from microplex_us.data_sources.cps import (
+    RETIREMENT_CATCH_UP_AGE,
+    RETIREMENT_CONTRIBUTION_LIMITS_BY_YEAR,
+)
 from microplex_us.data_sources.forbes import (
     ForbesFixedSpine,
     ForbesFixedSpineConfig,
@@ -11109,6 +11113,71 @@ class USMicroplexPipeline:
                 "hours_worked_last_week",
                 "hours_worked",
             ).clip(lower=0.0)
+
+        retirement_desired_columns = {
+            "self_employed_pension_contributions": (
+                "self_employed_pension_contributions_desired"
+            ),
+            "traditional_401k_contributions": "traditional_401k_contributions_desired",
+            "roth_401k_contributions": "roth_401k_contributions_desired",
+            "traditional_ira_contributions": "traditional_ira_contributions_desired",
+            "roth_ira_contributions": "roth_ira_contributions_desired",
+        }
+        if all(
+            column in result.columns for column in retirement_desired_columns.values()
+        ):
+            limit_year = max(
+                min(
+                    self.config.policyengine_dataset_year or 2024,
+                    max(RETIREMENT_CONTRIBUTION_LIMITS_BY_YEAR),
+                ),
+                min(RETIREMENT_CONTRIBUTION_LIMITS_BY_YEAR),
+            )
+            limits = RETIREMENT_CONTRIBUTION_LIMITS_BY_YEAR[limit_year]
+            age = first_present("age")
+            catch_up_eligible = age.ge(RETIREMENT_CATCH_UP_AGE)
+            limit_401k = pd.Series(
+                float(limits["401k"]),
+                index=result.index,
+                dtype=float,
+            ) + catch_up_eligible.astype(float) * float(limits["401k_catch_up"])
+            limit_ira = pd.Series(
+                float(limits["ira"]),
+                index=result.index,
+                dtype=float,
+            ) + catch_up_eligible.astype(float) * float(limits["ira_catch_up"])
+
+            def capped_at(values: pd.Series, caps: pd.Series) -> pd.Series:
+                return pd.Series(
+                    np.minimum(values.to_numpy(), caps.to_numpy()),
+                    index=result.index,
+                    dtype=float,
+                )
+
+            self_employed_pension = first_present(
+                "self_employed_pension_contributions_desired"
+            ).clip(lower=0.0)
+            traditional_401k = capped_at(
+                first_present("traditional_401k_contributions_desired").clip(lower=0.0),
+                limit_401k,
+            )
+            roth_401k = capped_at(
+                first_present("roth_401k_contributions_desired").clip(lower=0.0),
+                (limit_401k - traditional_401k).clip(lower=0.0),
+            )
+            traditional_ira = capped_at(
+                first_present("traditional_ira_contributions_desired").clip(lower=0.0),
+                limit_ira,
+            )
+            roth_ira = capped_at(
+                first_present("roth_ira_contributions_desired").clip(lower=0.0),
+                (limit_ira - traditional_ira).clip(lower=0.0),
+            )
+            result["self_employed_pension_contributions"] = self_employed_pension
+            result["traditional_401k_contributions"] = traditional_401k
+            result["roth_401k_contributions"] = roth_401k
+            result["traditional_ira_contributions"] = traditional_ira
+            result["roth_ira_contributions"] = roth_ira
 
         marital_status = (
             pd.to_numeric(result["marital_status"], errors="coerce")

@@ -2879,6 +2879,48 @@ class TestPolicyEngineUSProjection:
             "weekly_hours_worked_before_lsr",
         }.issubset(columns)
 
+    def test_pipeline_export_uses_desired_retirement_leaves_for_final_inputs(self):
+        pipeline = USMicroplexPipeline(
+            USMicroplexBuildConfig(policyengine_dataset_year=2024)
+        )
+        persons = pd.DataFrame(
+            {
+                "person_id": [1, 2],
+                "household_id": [10, 11],
+                "age": [40, 52],
+                "self_employed_pension_contributions": [0.0, 99_000.0],
+                "traditional_401k_contributions": [10_000.0, 99_000.0],
+                "roth_401k_contributions": [0.0, 99_000.0],
+                "traditional_ira_contributions": [0.0, 99_000.0],
+                "roth_ira_contributions": [0.0, 99_000.0],
+                "self_employed_pension_contributions_desired": [0.0, 1_000.0],
+                "traditional_401k_contributions_desired": [7_718.0, 40_000.0],
+                "roth_401k_contributions_desired": [1_362.0, 5_000.0],
+                "traditional_ira_contributions_desired": [360.64, 10_000.0],
+                "roth_ira_contributions_desired": [559.36, 3_000.0],
+            }
+        )
+
+        result = pipeline._augment_policyengine_person_inputs(persons)
+
+        np.testing.assert_allclose(
+            result[
+                [
+                    "self_employed_pension_contributions",
+                    "traditional_401k_contributions",
+                    "roth_401k_contributions",
+                    "traditional_ira_contributions",
+                    "roth_ira_contributions",
+                ]
+            ].to_numpy(),
+            np.array(
+                [
+                    [0.0, 7_718.0, 1_362.0, 360.64, 559.36],
+                    [1_000.0, 30_500.0, 0.0, 8_000.0, 0.0],
+                ]
+            ),
+        )
+
     def test_projects_frame_and_writes_time_period_dataset(self, tmp_path):
         frame = pd.DataFrame(
             {

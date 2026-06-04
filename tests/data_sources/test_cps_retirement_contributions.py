@@ -102,22 +102,32 @@ def _expected_capped_split(
     *,
     year: int,
 ) -> dict[str, float]:
-    """Recompute eCPS' capped account-order split (cps.py:1500-1537)."""
+    """Recompute the final account leaves by capping each desired pool."""
     limits = RETIREMENT_CONTRIBUTION_LIMITS_BY_YEAR[year]
     catch_up = age >= 50
     limit_401k = limits["401k"] + catch_up * limits["401k_catch_up"]
     limit_ira = limits["ira"] + catch_up * limits["ira_catch_up"]
-    se_pension = retcb if se > 0 else 0.0
-    remaining = max(retcb - se_pension, 0.0)
-    traditional_401k = min(remaining, limit_401k) if wages > 0 else 0.0
-    remaining = max(remaining - traditional_401k, 0.0)
-    roth_401k = min(remaining, limit_401k) if wages > 0 else 0.0
-    remaining = max(remaining - roth_401k, 0.0)
-    traditional_ira = min(remaining, limit_ira) if wages > 0 else 0.0
-    remaining = max(remaining - traditional_ira, 0.0)
-    roth_ira = min(remaining, limit_ira - traditional_ira) if wages > 0 else 0.0
+    desired = _expected_split(retcb, wages, se)
+    traditional_401k = min(
+        desired["traditional_401k_contributions_desired"],
+        limit_401k,
+    )
+    roth_401k = min(
+        desired["roth_401k_contributions_desired"],
+        max(limit_401k - traditional_401k, 0.0),
+    )
+    traditional_ira = min(
+        desired["traditional_ira_contributions_desired"],
+        limit_ira,
+    )
+    roth_ira = min(
+        desired["roth_ira_contributions_desired"],
+        max(limit_ira - traditional_ira, 0.0),
+    )
     return {
-        "self_employed_pension_contributions": se_pension,
+        "self_employed_pension_contributions": desired[
+            "self_employed_pension_contributions_desired"
+        ],
         "traditional_401k_contributions": traditional_401k,
         "roth_401k_contributions": roth_401k,
         "traditional_ira_contributions": traditional_ira,
@@ -167,7 +177,7 @@ def test_split_matches_ecps_math_exactly():
             assert got == expected[leaf], f"row {i} {leaf}: {got} != {expected[leaf]}"
 
 
-def test_capped_split_matches_ecps_account_order_exactly():
+def test_capped_split_matches_desired_account_pools_with_limits():
     rows = [
         {"wages": 50_000.0, "se": 0.0, "retcb": 10_000.0, "age": 40},
         {"wages": 0.0, "se": 80_000.0, "retcb": 5_000.0, "age": 40},
@@ -185,6 +195,18 @@ def test_capped_split_matches_ecps_account_order_exactly():
         for leaf in _CAPPED_LEAVES:
             got = out[leaf].to_list()[i]
             assert got == expected[leaf], f"row {i} {leaf}: {got} != {expected[leaf]}"
+
+
+def test_capped_split_preserves_ira_support_below_401k_limit():
+    rows = [
+        {"wages": 50_000.0, "se": 0.0, "retcb": 10_000.0, "age": 40},
+    ]
+    out = _process_persons(_raw_person_frame(rows), 2024)
+
+    assert out["traditional_401k_contributions"].to_list()[0] > 0
+    assert out["roth_401k_contributions"].to_list()[0] > 0
+    assert out["traditional_ira_contributions"].to_list()[0] > 0
+    assert out["roth_ira_contributions"].to_list()[0] > 0
 
 
 def test_five_leaves_reconcile_to_retcb_for_earned_income_records():

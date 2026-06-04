@@ -3,6 +3,7 @@
 import json
 import logging
 import sqlite3
+from pathlib import Path
 from types import SimpleNamespace
 
 import h5py
@@ -5211,6 +5212,108 @@ class TestUSMicroplexPipeline:
 
         assert output_path.exists()
         assert captured == [("filing_status",)]
+
+    def test_export_policyengine_dataset_normalizes_checkpoint_person_inputs(
+        self,
+        tmp_path,
+        monkeypatch,
+    ):
+        captured_persons: list[pd.DataFrame] = []
+
+        def _identity_marketplace_ratio(self, tables, *, target_period):
+            return tables
+
+        def _fake_build_maps(tables, **kwargs):
+            captured_persons.append(tables.persons.copy())
+            return {
+                "household": {},
+                "person": {
+                    "rental_income": "rental_income",
+                    "farm_income": "farm_income",
+                },
+                "tax_unit": {},
+                "spm_unit": {},
+                "family": {},
+            }
+
+        def _fake_arrays(*args, **kwargs):
+            return {}
+
+        def _fake_write(arrays, path, **kwargs):
+            Path(path).write_text("h5 placeholder")
+            return Path(path)
+
+        monkeypatch.setattr(
+            USMicroplexPipeline,
+            "_attach_policyengine_marketplace_plan_benchmark_ratio",
+            _identity_marketplace_ratio,
+        )
+        monkeypatch.setattr(
+            USMicroplexPipeline,
+            "_resolve_policyengine_tax_benefit_system",
+            lambda self: SimpleNamespace(variables={}),
+        )
+        monkeypatch.setattr(
+            us_pipeline_module,
+            "build_policyengine_us_export_variable_maps",
+            _fake_build_maps,
+        )
+        monkeypatch.setattr(
+            us_pipeline_module,
+            "resolve_policyengine_excluded_export_variables",
+            lambda *args, **kwargs: set(),
+        )
+        monkeypatch.setattr(
+            us_pipeline_module,
+            "build_policyengine_us_time_period_arrays",
+            _fake_arrays,
+        )
+        monkeypatch.setattr(
+            us_pipeline_module,
+            "write_policyengine_us_time_period_dataset",
+            _fake_write,
+        )
+
+        config = USMicroplexBuildConfig(policyengine_dataset_year=2024)
+        tables = PolicyEngineUSEntityTableBundle(
+            households=pd.DataFrame({"household_id": [1], "household_weight": [1.0]}),
+            persons=pd.DataFrame(
+                {
+                    "person_id": [10, 20, 30],
+                    "household_id": [1, 1, 1],
+                    "age": [45, 50, 55],
+                    "sex": [1, 2, 1],
+                    "income": [1_000.0, 1_000.0, 1_000.0],
+                    "rental_income": [900.0, 900.0, 900.0],
+                    "rental_income_positive": [300.0, 0.0, 50.0],
+                    "rental_income_negative": [100.0, 200.0, 0.0],
+                    "farm_income": [20.0, 30.0, 40.0],
+                    "farm_operations_income": [10.0, -15.0, 0.0],
+                }
+            ),
+        )
+        result = USMicroplexBuildResult(
+            config=config,
+            seed_data=pd.DataFrame(),
+            synthetic_data=pd.DataFrame(),
+            calibrated_data=pd.DataFrame(),
+            targets=USMicroplexTargets(marginal={}, continuous={}),
+            calibration_summary={},
+            policyengine_tables=tables,
+        )
+
+        output_path = USMicroplexPipeline(config).export_policyengine_dataset(
+            result,
+            tmp_path / "us_microplex.h5",
+        )
+
+        assert output_path.exists()
+        assert captured_persons[0]["rental_income"].tolist() == [
+            200.0,
+            -200.0,
+            50.0,
+        ]
+        assert captured_persons[0]["farm_income"].tolist() == [10.0, -15.0, 40.0]
 
     def test_augment_policyengine_person_inputs_materializes_non_sch_d_capital_gains(
         self,

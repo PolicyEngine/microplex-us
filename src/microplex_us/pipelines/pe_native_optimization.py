@@ -556,6 +556,12 @@ def rewrite_policyengine_us_dataset_weights(
                 or group_id_name not in handle
                 or person_group_name not in handle
                 or person_households is None
+                # Production datasets (e.g. the published enhanced CPS) may
+                # leave derived entity-weight groups empty because PolicyEngine
+                # computes those weights from household_weight at runtime. The
+                # group then exists without a value for this period, so skip
+                # propagation rather than raising KeyError on [period_key].
+                or period_key not in handle[group_weight_name]
             ):
                 continue
             person_group_ids = handle[person_group_name][period_key][:]

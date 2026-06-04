@@ -10,7 +10,6 @@
           "title": "Resolve run profile",
           "description": "Resolve build configuration, provider query choices, output locations, and optional validation settings before any data is loaded.",
           "status": "current",
-          "stability": "evolving",
           "nodes": [
             {
               "id": "config.build_config",
@@ -62,7 +61,6 @@
           "title": "Prepare source input",
           "description": "Ask each configured provider for the requested source data and normalize it into source input records.",
           "status": "current",
-          "stability": "evolving",
           "nodes": [
             {
               "id": "external.source_providers",
@@ -97,7 +95,6 @@
           "title": "Attach source semantics",
           "description": "Carry source descriptors, entity observations, and household-person relationships with loaded tables.",
           "status": "current",
-          "stability": "stable",
           "nodes": [
             {
               "id": "core.observation_frame",
@@ -141,7 +138,6 @@
           "title": "Build fusion plan",
           "description": "Summarize variable coverage and source contribution roles before choosing the build backbone.",
           "status": "current",
-          "stability": "evolving",
           "nodes": [
             {
               "id": "core.fusion_planning",
@@ -179,7 +175,6 @@
           "title": "Select scaffold source",
           "description": "Pick the household-person source that becomes the structural backbone of the national population.",
           "status": "current",
-          "stability": "evolving",
           "nodes": [
             {
               "id": "artifact.scaffold_selection",
@@ -225,7 +220,6 @@
           "title": "Project scaffold seed",
           "description": "Convert the selected scaffold source into initial household and person seed tables.",
           "status": "current",
-          "stability": "evolving",
           "nodes": [
             {
               "id": "artifact.scaffold_seed_data",
@@ -254,7 +248,6 @@
           "title": "Normalize scaffold identifiers",
           "description": "Remove generated IDs that should not leak across the stage boundary.",
           "status": "current",
-          "stability": "stable",
           "nodes": [
             {
               "id": "artifact.normalized_scaffold_seed_data",
@@ -288,7 +281,6 @@
           "title": "Integrate donor sources",
           "description": "Impute donor variables from secondary sources onto the scaffold seed.",
           "status": "current",
-          "stability": "evolving",
           "nodes": [
             {
               "id": "artifact.donor_frames",
@@ -335,7 +327,6 @@
           "title": "Build targets and synthesis variables",
           "description": "Build target counts and decide which variables the synthesizer must carry forward.",
           "status": "current",
-          "stability": "evolving",
           "nodes": [
             {
               "id": "core.targets",
@@ -392,7 +383,6 @@
           "title": "Synthesize population",
           "description": "Generate the synthetic candidate population and enforce target support.",
           "status": "current",
-          "stability": "evolving",
           "nodes": [
             {
               "id": "core.synthesizer",
@@ -447,7 +437,6 @@
           "title": "Materialize PolicyEngine tables",
           "description": "Convert synthetic records into household, person, tax-unit, family, and SPM entity tables.",
           "status": "current",
-          "stability": "evolving",
           "nodes": [
             {
               "id": "artifact.policyengine_entity_tables",
@@ -476,7 +465,6 @@
           "title": "Checkpoint and contract-check entity tables",
           "description": "Optionally persist pre-calibration entity tables and verify the export-column surface.",
           "status": "current",
-          "stability": "stable",
           "nodes": [
             {
               "id": "artifact.policyengine_checkpoint",
@@ -516,7 +504,6 @@
           "title": "Resolve PolicyEngine constraints",
           "description": "Load PE target rows, filter unsupported constraints, and choose the calibration household budget.",
           "status": "current",
-          "stability": "evolving",
           "nodes": [
             {
               "id": "external.policyengine_targets_db",
@@ -563,7 +550,6 @@
           "title": "Run calibration",
           "description": "Run either PE-native table calibration or the generic dataframe calibration fallback.",
           "status": "current",
-          "stability": "evolving",
           "nodes": [
             {
               "id": "core.calibrator",
@@ -637,7 +623,6 @@
           "title": "Export PolicyEngine dataset",
           "description": "Write the final calibrated entity tables into the PolicyEngine H5 dataset format.",
           "status": "current",
-          "stability": "stable",
           "nodes": [
             {
               "id": "artifact.policyengine_dataset",
@@ -666,7 +651,6 @@
           "title": "Save dataset bundle",
           "description": "Persist stage artifacts, manifests, registry/index entries, and versioned publication outputs.",
           "status": "current",
-          "stability": "evolving",
           "nodes": [
             {
               "id": "artifact.artifact_manifest",
@@ -724,7 +708,6 @@
           "title": "Load validation inputs",
           "description": "Load the final H5 and previously written artifact manifest for replayable validation.",
           "status": "current",
-          "stability": "stable",
           "nodes": [
             {
               "id": "artifact.validation_inputs",
@@ -759,7 +742,6 @@
           "title": "Compute benchmark evidence",
           "description": "Run configured validation and benchmark evidence, including PE target harness and PE-native scores.",
           "status": "current",
-          "stability": "evolving",
           "nodes": [
             {
               "id": "artifact.policyengine_harness",
@@ -818,7 +800,6 @@
           "title": "Write validation evidence manifest",
           "description": "Index validation artifacts for saved-run overlays and allow Stage 9 replay without mutating Stage 8 outputs.",
           "status": "current",
-          "stability": "evolving",
           "nodes": [
             {
               "id": "artifact.validation_evidence_manifest",

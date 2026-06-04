@@ -13,10 +13,13 @@ or benchmark evidence.
 The public generated files live under `docs/generated/`:
 
 - [`us_pipeline_graph.json`](./generated/us_pipeline_graph.json): the canonical
-  9-stage graph.
+  9-stage graph generated from
+  `microplex_us.pipelines.stage_contracts`.
 - [`us_pipeline_internals.json`](./generated/us_pipeline_internals.json): the
   substage, function, artifact, library, external-source, and validation graph
-  for each canonical stage.
+  for each canonical stage, generated from
+  [`us_pipeline_internals.map.json`](./us_pipeline_internals.map.json) and
+  `@pipeline_node` decorators.
 - [`us_pipeline_graph.schema.json`](./generated/us_pipeline_graph.schema.json):
   schema for graph consumers.
 - [`us_pipeline_internals.schema.json`](./generated/us_pipeline_internals.schema.json):
@@ -48,6 +51,10 @@ microplex-us-generate-pipeline-docs \
   --artifact-root /path/to/saved/artifact
 ```
 
+That command writes a run-specific `us_pipeline_overlay.json` only when
+`--artifact-root` is supplied. The overlay is not the source of the canonical
+pipeline shape; it only adds saved-run evidence on top of the static graph.
+
 ## Viewer
 
 The separate `pipeline_viewer/` app renders the generated graph with ELK-routed
@@ -65,9 +72,18 @@ npm install
 npm run dev
 ```
 
-The viewer ships with fixture graph, internals, and overlay JSON files. Use the
-file loaders in the header to inspect different generated graph data or a
-saved-run overlay.
+The viewer ships with fixture graph, internals, and overlay JSON files copied
+from generated docs or test fixtures. The advanced data loaders are for
+inspecting alternate generated files:
+
+- stage graph: `docs/generated/us_pipeline_graph.json`
+- machinery internals: `docs/generated/us_pipeline_internals.json`
+- saved-run overlay: generated with
+  `microplex-us-generate-pipeline-docs --artifact-root /path/to/saved/artifact`
+
+Individual stage views expose the same kind of reference layer the old US data
+pipeline docs exposed: substage sections, exact function or class references,
+source locations, and directed edges.
 
 After regenerating `docs/generated/us_pipeline_internals.json`, update the
 viewer fixture with:

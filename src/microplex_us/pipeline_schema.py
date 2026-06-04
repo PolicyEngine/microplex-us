@@ -29,7 +29,6 @@ EdgeType = Literal[
     "informational",
 ]
 NodeStatus = Literal["current", "planned", "legacy", "missing"]
-Stability = Literal["stable", "evolving", "experimental"]
 
 
 @dataclass(frozen=True)
@@ -48,7 +47,6 @@ class PipelineNode:
     signature: str | None = None
     docstring: str | None = None
     status: NodeStatus = "current"
-    stability: Stability = "stable"
     artifacts_in: tuple[str, ...] = field(default_factory=tuple)
     artifacts_out: tuple[str, ...] = field(default_factory=tuple)
     api_refs: tuple[str, ...] = field(default_factory=tuple)
@@ -76,7 +74,6 @@ class PipelineNode:
             signature=_optional_str(value.get("signature")),
             docstring=_optional_str(value.get("docstring")),
             status=value.get("status", "current"),
-            stability=value.get("stability", "stable"),
             artifacts_in=_tuple_of_str(
                 value.get("artifacts_in", value.get("artifactsIn", ()))
             ),
@@ -104,7 +101,6 @@ class PipelineNode:
             "signature": self.signature,
             "docstring": self.docstring,
             "status": self.status,
-            "stability": self.stability,
             "artifactsIn": list(self.artifacts_in),
             "artifactsOut": list(self.artifacts_out),
             "apiRefs": list(self.api_refs),
@@ -122,7 +118,6 @@ class PipelineEdge:
     edge_type: EdgeType = "data_flow"
     label: str = ""
     status: NodeStatus = "current"
-    stability: Stability = "stable"
     notes: tuple[str, ...] = field(default_factory=tuple)
 
     @classmethod
@@ -135,7 +130,6 @@ class PipelineEdge:
             edge_type=value.get("edge_type", value.get("edgeType", "data_flow")),
             label=str(value.get("label", "")),
             status=value.get("status", "current"),
-            stability=value.get("stability", "stable"),
             notes=_tuple_of_str(value.get("notes", ())),
         )
 
@@ -149,7 +143,6 @@ class PipelineEdge:
             "edgeType": self.edge_type,
             "label": self.label,
             "status": self.status,
-            "stability": self.stability,
             "notes": list(self.notes),
         }
 
@@ -180,5 +173,4 @@ __all__ = [
     "NodeType",
     "PipelineEdge",
     "PipelineNode",
-    "Stability",
 ]

@@ -71,9 +71,6 @@
             "null"
           ]
         },
-        "stability": {
-          "type": "string"
-        },
         "status": {
           "type": "string"
         }
@@ -82,8 +79,7 @@
         "id",
         "label",
         "nodeType",
-        "status",
-        "stability"
+        "status"
       ],
       "type": "object"
     },

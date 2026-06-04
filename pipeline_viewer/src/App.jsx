@@ -110,7 +110,6 @@ function StageMachineryFlow({ internals, selectedStageId, selectedSubstageId }) 
           label: substage.title,
           nodeType: "substage",
           description: substage.description,
-          stability: substage.stability,
           order: substageIndex * 10,
           nodeWidth: 280,
         },
@@ -239,41 +238,57 @@ export default function App() {
           <p className="eyebrow">Microplex US</p>
           <h1>Pipeline Viewer</h1>
         </div>
-        <div className="loaders">
-          <label>
-            Graph JSON
-            <input
-              type="file"
-              accept="application/json,.json"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) loadJsonFile(file, setGraph);
-              }}
-            />
-          </label>
-          <label>
-            Overlay JSON
-            <input
-              type="file"
-              accept="application/json,.json"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) loadJsonFile(file, setOverlay);
-              }}
-            />
-          </label>
-          <label>
-            Internals JSON
-            <input
-              type="file"
-              accept="application/json,.json"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) loadJsonFile(file, setInternals);
-              }}
-            />
-          </label>
-        </div>
+        <details className="data-loaders">
+          <summary>Advanced data</summary>
+          <p>
+            Defaults load from <code>pipeline_viewer/src/fixtures</code>. Regenerated
+            sources live in <code>docs/generated</code>.
+          </p>
+          <div className="loader-grid">
+            <label>
+              Stage graph
+              <small>
+                <code>docs/generated/us_pipeline_graph.json</code>
+              </small>
+              <input
+                type="file"
+                accept="application/json,.json"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) loadJsonFile(file, setGraph);
+                }}
+              />
+            </label>
+            <label>
+              Saved-run overlay
+              <small>
+                generated with <code>--artifact-root</code>
+              </small>
+              <input
+                type="file"
+                accept="application/json,.json"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) loadJsonFile(file, setOverlay);
+                }}
+              />
+            </label>
+            <label>
+              Machinery internals
+              <small>
+                <code>docs/generated/us_pipeline_internals.json</code>
+              </small>
+              <input
+                type="file"
+                accept="application/json,.json"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) loadJsonFile(file, setInternals);
+                }}
+              />
+            </label>
+          </div>
+        </details>
       </header>
 
       <section className="workspace">
@@ -341,6 +356,7 @@ export default function App() {
             stage={selectedStage}
             node={selectedNode}
             internalsStage={selectedInternalsStage}
+            selectedSubstageId={selectedSubstageId}
           />
         )}
       </section>
@@ -436,7 +452,7 @@ function PipelineSummaryPanel({ summary }) {
   );
 }
 
-function StageDetails({ stage, node, internalsStage }) {
+function StageDetails({ stage, node, internalsStage, selectedSubstageId }) {
   if (!node) {
     return <aside className="details-panel">Select a stage.</aside>;
   }
@@ -446,6 +462,7 @@ function StageDetails({ stage, node, internalsStage }) {
   const diagnostics = stage?.diagnostics || [];
   const validations = stage?.validations || [];
   const metrics = stage?.metrics || [];
+  const visibleMachinery = visibleSubstages(internalsStage, selectedSubstageId);
   return (
     <aside className="details-panel">
       <p className="eyebrow">{node.step}</p>
@@ -502,14 +519,9 @@ function StageDetails({ stage, node, internalsStage }) {
         )}
       </DetailSection>
       <DetailSection title="Machinery">
-        {internalsStage?.substages?.length ? (
-          internalsStage.substages.map((substage) => (
-            <div className="detail-row" key={substage.id}>
-              <span>{substage.id}</span>
-              <strong>
-                {substage.nodes.length} nodes, {substage.edges.length} edges
-              </strong>
-            </div>
+        {visibleMachinery.length ? (
+          visibleMachinery.map((substage) => (
+            <SubstageDocs substage={substage} key={substage.id} />
           ))
         ) : (
           <p className="muted">No stage machinery map.</p>
@@ -523,6 +535,84 @@ function StageDetails({ stage, node, internalsStage }) {
         </DetailSection>
       )}
     </aside>
+  );
+}
+
+function SubstageDocs({ substage }) {
+  return (
+    <section className="substage-docs">
+      <div className="substage-docs-header">
+        <span>{substage.id}</span>
+        <strong>{substage.title}</strong>
+      </div>
+      {substage.description && <p>{substage.description}</p>}
+      <NodeReferenceTable nodes={substage.nodes || []} />
+      <EdgeReferenceList edges={substage.edges || []} />
+    </section>
+  );
+}
+
+function NodeReferenceTable({ nodes }) {
+  if (!nodes.length) {
+    return <p className="muted">No function, class, or artifact references.</p>;
+  }
+  return (
+    <div className="reference-table-wrap">
+      <table className="reference-table">
+        <thead>
+          <tr>
+            <th>Node</th>
+            <th>Type</th>
+            <th>Reference</th>
+          </tr>
+        </thead>
+        <tbody>
+          {nodes.map((node) => {
+            const codeRef = nodeCodeReference(node);
+            const sourceRef = nodeSourceReference(node);
+            return (
+              <tr key={node.id}>
+                <td>
+                  <strong>{node.label}</strong>
+                  <code>{node.id}</code>
+                </td>
+                <td>{nodeTypeLabel(node)}</td>
+                <td>
+                  {codeRef ? (
+                    <code className="code-ref">{codeRef}</code>
+                  ) : (
+                    <span className="muted">conceptual node</span>
+                  )}
+                  {node.signature && (
+                    <code className="signature-ref">{node.signature}</code>
+                  )}
+                  {sourceRef && <code className="source-ref">{sourceRef}</code>}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function EdgeReferenceList({ edges }) {
+  if (!edges.length) {
+    return <p className="muted">No mapped edges.</p>;
+  }
+  return (
+    <div className="edge-reference-list">
+      <strong>Edges</strong>
+      {edges.map((edge) => (
+        <div className="edge-reference-row" key={edge.id}>
+          <code>{edge.source}</code>
+          <span>to</span>
+          <code>{edge.target}</code>
+          <small>{edge.label || edge.edgeType}</small>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -580,6 +670,32 @@ function buildPipelineSummary(graph, internals) {
     ),
     stages,
   };
+}
+
+function visibleSubstages(internalsStage, selectedSubstageId) {
+  const substages = internalsStage?.substages || [];
+  if (selectedSubstageId === "all") return substages;
+  return substages.filter((substage) => substage.id === selectedSubstageId);
+}
+
+function nodeCodeReference(node) {
+  if (node.objectPath) return node.objectPath;
+  if (Array.isArray(node.apiRefs) && node.apiRefs.length) {
+    return node.apiRefs.join(", ");
+  }
+  if (node.pydoc) return node.pydoc;
+  return null;
+}
+
+function nodeSourceReference(node) {
+  if (!node.sourceFile) return null;
+  return node.line ? `${node.sourceFile}:${node.line}` : node.sourceFile;
+}
+
+function nodeTypeLabel(node) {
+  const nodeType = node.nodeType || "node";
+  const kind = node.kind ? ` / ${node.kind}` : "";
+  return `${nodeType.replaceAll("_", " ")}${kind}`;
 }
 
 function DetailSection({ title, children }) {

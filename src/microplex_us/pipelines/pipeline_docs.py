@@ -307,7 +307,7 @@ def pipeline_internals_json_schema() -> dict[str, Any]:
             },
             "node": {
                 "type": "object",
-                "required": ["id", "label", "nodeType", "status", "stability"],
+                "required": ["id", "label", "nodeType", "status"],
                 "properties": {
                     "id": {"type": "string"},
                     "label": {"type": "string"},
@@ -319,7 +319,6 @@ def pipeline_internals_json_schema() -> dict[str, Any]:
                     "signature": {"type": ["string", "null"]},
                     "pydoc": {"type": ["string", "null"]},
                     "status": {"type": "string"},
-                    "stability": {"type": "string"},
                 },
             },
             "edge": {
@@ -661,7 +660,6 @@ def _pipeline_internals_substage(
             "title": str(payload.get("title", substage_id)),
             "description": str(payload.get("description", "")),
             "status": str(payload.get("status", "current")),
-            "stability": str(payload.get("stability", "stable")),
             "nodes": sorted(nodes_by_id.values(), key=lambda node: str(node["id"])),
             "edges": edges,
         },

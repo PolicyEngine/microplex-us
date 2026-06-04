@@ -714,15 +714,14 @@ def _pipeline_internals_substage(
         PipelineEdge.from_mapping(edge_payload).to_dict()
         for edge_payload in _list_of_mappings(payload.get("edges"))
     ]
-    referenced_node_ids = {
-        str(edge[endpoint]) for edge in edges for endpoint in ("source", "target")
-    }
-    referenced_decorated_node_ids = {
-        node_id for node_id in referenced_node_ids if node_id in decorated_nodes
-    }
-    for node_id in sorted(referenced_decorated_node_ids):
-        nodes_by_id.setdefault(node_id, decorated_nodes[node_id].to_node())
-    for node_id in sorted(referenced_node_ids):
+    referenced_node_ids_ordered = _referenced_node_ids(edges)
+    referenced_node_ids = set(referenced_node_ids_ordered)
+    referenced_decorated_node_ids: set[str] = set()
+    for node_id in referenced_node_ids_ordered:
+        if node_id in decorated_nodes:
+            nodes_by_id.setdefault(node_id, decorated_nodes[node_id].to_node())
+            referenced_decorated_node_ids.add(node_id)
+    for node_id in referenced_node_ids_ordered:
         if node_id in authored_nodes:
             nodes_by_id.setdefault(node_id, authored_nodes[node_id])
     missing = sorted(referenced_node_ids - set(nodes_by_id))
@@ -737,7 +736,7 @@ def _pipeline_internals_substage(
             "title": str(payload.get("title", substage_id)),
             "description": str(payload.get("description", "")),
             "status": str(payload.get("status", "current")),
-            "nodes": sorted(nodes_by_id.values(), key=lambda node: str(node["id"])),
+            "nodes": list(nodes_by_id.values()),
             "edges": edges,
         },
         referenced_decorated_node_ids,
@@ -754,6 +753,19 @@ def _pipeline_internals_authored_nodes(
                 node = PipelineNode.from_mapping(node_payload).to_dict()
                 nodes_by_id.setdefault(str(node["id"]), node)
     return nodes_by_id
+
+
+def _referenced_node_ids(edges: Sequence[Mapping[str, Any]]) -> list[str]:
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for edge in edges:
+        for endpoint in ("source", "target"):
+            node_id = str(edge[endpoint])
+            if node_id in seen:
+                continue
+            ordered.append(node_id)
+            seen.add(node_id)
+    return ordered
 
 
 def _load_or_build_stage_manifest(
@@ -927,21 +939,17 @@ def _append_markdown_substage(
             f"- Canonical stage: `{stage_id}`",
             f"- Status: `{substage.get('status', 'current')}`",
             "",
-            "| Node | Does | Type | Status | Code refs | Source |",
-            "| --- | --- | --- | --- | --- | --- |",
+            "| Node | Type | Status | API refs |",
+            "| --- | --- | --- | --- |",
         ]
     )
     for node in _list_of_mappings(substage.get("nodes")):
         refs = _node_markdown_refs(node)
-        source = _node_source_reference(node)
-        does = _first_docstring_line(node)
         lines.append(
             f"| `{node.get('id', '')}` {_markdown_cell(node.get('label', ''))} | "
-            f"{_markdown_cell(does)} | "
             f"`{node.get('nodeType', 'process')}` | "
             f"`{node.get('status', 'current')}` | "
-            f"{refs or ''} | "
-            f"{f'`{source}`' if source else ''} |"
+            f"{refs or ''} |"
         )
     lines.extend(["", "#### Edges", ""])
     for edge in _list_of_mappings(substage.get("edges")):
@@ -964,12 +972,7 @@ def _node_markdown_refs(node: Mapping[str, Any]) -> str:
     pydoc = _optional_str(node.get("pydoc"))
     if pydoc and pydoc not in refs:
         refs.append(pydoc)
-    signature = _optional_str(node.get("signature"))
-    rendered = ", ".join(f"`{ref}`" for ref in refs)
-    if signature:
-        signature_ref = f"`{signature}`"
-        rendered = f"{rendered}<br>{signature_ref}" if rendered else signature_ref
-    return rendered
+    return ", ".join(f"`{ref}`" for ref in refs)
 
 
 def _node_code_reference(node: Mapping[str, Any]) -> str | None:

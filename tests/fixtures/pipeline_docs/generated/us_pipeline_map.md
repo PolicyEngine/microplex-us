@@ -30,18 +30,36 @@ Resolve build configuration, provider query choices, output locations, and optio
 - Canonical stage: `01_run_profile`
 - Status: `current`
 
-| Node | Does | Type | Status | Code refs | Source |
-| --- | --- | --- | --- | --- | --- |
-| `artifact.run_profile` Run profile manifest | Stage 1 run metadata consumed by later stage manifests. | `artifact` | `current` |  |  |
-| `config.build_config` USMicroplexBuildConfig | User-facing configuration object for a US build. | `artifact` | `current` |  |  |
-| `config.provider_queries` Provider query plan | Resolved source-provider query settings. | `artifact` | `current` |  |  |
-| `us.pipeline.build_from_source_providers` Build from source providers | Loads each configured SourceProvider into an ObservationFrame, records source-loading stage lifecycle state, then delegates the loaded frames to the canonical US build path. | `entrypoint` | `current` | `microplex_us.pipelines.us.USMicroplexPipeline.build_from_source_providers`<br>`build_from_source_providers(self, providers, queries)` | `src/microplex_us/pipelines/us.py:2698` |
+| Node | Type | Status | API refs |
+| --- | --- | --- | --- |
+| `config.build_config` USMicroplexBuildConfig | `artifact` | `current` |  |
+| `config.provider_queries` Provider query plan | `artifact` | `current` |  |
+| `core.source_provider` SourceProvider | `library` | `current` | `microplex.core.SourceProvider`, `microplex.core.SourceQuery` |
+| `us.pipeline.resolve_source_query` Resolve source query | `process` | `current` | `microplex_us.pipelines.us.USMicroplexPipeline._resolve_source_query`, `microplex_us.pipelines.us.USMicroplexPipeline._source_query_keys` |
+| `core.source_provider_load_frame` Load provider frame | `library` | `current` | `microplex.core.SourceProvider.load_frame` |
+| `core.observation_frame` ObservationFrame | `library` | `current` | `microplex.core.ObservationFrame`, `microplex.core.SourceDescriptor` |
+| `stage_runtime.source_loading_lifecycle` Source-loading lifecycle writer | `infrastructure` | `current` | `microplex_us.pipelines.stage_runtime.USStageRuntimeWriter.start_stage`, `microplex_us.pipelines.stage_runtime.USStageRuntimeWriter.complete_stage`, `microplex_us.pipelines.stage_runtime.USStageRuntimeWriter.fail_stage` |
+| `us.pipeline.source_loading_stage_outputs` Source-loading stage outputs | `process` | `current` | `microplex_us.pipelines.us._source_loading_stage_outputs` |
+| `us.pipeline.build_from_frames` Build from frames | `process` | `current` | `microplex_us.pipelines.us.USMicroplexPipeline.build_from_frames` |
+| `artifact.run_profile` Run profile manifest | `artifact` | `current` |  |
+| `us.pipeline.build_from_source_providers` Build from source providers | `entrypoint` | `current` | `microplex_us.pipelines.us.USMicroplexPipeline.build_from_source_providers` |
 
 #### Edges
 
 - `config.build_config` -> `config.provider_queries` `data_flow` (resolves)
 - `config.build_config` -> `us.pipeline.build_from_source_providers` `data_flow` (starts build)
+- `config.provider_queries` -> `us.pipeline.resolve_source_query` `data_flow` (query map)
+- `core.source_provider` -> `us.pipeline.resolve_source_query` `uses_library` (descriptor keys)
+- `us.pipeline.build_from_source_providers` -> `stage_runtime.source_loading_lifecycle` `uses_utility` (starts Stage 2)
+- `us.pipeline.build_from_source_providers` -> `us.pipeline.resolve_source_query` `data_flow` (per provider)
+- `us.pipeline.resolve_source_query` -> `core.source_provider_load_frame` `data_flow` (query)
+- `core.source_provider` -> `core.source_provider_load_frame` `external_source` (provider implementation)
+- `core.source_provider_load_frame` -> `core.observation_frame` `produces_artifact` (returns)
+- `core.observation_frame` -> `us.pipeline.source_loading_stage_outputs` `data_flow` (summarizes)
+- `us.pipeline.source_loading_stage_outputs` -> `stage_runtime.source_loading_lifecycle` `produces_artifact` (completes Stage 2)
+- `core.observation_frame` -> `us.pipeline.build_from_frames` `data_flow` (loaded frames)
 - `us.pipeline.build_from_source_providers` -> `artifact.run_profile` `produces_artifact` (initializes)
+- `us.pipeline.build_from_frames` -> `artifact.run_profile` `data_flow` (continues run)
 
 ## 02: Source contracts and source loading
 
@@ -55,11 +73,11 @@ Ask each configured provider for the requested source data and normalize it into
 - Canonical stage: `02_source_loading`
 - Status: `current`
 
-| Node | Does | Type | Status | Code refs | Source |
-| --- | --- | --- | --- | --- | --- |
-| `artifact.source_frames` Observation frames | Loaded source tables plus entity and relationship metadata. | `artifact` | `current` |  |  |
-| `external.source_providers` Source providers | CPS, PUF, ACS, SIPP, and other provider implementations available to the run. | `external` | `current` |  |  |
-| `us.pipeline.prepare_source_input` Prepare source input | Validate and extract the source-planning context for a US build. | `process` | `current` | `microplex_us.pipelines.us.USMicroplexPipeline.prepare_source_input`<br>`prepare_source_input(self, frame)` | `src/microplex_us/pipelines/us.py:3188` |
+| Node | Type | Status | API refs |
+| --- | --- | --- | --- |
+| `external.source_providers` Source providers | `external` | `current` |  |
+| `artifact.source_frames` Observation frames | `artifact` | `current` |  |
+| `us.pipeline.prepare_source_input` Prepare source input | `process` | `current` | `microplex_us.pipelines.us.USMicroplexPipeline.prepare_source_input` |
 
 #### Edges
 
@@ -74,11 +92,11 @@ Carry source descriptors, entity observations, and household-person relationship
 - Canonical stage: `02_source_loading`
 - Status: `current`
 
-| Node | Does | Type | Status | Code refs | Source |
-| --- | --- | --- | --- | --- | --- |
-| `artifact.source_frames` Observation frames | Loaded source tables plus entity and relationship metadata. | `artifact` | `current` |  |  |
-| `artifact.source_semantics` Source semantics | Source availability, table, entity, relationship, and geography metadata. | `artifact` | `current` |  |  |
-| `core.observation_frame` ObservationFrame | microplex core source container for tables and relationships. | `library` | `current` | `microplex.core.ObservationFrame`, `microplex.core.SourceDescriptor` |  |
+| Node | Type | Status | API refs |
+| --- | --- | --- | --- |
+| `core.observation_frame` ObservationFrame | `library` | `current` | `microplex.core.ObservationFrame`, `microplex.core.SourceDescriptor` |
+| `artifact.source_semantics` Source semantics | `artifact` | `current` |  |
+| `artifact.source_frames` Observation frames | `artifact` | `current` |  |
 
 #### Edges
 
@@ -97,11 +115,11 @@ Summarize variable coverage and source contribution roles before choosing the bu
 - Canonical stage: `03_source_planning`
 - Status: `current`
 
-| Node | Does | Type | Status | Code refs | Source |
-| --- | --- | --- | --- | --- | --- |
-| `artifact.fusion_plan` Fusion plan | Variable-family source coverage and synthetic-release requirements. | `artifact` | `current` |  |  |
-| `artifact.source_frames` Observation frames | Loaded source tables plus entity and relationship metadata. | `artifact` | `current` |  |  |
-| `core.fusion_planning` Fusion planning | microplex source-mix planning utilities. | `library` | `current` | `microplex.fusion.FusionPlan` |  |
+| Node | Type | Status | API refs |
+| --- | --- | --- | --- |
+| `core.fusion_planning` Fusion planning | `library` | `current` | `microplex.fusion.FusionPlan` |
+| `artifact.fusion_plan` Fusion plan | `artifact` | `current` |  |
+| `artifact.source_frames` Observation frames | `artifact` | `current` |  |
 
 #### Edges
 
@@ -116,12 +134,12 @@ Pick the household-person source that becomes the structural backbone of the nat
 - Canonical stage: `03_source_planning`
 - Status: `current`
 
-| Node | Does | Type | Status | Code refs | Source |
-| --- | --- | --- | --- | --- | --- |
-| `artifact.fusion_plan` Fusion plan | Variable-family source coverage and synthetic-release requirements. | `artifact` | `current` |  |  |
-| `artifact.scaffold_selection` Scaffold selection | Selected source plus selection scores and rationale. | `artifact` | `current` |  |  |
-| `artifact.source_plan` Source plan | Stage 3 plan artifact consumed by the seed/scaffold stage. | `artifact` | `current` |  |  |
-| `us.pipeline.select_scaffold_source` Select scaffold source | Choose the source frame that provides the structural household-person backbone. | `process` | `current` | `microplex_us.pipelines.us.USMicroplexPipeline._select_scaffold_source`<br>`_select_scaffold_source(self, source_inputs)` | `src/microplex_us/pipelines/us.py:6075` |
+| Node | Type | Status | API refs |
+| --- | --- | --- | --- |
+| `artifact.scaffold_selection` Scaffold selection | `artifact` | `current` |  |
+| `artifact.source_plan` Source plan | `artifact` | `current` |  |
+| `us.pipeline.select_scaffold_source` Select scaffold source | `process` | `current` | `microplex_us.pipelines.us.USMicroplexPipeline._select_scaffold_source` |
+| `artifact.fusion_plan` Fusion plan | `artifact` | `current` |  |
 
 #### Edges
 
@@ -141,11 +159,11 @@ Convert the selected scaffold source into initial household and person seed tabl
 - Canonical stage: `04_seed_scaffold`
 - Status: `current`
 
-| Node | Does | Type | Status | Code refs | Source |
-| --- | --- | --- | --- | --- | --- |
-| `artifact.scaffold_seed_data` Scaffold seed data | Pre-donor seed tables built from the chosen scaffold source. | `artifact` | `current` |  |  |
-| `artifact.scaffold_selection` Scaffold selection | Selected source plus selection scores and rationale. | `artifact` | `current` |  |  |
-| `us.pipeline.prepare_seed_data_from_source` Prepare scaffold seed data | Project an observation frame into the canonical US seed schema. | `process` | `current` | `microplex_us.pipelines.us.USMicroplexPipeline.prepare_seed_data_from_source`<br>`prepare_seed_data_from_source(self, source_input)` | `src/microplex_us/pipelines/us.py:3244` |
+| Node | Type | Status | API refs |
+| --- | --- | --- | --- |
+| `artifact.scaffold_seed_data` Scaffold seed data | `artifact` | `current` |  |
+| `us.pipeline.prepare_seed_data_from_source` Prepare scaffold seed data | `process` | `current` | `microplex_us.pipelines.us.USMicroplexPipeline.prepare_seed_data_from_source` |
+| `artifact.scaffold_selection` Scaffold selection | `artifact` | `current` |  |
 
 #### Edges
 
@@ -160,11 +178,11 @@ Remove generated IDs that should not leak across the stage boundary.
 - Canonical stage: `04_seed_scaffold`
 - Status: `current`
 
-| Node | Does | Type | Status | Code refs | Source |
-| --- | --- | --- | --- | --- | --- |
-| `artifact.normalized_scaffold_seed_data` Normalized scaffold seed | Scaffold seed data after generated ID cleanup. | `artifact` | `current` |  |  |
-| `artifact.scaffold_seed_data` Scaffold seed data | Pre-donor seed tables built from the chosen scaffold source. | `artifact` | `current` |  |  |
-| `us.pipeline.strip_generated_entity_ids` Strip generated entity ids | Normalize generated identifiers before the seed handoff is persisted. | `process` | `current` | `microplex_us.pipelines.us.USMicroplexPipeline._strip_generated_entity_ids`<br>`_strip_generated_entity_ids(self, frame, *, scaffold_input)` | `src/microplex_us/pipelines/us.py:7694` |
+| Node | Type | Status | API refs |
+| --- | --- | --- | --- |
+| `artifact.normalized_scaffold_seed_data` Normalized scaffold seed | `artifact` | `current` |  |
+| `us.pipeline.strip_generated_entity_ids` Strip generated entity ids | `process` | `current` | `microplex_us.pipelines.us.USMicroplexPipeline._strip_generated_entity_ids` |
+| `artifact.scaffold_seed_data` Scaffold seed data | `artifact` | `current` |  |
 
 #### Edges
 
@@ -183,13 +201,13 @@ Impute donor variables from secondary sources onto the scaffold seed.
 - Canonical stage: `05_donor_integration_synthesis`
 - Status: `current`
 
-| Node | Does | Type | Status | Code refs | Source |
-| --- | --- | --- | --- | --- | --- |
-| `artifact.donor_frames` Donor frames | Secondary source frames used for imputation. | `artifact` | `current` |  |  |
-| `artifact.normalized_scaffold_seed_data` Normalized scaffold seed | Scaffold seed data after generated ID cleanup. | `artifact` | `current` |  |  |
-| `artifact.seed_data` Seed data | Donor-integrated seed data consumed by synthesis. | `artifact` | `current` |  |  |
-| `us.pipeline.build_donor_imputer` Build donor imputer | Choose and configure the donor-imputation model for missing variable families. | `process` | `current` | `microplex_us.pipelines.us.USMicroplexPipeline._build_donor_imputer`<br>`_build_donor_imputer(self, *, condition_vars, target_vars)` | `src/microplex_us/pipelines/us.py:5914` |
-| `us.pipeline.integrate_donor_sources` Integrate donor sources | Impute donor variables onto the scaffold seed before synthesis. | `process` | `current` | `microplex_us.pipelines.us.USMicroplexPipeline._integrate_donor_sources`<br>`_integrate_donor_sources(self, seed_data, *, scaffold_input, donor_inputs)` | `src/microplex_us/pipelines/us.py:6484` |
+| Node | Type | Status | API refs |
+| --- | --- | --- | --- |
+| `artifact.donor_frames` Donor frames | `artifact` | `current` |  |
+| `artifact.seed_data` Seed data | `artifact` | `current` |  |
+| `us.pipeline.build_donor_imputer` Build donor imputer | `process` | `current` | `microplex_us.pipelines.us.USMicroplexPipeline._build_donor_imputer` |
+| `us.pipeline.integrate_donor_sources` Integrate donor sources | `process` | `current` | `microplex_us.pipelines.us.USMicroplexPipeline._integrate_donor_sources` |
+| `artifact.normalized_scaffold_seed_data` Normalized scaffold seed | `artifact` | `current` |  |
 
 #### Edges
 
@@ -206,13 +224,13 @@ Build target counts and decide which variables the synthesizer must carry forwar
 - Canonical stage: `05_donor_integration_synthesis`
 - Status: `current`
 
-| Node | Does | Type | Status | Code refs | Source |
-| --- | --- | --- | --- | --- | --- |
-| `artifact.synthesis_variables` Synthesis variables | Variables preserved or generated during synthesis. | `artifact` | `current` |  |  |
-| `artifact.targets` Targets | Calibration and synthesis target surface. | `artifact` | `current` |  |  |
-| `core.targets` Target specs | microplex target-query and target-spec machinery. | `library` | `current` | `microplex.targets.TargetSpec`, `microplex.targets.TargetQuery` |  |
-| `us.pipeline.build_targets` Build calibration targets | Build weighted calibration targets from the seed data. | `process` | `current` | `microplex_us.pipelines.us.USMicroplexPipeline.build_targets`<br>`build_targets(self, seed_data, weight_col)` | `src/microplex_us/pipelines/us.py:3476` |
-| `us.pipeline.resolve_synthesis_variables` Resolve synthesis variables | Select the observed variables to feed into synthesis. | `process` | `current` | `microplex_us.pipelines.us.USMicroplexPipeline._resolve_synthesis_variables`<br>`_resolve_synthesis_variables(self, source_input, *, fusion_plan, include_all_observed_targets, available_columns, observed_frame)` | `src/microplex_us/pipelines/us.py:5973` |
+| Node | Type | Status | API refs |
+| --- | --- | --- | --- |
+| `core.targets` Target specs | `library` | `current` | `microplex.targets.TargetSpec`, `microplex.targets.TargetQuery` |
+| `artifact.targets` Targets | `artifact` | `current` |  |
+| `artifact.synthesis_variables` Synthesis variables | `artifact` | `current` |  |
+| `us.pipeline.build_targets` Build calibration targets | `process` | `current` | `microplex_us.pipelines.us.USMicroplexPipeline.build_targets` |
+| `us.pipeline.resolve_synthesis_variables` Resolve synthesis variables | `process` | `current` | `microplex_us.pipelines.us.USMicroplexPipeline._resolve_synthesis_variables` |
 
 #### Edges
 
@@ -229,13 +247,13 @@ Generate the synthetic candidate population and enforce target support.
 - Canonical stage: `05_donor_integration_synthesis`
 - Status: `current`
 
-| Node | Does | Type | Status | Code refs | Source |
-| --- | --- | --- | --- | --- | --- |
-| `artifact.seed_data` Seed data | Donor-integrated seed data consumed by synthesis. | `artifact` | `current` |  |  |
-| `artifact.synthetic_data` Synthetic data | Generated records before calibration. | `artifact` | `current` |  |  |
-| `core.synthesizer` Synthesizer | microplex synthesizer used to generate candidate records. | `library` | `current` | `microplex.synthesizer.Synthesizer` |  |
-| `us.pipeline.ensure_target_support` Ensure target support | Ensure every marginal target category has support in the synthetic sample. | `process` | `current` | `microplex_us.pipelines.us.USMicroplexPipeline.ensure_target_support`<br>`ensure_target_support(self, synthetic_data, seed_data, targets)` | `src/microplex_us/pipelines/us.py:3551` |
-| `us.pipeline.synthesize` Synthesize records | Generate synthetic records from the seed data. | `process` | `current` | `microplex_us.pipelines.us.USMicroplexPipeline.synthesize`<br>`synthesize(self, seed_data, synthesis_variables)` | `src/microplex_us/pipelines/us.py:3627` |
+| Node | Type | Status | API refs |
+| --- | --- | --- | --- |
+| `core.synthesizer` Synthesizer | `library` | `current` | `microplex.synthesizer.Synthesizer` |
+| `artifact.synthetic_data` Synthetic data | `artifact` | `current` |  |
+| `us.pipeline.synthesize` Synthesize records | `process` | `current` | `microplex_us.pipelines.us.USMicroplexPipeline.synthesize` |
+| `us.pipeline.ensure_target_support` Ensure target support | `process` | `current` | `microplex_us.pipelines.us.USMicroplexPipeline.ensure_target_support` |
+| `artifact.seed_data` Seed data | `artifact` | `current` |  |
 
 #### Edges
 
@@ -256,11 +274,11 @@ Convert synthetic records into household, person, tax-unit, family, and SPM enti
 - Canonical stage: `06_policyengine_entities`
 - Status: `current`
 
-| Node | Does | Type | Status | Code refs | Source |
-| --- | --- | --- | --- | --- | --- |
-| `artifact.policyengine_entity_tables` PolicyEngine entity tables | In-memory entity-table bundle used for PE-native calibration and export. | `artifact` | `current` |  |  |
-| `artifact.synthetic_data` Synthetic data | Generated records before calibration. | `artifact` | `current` |  |  |
-| `us.pipeline.build_policyengine_entity_tables` Build PolicyEngine entity tables | Build a PolicyEngine-oriented multientity bundle from person rows. | `process` | `current` | `microplex_us.pipelines.us.USMicroplexPipeline.build_policyengine_entity_tables`<br>`build_policyengine_entity_tables(self, population)` | `src/microplex_us/pipelines/us.py:5524` |
+| Node | Type | Status | API refs |
+| --- | --- | --- | --- |
+| `artifact.policyengine_entity_tables` PolicyEngine entity tables | `artifact` | `current` |  |
+| `us.pipeline.build_policyengine_entity_tables` Build PolicyEngine entity tables | `process` | `current` | `microplex_us.pipelines.us.USMicroplexPipeline.build_policyengine_entity_tables` |
+| `artifact.synthetic_data` Synthetic data | `artifact` | `current` |  |
 
 #### Edges
 
@@ -275,12 +293,12 @@ Optionally persist pre-calibration entity tables and verify the export-column su
 - Canonical stage: `06_policyengine_entities`
 - Status: `current`
 
-| Node | Does | Type | Status | Code refs | Source |
-| --- | --- | --- | --- | --- | --- |
-| `artifact.policyengine_checkpoint` PolicyEngine checkpoint | Parquet checkpoint for PE entity tables at a resumable boundary. | `artifact` | `current` |  |  |
-| `artifact.policyengine_entity_tables` PolicyEngine entity tables | In-memory entity-table bundle used for PE-native calibration and export. | `artifact` | `current` |  |  |
-| `us.pipeline.check_policyengine_export_column_contract` Check PE export columns | Validate the exported entity-table column surface against the export contract. | `process` | `current` | `microplex_us.pipelines.us.USMicroplexPipeline._check_policyengine_export_column_contract`<br>`_check_policyengine_export_column_contract(self, tables, *, stage)` | `src/microplex_us/pipelines/us.py:5078` |
-| `us.policyengine.save_us_pipeline_checkpoint` Save PE entity checkpoint | Persist a pipeline-stage bundle to ``path`` as parquet + metadata. | `process` | `current` | `microplex_us.policyengine.us.save_us_pipeline_checkpoint`<br>`save_us_pipeline_checkpoint(bundle, path, *, stage)` | `src/microplex_us/policyengine/us.py:183` |
+| Node | Type | Status | API refs |
+| --- | --- | --- | --- |
+| `artifact.policyengine_checkpoint` PolicyEngine checkpoint | `artifact` | `current` |  |
+| `us.policyengine.save_us_pipeline_checkpoint` Save PE entity checkpoint | `process` | `current` | `microplex_us.policyengine.us.save_us_pipeline_checkpoint` |
+| `us.pipeline.check_policyengine_export_column_contract` Check PE export columns | `process` | `current` | `microplex_us.pipelines.us.USMicroplexPipeline._check_policyengine_export_column_contract` |
+| `artifact.policyengine_entity_tables` PolicyEngine entity tables | `artifact` | `current` |  |
 
 #### Edges
 
@@ -300,13 +318,13 @@ Load PE target rows, filter unsupported constraints, and choose the calibration 
 - Canonical stage: `07_calibration`
 - Status: `current`
 
-| Node | Does | Type | Status | Code refs | Source |
-| --- | --- | --- | --- | --- | --- |
-| `artifact.policyengine_targets` PolicyEngine targets | Supported PE-native calibration targets and constraints. | `artifact` | `current` |  |  |
-| `external.policyengine_targets_db` PolicyEngine targets DB | Optional PolicyEngine target database used for PE-native calibration. | `external` | `current` |  |  |
-| `us.pipeline.resolve_policyengine_calibration_targets` Resolve PE calibration targets | Load and filter PolicyEngine target DB rows into supported calibration constraints. | `process` | `current` | `microplex_us.pipelines.us.USMicroplexPipeline._resolve_policyengine_calibration_targets`<br>`_resolve_policyengine_calibration_targets(self, tables, *, provider, target_period, forbes_fixed_spine)` | `src/microplex_us/pipelines/us.py:5147` |
-| `us.pipeline.select_feasible_policyengine_calibration_constraints` Select feasible PE constraints | Filter PolicyEngine target constraints to those supportable by the current tables. | `process` | `current` | `microplex_us.pipelines.us._select_feasible_policyengine_calibration_constraints`<br>`_select_feasible_policyengine_calibration_constraints(targets, constraints, *, household_count, max_constraints, max_constraints_per_household, min_active_households, priority_scores)` | `src/microplex_us/pipelines/us.py:1967` |
-| `us.pipeline.select_policyengine_household_budget` Select household budget | Choose a household budget for PE-native calibration from configured limits and table size. | `process` | `current` | `microplex_us.pipelines.us.USMicroplexPipeline._select_policyengine_household_budget`<br>`_select_policyengine_household_budget(self, tables, supported_targets, constraints)` | `src/microplex_us/pipelines/us.py:3851` |
+| Node | Type | Status | API refs |
+| --- | --- | --- | --- |
+| `external.policyengine_targets_db` PolicyEngine targets DB | `external` | `current` |  |
+| `artifact.policyengine_targets` PolicyEngine targets | `artifact` | `current` |  |
+| `us.pipeline.resolve_policyengine_calibration_targets` Resolve PE calibration targets | `process` | `current` | `microplex_us.pipelines.us.USMicroplexPipeline._resolve_policyengine_calibration_targets` |
+| `us.pipeline.select_feasible_policyengine_calibration_constraints` Select feasible PE constraints | `process` | `current` | `microplex_us.pipelines.us._select_feasible_policyengine_calibration_constraints` |
+| `us.pipeline.select_policyengine_household_budget` Select household budget | `process` | `current` | `microplex_us.pipelines.us.USMicroplexPipeline._select_policyengine_household_budget` |
 
 #### Edges
 
@@ -323,15 +341,15 @@ Run either PE-native table calibration or the generic dataframe calibration fall
 - Canonical stage: `07_calibration`
 - Status: `current`
 
-| Node | Does | Type | Status | Code refs | Source |
-| --- | --- | --- | --- | --- | --- |
-| `artifact.calibrated_data` Calibrated data | Calibrated synthetic records or entity tables. | `artifact` | `current` |  |  |
-| `artifact.calibration_summary` Calibration summary | Calibration loss, constraints, and convergence diagnostics. | `artifact` | `current` |  |  |
-| `artifact.policyengine_targets` PolicyEngine targets | Supported PE-native calibration targets and constraints. | `artifact` | `current` |  |  |
-| `artifact.targets` Targets | Calibration and synthesis target surface. | `artifact` | `current` |  |  |
-| `core.calibrator` Calibrator | microplex calibrator implementations and linear constraints. | `library` | `current` | `microplex.calibration.Calibrator`, `microplex.calibration.LinearConstraint` |  |
-| `us.pipeline.calibrate` Calibrate generic tables | Calibrate synthetic records to weighted targets. | `process` | `current` | `microplex_us.pipelines.us.USMicroplexPipeline.calibrate`<br>`calibrate(self, synthetic_data, targets)` | `src/microplex_us/pipelines/us.py:3713` |
-| `us.pipeline.calibrate_policyengine_tables` Calibrate PolicyEngine tables | Calibrate household weights using PolicyEngine US target DB constraints. | `process` | `current` | `microplex_us.pipelines.us.USMicroplexPipeline.calibrate_policyengine_tables`<br>`calibrate_policyengine_tables(self, tables)` | `src/microplex_us/pipelines/us.py:4321` |
+| Node | Type | Status | API refs |
+| --- | --- | --- | --- |
+| `core.calibrator` Calibrator | `library` | `current` | `microplex.calibration.Calibrator`, `microplex.calibration.LinearConstraint` |
+| `artifact.calibrated_data` Calibrated data | `artifact` | `current` |  |
+| `artifact.calibration_summary` Calibration summary | `artifact` | `current` |  |
+| `us.pipeline.calibrate_policyengine_tables` Calibrate PolicyEngine tables | `process` | `current` | `microplex_us.pipelines.us.USMicroplexPipeline.calibrate_policyengine_tables` |
+| `us.pipeline.calibrate` Calibrate generic tables | `process` | `current` | `microplex_us.pipelines.us.USMicroplexPipeline.calibrate` |
+| `artifact.policyengine_targets` PolicyEngine targets | `artifact` | `current` |  |
+| `artifact.targets` Targets | `artifact` | `current` |  |
 
 #### Edges
 
@@ -354,11 +372,11 @@ Write the final calibrated entity tables into the PolicyEngine H5 dataset format
 - Canonical stage: `08_dataset_assembly`
 - Status: `current`
 
-| Node | Does | Type | Status | Code refs | Source |
-| --- | --- | --- | --- | --- | --- |
-| `artifact.calibrated_data` Calibrated data | Calibrated synthetic records or entity tables. | `artifact` | `current` |  |  |
-| `artifact.policyengine_dataset` PolicyEngine H5 dataset | Final H5 dataset consumable by PolicyEngine-US. | `artifact` | `current` |  |  |
-| `us.pipeline.export_policyengine_dataset` Export PolicyEngine dataset | Export a build result as a PolicyEngine-readable HDF5 dataset. | `process` | `current` | `microplex_us.pipelines.us.USMicroplexPipeline.export_policyengine_dataset`<br>`export_policyengine_dataset(self, result, path, *, period, direct_override_variables)` | `src/microplex_us/pipelines/us.py:5813` |
+| Node | Type | Status | API refs |
+| --- | --- | --- | --- |
+| `artifact.policyengine_dataset` PolicyEngine H5 dataset | `artifact` | `current` |  |
+| `us.pipeline.export_policyengine_dataset` Export PolicyEngine dataset | `process` | `current` | `microplex_us.pipelines.us.USMicroplexPipeline.export_policyengine_dataset` |
+| `artifact.calibrated_data` Calibrated data | `artifact` | `current` |  |
 
 #### Edges
 
@@ -373,13 +391,13 @@ Persist stage artifacts, manifests, registry/index entries, and versioned public
 - Canonical stage: `08_dataset_assembly`
 - Status: `current`
 
-| Node | Does | Type | Status | Code refs | Source |
-| --- | --- | --- | --- | --- | --- |
-| `artifact.artifact_manifest` Artifact manifest | Top-level artifact manifest for a saved build. | `artifact` | `current` |  |  |
-| `artifact.policyengine_dataset` PolicyEngine H5 dataset | Final H5 dataset consumable by PolicyEngine-US. | `artifact` | `current` |  |  |
-| `artifact.versioned_bundle` Versioned bundle | Versioned output directory and registry-facing bundle metadata. | `artifact` | `current` |  |  |
-| `us.artifacts.save_us_microplex_artifacts` Save artifact bundle | Persist a build result as a reproducible artifact bundle. | `process` | `current` | `microplex_us.pipelines.artifacts.save_us_microplex_artifacts`<br>`save_us_microplex_artifacts(result, output_dir, *, policyengine_comparison_cache, policyengine_target_provider, policyengine_baseline_dataset, policyengine_harness_slices, policyengine_harness_metadata, policyengine_us_data_repo, defer_policyengine_harness, require_policyengine_native_score, defer_policyengine_native_score, precomputed_policyengine_harness_payload, precomputed_policyengine_native_scores, run_registry_path, run_index_path, run_registry_metadata, enable_child_tax_unit_agi_drift, child_tax_unit_agi_drift_variables, allow_stage_input_overrides, stage_input_overrides, stage_runtime_writer)` | `src/microplex_us/pipelines/artifacts.py:132` |
-| `us.artifacts.save_versioned_us_microplex_artifacts` Save versioned artifacts | Persist a build under a stable versioned directory beneath one output root. | `process` | `current` | `microplex_us.pipelines.versioned_artifacts.save_versioned_us_microplex_artifacts`<br>`save_versioned_us_microplex_artifacts(result, output_root, *, version_id, policyengine_comparison_cache, policyengine_target_provider, policyengine_baseline_dataset, policyengine_harness_slices, policyengine_harness_metadata, policyengine_us_data_repo, defer_policyengine_harness, require_policyengine_native_score, defer_policyengine_native_score, precomputed_policyengine_harness_payload, precomputed_policyengine_native_scores, run_registry_path, run_index_path, run_registry_metadata, enable_child_tax_unit_agi_drift, child_tax_unit_agi_drift_variables, allow_stage_input_overrides, stage_input_overrides)` | `src/microplex_us/pipelines/versioned_artifacts.py:74` |
+| Node | Type | Status | API refs |
+| --- | --- | --- | --- |
+| `artifact.artifact_manifest` Artifact manifest | `artifact` | `current` |  |
+| `artifact.versioned_bundle` Versioned bundle | `artifact` | `current` |  |
+| `us.artifacts.save_us_microplex_artifacts` Save artifact bundle | `process` | `current` | `microplex_us.pipelines.artifacts.save_us_microplex_artifacts` |
+| `us.artifacts.save_versioned_us_microplex_artifacts` Save versioned artifacts | `process` | `current` | `microplex_us.pipelines.versioned_artifacts.save_versioned_us_microplex_artifacts` |
+| `artifact.policyengine_dataset` PolicyEngine H5 dataset | `artifact` | `current` |  |
 
 #### Edges
 
@@ -401,12 +419,12 @@ Load the final H5 and previously written artifact manifest for replayable valida
 - Canonical stage: `09_validation_benchmarking`
 - Status: `current`
 
-| Node | Does | Type | Status | Code refs | Source |
-| --- | --- | --- | --- | --- | --- |
-| `artifact.artifact_manifest` Artifact manifest | Top-level artifact manifest for a saved build. | `artifact` | `current` |  |  |
-| `artifact.policyengine_dataset` PolicyEngine H5 dataset | Final H5 dataset consumable by PolicyEngine-US. | `artifact` | `current` |  |  |
-| `artifact.validation_inputs` Validation inputs | Final dataset, manifest, optional baseline, and configured target provider. | `artifact` | `current` |  |  |
-| `us.policyengine.load_policyengine_us_entity_tables` Load PE entity tables | Load a PE-US time-period dataset into a multientity table bundle. | `process` | `current` | `microplex_us.policyengine.us.load_policyengine_us_entity_tables`<br>`load_policyengine_us_entity_tables(dataset, *, period, variables)` | `src/microplex_us/policyengine/us.py:2159` |
+| Node | Type | Status | API refs |
+| --- | --- | --- | --- |
+| `artifact.validation_inputs` Validation inputs | `artifact` | `current` |  |
+| `us.policyengine.load_policyengine_us_entity_tables` Load PE entity tables | `process` | `current` | `microplex_us.policyengine.us.load_policyengine_us_entity_tables` |
+| `artifact.policyengine_dataset` PolicyEngine H5 dataset | `artifact` | `current` |  |
+| `artifact.artifact_manifest` Artifact manifest | `artifact` | `current` |  |
 
 #### Edges
 
@@ -422,15 +440,15 @@ Run configured validation and benchmark evidence, including PE target harness an
 - Canonical stage: `09_validation_benchmarking`
 - Status: `current`
 
-| Node | Does | Type | Status | Code refs | Source |
-| --- | --- | --- | --- | --- | --- |
-| `artifact.benchmark_summary` Benchmark summary | Saved summary of validation and benchmark evidence. | `artifact` | `current` |  |  |
-| `artifact.policyengine_harness` PolicyEngine harness | Target-slice benchmark comparison against configured targets and baseline. | `artifact` | `current` |  |  |
-| `artifact.policyengine_native_scores` PE-native scores | Loss payload from the PE-US-data native score implementation. | `artifact` | `current` |  |  |
-| `artifact.validation_inputs` Validation inputs | Final dataset, manifest, optional baseline, and configured target provider. | `artifact` | `current` |  |  |
-| `us.stage9.attach_rebuild_checkpoint_evidence` Attach PE rebuild evidence | Attach PE comparison evidence to an already-saved rebuild artifact. | `process` | `current` | `microplex_us.pipelines.pe_us_data_rebuild_checkpoint.attach_policyengine_us_data_rebuild_checkpoint_evidence`<br>`attach_policyengine_us_data_rebuild_checkpoint_evidence(artifact_dir, *, build_result, program, policyengine_comparison_cache, policyengine_target_provider, policyengine_baseline_dataset, policyengine_harness_slices, policyengine_harness_metadata, policyengine_us_data_repo, policyengine_us_data_python, compute_harness, compute_native_scores, compute_native_audit, compute_imputation_ablation, require_policyengine_native_score, precomputed_policyengine_harness_payload, precomputed_policyengine_native_scores, precomputed_imputation_ablation_payload, run_registry_path, run_index_path, run_registry_metadata)` | `src/microplex_us/pipelines/pe_us_data_rebuild_checkpoint.py:1517` |
-| `us.stage9.compute_pe_native_scores` Compute PE-native scores | Build the saved manifest payload for PE-native broad scoring. | `process` | `current` | `microplex_us.pipelines.pe_native_scores.compute_us_pe_native_scores`<br>`compute_us_pe_native_scores(*, candidate_dataset_path, baseline_dataset_path, period, policyengine_us_data_repo, policyengine_us_data_python, target_scope_filter)` | `src/microplex_us/pipelines/pe_native_scores.py:2527` |
-| `us.stage9.evaluate_policyengine_us_harness` Evaluate PE target harness | Evaluate a candidate bundle against a baseline across named target slices. | `process` | `current` | `microplex_us.policyengine.harness.evaluate_policyengine_us_harness`<br>`evaluate_policyengine_us_harness(candidate_tables, provider, slices, *, baseline_dataset, dataset_year, simulation_cls, candidate_label, baseline_label, metadata, strict_materialization, cache, candidate_direct_override_variables)` | `src/microplex_us/policyengine/harness.py:794` |
+| Node | Type | Status | API refs |
+| --- | --- | --- | --- |
+| `artifact.policyengine_harness` PolicyEngine harness | `artifact` | `current` |  |
+| `artifact.policyengine_native_scores` PE-native scores | `artifact` | `current` |  |
+| `artifact.benchmark_summary` Benchmark summary | `artifact` | `current` |  |
+| `us.stage9.evaluate_policyengine_us_harness` Evaluate PE target harness | `process` | `current` | `microplex_us.policyengine.harness.evaluate_policyengine_us_harness` |
+| `us.stage9.compute_pe_native_scores` Compute PE-native scores | `process` | `current` | `microplex_us.pipelines.pe_native_scores.compute_us_pe_native_scores` |
+| `us.stage9.attach_rebuild_checkpoint_evidence` Attach PE rebuild evidence | `process` | `current` | `microplex_us.pipelines.pe_us_data_rebuild_checkpoint.attach_policyengine_us_data_rebuild_checkpoint_evidence` |
+| `artifact.validation_inputs` Validation inputs | `artifact` | `current` |  |
 
 #### Edges
 
@@ -448,14 +466,14 @@ Index validation artifacts for saved-run overlays and allow Stage 9 replay witho
 - Canonical stage: `09_validation_benchmarking`
 - Status: `current`
 
-| Node | Does | Type | Status | Code refs | Source |
-| --- | --- | --- | --- | --- | --- |
-| `artifact.benchmark_summary` Benchmark summary | Saved summary of validation and benchmark evidence. | `artifact` | `current` |  |  |
-| `artifact.validation_evidence_manifest` Validation evidence manifest | Stage 9 evidence index used by overlays, checks, and replay. | `artifact` | `current` |  |  |
-| `artifact.validation_inputs` Validation inputs | Final dataset, manifest, optional baseline, and configured target provider. | `artifact` | `current` |  |  |
-| `us.stage9.build_validation_evidence_manifest` Build validation evidence manifest | Build a compact Stage 9 evidence index from a saved artifact manifest. | `process` | `current` | `microplex_us.pipelines.stage_validation_evidence.build_us_validation_evidence_manifest`<br>`build_us_validation_evidence_manifest(artifact_dir, *, manifest_payload)` | `src/microplex_us/pipelines/stage_validation_evidence.py:26` |
-| `us.stage9.replay_validation_benchmarking` Replay Stage 9 validation | Rerun safe Stage 9 evidence against an existing Stage 8 dataset. | `process` | `current` | `microplex_us.pipelines.stage9_replay.replay_us_stage9_validation_benchmarking`<br>`replay_us_stage9_validation_benchmarking(artifact_dir, *, output_dir, baseline_dataset, policyengine_us_data_repo, period, precomputed_policyengine_harness, precomputed_policyengine_native_scores, run_id, allow_overwrite)` | `src/microplex_us/pipelines/stage9_replay.py:38` |
-| `us.stage9.write_validation_evidence_manifest` Write validation evidence manifest | Write a Stage 9 evidence manifest for validation/benchmark sidecars. | `process` | `current` | `microplex_us.pipelines.stage_validation_evidence.write_us_validation_evidence_manifest`<br>`write_us_validation_evidence_manifest(artifact_dir, output_path, *, manifest_payload)` | `src/microplex_us/pipelines/stage_validation_evidence.py:94` |
+| Node | Type | Status | API refs |
+| --- | --- | --- | --- |
+| `artifact.validation_evidence_manifest` Validation evidence manifest | `artifact` | `current` |  |
+| `us.stage9.build_validation_evidence_manifest` Build validation evidence manifest | `process` | `current` | `microplex_us.pipelines.stage_validation_evidence.build_us_validation_evidence_manifest` |
+| `us.stage9.write_validation_evidence_manifest` Write validation evidence manifest | `process` | `current` | `microplex_us.pipelines.stage_validation_evidence.write_us_validation_evidence_manifest` |
+| `us.stage9.replay_validation_benchmarking` Replay Stage 9 validation | `process` | `current` | `microplex_us.pipelines.stage9_replay.replay_us_stage9_validation_benchmarking` |
+| `artifact.benchmark_summary` Benchmark summary | `artifact` | `current` |  |
+| `artifact.validation_inputs` Validation inputs | `artifact` | `current` |  |
 
 #### Edges
 

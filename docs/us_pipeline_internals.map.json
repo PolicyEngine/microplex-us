@@ -24,6 +24,74 @@
               "description": "Resolved source-provider query settings."
             },
             {
+              "id": "core.source_provider",
+              "label": "SourceProvider",
+              "nodeType": "library",
+              "description": "Configured microplex providers that expose source descriptors and source-frame loading.",
+              "apiRefs": [
+                "microplex.core.SourceProvider",
+                "microplex.core.SourceQuery"
+              ]
+            },
+            {
+              "id": "us.pipeline.resolve_source_query",
+              "label": "Resolve source query",
+              "nodeType": "process",
+              "description": "Selects the provider-specific SourceQuery from configured query keys before a provider loads data.",
+              "apiRefs": [
+                "microplex_us.pipelines.us.USMicroplexPipeline._resolve_source_query",
+                "microplex_us.pipelines.us.USMicroplexPipeline._source_query_keys"
+              ]
+            },
+            {
+              "id": "core.source_provider_load_frame",
+              "label": "Load provider frame",
+              "nodeType": "library",
+              "description": "Calls the provider implementation to download, read, or materialize source tables as an ObservationFrame.",
+              "apiRefs": [
+                "microplex.core.SourceProvider.load_frame"
+              ]
+            },
+            {
+              "id": "core.observation_frame",
+              "label": "ObservationFrame",
+              "nodeType": "library",
+              "description": "microplex core source container for loaded entity tables, descriptors, and relationships.",
+              "apiRefs": [
+                "microplex.core.ObservationFrame",
+                "microplex.core.SourceDescriptor"
+              ]
+            },
+            {
+              "id": "stage_runtime.source_loading_lifecycle",
+              "label": "Source-loading lifecycle writer",
+              "nodeType": "infrastructure",
+              "description": "Persists the live Stage 2 lifecycle state around provider loading, including start, complete, and failure events.",
+              "apiRefs": [
+                "microplex_us.pipelines.stage_runtime.USStageRuntimeWriter.start_stage",
+                "microplex_us.pipelines.stage_runtime.USStageRuntimeWriter.complete_stage",
+                "microplex_us.pipelines.stage_runtime.USStageRuntimeWriter.fail_stage"
+              ]
+            },
+            {
+              "id": "us.pipeline.source_loading_stage_outputs",
+              "label": "Source-loading stage outputs",
+              "nodeType": "process",
+              "description": "Summarizes loaded source names, entity-table row counts, and relationships for the Stage 2 output manifest.",
+              "apiRefs": [
+                "microplex_us.pipelines.us._source_loading_stage_outputs"
+              ]
+            },
+            {
+              "id": "us.pipeline.build_from_frames",
+              "label": "Build from frames",
+              "nodeType": "process",
+              "description": "Hands loaded ObservationFrames into source planning, scaffold selection, seed construction, donor integration, entity construction, calibration, and assembly.",
+              "apiRefs": [
+                "microplex_us.pipelines.us.USMicroplexPipeline.build_from_frames"
+              ]
+            },
+            {
               "id": "artifact.run_profile",
               "label": "Run profile manifest",
               "nodeType": "artifact",
@@ -44,10 +112,76 @@
               "label": "starts build"
             },
             {
+              "source": "config.provider_queries",
+              "target": "us.pipeline.resolve_source_query",
+              "edgeType": "data_flow",
+              "label": "query map"
+            },
+            {
+              "source": "core.source_provider",
+              "target": "us.pipeline.resolve_source_query",
+              "edgeType": "uses_library",
+              "label": "descriptor keys"
+            },
+            {
+              "source": "us.pipeline.build_from_source_providers",
+              "target": "stage_runtime.source_loading_lifecycle",
+              "edgeType": "uses_utility",
+              "label": "starts Stage 2"
+            },
+            {
+              "source": "us.pipeline.build_from_source_providers",
+              "target": "us.pipeline.resolve_source_query",
+              "edgeType": "data_flow",
+              "label": "per provider"
+            },
+            {
+              "source": "us.pipeline.resolve_source_query",
+              "target": "core.source_provider_load_frame",
+              "edgeType": "data_flow",
+              "label": "query"
+            },
+            {
+              "source": "core.source_provider",
+              "target": "core.source_provider_load_frame",
+              "edgeType": "external_source",
+              "label": "provider implementation"
+            },
+            {
+              "source": "core.source_provider_load_frame",
+              "target": "core.observation_frame",
+              "edgeType": "produces_artifact",
+              "label": "returns"
+            },
+            {
+              "source": "core.observation_frame",
+              "target": "us.pipeline.source_loading_stage_outputs",
+              "edgeType": "data_flow",
+              "label": "summarizes"
+            },
+            {
+              "source": "us.pipeline.source_loading_stage_outputs",
+              "target": "stage_runtime.source_loading_lifecycle",
+              "edgeType": "produces_artifact",
+              "label": "completes Stage 2"
+            },
+            {
+              "source": "core.observation_frame",
+              "target": "us.pipeline.build_from_frames",
+              "edgeType": "data_flow",
+              "label": "loaded frames"
+            },
+            {
               "source": "us.pipeline.build_from_source_providers",
               "target": "artifact.run_profile",
               "edgeType": "produces_artifact",
               "label": "initializes"
+            },
+            {
+              "source": "us.pipeline.build_from_frames",
+              "target": "artifact.run_profile",
+              "edgeType": "data_flow",
+              "label": "continues run"
             }
           ]
         }

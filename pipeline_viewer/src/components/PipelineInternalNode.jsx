@@ -18,7 +18,6 @@ function NodeHandles() {
 }
 
 export default function PipelineInternalNode({ data }) {
-  const source = data.sourceFile && data.line ? `${data.sourceFile}:${data.line}` : null;
   const codeReference =
     data.objectPath ||
     (Array.isArray(data.apiRefs) && data.apiRefs.length ? data.apiRefs[0] : null) ||
@@ -29,13 +28,7 @@ export default function PipelineInternalNode({ data }) {
   return (
     <div className={`internal-node ${data.nodeType || "process"}`}>
       <NodeHandles />
-      {(codeReference || data.signature || source) && (
-        <div className="internal-node-code">
-          {codeReference && <code>{codeReference}</code>}
-          {data.signature && <code>{data.signature}</code>}
-          {source && <code>{source}</code>}
-        </div>
-      )}
+      {codeReference && <code className="internal-node-api-ref">{codeReference}</code>}
       <div className="internal-node-topline">
         <span>{(data.nodeType || "node").replaceAll("_", " ")}</span>
         {kind && <span>{kind}</span>}

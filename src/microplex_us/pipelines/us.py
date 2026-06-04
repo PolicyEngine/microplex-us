@@ -10970,6 +10970,32 @@ class USMicroplexPipeline:
         def has_any(*columns: str) -> bool:
             return any(column in result.columns for column in columns)
 
+        def signed_rental_income() -> pd.Series:
+            if has_any("rental_income_positive", "rental_income_negative"):
+                return first_present("rental_income_positive") - first_present(
+                    "rental_income_negative"
+                )
+            return first_present("rental_income")
+
+        def first_signed_or_present(*columns: str) -> pd.Series:
+            fallback: pd.Series | None = None
+            for column in columns:
+                if column not in result.columns:
+                    continue
+                candidate = first_present(column)
+                if fallback is None:
+                    fallback = candidate
+                if candidate.lt(0.0).any():
+                    if fallback is not None:
+                        return candidate.where(candidate.ne(0.0), fallback)
+                    return candidate
+            return fallback if fallback is not None else zero.copy()
+
+        signed_self_employment_income = first_signed_or_present(
+            "self_employment_income_before_lsr",
+            "self_employment_income",
+        )
+
         if "is_female" in result.columns:
             result["is_female"] = result["is_female"].fillna(False).astype(bool)
         elif "sex" in result.columns:
@@ -11104,13 +11130,10 @@ class USMicroplexPipeline:
             result["takes_up_ssi_if_eligible"] = first_present("ssi").gt(0.0)
 
         known_nonemployment = (
-            first_nonzero_or_present(
-                "self_employment_income_before_lsr",
-                "self_employment_income",
-            )
+            signed_self_employment_income
             + first_nonzero_or_present("taxable_interest_income", "interest_income")
             + first_nonzero_or_present("ordinary_dividend_income", "dividend_income")
-            + first_present("rental_income")
+            + signed_rental_income()
             + first_present("gross_social_security", "social_security")
             + first_present("ssi")
             + first_present("public_assistance")
@@ -11133,10 +11156,7 @@ class USMicroplexPipeline:
             )
             else fallback_employment_income
         )
-        result["self_employment_income_before_lsr"] = first_nonzero_or_present(
-            "self_employment_income_before_lsr",
-            "self_employment_income",
-        )
+        result["self_employment_income_before_lsr"] = signed_self_employment_income
         result["taxable_interest_income"] = first_nonzero_or_present(
             "taxable_interest_income",
             "interest_income",
@@ -11189,10 +11209,13 @@ class USMicroplexPipeline:
         result["partnership_s_corp_income"] = first_present("partnership_s_corp_income")
         result["partnership_se_income"] = first_present("partnership_se_income")
         result["estate_income"] = first_present("estate_income")
-        result["farm_income"] = first_present("farm_income")
+        result["farm_income"] = first_signed_or_present(
+            "farm_income",
+            "farm_operations_income",
+        )
         result["farm_operations_income"] = first_present("farm_operations_income")
         result["farm_rent_income"] = first_present("farm_rent_income")
-        result["rental_income"] = first_present("rental_income")
+        result["rental_income"] = signed_rental_income()
         result["w2_wages_from_qualified_business"] = first_present(
             "w2_wages_from_qualified_business"
         ).clip(lower=0.0)

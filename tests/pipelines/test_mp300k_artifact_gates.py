@@ -361,7 +361,7 @@ def test_export_support_gate_rejects_ecps_populated_numeric_filler(tmp_path):
     assert support_gate["status"] == "fail"
     assert support_gate["metrics"]["unsupported_populated_export_column_count"] == 1
     assert support_gate["details"]["issues"][0]["column"] == "hourly_wage"
-    assert support_gate["details"]["issues"][0]["requirement"] == "numeric_nonzero"
+    assert support_gate["details"]["issues"][0]["requirement"] == "numeric_positive"
 
 
 def test_export_support_gate_rejects_ecps_varied_categorical_filler(tmp_path):

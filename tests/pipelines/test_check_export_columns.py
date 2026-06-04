@@ -194,6 +194,89 @@ def test_support_baseline_rejects_numeric_column_eCPS_populates(
     assert rc == 1
 
 
+def test_support_baseline_rejects_missing_numeric_sign_support(
+    tmp_path,
+):
+    contract_path = _write_json(
+        tmp_path / "contract.json",
+        {
+            "required": ["age", "snap", "rental_income"],
+            "ecps_internal_optional": [],
+            "forbidden": [],
+        },
+    )
+    candidate = _write_period_h5(
+        tmp_path / "candidate.h5",
+        {
+            "age": [34, 42, 50],
+            "snap": [False, True, False],
+            "rental_income": [0.0, 12_000.0, 0.0],
+        },
+    )
+    baseline = _write_period_h5(
+        tmp_path / "baseline.h5",
+        {
+            "age": [34, 42, 50],
+            "snap": [False, True, False],
+            "rental_income": [-200.0, 12_000.0, 0.0],
+        },
+    )
+    diagnostics = tmp_path / "support.json"
+
+    rc = main(
+        [
+            str(candidate),
+            "--contract",
+            str(contract_path),
+            "--support-baseline",
+            str(baseline),
+            "--support-diagnostics-json",
+            str(diagnostics),
+        ]
+    )
+
+    assert rc == 1
+    payload = json.loads(diagnostics.read_text())
+    assert payload["issues"][0]["column"] == "rental_income"
+    assert payload["issues"][0]["requirement"] == "numeric_signed"
+    assert payload["issues"][0]["baseline"]["negative_count"] == 1
+    assert payload["issues"][0]["candidate"]["negative_count"] == 0
+
+
+def test_support_baseline_accepts_negative_noise_for_unsigned_numeric(
+    tmp_path,
+    contract_path,
+):
+    candidate = _write_period_h5(
+        tmp_path / "candidate.h5",
+        {
+            "age": [34, 42, 50],
+            "snap": [False, True, False],
+            "employment_income": [0.0, 12_000.0, 0.0],
+        },
+    )
+    baseline = _write_period_h5(
+        tmp_path / "baseline.h5",
+        {
+            "age": [34, 42, 50],
+            "snap": [False, True, False],
+            "employment_income": [-200.0, 12_000.0, 0.0],
+        },
+    )
+
+    rc = main(
+        [
+            str(candidate),
+            "--contract",
+            str(contract_path),
+            "--support-baseline",
+            str(baseline),
+        ]
+    )
+
+    assert rc == 0
+
+
 def test_support_baseline_rejects_categorical_column_eCPS_varies(
     tmp_path,
     contract_path,

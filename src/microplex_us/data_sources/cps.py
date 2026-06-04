@@ -39,7 +39,7 @@ from microplex_us.source_registry import resolve_source_variable_capabilities
 
 # Default cache directory
 DEFAULT_CACHE_DIR = Path.home() / ".cache" / "microplex"
-CPS_ASEC_PROCESSED_CACHE_VERSION = "20260603_lastyr_income_current_fallback"
+CPS_ASEC_PROCESSED_CACHE_VERSION = "20260604_spm_retirement_target_inputs"
 
 CURRENT_HEALTH_COVERAGE_REPORTED_VAR_MAP = {
     "reported_has_direct_purchase_health_coverage_at_interview": "NOW_DIR",
@@ -242,10 +242,9 @@ PERSON_VARIABLES = {
     "PMED_VAL": "other_medical_expenses",
     "PEMCPREM": "medicare_part_b_premiums",
     "WICYN": "_receives_wic",
-    "SPM_CAPHOUSESUB": "_spm_capped_housing_subsidy",
+    "SPM_CAPHOUSESUB": "spm_unit_capped_housing_subsidy_reported",
     "SPM_ENGVAL": "spm_unit_energy_subsidy",
-    # Capped work childcare expenses are a PolicyEngine-computed variable
-    # (derived from this pre-subsidy input), so only the input is exported.
+    "SPM_CAPWKCCXPNS": "spm_unit_capped_work_childcare_expenses",
     "SPM_CHILDCAREXPNS": "spm_unit_pre_subsidy_childcare_expenses",
     # Person relationship-to-householder code (eCPS cps.py:190-195, :1219).
     # Codes 43/44/46/47 mark an unmarried partner of the household head.
@@ -330,8 +329,15 @@ PERSON_NONNEGATIVE_VALUE_COLUMNS = (
     "social_security_survivors",
     "social_security_dependents",
     "spm_unit_energy_subsidy",
+    "spm_unit_capped_housing_subsidy_reported",
+    "spm_unit_capped_work_childcare_expenses",
     "spm_unit_pre_subsidy_childcare_expenses",
     "hourly_wage",
+    "self_employed_pension_contributions",
+    "traditional_401k_contributions",
+    "roth_401k_contributions",
+    "traditional_ira_contributions",
+    "roth_ira_contributions",
     "taxable_private_pension_income",
     "tax_exempt_private_pension_income",
     "taxable_401k_distributions",
@@ -364,8 +370,15 @@ PERSON_ZERO_DEFAULT_VALUE_COLUMNS = (
     "social_security_survivors",
     "social_security_dependents",
     "spm_unit_energy_subsidy",
+    "spm_unit_capped_housing_subsidy_reported",
+    "spm_unit_capped_work_childcare_expenses",
     "spm_unit_pre_subsidy_childcare_expenses",
     "hourly_wage",
+    "self_employed_pension_contributions",
+    "traditional_401k_contributions",
+    "roth_401k_contributions",
+    "traditional_ira_contributions",
+    "roth_ira_contributions",
     "taxable_private_pension_income",
     "tax_exempt_private_pension_income",
     "taxable_401k_distributions",
@@ -472,6 +485,14 @@ TAXABLE_PENSION_FRACTION = 0.590
 TAXABLE_401K_DISTRIBUTION_FRACTION = 1.0
 TAXABLE_403B_DISTRIBUTION_FRACTION = 1.0
 TAXABLE_SEP_DISTRIBUTION_FRACTION = 1.0
+RETIREMENT_CONTRIBUTION_LIMITS_BY_YEAR = {
+    2021: {"401k": 19_500, "401k_catch_up": 6_500, "ira": 6_000, "ira_catch_up": 1_000},
+    2022: {"401k": 20_500, "401k_catch_up": 6_500, "ira": 6_000, "ira_catch_up": 1_000},
+    2023: {"401k": 22_500, "401k_catch_up": 7_500, "ira": 6_500, "ira_catch_up": 1_000},
+    2024: {"401k": 23_000, "401k_catch_up": 7_500, "ira": 7_000, "ira_catch_up": 1_000},
+    2025: {"401k": 23_500, "401k_catch_up": 7_500, "ira": 7_000, "ira_catch_up": 1_000},
+}
+RETIREMENT_CATCH_UP_AGE = 50
 
 # Census CPS ASEC 2024 technical documentation, PERRP (relationship to
 # household reference person). Codes 43/44/46/47 mark an unmarried partner of
@@ -2022,12 +2043,23 @@ def _process_persons(df: pl.DataFrame, year: int) -> pl.DataFrame:
         "traditional_ira_contributions_desired",
         "roth_ira_contributions_desired",
     )
+    _RETIREMENT_CONTRIBUTION_CAPPED_LEAVES = (
+        "self_employed_pension_contributions",
+        "traditional_401k_contributions",
+        "roth_401k_contributions",
+        "traditional_ira_contributions",
+        "roth_ira_contributions",
+    )
     if {
         "_retirement_contributions",
         "wage_income",
         "self_employment_income",
     }.issubset(set(result.columns)) and any(
-        leaf not in result.columns for leaf in _RETIREMENT_CONTRIBUTION_DESIRED_LEAVES
+        leaf not in result.columns
+        for leaf in (
+            _RETIREMENT_CONTRIBUTION_DESIRED_LEAVES
+            + _RETIREMENT_CONTRIBUTION_CAPPED_LEAVES
+        )
     ):
         retirement_contributions = pl.col("_retirement_contributions")
         has_wages = pl.col("wage_income") > 0
@@ -2089,6 +2121,78 @@ def _process_persons(df: pl.DataFrame, year: int) -> pl.DataFrame:
                     "roth_ira_contributions_desired"
                 )
             )
+        limit_year = max(
+            min(year, max(RETIREMENT_CONTRIBUTION_LIMITS_BY_YEAR)),
+            min(RETIREMENT_CONTRIBUTION_LIMITS_BY_YEAR),
+        )
+        limits = RETIREMENT_CONTRIBUTION_LIMITS_BY_YEAR[limit_year]
+        catch_up_eligible = pl.col("age") >= RETIREMENT_CATCH_UP_AGE
+        limit_401k = pl.lit(float(limits["401k"])) + (
+            catch_up_eligible * float(limits["401k_catch_up"])
+        )
+        limit_ira = pl.lit(float(limits["ira"])) + (
+            catch_up_eligible * float(limits["ira_catch_up"])
+        )
+        capped_se_pension = (
+            pl.when(has_se).then(retirement_contributions).otherwise(0.0)
+        )
+        capped_remaining_after_se = pl.max_horizontal(
+            retirement_contributions - capped_se_pension,
+            pl.lit(0.0),
+        )
+        capped_traditional_401k = (
+            pl.when(has_wages)
+            .then(pl.min_horizontal(capped_remaining_after_se, limit_401k))
+            .otherwise(0.0)
+        )
+        capped_remaining_after_traditional_401k = pl.max_horizontal(
+            capped_remaining_after_se - capped_traditional_401k,
+            pl.lit(0.0),
+        )
+        capped_roth_401k = (
+            pl.when(has_wages)
+            .then(
+                pl.min_horizontal(
+                    capped_remaining_after_traditional_401k,
+                    limit_401k,
+                )
+            )
+            .otherwise(0.0)
+        )
+        capped_remaining_after_roth_401k = pl.max_horizontal(
+            capped_remaining_after_traditional_401k - capped_roth_401k,
+            pl.lit(0.0),
+        )
+        capped_traditional_ira = (
+            pl.when(has_wages)
+            .then(pl.min_horizontal(capped_remaining_after_roth_401k, limit_ira))
+            .otherwise(0.0)
+        )
+        capped_remaining_after_traditional_ira = pl.max_horizontal(
+            capped_remaining_after_roth_401k - capped_traditional_ira,
+            pl.lit(0.0),
+        )
+        capped_roth_ira_limit = limit_ira - capped_traditional_ira
+        capped_roth_ira = (
+            pl.when(has_wages)
+            .then(
+                pl.min_horizontal(
+                    capped_remaining_after_traditional_ira,
+                    capped_roth_ira_limit,
+                )
+            )
+            .otherwise(0.0)
+        )
+        capped_retirement_columns = {
+            "self_employed_pension_contributions": capped_se_pension,
+            "traditional_401k_contributions": capped_traditional_401k,
+            "roth_401k_contributions": capped_roth_401k,
+            "traditional_ira_contributions": capped_traditional_ira,
+            "roth_ira_contributions": capped_roth_ira,
+        }
+        for column, expression in capped_retirement_columns.items():
+            if column not in result.columns:
+                derived_retirement_columns.append(expression.alias(column))
         result = result.with_columns(derived_retirement_columns).drop(
             "_retirement_contributions"
         )
@@ -2163,11 +2267,11 @@ def _process_persons(df: pl.DataFrame, year: int) -> pl.DataFrame:
     elif "_receives_wic" in result.columns:
         result = result.drop("_receives_wic")
     if (
-        "_spm_capped_housing_subsidy" in result.columns
+        "spm_unit_capped_housing_subsidy_reported" in result.columns
         and "receives_housing_assistance" not in result.columns
     ):
         result = result.with_columns(
-            (pl.col("_spm_capped_housing_subsidy") > 0).alias(
+            (pl.col("spm_unit_capped_housing_subsidy_reported") > 0).alias(
                 "receives_housing_assistance"
             )
         )
@@ -2180,8 +2284,6 @@ def _process_persons(df: pl.DataFrame, year: int) -> pl.DataFrame:
                 "takes_up_housing_assistance_if_eligible"
             )
         )
-    if "_spm_capped_housing_subsidy" in result.columns:
-        result = result.drop("_spm_capped_housing_subsidy")
     # Unmarried partner of the household head (G8). Mirrors eCPS cps.py:1219
     # `perrp.isin(PERRP_UNMARRIED_PARTNER_OF_HOUSEHOLD_HEAD_CODES)`.
     if (

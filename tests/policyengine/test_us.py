@@ -22,6 +22,7 @@ from microplex.targets import (
 
 from microplex_us.pipelines.us import USMicroplexBuildConfig, USMicroplexPipeline
 from microplex_us.policyengine.us import (
+    POLICYENGINE_US_ALLOWED_COMPUTED_EXPORT_VARIABLES,
     SAFE_POLICYENGINE_US_EXPORT_VARIABLES,
     PolicyEngineUSConstraint,
     PolicyEngineUSDBTarget,
@@ -2466,6 +2467,7 @@ class TestPolicyEngineUSProjection:
             name
             for name in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
             if name in tbs.variables
+            and name not in POLICYENGINE_US_ALLOWED_COMPUTED_EXPORT_VARIABLES
             and (
                 getattr(tbs.variables[name], "formulas", None)
                 or getattr(tbs.variables[name], "adds", None)
@@ -2490,21 +2492,25 @@ class TestPolicyEngineUSProjection:
             "medicare_part_b_premiums_reported"
             not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         )
-        assert (
-            "traditional_ira_contributions" not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
-        )
+        assert "traditional_ira_contributions" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         assert (
             "traditional_ira_contributions_desired"
             in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         )
-        assert "roth_ira_contributions" not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
+        assert "roth_ira_contributions" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         assert "roth_ira_contributions_desired" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
+        assert "traditional_401k_contributions" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
+        assert "roth_401k_contributions" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         assert (
             "self_employed_pension_contributions"
-            not in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
+            in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         )
         assert (
             "self_employed_pension_contributions_desired"
+            in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
+        )
+        assert (
+            "spm_unit_capped_work_childcare_expenses"
             in SAFE_POLICYENGINE_US_EXPORT_VARIABLES
         )
         assert "non_sch_d_capital_gains" in SAFE_POLICYENGINE_US_EXPORT_VARIABLES

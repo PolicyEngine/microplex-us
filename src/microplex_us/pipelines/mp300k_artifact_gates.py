@@ -83,14 +83,8 @@ _DEFAULT_MAX_SUPPORT_WEIGHT_SHARE = 0.25
 _KNOWN_PEUS_COMPUTED_ECPS_CONTRACT_COLUMNS = frozenset(
     {
         "medicare_enrolled",
-        "roth_401k_contributions",
-        "roth_ira_contributions",
         "self_employed_health_insurance_ald",
         "self_employed_pension_contribution_ald",
-        "self_employed_pension_contributions",
-        "spm_unit_capped_work_childcare_expenses",
-        "traditional_401k_contributions",
-        "traditional_ira_contributions",
     }
 )
 _FORBIDDEN_SOURCE_DIAGNOSTIC_VARIABLES = frozenset(

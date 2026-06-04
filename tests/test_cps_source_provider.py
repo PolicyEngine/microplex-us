@@ -467,6 +467,7 @@ def test_load_cps_asec_derives_policyengine_value_inputs(tmp_path):
             "WICYN": [1, 2],
             "SPM_CAPHOUSESUB": [700, 0],
             "SPM_ENGVAL": [90, -1],
+            "SPM_CAPWKCCXPNS": [1200, -1],
             "SPM_CHILDCAREXPNS": [1500, -1],
             "PHIP_VAL": [900, -1],
             "POTC_VAL": [120, -1],
@@ -499,6 +500,8 @@ def test_load_cps_asec_derives_policyengine_value_inputs(tmp_path):
     assert persons["receives_housing_assistance"].tolist() == [True, False]
     assert persons["takes_up_housing_assistance_if_eligible"].tolist() == [True, False]
     assert persons["spm_unit_energy_subsidy"].tolist() == [90, 0]
+    assert persons["spm_unit_capped_housing_subsidy_reported"].tolist() == [700, 0]
+    assert persons["spm_unit_capped_work_childcare_expenses"].tolist() == [1200, 0]
     assert persons["spm_unit_pre_subsidy_childcare_expenses"].tolist() == [1500, 0]
     assert persons["health_insurance_premiums_without_medicare_part_b"].tolist() == [
         900,

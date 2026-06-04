@@ -911,6 +911,51 @@ def _subset_policyengine_linear_constraints(
     return tuple(subset)
 
 
+def _normalize_policyengine_constraints_for_microcalibrate(
+    constraints: tuple[LinearConstraint, ...] | list[LinearConstraint],
+) -> tuple[tuple[LinearConstraint, ...], dict[str, Any]]:
+    """Make signed equality targets safe for microcalibrate's relative-error loss.
+
+    ``microcalibrate`` normalizes its objective by ``target + 1`` and is
+    therefore numerically unsafe for large negative targets. Multiplying
+    a linear equality by ``-1`` preserves the exact feasible set, so
+    negative-target constraints are passed to the backend with positive
+    targets and flipped coefficients.
+    """
+
+    normalized: list[LinearConstraint] = []
+    sign_flipped_names: list[str] = []
+    for constraint in constraints:
+        target = float(constraint.target)
+        coefficients = np.asarray(constraint.coefficients, dtype=float)
+        if target < 0.0:
+            normalized.append(
+                LinearConstraint(
+                    name=constraint.name,
+                    coefficients=-coefficients,
+                    target=-target,
+                )
+            )
+            sign_flipped_names.append(constraint.name)
+        else:
+            normalized.append(
+                LinearConstraint(
+                    name=constraint.name,
+                    coefficients=coefficients,
+                    target=target,
+                )
+            )
+    max_names_to_record = 100
+    summary = {
+        "sign_flipped_constraint_count": len(sign_flipped_names),
+        "sign_flipped_constraint_names": sign_flipped_names[:max_names_to_record],
+        "sign_flipped_constraint_names_truncated": (
+            len(sign_flipped_names) > max_names_to_record
+        ),
+    }
+    return tuple(normalized), summary
+
+
 def _policyengine_target_geo_priority(target: TargetSpec) -> int:
     geo_level = str(target.metadata.get("geo_level", "")).lower()
     return {
@@ -4384,6 +4429,14 @@ class USMicroplexPipeline:
                             ),
                         )
                     )
+                microcalibrate_constraint_normalization = None
+                if self.config.calibration_backend == "microcalibrate":
+                    (
+                        calibration_constraints,
+                        microcalibrate_constraint_normalization,
+                    ) = _normalize_policyengine_constraints_for_microcalibrate(
+                        calibration_constraints
+                    )
                 calibrated_households = stage_calibrator.fit_transform(
                     stage_tables.households.copy(),
                     {},
@@ -4482,6 +4535,9 @@ class USMicroplexPipeline:
                         if not calibrated_persons.empty
                         and "weight" in calibrated_persons.columns
                         else None
+                    ),
+                    "microcalibrate_constraint_normalization": (
+                        microcalibrate_constraint_normalization
                     ),
                 },
             )
@@ -4635,6 +4691,9 @@ class USMicroplexPipeline:
                         "person_weight_diagnostics": stage_result[
                             "person_weight_diagnostics"
                         ],
+                        "microcalibrate_constraint_normalization": stage_result.get(
+                            "microcalibrate_constraint_normalization"
+                        ),
                         "max_error": float(validation.get("max_error", 0.0)),
                         "effective_backend": validation.get("backend"),
                         "uses_gates": validation.get("uses_gates"),

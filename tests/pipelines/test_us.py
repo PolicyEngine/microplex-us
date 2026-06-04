@@ -9,6 +9,7 @@ import h5py
 import numpy as np
 import pandas as pd
 import pytest
+from microplex.calibration import LinearConstraint
 from microplex.core import (
     EntityObservation,
     EntityRelationship,
@@ -32,6 +33,7 @@ from microplex_us.pipelines.us import (
     USMicroplexPipeline,
     USMicroplexTargets,
     _attach_household_census_geographies,
+    _normalize_policyengine_constraints_for_microcalibrate,
     _policyengine_target_loss_geography_key,
     _select_feasible_policyengine_calibration_constraints,
     _select_policyengine_deferred_stage_constraints,
@@ -6589,6 +6591,36 @@ class TestUSMicroplexPipeline:
         assert [target.name for target in selected_targets] == ["dense_state_count"]
         assert summary["n_constraints_dropped_low_support"] == 1
         assert summary["n_constraints_after_feasibility_filter"] == 1
+
+    def test_normalize_microcalibrate_constraints_flips_negative_targets(self):
+        constraints = (
+            LinearConstraint(
+                name="signed_loss",
+                coefficients=np.array([-4.0, 1.0, 0.0]),
+                target=-12.0,
+            ),
+            LinearConstraint(
+                name="positive_amount",
+                coefficients=np.array([2.0, 0.0, 3.0]),
+                target=20.0,
+            ),
+        )
+
+        normalized, summary = _normalize_policyengine_constraints_for_microcalibrate(
+            constraints
+        )
+
+        assert normalized[0].name == "signed_loss"
+        assert normalized[0].target == pytest.approx(12.0)
+        np.testing.assert_allclose(normalized[0].coefficients, [4.0, -1.0, -0.0])
+        assert normalized[1].name == "positive_amount"
+        assert normalized[1].target == pytest.approx(20.0)
+        np.testing.assert_allclose(normalized[1].coefficients, [2.0, 0.0, 3.0])
+        assert summary == {
+            "sign_flipped_constraint_count": 1,
+            "sign_flipped_constraint_names": ["signed_loss"],
+            "sign_flipped_constraint_names_truncated": False,
+        }
 
     def test_calibrate_policyengine_tables_applies_feasibility_constraint_budget(
         self,

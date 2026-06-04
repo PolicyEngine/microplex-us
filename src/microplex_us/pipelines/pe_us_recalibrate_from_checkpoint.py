@@ -26,6 +26,7 @@ from pathlib import Path
 
 from microplex_us.pipelines.us import (
     USMicroplexBuildConfig,
+    USMicroplexPipeline,
     recalibrate_policyengine_us_from_checkpoint,
 )
 
@@ -71,10 +72,41 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Path to the PolicyEngine US targets SQLite database.",
     )
     parser.add_argument(
+        "--arch-targets-db",
+        type=Path,
+        action="append",
+        default=[],
+        help=(
+            "Path to an Arch target artifact. May be supplied multiple times. "
+            "Required when --calibration-target-source=arch."
+        ),
+    )
+    parser.add_argument(
         "--target-period",
         type=int,
         default=None,
         help="Calendar year for calibration targets (default: config default).",
+    )
+    parser.add_argument(
+        "--target-profile",
+        type=str,
+        default=None,
+        help="PolicyEngine target profile used for scoring/ledger context.",
+    )
+    parser.add_argument(
+        "--calibration-target-source",
+        choices=["policyengine", "arch"],
+        default=None,
+        help=(
+            "Source for calibration targets. Defaults to the build config default "
+            "unless supplied."
+        ),
+    )
+    parser.add_argument(
+        "--calibration-target-profile",
+        type=str,
+        default=None,
+        help="Target profile used to select calibration constraints.",
     )
     parser.add_argument(
         "--calibration-backend",
@@ -106,6 +138,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             "recalibration so the next iteration can skip microsim too."
         ),
     )
+    parser.add_argument(
+        "--policyengine-dataset-output",
+        type=Path,
+        default=None,
+        help=(
+            "Optional PolicyEngine-readable H5 output path. When set, the "
+            "recalibrated entity tables are exported after calibration."
+        ),
+    )
     args = parser.parse_args(argv)
     output_root = _prepare_output_root(args.output_root)
 
@@ -116,8 +157,20 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.policyengine_materialize_batch_size
         ),
     }
+    if args.arch_targets_db:
+        config_kwargs["arch_targets_db"] = tuple(
+            str(path) for path in args.arch_targets_db
+        )
     if args.target_period is not None:
         config_kwargs["policyengine_target_period"] = int(args.target_period)
+    if args.target_profile is not None:
+        config_kwargs["policyengine_target_profile"] = args.target_profile
+    if args.calibration_target_source is not None:
+        config_kwargs["calibration_target_source"] = args.calibration_target_source
+    if args.calibration_target_profile is not None:
+        config_kwargs["policyengine_calibration_target_profile"] = (
+            args.calibration_target_profile
+        )
     if args.calibration_max_iter is not None:
         config_kwargs["calibration_max_iter"] = int(args.calibration_max_iter)
     if args.pipeline_checkpoint_save_post_microsim_path is not None:
@@ -136,9 +189,31 @@ def main(argv: Sequence[str] | None = None) -> int:
         result.policyengine_tables.persons.to_parquet(
             output_root / "persons.parquet"
         )
+    if result.policyengine_tables.tax_units is not None:
+        result.policyengine_tables.tax_units.to_parquet(
+            output_root / "tax_units.parquet"
+        )
+    if result.policyengine_tables.spm_units is not None:
+        result.policyengine_tables.spm_units.to_parquet(
+            output_root / "spm_units.parquet"
+        )
+    if result.policyengine_tables.families is not None:
+        result.policyengine_tables.families.to_parquet(
+            output_root / "families.parquet"
+        )
+    if result.policyengine_tables.marital_units is not None:
+        result.policyengine_tables.marital_units.to_parquet(
+            output_root / "marital_units.parquet"
+        )
     (output_root / "calibration_summary.json").write_text(
         json.dumps(result.calibration_summary, indent=2, default=str)
     )
+    if args.policyengine_dataset_output is not None:
+        USMicroplexPipeline(config).export_policyengine_dataset(
+            result,
+            args.policyengine_dataset_output,
+            period=args.target_period,
+        )
     print(
         f"Recalibrated from {args.checkpoint_path} → {output_root} "
         f"(stage={result.loaded_stage}, "

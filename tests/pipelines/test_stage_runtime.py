@@ -5,6 +5,7 @@ import json
 import pytest
 from microplex.core import RelationshipCardinality
 
+import microplex_us.pipelines.stage_runtime as stage_runtime_module
 from microplex_us.pipelines.stage_contracts import US_STAGE_CONTRACT_VERSION
 from microplex_us.pipelines.stage_run import (
     USArtifactRef,
@@ -12,6 +13,7 @@ from microplex_us.pipelines.stage_run import (
     USRunProfileOutputs,
     USSourceLoadingOutputs,
     USStageInputOverride,
+    USValidationBenchmarkingOutputs,
 )
 from microplex_us.pipelines.stage_runtime import USStageRuntimeWriter
 
@@ -128,6 +130,97 @@ def test_runtime_writer_finalize_preserves_completed_stage_lifecycle(tmp_path):
     assert after["updatedAt"] == before["updatedAt"]
     assert after["completedAt"] == before["completedAt"]
     assert after["events"] == before["events"]
+
+
+def test_runtime_writer_finalize_rehydrates_failed_stage_outputs(
+    tmp_path,
+    monkeypatch,
+):
+    previous_stage = (
+        tmp_path / "stage_artifacts" / "manifests" / "08_dataset_assembly.json"
+    )
+    previous_stage.parent.mkdir(parents=True, exist_ok=True)
+    previous_stage.write_text(
+        json.dumps(
+            {
+                "stageId": "08_dataset_assembly",
+                "outputs": {
+                    "policyengine_dataset": {
+                        "key": "policyengine_dataset",
+                        "path": "policyengine_us.h5",
+                        "exists": True,
+                    }
+                },
+            }
+        )
+    )
+    (tmp_path / "policyengine_us.h5").write_text("{}")
+    evidence_path = (
+        tmp_path
+        / "stage_artifacts"
+        / "09_validation_benchmarking"
+        / "evidence_manifest.json"
+    )
+    evidence_path.parent.mkdir(parents=True, exist_ok=True)
+    evidence_path.write_text("{}")
+
+    writer = USStageRuntimeWriter(tmp_path)
+    writer.record_output(
+        "09_validation_benchmarking",
+        "validation_evidence",
+        USArtifactRef(
+            key="validation_evidence",
+            path=evidence_path.relative_to(tmp_path),
+            format="json",
+            required=True,
+            assume_exists=True,
+        ),
+    )
+    writer.record_output(
+        "09_validation_benchmarking",
+        "benchmark_summary",
+        {"policyengine_native_scores": {"loss_delta": -0.1}},
+    )
+    writer.fail_stage("09_validation_benchmarking", ValueError("finalize failed"))
+
+    def _empty_rebuilt_stage_outputs(*_args, **_kwargs):
+        return (
+            USValidationBenchmarkingOutputs(
+                diagnostics=_diagnostics("09_validation_benchmarking"),
+                complete=False,
+            ),
+        )
+
+    monkeypatch.setattr(
+        stage_runtime_module,
+        "build_us_stage_output_manifests_from_artifact_manifest",
+        _empty_rebuilt_stage_outputs,
+    )
+
+    writer.finalize_from_artifact_manifest(
+        {
+            "artifacts": {"policyengine_dataset": "policyengine_us.h5"},
+            "config": {"calibration_backend": "microcalibrate"},
+        }
+    )
+
+    stage9 = json.loads(
+        (
+            tmp_path
+            / "stage_artifacts"
+            / "manifests"
+            / "09_validation_benchmarking.json"
+        ).read_text()
+    )
+    assert stage9["complete"] is True
+    assert stage9["lifecycleStatus"] == "complete"
+    assert stage9["failedAt"] is None
+    assert stage9["failure"] is None
+    assert stage9["missingRequiredOutputs"] == []
+    assert stage9["outputs"]["benchmark_summary"] == {
+        "policyengine_native_scores": {"loss_delta": -0.1}
+    }
+    assert stage9["outputs"]["validation_evidence"]["exists"] is True
 
 
 def test_runtime_writer_serializes_enum_outputs(tmp_path):

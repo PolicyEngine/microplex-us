@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import traceback
 from collections.abc import Mapping
-from dataclasses import replace
+from dataclasses import fields, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -281,6 +281,19 @@ class USStageRuntimeWriter:
             self.manifest_payload,
         ):
             existing = self._stage_payload(outputs.stage_id)
+            outputs = _rehydrate_outputs_from_stage_payload(outputs, existing)
+            if (
+                _terminal_lifecycle(existing) == "failed"
+                and not outputs.complete
+                and not outputs.missing_required_outputs(self.artifact_root)
+            ):
+                outputs = replace(
+                    outputs,
+                    complete=True,
+                    lifecycle_status="complete",
+                    deferred_reason=None,
+                    failure=None,
+                )
             now = _now()
             existing_events = tuple(
                 dict(event)
@@ -288,7 +301,11 @@ class USStageRuntimeWriter:
                 if isinstance(event, dict)
             )
             existing_lifecycle = _terminal_lifecycle(existing)
-            if existing_lifecycle is not None:
+            preserve_existing_lifecycle = existing_lifecycle in {
+                "complete",
+                "deferred",
+            } or (existing_lifecycle == "failed" and not outputs.complete)
+            if preserve_existing_lifecycle:
                 lifecycle_status = existing_lifecycle
                 complete = bool(existing.get("complete"))
                 started_at = _optional_str(existing.get("startedAt"))
@@ -580,6 +597,81 @@ def _final_lifecycle_status(
     if outputs.resolved_lifecycle_status() == "deferred":
         return "deferred"
     return "complete" if outputs.complete else "pending"
+
+
+def _rehydrate_outputs_from_stage_payload(
+    outputs: USStageOutputManifest,
+    payload: Mapping[str, Any],
+) -> USStageOutputManifest:
+    serialized_outputs = payload.get("outputs")
+    if not isinstance(serialized_outputs, Mapping):
+        return outputs
+
+    hydrated: dict[str, Any] = {}
+    for item in fields(outputs):
+        name = item.name
+        if name in {
+            "schema_version",
+            "contract_version",
+            "input_stage_manifest",
+            "diagnostics",
+            "auxiliary_artifacts",
+            "metadata",
+            "complete",
+            "lifecycle_status",
+            "started_at",
+            "updated_at",
+            "completed_at",
+            "failed_at",
+            "deferred_reason",
+            "failure",
+            "events",
+            "stage_id",
+        }:
+            continue
+        if name not in serialized_outputs:
+            continue
+        current = getattr(outputs, name)
+        if not _typed_output_is_missing(current):
+            continue
+        value = _deserialize_stage_output_field(serialized_outputs[name])
+        if not _typed_output_is_missing(value):
+            hydrated[name] = value
+    if not hydrated:
+        return outputs
+    return replace(outputs, **hydrated)
+
+
+def _deserialize_stage_output_field(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        if "path" in value and "key" in value:
+            return USArtifactRef(
+                key=str(value["key"]),
+                path=str(value["path"]),
+                format=value.get("format", "unknown"),
+                required=bool(value.get("required", False)),
+                category=value.get("category", "required_output"),
+                resume_role=value.get("resume_role"),
+                assume_exists=bool(value.get("assume_exists", False)),
+                exists=(
+                    value.get("exists")
+                    if isinstance(value.get("exists"), bool)
+                    else None
+                ),
+            )
+    return value
+
+
+def _typed_output_is_missing(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, Mapping):
+        return not bool(value)
+    if isinstance(value, (tuple, list, set, frozenset)):
+        return not bool(value)
+    if isinstance(value, str):
+        return not value
+    return False
 
 
 def _terminal_lifecycle(

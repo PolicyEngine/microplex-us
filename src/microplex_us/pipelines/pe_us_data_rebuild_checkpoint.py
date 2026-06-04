@@ -359,11 +359,17 @@ def _resolve_checkpoint_resume_artifact_root(
     output_root: str | Path,
     *,
     version_id: str | None,
+    resume_from_stage: str | None = None,
 ) -> Path:
     root = Path(output_root).expanduser()
     if version_id is not None:
         return root / version_id
     if (root / "manifest.json").exists():
+        return root
+    if (
+        resume_from_stage is not None
+        and canonicalize_us_pipeline_stage_id(resume_from_stage) == "01_run_profile"
+    ):
         return root
     raise ValueError(
         "resume_from_stage requires --version-id unless --output-root points "
@@ -381,7 +387,10 @@ def _load_checkpoint_manifest_if_available(artifact_root: Path) -> dict[str, Any
     path = artifact_root / "manifest.json"
     if not path.exists():
         return {}
-    payload = json.loads(path.read_text())
+    try:
+        payload = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return {}
     return payload if isinstance(payload, dict) else {}
 
 
@@ -2700,6 +2709,7 @@ def _run_policyengine_us_data_rebuild_checkpoint_resume(
     artifact_root = _resolve_checkpoint_resume_artifact_root(
         output_root,
         version_id=version_id,
+        resume_from_stage=resume_stage_id,
     )
     preflight = preflight_us_stage_resume(
         artifact_root,
@@ -2709,7 +2719,7 @@ def _run_policyengine_us_data_rebuild_checkpoint_resume(
         ),
     )
     preflight.raise_for_missing()
-    manifest = _load_checkpoint_manifest(artifact_root)
+    manifest = _load_checkpoint_manifest_if_available(artifact_root)
     stage_runtime_writer = USStageRuntimeWriter(
         artifact_root,
         manifest_payload=manifest,
@@ -2984,6 +2994,7 @@ def run_policyengine_us_data_rebuild_checkpoint(
         artifact_root = _resolve_checkpoint_resume_artifact_root(
             output_root,
             version_id=version_id,
+            resume_from_stage=resume_stage_id,
         )
         preflight = preflight_us_stage_resume(
             artifact_root,

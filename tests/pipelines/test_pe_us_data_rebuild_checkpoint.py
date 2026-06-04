@@ -481,6 +481,88 @@ def test_stage_resume_preflight_allows_stage1_without_manifest(tmp_path) -> None
     assert preflight.ok
 
 
+@pytest.mark.parametrize("use_version_id", [True, False])
+def test_run_policyengine_us_data_rebuild_checkpoint_stage1_resume_allows_missing_manifest(
+    monkeypatch,
+    tmp_path,
+    use_version_id,
+) -> None:
+    artifact_root = tmp_path / "artifacts" / "run-1"
+    artifact_root.mkdir(parents=True)
+    provider = _FakeProvider(descriptor=SimpleNamespace(name="fake_source"))
+    captured: dict[str, Any] = {}
+    fake_build_result = SimpleNamespace(
+        config=default_policyengine_us_data_rebuild_checkpoint_config(
+            policyengine_baseline_dataset="/tmp/enhanced_cps_2024.h5",
+            policyengine_targets_db="/tmp/policy_data.db",
+        )
+    )
+
+    def fake_resume_from_source_stage(**kwargs):
+        captured["resume_stage"] = kwargs["resume_from_stage"]
+        captured["artifact_root"] = kwargs["artifact_root"]
+        captured["manifest_payload"] = dict(
+            kwargs["stage_runtime_writer"].manifest_payload
+        )
+        return fake_build_result
+
+    def fake_finalize(build_result, **_kwargs):
+        return _fake_versioned_artifacts(artifact_root, build_result)
+
+    def fake_attach(artifact_dir, **kwargs):
+        captured["attach_build_result"] = kwargs["build_result"]
+        return _fake_evidence_result(Path(artifact_dir))
+
+    def fake_load_artifacts(*, build_result, artifact_root, frontier_metric):
+        captured["loaded_build_result"] = build_result
+        return _fake_versioned_artifacts(artifact_root, build_result)
+
+    monkeypatch.setattr(
+        checkpoint_module,
+        "_resume_checkpoint_build_from_source_stage",
+        fake_resume_from_source_stage,
+    )
+    monkeypatch.setattr(
+        checkpoint_module,
+        "_finalize_versioned_build_artifacts",
+        fake_finalize,
+    )
+    monkeypatch.setattr(
+        checkpoint_module,
+        "attach_policyengine_us_data_rebuild_checkpoint_evidence",
+        fake_attach,
+    )
+    monkeypatch.setattr(
+        checkpoint_module,
+        "_load_checkpoint_versioned_artifacts",
+        fake_load_artifacts,
+    )
+
+    output_root = tmp_path / "artifacts" if use_version_id else artifact_root
+    version_id = "run-1" if use_version_id else None
+    result = run_policyengine_us_data_rebuild_checkpoint(
+        output_root=output_root,
+        policyengine_baseline_dataset="/tmp/enhanced_cps_2024.h5",
+        policyengine_targets_db="/tmp/policy_data.db",
+        providers=(provider,),
+        queries={},
+        version_id=version_id,
+        resume_from_stage="01_run_profile",
+        defer_policyengine_harness=True,
+        defer_policyengine_native_score=True,
+        defer_native_audit=True,
+        defer_imputation_ablation=True,
+    )
+
+    assert not (artifact_root / "manifest.json").exists()
+    assert captured["resume_stage"] == "01_run_profile"
+    assert captured["artifact_root"] == artifact_root
+    assert captured["manifest_payload"] == {}
+    assert captured["attach_build_result"] is fake_build_result
+    assert captured["loaded_build_result"] is fake_build_result
+    assert result.artifacts.build_result is fake_build_result
+
+
 def test_stage_resume_preflight_reports_missing_policyengine_bundle_member(
     tmp_path,
 ) -> None:

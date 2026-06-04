@@ -81,6 +81,27 @@ To avoid rebuilding long prompts in chat:
 3. Write the full review to a dated file under [`/Users/maxghenis/PolicyEngine/microplex-us/reviews/`](/Users/maxghenis/PolicyEngine/microplex-us/reviews/).
 4. Append only a concise summary to [`/Users/maxghenis/PolicyEngine/microplex-us/_BUILD_LOG.md`](/Users/maxghenis/PolicyEngine/microplex-us/_BUILD_LOG.md).
 
+## Weighting / population aggregates (CRITICAL)
+
+When computing any population figure from a PolicyEngine dataset/H5 (eCPS, MP, candidate
+comparisons, coverage checks — everything):
+
+- **NEVER** read or sum a weight array directly — not `person_weight`, `tax_unit_weight`,
+  `family_weight`, `marital_unit_weight`, nor even `household_weight` — and **never** report an
+  unweighted record count or a raw HDF5 column `.sum()` as a population number. Both are wrong.
+- **Always** aggregate through `Microsimulation`, which auto-weights via microdf (you never touch a
+  weight):
+
+  ```python
+  from policyengine_us import Microsimulation
+  sim = Microsimulation(dataset=path)
+  total      = sim.calculate("taxable_private_pension_income", 2024).sum()        # weighted $
+  recipients = (sim.calculate("taxable_private_pension_income", 2024) > 0).sum()  # weighted count
+  ```
+
+- If you ever must reference a weight at all, it is **`household_weight` ONLY**; the other entity
+  weights are derived and must never be used directly.
+
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 

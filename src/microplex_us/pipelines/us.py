@@ -45,6 +45,7 @@ from microplex.targets import TargetQuery, TargetSpec
 from microplex_us.data_sources.cps import (
     RETIREMENT_CATCH_UP_AGE,
     RETIREMENT_CONTRIBUTION_LIMITS_BY_YEAR,
+    TAXABLE_PENSION_FRACTION,
 )
 from microplex_us.data_sources.forbes import (
     ForbesFixedSpine,
@@ -137,6 +138,7 @@ from microplex_us.policyengine.us import (
 from microplex_us.targets.arch import resolve_arch_sqlite_target_provider
 from microplex_us.variables import (
     PE_STYLE_PUF_IRS_DEMOGRAPHIC_PREDICTORS,
+    UNSPLIT_DIVIDEND_QUALIFIED_SHARE,
     DonorMatchStrategy,
     VariableSupportFamily,
     donor_imputation_block_specs,
@@ -251,6 +253,27 @@ PUF_SUPPORT_CLONE_CPS_REFRESH_INCOME_VARIABLES: frozenset[str] = frozenset(
         "social_security",
     }
 )
+
+PUF_SUPPORT_CLONE_CPS_DIRECT_PASSTHROUGH_ALIASES: Mapping[str, tuple[str, ...]] = {
+    "taxable_unemployment_compensation": ("unemployment_compensation",),
+}
+PUF_SUPPORT_CLONE_CPS_TAXABLE_INTEREST_FALLBACK_SHARE = 0.680
+PUF_SUPPORT_CLONE_CPS_SPLIT_TOTALS: tuple[
+    tuple[tuple[str, str], str, float],
+    ...,
+] = (
+    (
+        ("taxable_interest_income", "tax_exempt_interest_income"),
+        "interest_income",
+        PUF_SUPPORT_CLONE_CPS_TAXABLE_INTEREST_FALLBACK_SHARE,
+    ),
+    (
+        ("taxable_pension_income", "tax_exempt_pension_income"),
+        "pension_income",
+        TAXABLE_PENSION_FRACTION,
+    ),
+)
+PUF_SUPPORT_CLONE_CPS_DIVIDEND_TOTAL_ALIAS = "dividend_income"
 
 # Refresh categorical/status fields against the PUF income surface, but never
 # overwrite amount fields here. PUF and CPS income amounts must come from donor
@@ -4414,6 +4437,7 @@ class USMicroplexPipeline:
                 stage_tables.households["household_weight"].sum()
             )
             stage_calibrator = None
+            microcalibrate_constraint_normalization = None
             if self.config.calibration_backend == "none":
                 calibrated_households = stage_tables.households.copy()
                 pre_rescale_household_weight_sum = stage_input_household_weight_sum
@@ -4433,7 +4457,6 @@ class USMicroplexPipeline:
                             ),
                         )
                     )
-                microcalibrate_constraint_normalization = None
                 if self.config.calibration_backend == "microcalibrate":
                     (
                         calibration_constraints,
@@ -6308,6 +6331,148 @@ class USMicroplexPipeline:
                 ] = total.loc[fallback_mask & age.lt(62)]
         return subcomponents
 
+    def _preserve_cps_measured_puf_clone_totals(
+        self,
+        *,
+        original: pd.DataFrame,
+        clone: pd.DataFrame,
+        integrated_variables: Iterable[str],
+        preclone_columns: set[str],
+    ) -> tuple[pd.DataFrame, dict[str, Any]]:
+        """Anchor copied PUF tax-detail leaves to CPS-reported income totals."""
+        integrated_set = set(integrated_variables)
+        result = clone.copy()
+        passthrough_variables: list[str] = []
+        dividend_scaled = False
+
+        for target, aliases in PUF_SUPPORT_CLONE_CPS_DIRECT_PASSTHROUGH_ALIASES.items():
+            if target not in result.columns or target not in integrated_set:
+                continue
+            if target in preclone_columns:
+                continue
+            source = next((alias for alias in aliases if alias in original.columns), None)
+            if source is None:
+                continue
+            result[target] = (
+                pd.to_numeric(original[source], errors="coerce")
+                .fillna(0.0)
+                .to_numpy(copy=True)
+            )
+            passthrough_variables.append(target)
+
+        for components, total_alias, fallback_first_share in (
+            PUF_SUPPORT_CLONE_CPS_SPLIT_TOTALS
+        ):
+            if total_alias not in original.columns:
+                continue
+            if not all(column in result.columns for column in components):
+                continue
+            if not any(
+                column in integrated_set and column not in preclone_columns
+                for column in components
+            ):
+                continue
+            cps_total = (
+                pd.to_numeric(original[total_alias], errors="coerce")
+                .fillna(0.0)
+                .clip(lower=0.0)
+                .astype(float)
+            )
+            first_component = (
+                pd.to_numeric(result[components[0]], errors="coerce")
+                .fillna(0.0)
+                .clip(lower=0.0)
+                .astype(float)
+            )
+            second_component = (
+                pd.to_numeric(result[components[1]], errors="coerce")
+                .fillna(0.0)
+                .clip(lower=0.0)
+                .astype(float)
+            )
+            component_total = first_component + second_component
+            first_share = pd.Series(fallback_first_share, index=result.index)
+            positive_component_total = component_total.gt(0.0)
+            first_share.loc[positive_component_total] = (
+                first_component.loc[positive_component_total]
+                / component_total.loc[positive_component_total]
+            ).clip(lower=0.0, upper=1.0)
+            result[components[0]] = (cps_total * first_share).to_numpy(copy=True)
+            result[components[1]] = (
+                cps_total * (1.0 - first_share)
+            ).to_numpy(copy=True)
+            if total_alias == "pension_income":
+                if "taxable_private_pension_income" in result.columns:
+                    result["taxable_private_pension_income"] = result[
+                        components[0]
+                    ].to_numpy(copy=True)
+                if "tax_exempt_private_pension_income" in result.columns:
+                    result["tax_exempt_private_pension_income"] = result[
+                        components[1]
+                    ].to_numpy(copy=True)
+            passthrough_variables.extend(components)
+
+        dividend_components = (
+            "qualified_dividend_income",
+            "non_qualified_dividend_income",
+        )
+        if (
+            PUF_SUPPORT_CLONE_CPS_DIVIDEND_TOTAL_ALIAS in original.columns
+            and all(column in result.columns for column in dividend_components)
+            and any(column in integrated_set for column in dividend_components)
+            and any(column not in preclone_columns for column in dividend_components)
+        ):
+            cps_total = (
+                pd.to_numeric(
+                    original[PUF_SUPPORT_CLONE_CPS_DIVIDEND_TOTAL_ALIAS],
+                    errors="coerce",
+                )
+                .fillna(0.0)
+                .clip(lower=0.0)
+                .astype(float)
+            )
+            qualified = (
+                pd.to_numeric(result["qualified_dividend_income"], errors="coerce")
+                .fillna(0.0)
+                .clip(lower=0.0)
+                .astype(float)
+            )
+            non_qualified = (
+                pd.to_numeric(result["non_qualified_dividend_income"], errors="coerce")
+                .fillna(0.0)
+                .clip(lower=0.0)
+                .astype(float)
+            )
+            component_total = qualified + non_qualified
+            share = pd.Series(UNSPLIT_DIVIDEND_QUALIFIED_SHARE, index=result.index)
+            positive_component_total = component_total.gt(0.0)
+            share.loc[positive_component_total] = (
+                qualified.loc[positive_component_total]
+                / component_total.loc[positive_component_total]
+            ).clip(lower=0.0, upper=1.0)
+            result["qualified_dividend_income"] = (cps_total * share).to_numpy(
+                copy=True
+            )
+            result["non_qualified_dividend_income"] = (
+                cps_total * (1.0 - share)
+            ).to_numpy(copy=True)
+            if "ordinary_dividend_income" in result.columns:
+                result["ordinary_dividend_income"] = cps_total.to_numpy(copy=True)
+            if "dividend_income" in result.columns:
+                result["dividend_income"] = cps_total.to_numpy(copy=True)
+            dividend_scaled = True
+            passthrough_variables.extend(
+                [
+                    "qualified_dividend_income",
+                    "non_qualified_dividend_income",
+                ]
+            )
+
+        return result, {
+            "passthrough_variables": sorted(set(passthrough_variables)),
+            "dividend_components_scaled_to_cps_total": dividend_scaled,
+        }
+
     def _finalize_puf_support_clone_frame(
         self,
         *,
@@ -6337,6 +6502,12 @@ class USMicroplexPipeline:
                 original[variable] = clone[variable].to_numpy(copy=True)
 
         clone, cps_refresh_summary = self._refresh_puf_support_clone_cps_only_fields(
+            original=original,
+            clone=clone,
+            integrated_variables=integrated_variables,
+            preclone_columns=preclone_columns,
+        )
+        clone, cps_passthrough_summary = self._preserve_cps_measured_puf_clone_totals(
             original=original,
             clone=clone,
             integrated_variables=integrated_variables,
@@ -6416,6 +6587,7 @@ class USMicroplexPipeline:
             "both_halves_override_variables": sorted(both_halves_override),
             "collapse_copy_variables": collapse_copy_variables,
             "cps_only_refresh": cps_refresh_summary,
+            "cps_measured_total_passthrough": cps_passthrough_summary,
             "dropped_generated_entity_id_columns": generated_entity_id_columns,
             "variable_surface": {
                 "ecps_imputed_variables": list(PUF_SUPPORT_CLONE_IMPUTED_VARIABLES),
@@ -11418,7 +11590,8 @@ class USMicroplexPipeline:
             "taxable_public_pension_income"
         )
         result["tax_exempt_private_pension_income"] = first_present(
-            "tax_exempt_private_pension_income"
+            "tax_exempt_private_pension_income",
+            "tax_exempt_pension_income",
         )
         result["tax_exempt_public_pension_income"] = first_present(
             "tax_exempt_public_pension_income"

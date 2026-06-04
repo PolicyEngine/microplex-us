@@ -4,6 +4,7 @@ chapters:
   - file: pipeline-stages
   - file: stage-contracts
   - file: pipeline-visualization
+  - file: generated/us_pipeline_map
   - file: api
   - file: architecture
   - file: source-semantics

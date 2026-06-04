@@ -14,6 +14,7 @@ from microplex_us.pipelines.pipeline_docs import (
     US_PIPELINE_GRAPH_SCHEMA_VERSION,
     US_PIPELINE_INTERNALS_SCHEMA_VERSION,
     US_PIPELINE_OVERLAY_SCHEMA_VERSION,
+    build_us_pipeline_docs_payloads,
     build_us_pipeline_graph,
     build_us_pipeline_internals,
     build_us_pipeline_overlay,
@@ -91,6 +92,21 @@ def test_pipeline_internals_edges_reference_materialized_nodes() -> None:
             for edge in substage["edges"]:
                 assert edge["source"] in node_ids, (substage["id"], edge)
                 assert edge["target"] in node_ids, (substage["id"], edge)
+
+
+def test_pipeline_markdown_docs_include_specific_code_references() -> None:
+    payloads = build_us_pipeline_docs_payloads()
+    markdown = payloads["us_pipeline_map.md"]
+
+    assert isinstance(markdown, str)
+    assert "| Node | Type | Status | Code refs | Source |" in markdown
+    assert "#### Edges" in markdown
+    assert (
+        "`microplex_us.pipelines.us.USMicroplexPipeline._integrate_donor_sources`"
+        in markdown
+    )
+    assert "`_integrate_donor_sources(self, seed_data, *, scaffold_input, donor_inputs)`" in markdown
+    assert "`src/microplex_us/pipelines/us.py:" in markdown
 
 
 def test_pipeline_viewer_internals_fixture_is_current() -> None:

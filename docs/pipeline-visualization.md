@@ -20,6 +20,9 @@ The public generated files live under `docs/generated/`:
   for each canonical stage, generated from
   [`us_pipeline_internals.map.json`](./us_pipeline_internals.map.json) and
   `@pipeline_node` decorators.
+- [`us_pipeline_map.md`](./generated/us_pipeline_map.md): the generated
+  Markdown pipeline map with canonical stages, substages, exact class or method
+  references, source locations, signatures, and edges.
 - [`us_pipeline_graph.schema.json`](./generated/us_pipeline_graph.schema.json):
   schema for graph consumers.
 - [`us_pipeline_internals.schema.json`](./generated/us_pipeline_internals.schema.json):
@@ -31,7 +34,7 @@ Small complete and failed overlay fixtures live under
 `tests/fixtures/pipeline_docs/generated/`. Those are test fixtures, not
 production run evidence.
 
-Regenerate the public graph, machinery map, and schemas with:
+Regenerate the public graph, machinery map, Markdown map, and schemas with:
 
 ```bash
 microplex-us-generate-pipeline-docs --output-dir docs/generated
@@ -81,9 +84,9 @@ inspecting alternate generated files:
 - saved-run overlay: generated with
   `microplex-us-generate-pipeline-docs --artifact-root /path/to/saved/artifact`
 
-Individual stage views expose the same kind of reference layer the old US data
-pipeline docs exposed: substage sections, exact function or class references,
-source locations, and directed edges.
+The generated Markdown map is the docs surface for exact class and method
+references. The viewer renders the same structured graph data for navigation
+and saved-run overlays.
 
 After regenerating `docs/generated/us_pipeline_internals.json`, update the
 viewer fixture with:

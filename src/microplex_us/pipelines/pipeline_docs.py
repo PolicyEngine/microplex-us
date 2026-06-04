@@ -461,20 +461,97 @@ def pipeline_overlay_json_schema() -> dict[str, Any]:
     }
 
 
+def render_us_pipeline_markdown(
+    *,
+    graph: USPipelineGraph,
+    internals: USPipelineInternals,
+) -> str:
+    """Render the canonical US pipeline map as generated Markdown docs."""
+
+    lines = [
+        "# US Pipeline Map",
+        "",
+        "Generated from `microplex_us.pipelines.stage_contracts`, "
+        f"`{DEFAULT_US_PIPELINE_INTERNALS_MAP}`, and `@pipeline_node` "
+        "decorators.",
+        "",
+        "This page is the static documentation surface for the build path. "
+        "It lists canonical stages, substages, exact class or method references, "
+        "source locations, and directed edges.",
+        "",
+        "## Canonical Stages",
+        "",
+        "| Stage | Title | Produces |",
+        "| --- | --- | --- |",
+    ]
+    for stage in graph["nodes"]:
+        produces = ", ".join(f"`{key}`" for key in stage.get("produces", ()))
+        lines.append(
+            f"| `{stage['id']}` {stage.get('step', '')} | "
+            f"{_markdown_cell(stage.get('title', ''))} | "
+            f"{produces or '`none`'} |"
+        )
+    lines.append("")
+
+    internals_by_stage = {stage["id"]: stage for stage in internals["stages"]}
+    for stage in graph["nodes"]:
+        stage_id = stage["id"]
+        internals_stage = internals_by_stage.get(stage_id, {})
+        lines.extend(
+            [
+                f"## {stage.get('step', stage_id)}: {stage.get('title', stage_id)}",
+                "",
+                str(stage.get("purpose", "")),
+                "",
+            ]
+        )
+        substages = internals_stage.get("substages", ())
+        for substage in substages if isinstance(substages, list) else ():
+            _append_markdown_substage(lines, stage_id=stage_id, substage=substage)
+
+    api_nodes = internals.get("apiNodes", ())
+    if isinstance(api_nodes, list) and api_nodes:
+        lines.extend(["## Pydoc API Surface", ""])
+        for node in api_nodes:
+            object_path = _node_code_reference(node)
+            if not object_path:
+                continue
+            lines.extend(
+                [
+                    f"### `{object_path}`",
+                    "",
+                ]
+            )
+            signature = _optional_str(node.get("signature"))
+            if signature:
+                lines.extend(["```python", signature, "```", ""])
+            docstring = _first_docstring_line(node)
+            if docstring:
+                lines.extend([docstring, ""])
+            source = _node_source_reference(node)
+            if source:
+                lines.extend([f"- Source: `{source}`", ""])
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def build_us_pipeline_docs_payloads(
     *,
     artifact_root: str | Path | None = None,
-) -> dict[str, dict[str, Any]]:
+) -> dict[str, dict[str, Any] | str]:
     """Return the generated docs payloads keyed by output filename."""
 
+    graph = build_us_pipeline_graph()
+    internals = build_us_pipeline_internals()
     payloads = {
         "us_pipeline_graph.schema.json": pipeline_graph_json_schema(),
         "us_pipeline_overlay.schema.json": pipeline_overlay_json_schema(),
         "us_pipeline_internals.schema.json": pipeline_internals_json_schema(),
-        "us_pipeline_graph.json": cast(dict[str, Any], build_us_pipeline_graph()),
-        "us_pipeline_internals.json": cast(
-            dict[str, Any],
-            build_us_pipeline_internals(),
+        "us_pipeline_graph.json": cast(dict[str, Any], graph),
+        "us_pipeline_internals.json": cast(dict[str, Any], internals),
+        "us_pipeline_map.md": render_us_pipeline_markdown(
+            graph=graph,
+            internals=internals,
         ),
     }
     if artifact_root is not None:
@@ -499,7 +576,7 @@ def write_us_pipeline_docs(
     mismatches: list[str] = []
     for filename, payload in payloads.items():
         path = paths[filename]
-        content = _json_dump(payload)
+        content = payload if isinstance(payload, str) else _json_dump(payload)
         if check:
             if not path.exists():
                 mismatches.append(f"missing generated file: {path}")
@@ -821,6 +898,107 @@ def _list_of_mappings(value: Any) -> list[dict[str, Any]]:
     return [dict(item) for item in value if isinstance(item, Mapping)]
 
 
+def _tuple_of_str(value: Any) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if isinstance(value, str):
+        return (value,)
+    if isinstance(value, Sequence):
+        return tuple(str(item) for item in value)
+    return (str(value),)
+
+
+def _append_markdown_substage(
+    lines: list[str],
+    *,
+    stage_id: str,
+    substage: Mapping[str, Any],
+) -> None:
+    substage_id = str(substage.get("id", "unknown"))
+    title = str(substage.get("title", substage_id))
+    description = str(substage.get("description", ""))
+    lines.extend(
+        [
+            f"### {title}",
+            "",
+            description,
+            "",
+            f"- Substage ID: `{substage_id}`",
+            f"- Canonical stage: `{stage_id}`",
+            f"- Status: `{substage.get('status', 'current')}`",
+            "",
+            "| Node | Type | Status | Code refs | Source |",
+            "| --- | --- | --- | --- | --- |",
+        ]
+    )
+    for node in _list_of_mappings(substage.get("nodes")):
+        refs = _node_markdown_refs(node)
+        source = _node_source_reference(node)
+        lines.append(
+            f"| `{node.get('id', '')}` {_markdown_cell(node.get('label', ''))} | "
+            f"`{node.get('nodeType', 'process')}` | "
+            f"`{node.get('status', 'current')}` | "
+            f"{refs or ''} | "
+            f"{f'`{source}`' if source else ''} |"
+        )
+    lines.extend(["", "#### Edges", ""])
+    for edge in _list_of_mappings(substage.get("edges")):
+        label = f" ({edge['label']})" if edge.get("label") else ""
+        lines.append(
+            f"- `{edge.get('source', '')}` -> `{edge.get('target', '')}` "
+            f"`{edge.get('edgeType', 'data_flow')}`{label}"
+        )
+    lines.append("")
+
+
+def _node_markdown_refs(node: Mapping[str, Any]) -> str:
+    refs: list[str] = []
+    object_path = _optional_str(node.get("objectPath"))
+    if object_path:
+        refs.append(object_path)
+    for ref in _tuple_of_str(node.get("apiRefs")):
+        if ref not in refs:
+            refs.append(ref)
+    pydoc = _optional_str(node.get("pydoc"))
+    if pydoc and pydoc not in refs:
+        refs.append(pydoc)
+    signature = _optional_str(node.get("signature"))
+    rendered = ", ".join(f"`{ref}`" for ref in refs)
+    if signature:
+        signature_ref = f"`{signature}`"
+        rendered = f"{rendered}<br>{signature_ref}" if rendered else signature_ref
+    return rendered
+
+
+def _node_code_reference(node: Mapping[str, Any]) -> str | None:
+    object_path = _optional_str(node.get("objectPath"))
+    if object_path:
+        return object_path
+    api_refs = _tuple_of_str(node.get("apiRefs"))
+    if api_refs:
+        return api_refs[0]
+    return _optional_str(node.get("pydoc"))
+
+
+def _node_source_reference(node: Mapping[str, Any]) -> str | None:
+    source_file = _optional_str(node.get("sourceFile"))
+    if source_file is None:
+        return None
+    line = node.get("line")
+    return f"{source_file}:{line}" if isinstance(line, int) else source_file
+
+
+def _first_docstring_line(node: Mapping[str, Any]) -> str:
+    docstring = _optional_str(node.get("docstring")) or _optional_str(
+        node.get("description")
+    )
+    return docstring.splitlines()[0] if docstring else ""
+
+
+def _markdown_cell(value: Any) -> str:
+    return str(value).replace("|", "\\|").replace("\n", "<br>")
+
+
 def _json_dump(payload: Mapping[str, Any]) -> str:
     return json.dumps(payload, indent=2, sort_keys=True) + "\n"
 
@@ -857,5 +1035,6 @@ __all__ = [
     "pipeline_graph_json_schema",
     "pipeline_internals_json_schema",
     "pipeline_overlay_json_schema",
+    "render_us_pipeline_markdown",
     "write_us_pipeline_docs",
 ]

@@ -261,3 +261,119 @@ class TestRecalibrateFromCheckpointCli:
 
         assert called is False
         assert not output_root.exists()
+
+    def test_main_threads_arch_target_options_into_config(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        import microplex_us.pipelines.pe_us_recalibrate_from_checkpoint as cli
+
+        observed: dict[str, Any] = {}
+
+        def _fake_recalibrate(
+            config: USMicroplexBuildConfig,
+            checkpoint_path: Path,
+        ) -> Any:
+            observed["config"] = config
+            observed["checkpoint_path"] = checkpoint_path
+            bundle = _make_bundle(n=3)
+            return type(
+                "FakeRecalibrateResult",
+                (),
+                {
+                    "loaded_stage": "post_imputation",
+                    "calibrated_data": bundle.households.assign(
+                        weight=bundle.households["household_weight"]
+                    ),
+                    "policyengine_tables": bundle,
+                    "calibration_summary": {"mock": True},
+                },
+            )()
+
+        monkeypatch.setattr(
+            cli,
+            "recalibrate_policyengine_us_from_checkpoint",
+            _fake_recalibrate,
+        )
+        export_calls: list[tuple[Any, Path, int | None]] = []
+
+        def _fake_export(
+            self: Any,
+            result: Any,
+            path: Path,
+            period: int | None = None,
+        ) -> Path:
+            export_calls.append((result, path, period))
+            path.write_text("fake h5")
+            return path
+
+        monkeypatch.setattr(
+            cli.USMicroplexPipeline,
+            "export_policyengine_dataset",
+            _fake_export,
+        )
+        output_root = tmp_path / "output"
+        output_root.mkdir()
+        arch_a = tmp_path / "arch-a.jsonl"
+        arch_b = tmp_path / "arch-b.db"
+        dataset_output = tmp_path / "policyengine_us.h5"
+
+        assert (
+            cli.main(
+                [
+                    "--checkpoint-path",
+                    str(tmp_path / "checkpoint"),
+                    "--output-root",
+                    str(output_root),
+                    "--targets-db",
+                    str(tmp_path / "targets.db"),
+                    "--arch-targets-db",
+                    str(arch_a),
+                    "--arch-targets-db",
+                    str(arch_b),
+                    "--target-period",
+                    "2024",
+                    "--target-profile",
+                    "pe_native_broad",
+                    "--calibration-target-source",
+                    "arch",
+                    "--calibration-target-profile",
+                    "pe_native_broad_source_backed",
+                    "--calibration-backend",
+                    "microcalibrate",
+                    "--calibration-max-iter",
+                    "64",
+                    "--policyengine-materialize-batch-size",
+                    "25000",
+                    "--pipeline-checkpoint-save-post-microsim-path",
+                    str(tmp_path / "post-microsim"),
+                    "--policyengine-dataset-output",
+                    str(dataset_output),
+                ]
+            )
+            == 0
+        )
+
+        config = observed["config"]
+        assert observed["checkpoint_path"] == tmp_path / "checkpoint"
+        assert config.arch_targets_db == (str(arch_a), str(arch_b))
+        assert config.policyengine_target_period == 2024
+        assert config.policyengine_target_profile == "pe_native_broad"
+        assert config.calibration_target_source == "arch"
+        assert (
+            config.policyengine_calibration_target_profile
+            == "pe_native_broad_source_backed"
+        )
+        assert config.calibration_backend == "microcalibrate"
+        assert config.calibration_max_iter == 64
+        assert config.policyengine_materialize_batch_size == 25000
+        assert (
+            config.pipeline_checkpoint_save_post_microsim_path
+            == tmp_path / "post-microsim"
+        )
+        assert (output_root / "calibration_summary.json").exists()
+        assert len(export_calls) == 1
+        assert export_calls[0][1] == dataset_output
+        assert export_calls[0][2] == 2024
+        assert dataset_output.read_text() == "fake h5"

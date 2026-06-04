@@ -22,20 +22,15 @@ const LIFECYCLE_LABELS = {
   deferred: "Deferred",
 };
 
-function PipelineOverviewFlow({ graph, internals, overlay, setStageView }) {
+function PipelineOverviewFlow({ graph, overlay, setStageView }) {
   const overlayByStage = useMemo(
     () => new Map((overlay?.stages || []).map((stage) => [stage.id, stage])),
     [overlay],
   );
-  const internalsByStage = useMemo(
-    () => new Map((internals?.stages || []).map((stage) => [stage.id, stage])),
-    [internals],
-  );
   const initialNodes = useMemo(() => {
-    const nodes = [];
-    graph.nodes.forEach((stage, stageIndex) => {
+    return graph.nodes.map((stage, stageIndex) => {
       const stageOverlay = overlayByStage.get(stage.id);
-      nodes.push({
+      return {
         id: stage.id,
         type: "pipelineStage",
         data: {
@@ -44,29 +39,12 @@ function PipelineOverviewFlow({ graph, internals, overlay, setStageView }) {
           selected: false,
           order: stageIndex * 100,
         },
-      });
-      const substages = internalsByStage.get(stage.id)?.substages || [];
-      substages.forEach((substage, substageIndex) => {
-        nodes.push({
-          id: overviewSubstageId(substage.id),
-          type: "pipelineInternal",
-          data: {
-            id: substage.id,
-            stageId: stage.id,
-            label: substage.title,
-            nodeType: "substage",
-            description: substage.description,
-            stability: substage.stability,
-            order: stageIndex * 100 + substageIndex + 1,
-            nodeWidth: 250,
-          },
-        });
-      });
+      };
     });
-    return nodes;
-  }, [graph, internalsByStage, overlayByStage]);
-  const initialEdges = useMemo(() => {
-    const edges = graph.edges.map((edge) => ({
+  }, [graph, overlayByStage]);
+  const initialEdges = useMemo(
+    () =>
+      graph.edges.map((edge) => ({
       id: edge.id,
       source: edge.source,
       target: edge.target,
@@ -82,33 +60,9 @@ function PipelineOverviewFlow({ graph, internals, overlay, setStageView }) {
         width: 16,
         height: 16,
       },
-    }));
-    graph.nodes.forEach((stage) => {
-      const substages = internalsByStage.get(stage.id)?.substages || [];
-      substages.forEach((substage, index) => {
-        const target = overviewSubstageId(substage.id);
-        edges.push({
-          id: `${stage.id}__${target}`,
-          source: index === 0 ? stage.id : overviewSubstageId(substages[index - 1].id),
-          target,
-          label: index === 0 ? "substages" : "then",
-          data: { edgeKind: "substage_overview" },
-          style: {
-            stroke: "#94a3b8",
-            strokeDasharray: "4 4",
-            strokeWidth: 1.4,
-          },
-          markerEnd: {
-            type: "arrowclosed",
-            color: "#94a3b8",
-            width: 14,
-            height: 14,
-          },
-        });
-      });
-    });
-    return edges;
-  }, [graph, internalsByStage]);
+    })),
+    [graph],
+  );
   const { nodes, edges, layoutDone } = useElkLayout(initialNodes, initialEdges);
 
   if (!layoutDone) {
@@ -126,13 +80,7 @@ function PipelineOverviewFlow({ graph, internals, overlay, setStageView }) {
       fitView
       fitViewOptions={{ padding: 0.14 }}
       onNodeClick={(_, node) => {
-        if (node.type === "pipelineStage") {
-          setStageView(node.id, "all");
-          return;
-        }
-        if (node.data?.stageId) {
-          setStageView(node.data.stageId, node.data.id);
-        }
+        setStageView(node.id, "all");
       }}
     >
       <Background color="#d8dee9" gap={24} size={1} />
@@ -343,13 +291,12 @@ export default function App() {
               <div className="panel-toolbar">
                 <div>
                   <p className="eyebrow">Entire Pipeline</p>
-                  <strong>Stages and substages</strong>
+                  <strong>Canonical stages</strong>
                 </div>
               </div>
               <ReactFlowProvider>
                 <PipelineOverviewFlow
                   graph={graph}
-                  internals={internals}
                   overlay={overlay}
                   setStageView={setStageView}
                 />
@@ -595,10 +542,6 @@ function edgeStyle(edgeType) {
     strokeDasharray: edgeType === "conditional" ? "6 5" : undefined,
     strokeWidth: 1.8,
   };
-}
-
-function overviewSubstageId(substageId) {
-  return `overview:${substageId}`;
 }
 
 function buildPipelineSummary(graph, internals) {

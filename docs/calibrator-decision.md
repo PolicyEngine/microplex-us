@@ -152,3 +152,24 @@ Revisit this decision if any of the following becomes true:
 1. A benchmark shows `microcalibrate` produces materially worse loss than a refactored `Calibrator` on representative constraint matrices. (Unlikely — PE uses it successfully.)
 2. Licensing / availability of `microcalibrate` becomes a blocker for external consumers of microplex-us. (Mitigate by forking the needed subset into microplex core.)
 3. The SS-model longitudinal extension requires a calibration primitive that `microcalibrate` does not provide (e.g., explicit spatial smoothness, per-year temporal regularization). Add the primitive at microplex level rather than swapping backends.
+
+## Update 2026-06-04: optimizers added since the original decision
+
+Two optimizer paths landed after this doc was written and were not covered above. Recording them here so the optimizer landscape is legible in one place.
+
+### `pe_l0` backend (eCPS-parity L0)
+`calibration_backend="pe_l0"` selects `microplex_us.pipelines.pe_l0.PolicyEngineL0Calibrator`, a lazy wrapper around PE-US-data's `fit_l0_weights` (the incumbent enhanced-CPS L0 sparse solver). Added to run the MP build under the same calibration the published eCPS uses, for apples-to-apples comparison.
+
+### PE-native-loss refit / scoring — `optimize_pe_native_loss_weights`
+`microplex_us.pipelines.pe_native_optimization.optimize_pe_native_loss_weights` refits household weights **directly on the PolicyEngine-native target loss** (used in the eCPS-replacement symmetric-refit comparison and scoring — *not* the dataset build).
+
+- **Algorithm: projected (proximal) gradient descent** — least-squares PE-native loss, gradient step, project onto the nonnegative budget simplex, Lipschitz step size + backtracking line search, monotone-descent acceptance.
+- **Naming caveat:** commit history ("Add robust PE-native loss and APG refit") and earlier notes call this "APG". That is a **misnomer** — there is no Nesterov momentum/extrapolation term, so it is **plain projected GD, not accelerated proximal gradient**. Do not assume acceleration from the name.
+
+### Current optimizer landscape (one place)
+| Job | Optimizer | Method |
+|---|---|---|
+| Dataset-build weight calibration (mainline) | `microcalibrate` / `HardConcreteCalibrator` | gradient-descent chi-squared + optional L0 (HardConcrete) |
+| Dataset-build (small-scale / diagnostics) | `microplex.calibration.Calibrator` | entropy balancing (scipy KL) / IPF (raking) / chi-square |
+| Dataset-build (eCPS-parity) | `pe_l0` → `PolicyEngineL0Calibrator` | PE-US-data `fit_l0_weights` (L0 sparse) |
+| eCPS-replacement refit / scoring | `optimize_pe_native_loss_weights` | projected (proximal) gradient descent on the PE-native loss ("APG" in commits = misnomer; not accelerated) |

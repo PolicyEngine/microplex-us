@@ -15,6 +15,14 @@ from microplex_us.pipelines.mp300k_artifact_gates import (
 )
 from microplex_us.policyengine.us import write_policyengine_us_time_period_dataset
 
+_EXPORT_CONTRACT_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "src"
+    / "microplex_us"
+    / "pipelines"
+    / "ecps_export_contract.json"
+)
+
 
 def _write_minimal_policyengine_dataset(path: Path, *, period: int = 2024) -> Path:
     arrays = {
@@ -34,8 +42,27 @@ def _write_minimal_policyengine_dataset(path: Path, *, period: int = 2024) -> Pa
     return write_policyengine_us_time_period_dataset(arrays, path)
 
 
-def _write_incomplete_policyengine_dataset(path: Path, *, period: int = 2024) -> Path:
+def _write_contract_policyengine_dataset(path: Path, *, period: int = 2024) -> Path:
+    """Write a structurally minimal H5 with the frozen export contract columns."""
     _write_minimal_policyengine_dataset(path, period=period)
+    contract = json.loads(_EXPORT_CONTRACT_PATH.read_text())
+    with h5py.File(path, "a") as handle:
+        for variable in contract["required"]:
+            if variable in handle:
+                continue
+            group = handle.create_group(variable)
+            group.create_dataset(str(period), data=np.asarray([0.0, 0.0]))
+    return path
+
+
+def _remove_period_dataset(path: Path, variable: str) -> None:
+    with h5py.File(path, "a") as handle:
+        if variable in handle:
+            del handle[variable]
+
+
+def _write_incomplete_policyengine_dataset(path: Path, *, period: int = 2024) -> Path:
+    _write_contract_policyengine_dataset(path, period=period)
     with h5py.File(path, "a") as handle:
         del handle["person_household_id"]
     return path
@@ -218,10 +245,10 @@ def _sound_ecps_comparison_payload(
 def test_write_mp300k_artifact_gate_report_passes_with_all_evidence(tmp_path):
     artifact_dir = tmp_path / "artifact"
     artifact_dir.mkdir()
-    candidate_dataset = _write_minimal_policyengine_dataset(
+    candidate_dataset = _write_contract_policyengine_dataset(
         artifact_dir / "candidate.h5"
     )
-    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    baseline_dataset = _write_contract_policyengine_dataset(tmp_path / "baseline.h5")
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
     _write_benchmark_manifest(benchmark_manifest)
     _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
@@ -271,8 +298,8 @@ def test_write_mp300k_artifact_gate_report_passes_with_all_evidence(tmp_path):
 def test_benchmark_manifest_gate_requires_pinned_release_evidence(tmp_path):
     artifact_dir = tmp_path / "artifact"
     artifact_dir.mkdir()
-    _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
-    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    _write_contract_policyengine_dataset(artifact_dir / "candidate.h5")
+    baseline_dataset = _write_contract_policyengine_dataset(tmp_path / "baseline.h5")
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
     benchmark_manifest.write_text(json.dumps({"schema_version": 1, "frozen": True}))
     _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
@@ -305,9 +332,11 @@ def test_benchmark_manifest_gate_requires_pinned_release_evidence(tmp_path):
 def test_column_contract_gate_rejects_missing_ecps_contract_column(tmp_path):
     artifact_dir = tmp_path / "artifact"
     artifact_dir.mkdir()
-    _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
-    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
-    _add_period_dataset(baseline_dataset, "age", [34, 12, 45])
+    candidate_dataset = _write_contract_policyengine_dataset(
+        artifact_dir / "candidate.h5"
+    )
+    _remove_period_dataset(candidate_dataset, "age")
+    baseline_dataset = _write_contract_policyengine_dataset(tmp_path / "baseline.h5")
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
     _write_benchmark_manifest(benchmark_manifest)
     _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
@@ -334,11 +363,11 @@ def test_column_contract_gate_rejects_missing_ecps_contract_column(tmp_path):
 def test_export_support_gate_rejects_ecps_populated_numeric_filler(tmp_path):
     artifact_dir = tmp_path / "artifact"
     artifact_dir.mkdir()
-    candidate_dataset = _write_minimal_policyengine_dataset(
+    candidate_dataset = _write_contract_policyengine_dataset(
         artifact_dir / "candidate.h5"
     )
     _add_period_dataset(candidate_dataset, "hourly_wage", [0.0, 0.0, 0.0])
-    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    baseline_dataset = _write_contract_policyengine_dataset(tmp_path / "baseline.h5")
     _add_period_dataset(baseline_dataset, "hourly_wage", [0.0, 25.0, 0.0])
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
     _write_benchmark_manifest(benchmark_manifest)
@@ -367,7 +396,7 @@ def test_export_support_gate_rejects_ecps_populated_numeric_filler(tmp_path):
 def test_export_support_gate_requires_signed_self_employment_support(tmp_path):
     artifact_dir = tmp_path / "artifact"
     artifact_dir.mkdir()
-    candidate_dataset = _write_minimal_policyengine_dataset(
+    candidate_dataset = _write_contract_policyengine_dataset(
         artifact_dir / "candidate.h5"
     )
     _add_period_dataset(
@@ -375,7 +404,7 @@ def test_export_support_gate_requires_signed_self_employment_support(tmp_path):
         "self_employment_income_before_lsr",
         [0.0, 5_000.0, 0.0],
     )
-    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    baseline_dataset = _write_contract_policyengine_dataset(tmp_path / "baseline.h5")
     _add_period_dataset(
         baseline_dataset,
         "self_employment_income_before_lsr",
@@ -410,11 +439,11 @@ def test_export_support_gate_requires_signed_self_employment_support(tmp_path):
 def test_export_support_gate_rejects_ecps_varied_categorical_filler(tmp_path):
     artifact_dir = tmp_path / "artifact"
     artifact_dir.mkdir()
-    candidate_dataset = _write_minimal_policyengine_dataset(
+    candidate_dataset = _write_contract_policyengine_dataset(
         artifact_dir / "candidate.h5"
     )
     _add_period_dataset(candidate_dataset, "is_tipped_occupation", [False, False])
-    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    baseline_dataset = _write_contract_policyengine_dataset(tmp_path / "baseline.h5")
     _add_period_dataset(baseline_dataset, "is_tipped_occupation", [False, True])
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
     _write_benchmark_manifest(benchmark_manifest)
@@ -444,11 +473,11 @@ def test_export_support_gate_rejects_ecps_varied_categorical_filler(tmp_path):
 def test_export_support_gate_ignores_ecps_filler_columns(tmp_path):
     artifact_dir = tmp_path / "artifact"
     artifact_dir.mkdir()
-    candidate_dataset = _write_minimal_policyengine_dataset(
+    candidate_dataset = _write_contract_policyengine_dataset(
         artifact_dir / "candidate.h5"
     )
     _add_period_dataset(candidate_dataset, "second_home_mortgage_interest", [0.0, 0.0])
-    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    baseline_dataset = _write_contract_policyengine_dataset(tmp_path / "baseline.h5")
     _add_period_dataset(baseline_dataset, "second_home_mortgage_interest", [0.0, 0.0])
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
     _write_benchmark_manifest(benchmark_manifest)
@@ -469,13 +498,15 @@ def test_export_support_gate_ignores_ecps_filler_columns(tmp_path):
 
     assert record["summary"]["status"] == "passed"
     assert support_gate["status"] == "pass"
-    assert support_gate["metrics"]["ecps_filler_export_column_count"] == 1
+    assert "second_home_mortgage_interest" in support_gate["details"][
+        "baseline_filler_columns"
+    ]
 
 
 def test_export_lineage_gate_rejects_ecps_populated_default_only_column(tmp_path):
     artifact_dir = tmp_path / "artifact"
     artifact_dir.mkdir()
-    candidate_dataset = _write_minimal_policyengine_dataset(
+    candidate_dataset = _write_contract_policyengine_dataset(
         artifact_dir / "candidate.h5"
     )
     _add_period_dataset(
@@ -483,7 +514,7 @@ def test_export_lineage_gate_rejects_ecps_populated_default_only_column(tmp_path
         "is_wic_at_nutritional_risk",
         [False, True],
     )
-    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    baseline_dataset = _write_contract_policyengine_dataset(tmp_path / "baseline.h5")
     _add_period_dataset(
         baseline_dataset,
         "is_wic_at_nutritional_risk",
@@ -520,94 +551,14 @@ def test_export_lineage_gate_rejects_ecps_populated_default_only_column(tmp_path
     ]
 
 
-def test_column_contract_gate_rejects_extra_candidate_columns(tmp_path):
+def test_column_contract_gate_reports_extra_candidate_columns(tmp_path):
     artifact_dir = tmp_path / "artifact"
     artifact_dir.mkdir()
-    candidate_dataset = _write_minimal_policyengine_dataset(
+    candidate_dataset = _write_contract_policyengine_dataset(
         artifact_dir / "candidate.h5"
     )
     _add_period_dataset(candidate_dataset, "filing_status", [1, 2])
-    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
-    benchmark_manifest = tmp_path / "benchmark_manifest.json"
-    _write_benchmark_manifest(benchmark_manifest)
-    _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
-
-    report_path = write_mp300k_artifact_gate_report(
-        artifact_dir,
-        ecps_comparison_payload=_sound_ecps_comparison_payload(),
-        arch_coverage_payload=_arch_coverage_payload(),
-        runtime_smoke_payload={"runtime_ratio": 1.0},
-        benchmark_manifest_path=benchmark_manifest,
-        compute_native_scores=False,
-        update_manifest=False,
-    )
-
-    record = json.loads(report_path.read_text())
-    column_gate = record["gates"]["column_contract"]
-
-    assert record["summary"]["status"] == "failed"
-    assert column_gate["status"] == "fail"
-    assert column_gate["metrics"]["extra_candidate_column_count"] == 1
-    assert column_gate["details"]["extra_candidate_columns"] == ["filing_status"]
-
-
-def test_column_contract_gate_rejects_renamed_candidate_columns(tmp_path):
-    artifact_dir = tmp_path / "artifact"
-    artifact_dir.mkdir()
-    candidate_dataset = _write_minimal_policyengine_dataset(
-        artifact_dir / "candidate.h5"
-    )
-    _add_period_dataset(
-        candidate_dataset,
-        "medicare_part_b_premiums_reported",
-        [0.0, 0.0, 0.0],
-    )
-    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
-    _add_period_dataset(baseline_dataset, "medicare_part_b_premiums", [0.0, 0.0, 0.0])
-    benchmark_manifest = tmp_path / "benchmark_manifest.json"
-    _write_benchmark_manifest(benchmark_manifest)
-    _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
-
-    report_path = write_mp300k_artifact_gate_report(
-        artifact_dir,
-        ecps_comparison_payload=_sound_ecps_comparison_payload(),
-        arch_coverage_payload=_arch_coverage_payload(),
-        runtime_smoke_payload={"runtime_ratio": 1.0},
-        benchmark_manifest_path=benchmark_manifest,
-        compute_native_scores=False,
-        update_manifest=False,
-    )
-
-    record = json.loads(report_path.read_text())
-    column_gate = record["gates"]["column_contract"]
-
-    assert record["summary"]["status"] == "failed"
-    assert column_gate["status"] == "fail"
-    assert column_gate["details"]["missing_contract_columns"] == [
-        "medicare_part_b_premiums"
-    ]
-    assert column_gate["details"]["extra_candidate_columns"] == [
-        "medicare_part_b_premiums_reported"
-    ]
-
-
-def test_column_contract_gate_excludes_computed_baseline_outputs(
-    tmp_path,
-):
-    artifact_dir = tmp_path / "artifact"
-    artifact_dir.mkdir()
-    _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
-    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
-    _add_period_dataset(
-        baseline_dataset,
-        "self_employed_health_insurance_ald",
-        [0.0, 0.0],
-    )
-    _add_period_dataset(
-        baseline_dataset,
-        "self_employed_pension_contribution_ald",
-        [0.0, 0.0],
-    )
+    baseline_dataset = _write_contract_policyengine_dataset(tmp_path / "baseline.h5")
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
     _write_benchmark_manifest(benchmark_manifest)
     _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
@@ -627,19 +578,93 @@ def test_column_contract_gate_excludes_computed_baseline_outputs(
 
     assert record["summary"]["status"] == "passed"
     assert column_gate["status"] == "pass"
-    assert column_gate["metrics"]["excluded_baseline_computed_column_count"] == 2
-    assert column_gate["details"]["excluded_baseline_computed_columns"] == [
-        "self_employed_health_insurance_ald",
-        "self_employed_pension_contribution_ald",
+    assert column_gate["metrics"]["extra_unknown_column_count"] == 1
+    assert column_gate["details"]["extra_unknown_columns"] == ["filing_status"]
+
+
+def test_column_contract_gate_rejects_renamed_candidate_columns(tmp_path):
+    artifact_dir = tmp_path / "artifact"
+    artifact_dir.mkdir()
+    candidate_dataset = _write_contract_policyengine_dataset(
+        artifact_dir / "candidate.h5"
+    )
+    _remove_period_dataset(candidate_dataset, "taxpayer_id_type")
+    _add_period_dataset(
+        candidate_dataset,
+        "taxpayer_id_type_reported",
+        [0.0, 0.0, 0.0],
+    )
+    baseline_dataset = _write_contract_policyengine_dataset(tmp_path / "baseline.h5")
+    benchmark_manifest = tmp_path / "benchmark_manifest.json"
+    _write_benchmark_manifest(benchmark_manifest)
+    _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
+
+    report_path = write_mp300k_artifact_gate_report(
+        artifact_dir,
+        ecps_comparison_payload=_sound_ecps_comparison_payload(),
+        arch_coverage_payload=_arch_coverage_payload(),
+        runtime_smoke_payload={"runtime_ratio": 1.0},
+        benchmark_manifest_path=benchmark_manifest,
+        compute_native_scores=False,
+        update_manifest=False,
+    )
+
+    record = json.loads(report_path.read_text())
+    column_gate = record["gates"]["column_contract"]
+
+    assert record["summary"]["status"] == "failed"
+    assert column_gate["status"] == "fail"
+    assert column_gate["details"]["missing_contract_columns"] == ["taxpayer_id_type"]
+    assert column_gate["details"]["extra_unknown_columns"] == [
+        "taxpayer_id_type_reported"
     ]
+
+
+def test_column_contract_gate_excludes_formula_owned_candidate_outputs(
+    tmp_path,
+):
+    artifact_dir = tmp_path / "artifact"
+    artifact_dir.mkdir()
+    candidate_dataset = _write_contract_policyengine_dataset(
+        artifact_dir / "candidate.h5"
+    )
+    _add_period_dataset(
+        candidate_dataset,
+        "weeks_worked",
+        [0.0, 0.0],
+    )
+    baseline_dataset = _write_contract_policyengine_dataset(tmp_path / "baseline.h5")
+    benchmark_manifest = tmp_path / "benchmark_manifest.json"
+    _write_benchmark_manifest(benchmark_manifest)
+    _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
+
+    report_path = write_mp300k_artifact_gate_report(
+        artifact_dir,
+        ecps_comparison_payload=_sound_ecps_comparison_payload(),
+        arch_coverage_payload=_arch_coverage_payload(),
+        runtime_smoke_payload={"runtime_ratio": 1.0},
+        benchmark_manifest_path=benchmark_manifest,
+        compute_native_scores=False,
+        update_manifest=False,
+    )
+
+    record = json.loads(report_path.read_text())
+    column_gate = record["gates"]["column_contract"]
+
+    assert record["summary"]["status"] == "passed"
+    assert column_gate["status"] == "pass"
+    assert column_gate["metrics"]["excluded_contract_column_count"] == 1
+    assert column_gate["details"]["extra_unknown_columns"] == []
 
 
 def test_column_contract_gate_rejects_missing_legacy_baseline_columns(tmp_path):
     artifact_dir = tmp_path / "artifact"
     artifact_dir.mkdir()
-    _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
-    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
-    _add_period_dataset(baseline_dataset, "taxpayer_id_type", [1, 1, 1])
+    candidate_dataset = _write_contract_policyengine_dataset(
+        artifact_dir / "candidate.h5"
+    )
+    _remove_period_dataset(candidate_dataset, "taxpayer_id_type")
+    baseline_dataset = _write_contract_policyengine_dataset(tmp_path / "baseline.h5")
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
     _write_benchmark_manifest(benchmark_manifest)
     _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
@@ -665,8 +690,8 @@ def test_column_contract_gate_rejects_missing_legacy_baseline_columns(tmp_path):
 def test_source_weight_diagnostics_gate_rejects_missing_sidecar(tmp_path):
     artifact_dir = tmp_path / "artifact"
     artifact_dir.mkdir()
-    _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
-    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    _write_contract_policyengine_dataset(artifact_dir / "candidate.h5")
+    baseline_dataset = _write_contract_policyengine_dataset(tmp_path / "baseline.h5")
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
     _write_benchmark_manifest(benchmark_manifest)
     _write_artifact_manifest(
@@ -696,8 +721,8 @@ def test_source_weight_diagnostics_gate_rejects_missing_sidecar(tmp_path):
 def test_source_weight_diagnostics_gate_rejects_puf_support_dominance(tmp_path):
     artifact_dir = tmp_path / "artifact"
     artifact_dir.mkdir()
-    _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
-    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    _write_contract_policyengine_dataset(artifact_dir / "candidate.h5")
+    baseline_dataset = _write_contract_policyengine_dataset(tmp_path / "baseline.h5")
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
     _write_benchmark_manifest(benchmark_manifest)
     _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
@@ -730,8 +755,8 @@ def test_source_weight_diagnostics_gate_rejects_puf_support_dominance(tmp_path):
 def test_arch_target_coverage_gate_rejects_uncovered_source_backed_cells(tmp_path):
     artifact_dir = tmp_path / "artifact"
     artifact_dir.mkdir()
-    _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
-    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    _write_contract_policyengine_dataset(artifact_dir / "candidate.h5")
+    baseline_dataset = _write_contract_policyengine_dataset(tmp_path / "baseline.h5")
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
     _write_benchmark_manifest(benchmark_manifest)
     _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
@@ -761,8 +786,8 @@ def test_arch_target_coverage_gate_rejects_uncovered_source_backed_cells(tmp_pat
 def test_benchmark_manifest_gate_rejects_dirty_us_data_pin(tmp_path):
     artifact_dir = tmp_path / "artifact"
     artifact_dir.mkdir()
-    _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
-    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    _write_contract_policyengine_dataset(artifact_dir / "candidate.h5")
+    baseline_dataset = _write_contract_policyengine_dataset(tmp_path / "baseline.h5")
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
     _write_benchmark_manifest(benchmark_manifest)
     payload = json.loads(benchmark_manifest.read_text())
@@ -817,7 +842,7 @@ def test_write_mp300k_artifact_gate_report_fails_missing_structural_array(tmp_pa
 def test_write_mp300k_artifact_gate_report_fails_invalid_entity_join(tmp_path):
     artifact_dir = tmp_path / "artifact"
     artifact_dir.mkdir()
-    _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
+    _write_contract_policyengine_dataset(artifact_dir / "candidate.h5")
     with h5py.File(artifact_dir / "candidate.h5", "a") as handle:
         handle["person_household_id"]["2024"][2] = 999
     _write_artifact_manifest(artifact_dir)
@@ -840,7 +865,7 @@ def test_write_mp300k_artifact_gate_report_fails_invalid_entity_join(tmp_path):
 def test_write_mp300k_artifact_gate_report_fails_source_diagnostic_variable(tmp_path):
     artifact_dir = tmp_path / "artifact"
     artifact_dir.mkdir()
-    _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
+    _write_contract_policyengine_dataset(artifact_dir / "candidate.h5")
     with h5py.File(artifact_dir / "candidate.h5", "a") as handle:
         diagnostic = handle.create_group("ssi_reported")
         diagnostic.create_dataset("2024", data=np.asarray([1.0, 0.0, 0.0]))
@@ -864,7 +889,7 @@ def test_write_mp300k_artifact_gate_report_fails_source_diagnostic_variable(tmp_
 def test_write_mp300k_artifact_gate_report_fails_nonfinite_numeric_value(tmp_path):
     artifact_dir = tmp_path / "artifact"
     artifact_dir.mkdir()
-    _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
+    _write_contract_policyengine_dataset(artifact_dir / "candidate.h5")
     with h5py.File(artifact_dir / "candidate.h5", "a") as handle:
         income = handle.create_group("employment_income")
         income.create_dataset("2024", data=np.asarray([1.0, np.nan, 3.0]))
@@ -906,8 +931,8 @@ def test_write_mp300k_artifact_gate_report_reports_missing_candidate(tmp_path):
 def test_main_writes_artifact_gate_report_from_payload_files(tmp_path, capsys):
     artifact_dir = tmp_path / "artifact"
     artifact_dir.mkdir()
-    _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
-    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    _write_contract_policyengine_dataset(artifact_dir / "candidate.h5")
+    baseline_dataset = _write_contract_policyengine_dataset(tmp_path / "baseline.h5")
     _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
     ecps_comparison_path = tmp_path / "ecps_comparison.json"
     ecps_comparison_path.write_text(
@@ -948,8 +973,8 @@ def test_main_writes_artifact_gate_report_from_payload_files(tmp_path, capsys):
 def test_ecps_comparison_can_become_nonblocking(tmp_path):
     artifact_dir = tmp_path / "artifact"
     artifact_dir.mkdir()
-    _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
-    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    _write_contract_policyengine_dataset(artifact_dir / "candidate.h5")
+    baseline_dataset = _write_contract_policyengine_dataset(tmp_path / "baseline.h5")
     _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
     _write_benchmark_manifest(benchmark_manifest)
@@ -978,8 +1003,8 @@ def test_ecps_comparison_can_become_nonblocking(tmp_path):
 def test_runtime_gate_accepts_repeated_loader_smoke_payload(tmp_path):
     artifact_dir = tmp_path / "artifact"
     artifact_dir.mkdir()
-    _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
-    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    _write_contract_policyengine_dataset(artifact_dir / "candidate.h5")
+    baseline_dataset = _write_contract_policyengine_dataset(tmp_path / "baseline.h5")
     _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
     _write_benchmark_manifest(benchmark_manifest)
@@ -1010,8 +1035,8 @@ def test_runtime_gate_accepts_repeated_loader_smoke_payload(tmp_path):
 def test_ecps_comparison_accepts_existing_broad_loss_array_payload(tmp_path):
     artifact_dir = tmp_path / "artifact"
     artifact_dir.mkdir()
-    _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
-    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    _write_contract_policyengine_dataset(artifact_dir / "candidate.h5")
+    baseline_dataset = _write_contract_policyengine_dataset(tmp_path / "baseline.h5")
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
     _write_benchmark_manifest(benchmark_manifest)
     _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
@@ -1050,8 +1075,8 @@ def test_ecps_comparison_accepts_existing_broad_loss_array_payload(tmp_path):
 def test_ecps_comparison_rejects_one_sided_unmatched_refit_win(tmp_path):
     artifact_dir = tmp_path / "artifact"
     artifact_dir.mkdir()
-    _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
-    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    _write_contract_policyengine_dataset(artifact_dir / "candidate.h5")
+    baseline_dataset = _write_contract_policyengine_dataset(tmp_path / "baseline.h5")
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
     _write_benchmark_manifest(benchmark_manifest)
     _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
@@ -1088,8 +1113,8 @@ def test_ecps_comparison_rejects_one_sided_unmatched_refit_win(tmp_path):
 def test_ecps_comparison_rejects_protected_family_regression(tmp_path):
     artifact_dir = tmp_path / "artifact"
     artifact_dir.mkdir()
-    _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
-    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    _write_contract_policyengine_dataset(artifact_dir / "candidate.h5")
+    baseline_dataset = _write_contract_policyengine_dataset(tmp_path / "baseline.h5")
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
     _write_benchmark_manifest(benchmark_manifest)
     _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
@@ -1129,8 +1154,8 @@ def test_ecps_comparison_rejects_protected_family_regression(tmp_path):
 def test_ecps_comparison_rejects_core_benchmark_family_regression(tmp_path):
     artifact_dir = tmp_path / "artifact"
     artifact_dir.mkdir()
-    _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
-    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    _write_contract_policyengine_dataset(artifact_dir / "candidate.h5")
+    baseline_dataset = _write_contract_policyengine_dataset(tmp_path / "baseline.h5")
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
     _write_benchmark_manifest(benchmark_manifest)
     _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
@@ -1171,8 +1196,8 @@ def test_ecps_comparison_rejects_core_benchmark_family_regression(tmp_path):
 def test_ecps_comparison_rejects_missing_ecps_refit_recovery(tmp_path):
     artifact_dir = tmp_path / "artifact"
     artifact_dir.mkdir()
-    _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
-    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    _write_contract_policyengine_dataset(artifact_dir / "candidate.h5")
+    baseline_dataset = _write_contract_policyengine_dataset(tmp_path / "baseline.h5")
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
     _write_benchmark_manifest(benchmark_manifest)
     _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
@@ -1201,8 +1226,8 @@ def test_ecps_comparison_rejects_missing_ecps_refit_recovery(tmp_path):
 def test_ecps_comparison_requires_measured_refit_objective_identity(tmp_path):
     artifact_dir = tmp_path / "artifact"
     artifact_dir.mkdir()
-    _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
-    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    _write_contract_policyengine_dataset(artifact_dir / "candidate.h5")
+    baseline_dataset = _write_contract_policyengine_dataset(tmp_path / "baseline.h5")
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
     _write_benchmark_manifest(benchmark_manifest)
     _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
@@ -1231,8 +1256,8 @@ def test_ecps_comparison_requires_measured_refit_objective_identity(tmp_path):
 def test_runtime_gate_ignores_contradictory_producer_verdict(tmp_path):
     artifact_dir = tmp_path / "artifact"
     artifact_dir.mkdir()
-    _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
-    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    _write_contract_policyengine_dataset(artifact_dir / "candidate.h5")
+    baseline_dataset = _write_contract_policyengine_dataset(tmp_path / "baseline.h5")
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
     _write_benchmark_manifest(benchmark_manifest)
     _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
@@ -1272,8 +1297,8 @@ def test_runtime_gate_ignores_contradictory_producer_verdict(tmp_path):
 def test_ecps_gate_derives_verdict_from_losses_not_producer_flag(tmp_path):
     artifact_dir = tmp_path / "artifact"
     artifact_dir.mkdir()
-    _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
-    baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    _write_contract_policyengine_dataset(artifact_dir / "candidate.h5")
+    baseline_dataset = _write_contract_policyengine_dataset(tmp_path / "baseline.h5")
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
     _write_benchmark_manifest(benchmark_manifest)
     _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)

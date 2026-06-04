@@ -6,6 +6,7 @@ import json
 import tarfile
 from pathlib import Path
 
+import h5py
 import numpy as np
 
 from microplex_us.pipelines.mp300k_artifact_gates import (
@@ -16,6 +17,14 @@ from microplex_us.pipelines.mp300k_gate_inputs import (
     package_mp300k_gate_inputs,
 )
 from microplex_us.policyengine.us import write_policyengine_us_time_period_dataset
+
+_EXPORT_CONTRACT_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "src"
+    / "microplex_us"
+    / "pipelines"
+    / "ecps_export_contract.json"
+)
 
 
 def _write_minimal_policyengine_dataset(path: Path, *, period: int = 2024) -> Path:
@@ -34,6 +43,18 @@ def _write_minimal_policyengine_dataset(path: Path, *, period: int = 2024) -> Pa
         "person_marital_unit_id": {str(period): np.asarray([10000, 10001, 20000])},
     }
     return write_policyengine_us_time_period_dataset(arrays, path)
+
+
+def _write_contract_policyengine_dataset(path: Path, *, period: int = 2024) -> Path:
+    _write_minimal_policyengine_dataset(path, period=period)
+    contract = json.loads(_EXPORT_CONTRACT_PATH.read_text())
+    with h5py.File(path, "a") as handle:
+        for variable in contract["required"]:
+            if variable in handle:
+                continue
+            group = handle.create_group(variable)
+            group.create_dataset(str(period), data=np.asarray([0.0, 0.0]))
+    return path
 
 
 def _write_manifest(
@@ -271,8 +292,8 @@ def test_packaged_inputs_run_gates_from_clean_extract(tmp_path):
         candidate_path="../candidate.h5",
         baseline_path="../baseline.h5",
     )
-    _write_minimal_policyengine_dataset(tmp_path / "candidate.h5")
-    _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    _write_contract_policyengine_dataset(tmp_path / "candidate.h5")
+    _write_contract_policyengine_dataset(tmp_path / "baseline.h5")
     benchmark_manifest = tmp_path / "benchmark.json"
     _write_benchmark_manifest(benchmark_manifest)
     arch_coverage = tmp_path / "arch_coverage.json"

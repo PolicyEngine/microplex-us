@@ -1193,6 +1193,9 @@ docs = [
     { name = "jupyter-book" },
     { name = "standard-imghdr" },
 ]
+hf = [
+    { name = "huggingface-hub" },
+]
 policyengine = [
     { name = "microimpute", marker = "python_full_version < '3.15'" },
     { name = "microunit" },
@@ -1208,6 +1211,7 @@ requires-dist = [
     { name = "boto3", marker = "extra == 'r2'", specifier = ">=1.34" },
     { name = "duckdb", specifier = ">=1.2" },
     { name = "h5py", specifier = ">=3.10" },
+    { name = "huggingface-hub", marker = "extra == 'hf'", specifier = ">=0.24" },
     { name = "jupyter-book", marker = "extra == 'docs'", specifier = ">=0.15,<0.16" },
     { name = "microimpute", marker = "python_full_version >= '3.12' and python_full_version < '3.15' and extra == 'policyengine'", git = "https://github.com/PolicyEngine/microimpute.git?rev=27d23090dcf04c2c30ae369b0a209e27eb3659f0" },
     { name = "microplex", extras = ["calibrate"], git = "https://github.com/PolicyEngine/microplex.git?rev=1e0627182f9df40aacd7043c96956c2895bf9d30" },
@@ -1219,7 +1223,7 @@ requires-dist = [
     { name = "spm-calculator", marker = "extra == 'policyengine'", specifier = ">=0.3.1" },
     { name = "standard-imghdr", marker = "python_full_version >= '3.13' and extra == 'docs'", specifier = ">=3.13" },
 ]
-provides-extras = ["dev", "docs", "r2", "policyengine"]
+provides-extras = ["dev", "docs", "r2", "hf", "policyengine"]
 
 [[package]]
 name = "microunit"

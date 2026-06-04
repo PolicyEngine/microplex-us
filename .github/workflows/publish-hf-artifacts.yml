@@ -1,0 +1,238 @@
+name: Publish Hugging Face Artifacts
+
+on:
+  workflow_dispatch:
+    inputs:
+      artifact_name:
+        description: Optional Actions artifact name containing a bundle or archive.
+        required: false
+        default: ""
+        type: string
+      artifact_archive_url:
+        description: Optional URL to a .zip, .tar, .tar.gz, or .tgz artifact bundle.
+        required: false
+        default: ""
+        type: string
+      run_id:
+        description: Optional stable run ID. Defaults to the bundle directory name.
+        required: false
+        default: ""
+        type: string
+      diagnostics_repo:
+        description: Hugging Face diagnostics dataset repo.
+        required: false
+        default: policyengine/microplex-us-diagnostics
+        type: string
+      dataset_repo:
+        description: Hugging Face deployed dataset repo.
+        required: false
+        default: policyengine/microplex-us-deployed-datasets
+        type: string
+      publish_dataset:
+        description: Upload policyengine_us.h5 to the dataset repo staging path.
+        required: false
+        default: false
+        type: boolean
+      promote_dataset:
+        description: Promote policyengine_us.h5 and manifest.json to dataset repo root.
+        required: false
+        default: false
+        type: boolean
+      dry_run:
+        description: Plan the upload without committing to Hugging Face.
+        required: false
+        default: true
+        type: boolean
+  workflow_call:
+    inputs:
+      artifact_name:
+        required: false
+        default: ""
+        type: string
+      artifact_archive_url:
+        required: false
+        default: ""
+        type: string
+      run_id:
+        required: false
+        default: ""
+        type: string
+      diagnostics_repo:
+        required: false
+        default: policyengine/microplex-us-diagnostics
+        type: string
+      dataset_repo:
+        required: false
+        default: policyengine/microplex-us-deployed-datasets
+        type: string
+      publish_dataset:
+        required: false
+        default: false
+        type: boolean
+      promote_dataset:
+        required: false
+        default: false
+        type: boolean
+      dry_run:
+        required: false
+        default: true
+        type: boolean
+    secrets:
+      HF_TOKEN:
+        required: false
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  publish-hf-artifacts:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: microplex-us
+    steps:
+      - name: Check out microplex-us
+        uses: actions/checkout@v4
+        with:
+          path: microplex-us
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Download packaged artifact from Actions
+        if: inputs.artifact_name != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: publish-inputs
+
+      - name: Download packaged artifact from URL
+        if: inputs.artifact_name == '' && inputs.artifact_archive_url != ''
+        run: |
+          mkdir -p ../publish-inputs
+          curl --fail --location "${{ inputs.artifact_archive_url }}" --output ../publish-inputs/artifact-archive
+
+      - name: Resolve artifact directory
+        run: |
+          uv run --python 3.13 python - <<'PY'
+          import shutil
+          import tarfile
+          import zipfile
+          from pathlib import Path
+
+          root = Path("../publish-inputs")
+          root.mkdir(parents=True, exist_ok=True)
+          archive_target = root / "artifact-archive"
+
+          if not archive_target.exists():
+              archives = []
+              for pattern in ("*.tar.gz", "*.tgz", "*.tar", "*.zip"):
+                  archives.extend(root.rglob(pattern))
+              archives = [path for path in archives if path.is_file()]
+              if archives:
+                  shutil.copyfile(archives[0], archive_target)
+
+          search_root = root
+          if archive_target.exists():
+              extract_root = root / "artifact-root"
+              extract_root.mkdir(parents=True, exist_ok=True)
+              try:
+                  if zipfile.is_zipfile(archive_target):
+                      with zipfile.ZipFile(archive_target) as archive:
+                          for member in archive.infolist():
+                              target = (extract_root / member.filename).resolve()
+                              if not target.is_relative_to(extract_root.resolve()):
+                                  raise SystemExit(
+                                      f"zip archive member escapes artifact root: {member.filename}"
+                                  )
+                          archive.extractall(extract_root)
+                  else:
+                      with tarfile.open(archive_target, "r:*") as archive:
+                          for member in archive.getmembers():
+                              target = (extract_root / member.name).resolve()
+                              if not target.is_relative_to(extract_root.resolve()):
+                                  raise SystemExit(
+                                      f"tar archive member escapes artifact root: {member.name}"
+                                  )
+                          archive.extractall(extract_root)
+              except (tarfile.TarError, zipfile.BadZipFile) as error:
+                  raise SystemExit(f"Could not extract artifact archive: {error}") from error
+              search_root = extract_root
+
+          manifests = sorted(
+              (
+                  path
+                  for path in search_root.rglob("manifest.json")
+                  if path.name == "manifest.json"
+              ),
+              key=lambda path: (len(path.relative_to(search_root).parts), str(path)),
+          )
+          if not manifests:
+              raise SystemExit(
+                  "Artifact input must contain manifest.json directly or inside a supported archive."
+              )
+          Path("../publish-inputs/artifact_dir.txt").write_text(
+              str(manifests[0].parent.resolve())
+          )
+          PY
+
+      - name: Test Hugging Face publisher
+        run: |
+          uv run --extra dev --python 3.13 python -m pytest -q tests/pipelines/test_hf_artifacts.py
+
+      - name: Publish artifact bundle
+        env:
+          HUGGING_FACE_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          artifact_dir="$(cat ../publish-inputs/artifact_dir.txt)"
+          args=(
+            "$artifact_dir"
+            --diagnostics-repo "${{ inputs.diagnostics_repo }}"
+            --dataset-repo "${{ inputs.dataset_repo }}"
+          )
+
+          if [ -n "${{ inputs.run_id }}" ]; then
+            args+=(--run-id "${{ inputs.run_id }}")
+          fi
+          if [ "${{ inputs.publish_dataset }}" = "true" ]; then
+            args+=(--publish-dataset)
+          fi
+          if [ "${{ inputs.promote_dataset }}" = "true" ]; then
+            args+=(--promote-dataset)
+          fi
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            args+=(--dry-run)
+          elif [ -z "$HUGGING_FACE_TOKEN" ]; then
+            echo "HF_TOKEN secret is required when dry_run is false."
+            exit 1
+          fi
+
+          uv run --extra hf --python 3.13 microplex-us-publish-hf-artifacts "${args[@]}"
+
+      - name: Smoke-check published artifact
+        if: inputs.dry_run == false
+        env:
+          HUGGING_FACE_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          args=(
+            --diagnostics-repo "${{ inputs.diagnostics_repo }}"
+            --dataset-repo "${{ inputs.dataset_repo }}"
+          )
+
+          if [ -n "${{ inputs.run_id }}" ]; then
+            args+=(--run-id "${{ inputs.run_id }}")
+          fi
+          if [ "${{ inputs.publish_dataset }}" != "true" ] && [ "${{ inputs.promote_dataset }}" != "true" ]; then
+            args+=(--no-dataset)
+          fi
+          if [ "${{ inputs.promote_dataset }}" != "true" ]; then
+            args+=(--no-promoted-dataset)
+          fi
+
+          uv run --extra hf --python 3.13 microplex-us-smoke-hf-artifact "${args[@]}"

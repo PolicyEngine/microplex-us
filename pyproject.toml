@@ -31,6 +31,9 @@ docs = [
 r2 = [
     "boto3>=1.34",
 ]
+hf = [
+    "huggingface_hub>=0.24",
+]
 policyengine = [
     "microimpute @ git+https://github.com/PolicyEngine/microimpute.git@27d23090dcf04c2c30ae369b0a209e27eb3659f0 ; python_full_version >= '3.12' and python_full_version < '3.15'",
     "policyengine-us==1.715.2; python_version >= '3.11' and python_version < '3.15'",
@@ -64,6 +67,8 @@ microplex-us-ecps-replacement-comparison = "microplex_us.pipelines.ecps_replacem
 microplex-us-mp-benchmark-manifest = "microplex_us.pipelines.mp_benchmark_manifest:main"
 microplex-us-pe-native-calibration-benchmark = "microplex_us.pipelines.pe_native_calibration_benchmark:main"
 microplex-us-pe-native-target-diagnostics = "microplex_us.pipelines.pe_native_scores:main_target_diagnostics"
+microplex-us-publish-hf-artifacts = "microplex_us.pipelines.hf_artifacts:main"
+microplex-us-smoke-hf-artifact = "microplex_us.pipelines.hf_artifacts:main_smoke"
 microplex-us-r2-archive-artifact = "microplex_us.pipelines.r2_artifacts:main"
 microplex-us-reweight-cd-age-targets = "microplex_us.pipelines.cd_age_reweighting:main"
 microplex-us-score-pe-native-loss = "microplex_us.pipelines.pe_native_scores:main"

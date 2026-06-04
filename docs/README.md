@@ -11,6 +11,7 @@
 - [PolicyEngine oracle compatibility path](./policyengine-oracle-compatibility.md)
 - [PE construction parity](./pe-construction-parity.md)
 - [Superseding `policyengine-us-data`](./superseding-policyengine-us-data.md)
+- [Hugging Face artifact publishing](./huggingface-artifact-publishing.md)
 
 This doc set is intentionally technical. It is meant to answer seven questions:
 

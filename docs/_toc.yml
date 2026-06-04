@@ -10,3 +10,4 @@ chapters:
   - file: benchmarking
   - file: pe-construction-parity
   - file: superseding-policyengine-us-data
+  - file: huggingface-artifact-publishing

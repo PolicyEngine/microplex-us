@@ -17,6 +17,7 @@ built on top of the generic `microplex` engine.
 - [PolicyEngine oracle compatibility path](./docs/policyengine-oracle-compatibility.md)
 - [PE construction parity](./docs/pe-construction-parity.md)
 - [Superseding `policyengine-us-data`](./docs/superseding-policyengine-us-data.md)
+- [Hugging Face artifact publishing](./docs/huggingface-artifact-publishing.md)
 
 ## Diagnostics dashboard
 

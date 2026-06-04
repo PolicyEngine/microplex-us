@@ -927,15 +927,17 @@ def _append_markdown_substage(
             f"- Canonical stage: `{stage_id}`",
             f"- Status: `{substage.get('status', 'current')}`",
             "",
-            "| Node | Type | Status | Code refs | Source |",
-            "| --- | --- | --- | --- | --- |",
+            "| Node | Does | Type | Status | Code refs | Source |",
+            "| --- | --- | --- | --- | --- | --- |",
         ]
     )
     for node in _list_of_mappings(substage.get("nodes")):
         refs = _node_markdown_refs(node)
         source = _node_source_reference(node)
+        does = _first_docstring_line(node)
         lines.append(
             f"| `{node.get('id', '')}` {_markdown_cell(node.get('label', ''))} | "
+            f"{_markdown_cell(does)} | "
             f"`{node.get('nodeType', 'process')}` | "
             f"`{node.get('status', 'current')}` | "
             f"{refs or ''} | "

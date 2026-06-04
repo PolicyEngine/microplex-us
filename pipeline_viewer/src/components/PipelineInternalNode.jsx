@@ -23,19 +23,30 @@ export default function PipelineInternalNode({ data }) {
     data.objectPath ||
     (Array.isArray(data.apiRefs) && data.apiRefs.length ? data.apiRefs[0] : null) ||
     data.pydoc ||
-    source;
+    null;
+  const explanation = firstTextLine(data.docstring || data.details || data.description);
   const kind = data.kind ? data.kind.replaceAll("_", " ") : null;
   return (
     <div className={`internal-node ${data.nodeType || "process"}`}>
       <NodeHandles />
+      {(codeReference || data.signature || source) && (
+        <div className="internal-node-code">
+          {codeReference && <code>{codeReference}</code>}
+          {data.signature && <code>{data.signature}</code>}
+          {source && <code>{source}</code>}
+        </div>
+      )}
       <div className="internal-node-topline">
         <span>{(data.nodeType || "node").replaceAll("_", " ")}</span>
         {kind && <span>{kind}</span>}
       </div>
       <strong>{data.label}</strong>
-      {data.description && <p>{data.description}</p>}
-      {codeReference && <small>{codeReference}</small>}
-      {source && source !== codeReference && <small>{source}</small>}
+      {explanation && <p>{explanation}</p>}
     </div>
   );
+}
+
+function firstTextLine(value) {
+  if (!value) return "";
+  return String(value).split("\n").find((line) => line.trim())?.trim() || "";
 }

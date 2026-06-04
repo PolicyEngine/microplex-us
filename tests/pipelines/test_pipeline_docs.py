@@ -99,7 +99,8 @@ def test_pipeline_markdown_docs_include_specific_code_references() -> None:
     markdown = payloads["us_pipeline_map.md"]
 
     assert isinstance(markdown, str)
-    assert "| Node | Type | Status | Code refs | Source |" in markdown
+    assert "| Node | Does | Type | Status | Code refs | Source |" in markdown
+    assert "Loads each configured SourceProvider into an ObservationFrame" in markdown
     assert "#### Edges" in markdown
     assert (
         "`microplex_us.pipelines.us.USMicroplexPipeline._integrate_donor_sources`"

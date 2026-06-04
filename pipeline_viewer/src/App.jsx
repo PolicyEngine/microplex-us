@@ -111,7 +111,7 @@ function StageMachineryFlow({ internals, selectedStageId, selectedSubstageId }) 
           nodeType: "substage",
           description: substage.description,
           order: substageIndex * 10,
-          nodeWidth: 280,
+          nodeWidth: 330,
         },
       });
       substage.nodes.forEach((node, nodeIndex) => {

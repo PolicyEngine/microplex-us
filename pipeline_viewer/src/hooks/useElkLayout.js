@@ -18,11 +18,26 @@ const ELK_OPTIONS = {
 };
 
 function estimateNodeSize(node) {
-  const purpose = node.data?.purpose || node.data?.description || "";
-  const width = node.data?.nodeWidth || (node.type === "pipelineInternal" ? 260 : 300);
+  const purpose =
+    node.data?.docstring ||
+    node.data?.details ||
+    node.data?.purpose ||
+    node.data?.description ||
+    "";
+  const codeRef = node.data?.objectPath || node.data?.pydoc || "";
+  const signature = node.data?.signature || "";
+  const width = node.data?.nodeWidth || (node.type === "pipelineInternal" ? 330 : 300);
+  const baseHeight = node.type === "pipelineInternal" ? 138 : 82;
+  const minHeight = node.type === "pipelineInternal" ? 154 : 112;
   return {
     width,
-    height: Math.max(112, 82 + Math.ceil(purpose.length / 60) * 18),
+    height: Math.max(
+      minHeight,
+      baseHeight +
+        Math.ceil(String(purpose).length / 60) * 18 +
+        Math.ceil(String(codeRef).length / 48) * 12 +
+        Math.ceil(String(signature).length / 48) * 12,
+    ),
   };
 }
 

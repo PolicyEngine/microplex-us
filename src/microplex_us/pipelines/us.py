@@ -2688,7 +2688,11 @@ class USMicroplexPipeline:
         id="us.pipeline.build_from_source_providers",
         label="Build from source providers",
         node_type="entrypoint",
-        description="Canonical library entrypoint for a multi-provider US build.",
+        description=(
+            "Loads each configured SourceProvider into an ObservationFrame, records "
+            "source-loading stage lifecycle state, then delegates the loaded frames "
+            "to the canonical US build path."
+        ),
         artifacts_out=("build_result",),
     )
     def build_from_source_providers(

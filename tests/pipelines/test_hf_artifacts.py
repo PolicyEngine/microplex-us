@@ -14,15 +14,20 @@ from microplex_us.pipelines.hf_artifacts import (
     dataset_repo_paths,
     diagnostics_repo_paths,
     publish_microplex_artifact_to_hf,
+    smoke_published_hf_artifact,
 )
 
 
 class FakeHfApi:
     def __init__(self) -> None:
         self.commits: list[dict[str, Any]] = []
+        self.files_by_repo: dict[str, list[str]] = {}
 
     def create_commit(self, **kwargs: Any) -> None:
         self.commits.append(kwargs)
+
+    def list_repo_files(self, **kwargs: Any) -> list[str]:
+        return self.files_by_repo[kwargs["repo_id"]]
 
 
 def _fake_add(path_in_repo: str, local_path: Path) -> dict[str, str]:
@@ -185,3 +190,62 @@ def test_publish_full_bundle_calls_expected_repos(
     assert "staging/run-a/manifest.json" in dataset_paths
     assert "policyengine_us.h5" in dataset_paths
     assert "manifest.json" in dataset_paths
+
+
+def test_smoke_published_hf_artifact_passes_when_expected_files_exist() -> None:
+    api = FakeHfApi()
+    api.files_by_repo = {
+        "policyengine/microplex-us-diagnostics": [
+            "latest.json",
+            "run_registry.jsonl",
+            "runs/run-a/manifest.json",
+            "runs/run-a/policyengine_native_scores.json",
+            "runs/run-a/pe_us_data_rebuild_native_audit.json",
+            "runs/run-a/pe_native_target_diagnostics.json",
+        ],
+        "policyengine/microplex-us-deployed-datasets": [
+            "staging/run-a/policyengine_us.h5",
+            "staging/run-a/manifest.json",
+            "policyengine_us.h5",
+            "manifest.json",
+        ],
+    }
+    config = HuggingFacePublishConfig(
+        diagnostics_repo="policyengine/microplex-us-diagnostics",
+        dataset_repo="policyengine/microplex-us-deployed-datasets",
+    )
+
+    result = smoke_published_hf_artifact(
+        config,
+        api=api,
+        latest_loader=lambda _config: {"run_id": "run-a"},
+    )
+
+    assert result["status"] == "passed"
+    assert result["missing_count"] == 0
+    assert result["run_id"] == "run-a"
+
+
+def test_smoke_published_hf_artifact_reports_missing_files() -> None:
+    api = FakeHfApi()
+    api.files_by_repo = {
+        "policyengine/microplex-us-diagnostics": ["latest.json"],
+        "policyengine/microplex-us-deployed-datasets": [
+            "staging/run-a/policyengine_us.h5"
+        ],
+    }
+    config = HuggingFacePublishConfig(
+        diagnostics_repo="policyengine/microplex-us-diagnostics",
+        dataset_repo="policyengine/microplex-us-deployed-datasets",
+    )
+
+    result = smoke_published_hf_artifact(
+        config,
+        run_id="run-a",
+        api=api,
+        latest_loader=lambda _config: {"run_id": "ignored"},
+    )
+
+    assert result["status"] == "failed"
+    assert "runs/run-a/manifest.json" in result["diagnostics"]["missing"]
+    assert "manifest.json" in result["dataset"]["missing"]

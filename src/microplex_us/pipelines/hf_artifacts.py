@@ -427,6 +427,85 @@ def publish_microplex_artifact_to_hf(
     return result
 
 
+def smoke_published_hf_artifact(
+    config: HuggingFacePublishConfig,
+    *,
+    run_id: str | None = None,
+    check_dataset: bool = True,
+    check_promoted_dataset: bool = True,
+    api: Any | None = None,
+    latest_loader: Callable[[HuggingFacePublishConfig], dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Verify that a published Hugging Face artifact exposes expected files."""
+    if config.diagnostics_repo is None:
+        raise ValueError("diagnostics_repo is required for smoke checks")
+    hf_api = api or create_hf_api()
+    latest = (
+        latest_loader(config)
+        if latest_loader is not None
+        else load_hf_json(config, config.diagnostics_repo, "latest.json")
+    )
+    resolved_run_id = run_id or latest.get("run_id")
+    if not isinstance(resolved_run_id, str) or not resolved_run_id:
+        raise ValueError("run_id is required when latest.json does not define run_id")
+
+    diagnostics_paths = diagnostics_repo_paths(
+        ".",
+        run_id=resolved_run_id,
+        run_prefix=config.diagnostics_run_prefix,
+    )
+    expected_diagnostics = set(diagnostics_paths.values())
+    diagnostics_files = set(
+        hf_api.list_repo_files(
+            repo_id=config.diagnostics_repo,
+            repo_type=config.repo_type,
+            token=config.token,
+        )
+    )
+
+    result: dict[str, Any] = {
+        "schema_version": 1,
+        "checked_at": datetime.now(UTC).isoformat(),
+        "run_id": resolved_run_id,
+        "diagnostics": {
+            "repo_id": config.diagnostics_repo,
+            "expected": sorted(expected_diagnostics),
+            "missing": sorted(expected_diagnostics - diagnostics_files),
+        },
+        "dataset": None,
+    }
+
+    if check_dataset:
+        if config.dataset_repo is None:
+            raise ValueError("dataset_repo is required when check_dataset is true")
+        dataset_paths = dataset_repo_paths(
+            ".",
+            run_id=resolved_run_id,
+            staging_prefix=config.dataset_staging_prefix,
+            promote=check_promoted_dataset,
+        )
+        expected_dataset = set(dataset_paths.values())
+        dataset_files = set(
+            hf_api.list_repo_files(
+                repo_id=config.dataset_repo,
+                repo_type=config.repo_type,
+                token=config.token,
+            )
+        )
+        result["dataset"] = {
+            "repo_id": config.dataset_repo,
+            "expected": sorted(expected_dataset),
+            "missing": sorted(expected_dataset - dataset_files),
+        }
+
+    missing = list(result["diagnostics"]["missing"])
+    if result["dataset"] is not None:
+        missing.extend(result["dataset"]["missing"])
+    result["status"] = "passed" if not missing else "failed"
+    result["missing_count"] = len(missing)
+    return result
+
+
 def create_hf_api() -> Any:
     """Create a Hugging Face API client lazily."""
     try:
@@ -438,6 +517,27 @@ def create_hf_api() -> Any:
             "`uv run --extra hf ...`."
         ) from error
     return HfApi()
+
+
+def load_hf_json(
+    config: HuggingFacePublishConfig,
+    repo_id: str,
+    filename: str,
+) -> dict[str, Any]:
+    """Download one JSON file from Hugging Face."""
+    try:
+        from huggingface_hub import hf_hub_download
+    except ImportError as error:  # pragma: no cover
+        raise RuntimeError(
+            "huggingface_hub is required for Hugging Face smoke checks."
+        ) from error
+    path = hf_hub_download(
+        repo_id=repo_id,
+        filename=filename,
+        repo_type=config.repo_type,
+        token=config.token,
+    )
+    return json.loads(Path(path).read_text())
 
 
 def _commit_add(path_in_repo: str, local_path: Path) -> Any:
@@ -578,6 +678,57 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Hugging Face artifact {mode}: {result['run_id']}")
     print(args.artifact_dir / HF_PUBLISH_MANIFEST_FILENAME)
     return 0
+
+
+def main_smoke(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Smoke-check a published Microplex Hugging Face artifact."
+    )
+    parser.add_argument("--run-id", default=None)
+    parser.add_argument("--diagnostics-repo", default=None)
+    parser.add_argument("--dataset-repo", default=None)
+    parser.add_argument("--repo-type", default=None)
+    parser.add_argument("--token", default=None)
+    parser.add_argument("--diagnostics-run-prefix", default=None)
+    parser.add_argument("--dataset-staging-prefix", default=None)
+    parser.add_argument(
+        "--no-dataset",
+        action="store_true",
+        help="Only check diagnostics files.",
+    )
+    parser.add_argument(
+        "--no-promoted-dataset",
+        action="store_true",
+        help="Do not require root policyengine_us.h5 and manifest.json.",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Print the full smoke-check payload as JSON.",
+    )
+    args = parser.parse_args(argv)
+    try:
+        config = _build_config_from_args(args)
+        result = smoke_published_hf_artifact(
+            config,
+            run_id=args.run_id,
+            check_dataset=not args.no_dataset,
+            check_promoted_dataset=not args.no_promoted_dataset,
+        )
+    except Exception as error:  # noqa: BLE001 - CLI should report concise failure.
+        print(f"Hugging Face smoke check failed: {error}", file=sys.stderr)
+        return 1
+    if args.json:
+        print(json.dumps(result, indent=2, sort_keys=True))
+    elif result["status"] == "passed":
+        print(f"Hugging Face artifact smoke check passed: {result['run_id']}")
+    else:
+        print(
+            f"Hugging Face artifact smoke check failed: {result['run_id']} "
+            f"({result['missing_count']} missing files)",
+            file=sys.stderr,
+        )
+    return 0 if result["status"] == "passed" else 1
 
 
 if __name__ == "__main__":  # pragma: no cover

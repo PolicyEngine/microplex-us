@@ -100,6 +100,21 @@ The command writes `hf_publish_manifest.json` into the local artifact directory.
 That file records the exact Hugging Face paths and operation counts that would
 be committed or were committed.
 
+Smoke-check a published bundle:
+
+```bash
+uv run --extra hf --python 3.13 microplex-us-smoke-hf-artifact \
+  --run-id <run_id>
+```
+
+For staging-only dataset publishes that have not promoted root files yet:
+
+```bash
+uv run --extra hf --python 3.13 microplex-us-smoke-hf-artifact \
+  --run-id <run_id> \
+  --no-promoted-dataset
+```
+
 ## GitHub Actions publishing
 
 The `Publish Hugging Face Artifacts` workflow is a manual workflow. It accepts
@@ -110,6 +125,8 @@ either:
 
 The workflow extracts the bundle, finds `manifest.json`, runs the focused
 publisher tests, and invokes `microplex-us-publish-hf-artifacts`.
+For real publishes, it then smoke-checks that the expected remote diagnostics
+and dataset files are visible on Hugging Face.
 
 The workflow defaults to `dry_run: true`. To publish, set `dry_run: false` and
 provide a writable Hugging Face token through the repository secret `HF_TOKEN`.

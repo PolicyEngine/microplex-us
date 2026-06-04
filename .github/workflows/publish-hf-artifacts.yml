@@ -214,3 +214,25 @@ jobs:
           fi
 
           uv run --extra hf --python 3.13 microplex-us-publish-hf-artifacts "${args[@]}"
+
+      - name: Smoke-check published artifact
+        if: inputs.dry_run == false
+        env:
+          HUGGING_FACE_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          args=(
+            --diagnostics-repo "${{ inputs.diagnostics_repo }}"
+            --dataset-repo "${{ inputs.dataset_repo }}"
+          )
+
+          if [ -n "${{ inputs.run_id }}" ]; then
+            args+=(--run-id "${{ inputs.run_id }}")
+          fi
+          if [ "${{ inputs.publish_dataset }}" != "true" ] && [ "${{ inputs.promote_dataset }}" != "true" ]; then
+            args+=(--no-dataset)
+          fi
+          if [ "${{ inputs.promote_dataset }}" != "true" ]; then
+            args+=(--no-promoted-dataset)
+          fi
+
+          uv run --extra hf --python 3.13 microplex-us-smoke-hf-artifact "${args[@]}"

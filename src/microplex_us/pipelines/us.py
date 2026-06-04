@@ -8,7 +8,7 @@ import time
 import warnings
 from collections import Counter
 from collections.abc import Iterable, Mapping
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from functools import lru_cache
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -5796,6 +5796,7 @@ class USMicroplexPipeline:
         tables = result.policyengine_tables or self.build_policyengine_entity_tables(
             result.calibrated_data
         )
+        tables = self._normalize_policyengine_tables_for_export(tables)
         tables = self._attach_policyengine_marketplace_plan_benchmark_ratio(
             tables,
             target_period=export_period,
@@ -5831,6 +5832,17 @@ class USMicroplexPipeline:
             path,
             excluded_variables=excluded_variables,
             tax_benefit_system=tax_benefit_system,
+        )
+
+    def _normalize_policyengine_tables_for_export(
+        self,
+        tables: PolicyEngineUSEntityTableBundle,
+    ) -> PolicyEngineUSEntityTableBundle:
+        if tables.persons is None:
+            return tables
+        return replace(
+            tables,
+            persons=self._augment_policyengine_person_inputs(tables.persons),
         )
 
     def _fit_synthesizer(

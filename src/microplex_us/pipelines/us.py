@@ -81,6 +81,8 @@ from microplex_us.pipelines.pe_native_optimization import (
     optimize_policyengine_us_native_loss_dataset,
 )
 from microplex_us.pipelines.stage_contracts import (
+    US_CANONICAL_STAGE_IDS,
+    canonicalize_us_pipeline_stage_id,
     get_us_stage_artifact_contract,
     resolve_us_stage_artifact_contract_path,
 )
@@ -2765,91 +2767,131 @@ class USMicroplexPipeline:
     def build_from_frames(
         self,
         frames: list[ObservationFrame],
+        *,
+        resume_from_stage: str | None = None,
+        restored_scaffold_seed_data: pd.DataFrame | None = None,
     ) -> USMicroplexBuildResult:
         if not frames:
             raise ValueError(
                 "USMicroplexPipeline requires at least one observation frame"
             )
+        start_stage = (
+            canonicalize_us_pipeline_stage_id(resume_from_stage)
+            if resume_from_stage is not None
+            else "03_source_planning"
+        )
+        resumable_frame_stages = {
+            "03_source_planning",
+            "04_seed_scaffold",
+            "05_donor_integration_synthesis",
+        }
+        if start_stage not in resumable_frame_stages:
+            valid_stages = ", ".join(sorted(resumable_frame_stages))
+            raise ValueError(
+                f"Cannot build from frames starting at {start_stage}; "
+                f"expected one of: {valid_stages}"
+            )
+        start_stage_index = US_CANONICAL_STAGE_IDS.index(start_stage)
 
-        self._runtime_start_stage("03_source_planning")
-        try:
+        if start_stage_index <= US_CANONICAL_STAGE_IDS.index("03_source_planning"):
+            self._runtime_start_stage("03_source_planning")
+            try:
+                source_inputs = [self.prepare_source_input(frame) for frame in frames]
+                fusion_plan = FusionPlan.from_sources(
+                    [frame.source for frame in frames]
+                )
+                scaffold_input = self._select_scaffold_source(source_inputs)
+                if self.stage_runtime_writer is not None:
+                    source_plan_path = _runtime_stage_artifact_path(
+                        self.stage_runtime_writer,
+                        "03_source_planning",
+                        "source_plan",
+                    )
+                    write_json_atomically(
+                        source_plan_path,
+                        _runtime_source_plan_payload(
+                            source_inputs,
+                            fusion_plan,
+                            scaffold_input,
+                        ),
+                    )
+                    scaffold_selection = _runtime_scaffold_selection_summary(
+                        source_inputs,
+                        scaffold_input,
+                    )
+                    self.stage_runtime_writer.complete_stage(
+                        USSourcePlanningOutputs(
+                            source_plan=_runtime_stage_artifact_ref(
+                                self.stage_runtime_writer,
+                                "03_source_planning",
+                                "source_plan",
+                            ),
+                            scaffold_selection=scaffold_selection,
+                            diagnostics=_runtime_stage_diagnostics(
+                                "03_source_planning",
+                                scaffold_selection,
+                            ),
+                        )
+                    )
+            except Exception as exc:
+                self._runtime_fail_stage("03_source_planning", exc)
+                raise
+        else:
             source_inputs = [self.prepare_source_input(frame) for frame in frames]
             fusion_plan = FusionPlan.from_sources([frame.source for frame in frames])
             scaffold_input = self._select_scaffold_source(source_inputs)
-            if self.stage_runtime_writer is not None:
-                source_plan_path = _runtime_stage_artifact_path(
-                    self.stage_runtime_writer,
-                    "03_source_planning",
-                    "source_plan",
-                )
-                write_json_atomically(
-                    source_plan_path,
-                    _runtime_source_plan_payload(
-                        source_inputs,
-                        fusion_plan,
-                        scaffold_input,
-                    ),
-                )
-                scaffold_selection = _runtime_scaffold_selection_summary(
-                    source_inputs,
-                    scaffold_input,
-                )
-                self.stage_runtime_writer.complete_stage(
-                    USSourcePlanningOutputs(
-                        source_plan=_runtime_stage_artifact_ref(
-                            self.stage_runtime_writer,
-                            "03_source_planning",
-                            "source_plan",
-                        ),
-                        scaffold_selection=scaffold_selection,
-                        diagnostics=_runtime_stage_diagnostics(
-                            "03_source_planning",
-                            scaffold_selection,
-                        ),
-                    )
-                )
-        except Exception as exc:
-            self._runtime_fail_stage("03_source_planning", exc)
-            raise
 
-        self._runtime_start_stage("04_seed_scaffold")
-        try:
-            seed_data = self.prepare_seed_data_from_source(scaffold_input)
-            seed_data = self._strip_generated_entity_ids(
-                seed_data,
-                scaffold_input=scaffold_input,
-            )
-            scaffold_seed_data = seed_data.copy()
-            if self.stage_runtime_writer is not None:
-                scaffold_seed_path = _runtime_stage_artifact_path(
-                    self.stage_runtime_writer,
-                    "04_seed_scaffold",
-                    "scaffold_seed_data",
+        if start_stage_index <= US_CANONICAL_STAGE_IDS.index("04_seed_scaffold"):
+            self._runtime_start_stage("04_seed_scaffold")
+            try:
+                seed_data = self.prepare_seed_data_from_source(scaffold_input)
+                seed_data = self._strip_generated_entity_ids(
+                    seed_data,
+                    scaffold_input=scaffold_input,
                 )
-                _write_runtime_dataframe_artifact(
-                    scaffold_seed_path, scaffold_seed_data
-                )
-                seed_schema_metadata = _runtime_seed_schema_metadata(scaffold_seed_data)
-                self.stage_runtime_writer.complete_stage(
-                    USSeedScaffoldOutputs(
-                        scaffold_seed_data=_runtime_stage_artifact_ref(
-                            self.stage_runtime_writer,
-                            "04_seed_scaffold",
-                            "scaffold_seed_data",
-                        ),
-                        seed_schema_metadata=seed_schema_metadata,
-                        diagnostics=_runtime_stage_diagnostics(
-                            "04_seed_scaffold",
-                            {
-                                **seed_schema_metadata,
-                                "scaffold_source": scaffold_input.frame.source.name,
-                            },
-                        ),
+                scaffold_seed_data = seed_data.copy()
+                if self.stage_runtime_writer is not None:
+                    scaffold_seed_path = _runtime_stage_artifact_path(
+                        self.stage_runtime_writer,
+                        "04_seed_scaffold",
+                        "scaffold_seed_data",
                     )
+                    _write_runtime_dataframe_artifact(
+                        scaffold_seed_path, scaffold_seed_data
+                    )
+                    seed_schema_metadata = _runtime_seed_schema_metadata(
+                        scaffold_seed_data
+                    )
+                    self.stage_runtime_writer.complete_stage(
+                        USSeedScaffoldOutputs(
+                            scaffold_seed_data=_runtime_stage_artifact_ref(
+                                self.stage_runtime_writer,
+                                "04_seed_scaffold",
+                                "scaffold_seed_data",
+                            ),
+                            seed_schema_metadata=seed_schema_metadata,
+                            diagnostics=_runtime_stage_diagnostics(
+                                "04_seed_scaffold",
+                                {
+                                    **seed_schema_metadata,
+                                    "scaffold_source": (
+                                        scaffold_input.frame.source.name
+                                    ),
+                                },
+                            ),
+                        )
+                    )
+            except Exception as exc:
+                self._runtime_fail_stage("04_seed_scaffold", exc)
+                raise
+        else:
+            if restored_scaffold_seed_data is None:
+                raise ValueError(
+                    "resume_from_stage='05_donor_integration_synthesis' requires "
+                    "restored_scaffold_seed_data"
                 )
-        except Exception as exc:
-            self._runtime_fail_stage("04_seed_scaffold", exc)
-            raise
+            scaffold_seed_data = restored_scaffold_seed_data.copy()
+            seed_data = scaffold_seed_data.copy()
 
         self._runtime_start_stage("05_donor_integration_synthesis")
         try:

@@ -10,6 +10,9 @@ from microplex_us.pipelines.stage_contracts import (
     get_us_pipeline_stage_contract,
     get_us_stage_artifact_contract,
 )
+from microplex_us.pipelines.stage_resume import (
+    preflight_us_stage_resume,
+)
 from microplex_us.pipelines.stage_run import (
     US_STAGE_OUTPUT_MANIFEST_TYPES,
     USArtifactRef,
@@ -118,6 +121,14 @@ def test_stage_run_writer_records_typed_stage_manifests(tmp_path):
     assert stage5_manifest["inputStageManifest"] == (
         "stage_artifacts/manifests/04_seed_scaffold.json"
     )
+    _assert_stage_manifests_write_required_outputs(tmp_path, updated_manifest)
+
+
+def test_stage_run_writer_writes_required_outputs_for_each_stage(tmp_path):
+    _write_mock_stage_prefix(tmp_path, US_CANONICAL_STAGE_IDS[-1])
+
+    manifest = json.loads((tmp_path / "manifest.json").read_text())
+    _assert_stage_manifests_write_required_outputs(tmp_path, manifest)
 
 
 @pytest.mark.parametrize(
@@ -170,6 +181,52 @@ def test_adjacent_stage_serialized_output_schema_breaks_next_stage_input(tmp_pat
 
         with pytest.raises(ValueError, match=missing_key):
             USStageRunWriter(seam_root).record_stage(current_output)
+
+
+def test_stage_resume_preflight_reports_missing_required_artifact_paths(tmp_path):
+    manifest_dir = tmp_path / "stage_artifacts" / "manifests"
+    manifest_dir.mkdir(parents=True)
+    (tmp_path / "manifest.json").write_text(
+        json.dumps(
+            {
+                "artifacts": {
+                    "seed_data": "seed_data.parquet",
+                    "synthetic_data": "synthetic_data.parquet",
+                }
+            }
+        )
+    )
+    (manifest_dir / "05_donor_integration_synthesis.json").write_text(
+        json.dumps(
+            {
+                "contractVersion": "us-runtime-stages-v2",
+                "stageId": "05_donor_integration_synthesis",
+                "complete": True,
+                "lifecycleStatus": "complete",
+                "requiredOutputs": ["seed_data", "synthetic_data"],
+                "outputs": {
+                    "seed_data": {
+                        "path": "seed_data.parquet",
+                        "exists": True,
+                    },
+                    "synthetic_data": {
+                        "path": "synthetic_data.parquet",
+                        "exists": True,
+                    },
+                },
+            }
+        )
+    )
+
+    preflight = preflight_us_stage_resume(
+        tmp_path,
+        "06_policyengine_entities",
+    )
+
+    assert not preflight.ok
+    missing = {item.label for item in preflight.missing}
+    assert "05_donor_integration_synthesis.seed_data" in missing
+    assert "05_donor_integration_synthesis.synthetic_data" in missing
 
 
 def test_stage_run_writer_rejects_missing_diagnostics(tmp_path):
@@ -726,6 +783,23 @@ def _missing_output_value(value):
 
 def _stage_manifest_ref(stage_id):
     return f"stage_artifacts/manifests/{stage_id}.json"
+
+
+def _assert_stage_manifests_write_required_outputs(root, manifest):
+    assert tuple(manifest["stage_output_manifests"]) == US_CANONICAL_STAGE_IDS
+
+    for stage_id in US_CANONICAL_STAGE_IDS:
+        contract = get_us_pipeline_stage_contract(stage_id)
+        required_outputs = tuple(
+            resource.key for resource in contract.outputs if resource.required
+        )
+        manifest_path = root / manifest["stage_output_manifests"][stage_id]
+        stage_manifest = json.loads(manifest_path.read_text())
+
+        assert stage_manifest["stageId"] == stage_id
+        assert tuple(stage_manifest["requiredOutputs"]) == required_outputs
+        assert set(required_outputs) <= set(stage_manifest["outputs"])
+        assert not stage_manifest["missingRequiredOutputs"]
 
 
 def _write_artifact_bundle_files(root):

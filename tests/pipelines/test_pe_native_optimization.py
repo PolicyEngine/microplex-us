@@ -196,6 +196,9 @@ def test_rewrite_policyengine_us_dataset_weights_skips_empty_derived_weight_grou
         assert np.allclose(handle["household_weight"]["2024"][:], np.asarray([7.0, 3.0]))
         # The empty derived-weight group is left untouched (still has no period).
         assert "2024" not in handle["family_weight"]
+        # A populated sibling derived group is still propagated in the same
+        # call: the skip is per-group, not all-or-nothing.
+        assert np.allclose(handle["tax_unit_weight"]["2024"][:], np.asarray([7.0, 3.0]))
 
 
 def test_optimize_policyengine_us_native_loss_dataset_rewrites_dataset(tmp_path: Path, monkeypatch):

@@ -90,6 +90,48 @@ class USStageRuntimeEventRecord(TypedDict, total=False):
     details: dict[str, Any]
 
 
+USSourceProviderProgressStatus = Literal[
+    "pending",
+    "running",
+    "complete",
+    "failed",
+]
+
+
+class USSourceProviderProgressRecord(TypedDict, total=False):
+    """Runtime progress for one source provider in Stage 2."""
+
+    providerName: str
+    providerClass: str
+    providerIndex: int
+    providerCount: int
+    queryKey: str | None
+    query: dict[str, Any] | None
+    provenance: dict[str, Any]
+    status: USSourceProviderProgressStatus
+    startedAt: str | None
+    updatedAt: str | None
+    completedAt: str | None
+    failedAt: str | None
+    elapsedSeconds: float | None
+    sourceName: str | None
+    tableRows: dict[str, int]
+    relationshipCount: int | None
+    failure: USStageFailureRecord | None
+
+
+class USSourceLoadingProgressRecord(TypedDict):
+    """Runtime progress summary for Stage 2 source loading."""
+
+    schemaVersion: int
+    stageId: str
+    providerCount: int
+    completedProviderCount: int
+    failedProviderCount: int
+    currentProviderName: str | None
+    providers: list[USSourceProviderProgressRecord]
+
+
 class USStageResourceRecord(TypedDict):
     """Saved-run view of one structured stage input or output."""
 
@@ -193,6 +235,9 @@ __all__ = [
     "USStageStatus",
     "USStageValidationRecord",
     "USStageValidationStatus",
+    "USSourceLoadingProgressRecord",
+    "USSourceProviderProgressRecord",
+    "USSourceProviderProgressStatus",
     "USValidationEvidenceManifest",
     "USValidationEvidenceRecord",
 ]

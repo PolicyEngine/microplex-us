@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 import json
+import logging
+import signal
+import threading
 import traceback
-from collections.abc import Mapping
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
+from types import FrameType
 from typing import Any, Literal
 
 from microplex_us.pipelines.stage_contracts import (
@@ -35,6 +40,17 @@ from microplex_us.pipelines.stage_run import (
 
 RuntimeUpdateSection = Literal["outputs", "diagnostics", "metadata"]
 
+_LOGGER = logging.getLogger(__name__)
+
+
+class USStageInterruptedError(BaseException):
+    """Raised after recording a runtime stage interruption signal."""
+
+    def __init__(self, signal_number: int) -> None:
+        self.signal_number = int(signal_number)
+        self.signal_name = _signal_name(signal_number)
+        super().__init__(f"Interrupted by {self.signal_name}")
+
 
 class USStageRuntimeWriter:
     """Write stage manifests incrementally during a canonical US build."""
@@ -57,12 +73,21 @@ class USStageRuntimeWriter:
             allow_stage_input_overrides=allow_stage_input_overrides,
             stage_input_overrides=stage_input_overrides,
         )
+        self._lock = threading.RLock()
+        self._active_stage_id: str | None = None
 
     @property
     def recorded_stages(self) -> tuple[USStageOutputManifest, ...]:
         """Return completed typed stage manifests recorded by this writer."""
 
         return self._run_writer.recorded_stages
+
+    @property
+    def active_stage_id(self) -> str | None:
+        """Return the stage currently marked as running by this writer."""
+
+        with self._lock:
+            return self._active_stage_id
 
     def start_stage(
         self,
@@ -72,30 +97,32 @@ class USStageRuntimeWriter:
     ) -> dict[str, Any]:
         """Mark one stage as running after validating its previous stage seam."""
 
-        self._validate_stage_id(stage_id)
-        self._validate_start_transition(stage_id)
-        now = _now()
-        payload = self._stage_payload(stage_id)
-        payload["complete"] = False
-        payload["lifecycleStatus"] = "running"
-        payload["startedAt"] = payload.get("startedAt") or now
-        payload["updatedAt"] = now
-        payload["completedAt"] = None
-        payload["failedAt"] = None
-        payload["deferredReason"] = None
-        payload["failure"] = None
-        payload["inputOverrides"] = self._serialized_overrides_for_stage(stage_id)
-        payload["metadata"] = {
-            **dict(payload.get("metadata", {})),
-            **dict(metadata or {}),
-        }
-        payload["events"] = [
-            *list(payload.get("events", [])),
-            _event("stage_started", now, dict(metadata or {})),
-        ]
-        self._write_stage_payload(stage_id, payload)
-        self._refresh_aggregate()
-        return payload
+        with self._lock:
+            self._validate_stage_id(stage_id)
+            self._validate_start_transition(stage_id)
+            now = _now()
+            payload = self._stage_payload(stage_id)
+            payload["complete"] = False
+            payload["lifecycleStatus"] = "running"
+            payload["startedAt"] = payload.get("startedAt") or now
+            payload["updatedAt"] = now
+            payload["completedAt"] = None
+            payload["failedAt"] = None
+            payload["deferredReason"] = None
+            payload["failure"] = None
+            payload["inputOverrides"] = self._serialized_overrides_for_stage(stage_id)
+            payload["metadata"] = {
+                **dict(payload.get("metadata", {})),
+                **dict(metadata or {}),
+            }
+            payload["events"] = [
+                *list(payload.get("events", [])),
+                _event("stage_started", now, dict(metadata or {})),
+            ]
+            self._active_stage_id = stage_id
+            self._write_stage_payload(stage_id, payload)
+            self._refresh_aggregate()
+            return payload
 
     def update(
         self,
@@ -108,25 +135,122 @@ class USStageRuntimeWriter:
     ) -> dict[str, Any]:
         """Update one manifest entry, optionally writing a JSON artifact first."""
 
-        self._validate_stage_id(stage_id)
-        if section == "outputs":
-            self._validate_output_key(stage_id, key)
-        payload = self._stage_payload(stage_id)
-        written_value = value
-        if path is not None:
-            written_value = self._write_update_artifact(stage_id, key, value, path)
-        bucket = dict(payload.get(section, {}))
-        bucket[key] = _runtime_serialize(written_value, self.artifact_root)
-        payload[section] = bucket
-        now = _now()
-        payload["updatedAt"] = now
-        payload["events"] = [
-            *list(payload.get("events", [])),
-            _event("stage_updated", now, {"section": section, "key": key}),
-        ]
-        self._write_stage_payload(stage_id, payload)
-        self._refresh_aggregate()
-        return payload
+        with self._lock:
+            self._validate_stage_id(stage_id)
+            if section == "outputs":
+                self._validate_output_key(stage_id, key)
+            payload = self._stage_payload(stage_id)
+            written_value = value
+            if path is not None:
+                written_value = self._write_update_artifact(stage_id, key, value, path)
+            bucket = dict(payload.get(section, {}))
+            bucket[key] = _runtime_serialize(written_value, self.artifact_root)
+            payload[section] = bucket
+            now = _now()
+            payload["updatedAt"] = now
+            payload["events"] = [
+                *list(payload.get("events", [])),
+                _event("stage_updated", now, {"section": section, "key": key}),
+            ]
+            self._write_stage_payload(stage_id, payload)
+            self._refresh_aggregate()
+            return payload
+
+    def record_metadata(
+        self,
+        stage_id: str,
+        key: str,
+        value: Any,
+    ) -> dict[str, Any]:
+        """Record one structured metadata entry for a running stage."""
+
+        return self.update(stage_id, key, value, section="metadata")
+
+    def record_event(
+        self,
+        stage_id: str,
+        event: str,
+        details: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Append a runtime event to one stage manifest."""
+
+        with self._lock:
+            self._validate_stage_id(stage_id)
+            now = _now()
+            payload = self._stage_payload(stage_id)
+            payload["updatedAt"] = now
+            payload["events"] = [
+                *list(payload.get("events", [])),
+                _event(event, now, dict(details or {})),
+            ]
+            self._write_stage_payload(stage_id, payload)
+            self._refresh_aggregate()
+            return payload
+
+    def heartbeat_stage(
+        self,
+        stage_id: str,
+        details: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Refresh a running stage manifest without changing stage outputs."""
+
+        with self._lock:
+            self._validate_stage_id(stage_id)
+            now = _now()
+            payload = self._stage_payload(stage_id)
+            heartbeat = {
+                "timestamp": now,
+                **dict(details or {}),
+            }
+            metadata = dict(payload.get("metadata", {}))
+            metadata["lastHeartbeat"] = heartbeat
+            payload["metadata"] = metadata
+            payload["updatedAt"] = now
+            payload["events"] = [
+                *list(payload.get("events", [])),
+                _event("stage_heartbeat", now, dict(details or {})),
+            ]
+            self._write_stage_payload(stage_id, payload)
+            self._refresh_aggregate()
+            return payload
+
+    @contextmanager
+    def auto_heartbeat(
+        self,
+        stage_id: str,
+        *,
+        interval_seconds: float = 300,
+        details_factory: Callable[[], Mapping[str, Any]] | None = None,
+    ) -> Iterator[None]:
+        """Emit best-effort heartbeats while a blocking operation runs."""
+
+        stop = threading.Event()
+
+        def _run() -> None:
+            while not stop.wait(interval_seconds):
+                details: Mapping[str, Any] | None = None
+                if details_factory is not None:
+                    try:
+                        details = details_factory()
+                    except BaseException as exc:  # noqa: BLE001 - best-effort thread.
+                        _log_runtime_handler_failure("heartbeat details", exc)
+                        details = None
+                self.best_effort_heartbeat_stage(stage_id, details)
+
+        thread: threading.Thread | None = None
+        if interval_seconds > 0:
+            thread = threading.Thread(
+                target=_run,
+                name=f"us-stage-heartbeat-{stage_id}",
+                daemon=True,
+            )
+            thread.start()
+        try:
+            yield
+        finally:
+            stop.set()
+            if thread is not None:
+                thread.join(timeout=max(1.0, min(float(interval_seconds), 5.0)))
 
     def record_output(
         self,
@@ -157,47 +281,54 @@ class USStageRuntimeWriter:
     def complete_stage(self, outputs: USStageOutputManifest) -> dict[str, Any]:
         """Validate, record, and write a complete typed stage output manifest."""
 
-        self._validate_stage_id(outputs.stage_id)
-        now = _now()
-        existing = self._stage_payload(outputs.stage_id)
-        stage_started_at = _optional_str(existing.get("startedAt")) or now
-        existing_events = tuple(
-            dict(event)
-            for event in existing.get("events", ())
-            if isinstance(event, dict)
-        )
-        input_stage_manifest = outputs.input_stage_manifest
-        if input_stage_manifest is None:
-            input_stage_manifest = self._previous_stage_manifest_ref(outputs.stage_id)
-        lifecycle_outputs = replace(
-            outputs,
-            input_stage_manifest=input_stage_manifest,
-            lifecycle_status="complete",
-            started_at=stage_started_at,
-            updated_at=now,
-            completed_at=now,
-            failed_at=None,
-            deferred_reason=None,
-            failure=None,
-            events=(
-                *existing_events,
-                *tuple(outputs.events),
-                _event("stage_completed", now),
-            ),
-        )
-        self._run_writer.manifest_payload = self.manifest_payload
-        self._run_writer.record_stage(lifecycle_outputs)
-        payload = lifecycle_outputs.to_dict(
-            self.artifact_root,
-            input_stage_manifest=input_stage_manifest,
-            input_overrides=self._input_overrides_for_stage(outputs.stage_id),
-        )
-        self._write_stage_payload(outputs.stage_id, payload)
-        if outputs.stage_id == "08_dataset_assembly":
-            self.manifest_payload = self._run_writer.write_manifest_files()
-        else:
-            self._refresh_aggregate()
-        return payload
+        with self._lock:
+            self._validate_stage_id(outputs.stage_id)
+            now = _now()
+            existing = self._stage_payload(outputs.stage_id)
+            stage_started_at = _optional_str(existing.get("startedAt")) or now
+            existing_events = tuple(
+                dict(event)
+                for event in existing.get("events", ())
+                if isinstance(event, dict)
+            )
+            input_stage_manifest = outputs.input_stage_manifest
+            if input_stage_manifest is None:
+                input_stage_manifest = self._previous_stage_manifest_ref(outputs.stage_id)
+            lifecycle_outputs = replace(
+                outputs,
+                input_stage_manifest=input_stage_manifest,
+                lifecycle_status="complete",
+                started_at=stage_started_at,
+                updated_at=now,
+                completed_at=now,
+                failed_at=None,
+                deferred_reason=None,
+                failure=None,
+                metadata={
+                    **dict(existing.get("metadata", {})),
+                    **dict(outputs.metadata),
+                },
+                events=(
+                    *existing_events,
+                    *tuple(outputs.events),
+                    _event("stage_completed", now),
+                ),
+            )
+            self._run_writer.manifest_payload = self.manifest_payload
+            self._run_writer.record_stage(lifecycle_outputs)
+            payload = lifecycle_outputs.to_dict(
+                self.artifact_root,
+                input_stage_manifest=input_stage_manifest,
+                input_overrides=self._input_overrides_for_stage(outputs.stage_id),
+            )
+            if self._active_stage_id == outputs.stage_id:
+                self._active_stage_id = None
+            self._write_stage_payload(outputs.stage_id, payload)
+            if outputs.stage_id == "08_dataset_assembly":
+                self.manifest_payload = self._run_writer.write_manifest_files()
+            else:
+                self._refresh_aggregate()
+            return payload
 
     def fail_stage(
         self,
@@ -208,32 +339,91 @@ class USStageRuntimeWriter:
     ) -> dict[str, Any]:
         """Mark one stage as failed and persist the failure details."""
 
-        self._validate_stage_id(stage_id)
-        now = _now()
-        payload = self._stage_payload(stage_id)
-        failure: USStageFailureRecord = {
-            "errorType": type(error).__name__,
-            "message": str(error),
-            "traceback": "".join(
-                traceback.format_exception(type(error), error, error.__traceback__)
-            ),
-        }
-        payload["complete"] = False
-        payload["lifecycleStatus"] = "failed"
-        payload["updatedAt"] = now
-        payload["failedAt"] = now
-        payload["failure"] = failure
-        payload["metadata"] = {
-            **dict(payload.get("metadata", {})),
-            **dict(metadata or {}),
-        }
-        payload["events"] = [
-            *list(payload.get("events", [])),
-            _event("stage_failed", now, {"errorType": type(error).__name__}),
-        ]
-        self._write_stage_payload(stage_id, payload)
-        self._refresh_aggregate()
-        return payload
+        with self._lock:
+            self._validate_stage_id(stage_id)
+            now = _now()
+            payload = self._stage_payload(stage_id)
+            failure: USStageFailureRecord = {
+                "errorType": type(error).__name__,
+                "message": str(error),
+                "traceback": "".join(
+                    traceback.format_exception(type(error), error, error.__traceback__)
+                ),
+            }
+            payload["complete"] = False
+            payload["lifecycleStatus"] = "failed"
+            payload["updatedAt"] = now
+            payload["failedAt"] = now
+            payload["failure"] = failure
+            payload["metadata"] = {
+                **dict(payload.get("metadata", {})),
+                **dict(metadata or {}),
+            }
+            payload["events"] = [
+                *list(payload.get("events", [])),
+                _event("stage_failed", now, {"errorType": type(error).__name__}),
+            ]
+            if self._active_stage_id == stage_id:
+                self._active_stage_id = None
+            self._write_stage_payload(stage_id, payload)
+            self._refresh_aggregate()
+            return payload
+
+    def best_effort_record_metadata(
+        self,
+        stage_id: str,
+        key: str,
+        value: Any,
+    ) -> dict[str, Any] | None:
+        """Record stage metadata without letting manifest failures escape."""
+
+        try:
+            return self.record_metadata(stage_id, key, value)
+        except BaseException as exc:  # noqa: BLE001 - preserve original caller errors.
+            _log_runtime_handler_failure("record runtime metadata", exc)
+            return None
+
+    def best_effort_heartbeat_stage(
+        self,
+        stage_id: str,
+        details: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        """Record a stage heartbeat without letting manifest failures escape."""
+
+        try:
+            return self.heartbeat_stage(stage_id, details)
+        except BaseException as exc:  # noqa: BLE001 - preserve original caller errors.
+            _log_runtime_handler_failure("record runtime heartbeat", exc)
+            return None
+
+    def best_effort_record_event(
+        self,
+        stage_id: str,
+        event: str,
+        details: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        """Append a runtime event without letting manifest failures escape."""
+
+        try:
+            return self.record_event(stage_id, event, details)
+        except BaseException as exc:  # noqa: BLE001 - preserve original caller errors.
+            _log_runtime_handler_failure("record runtime event", exc)
+            return None
+
+    def best_effort_fail_stage(
+        self,
+        stage_id: str,
+        error: BaseException,
+        *,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        """Mark a stage failed without masking the error that caused it."""
+
+        try:
+            return self.fail_stage(stage_id, error, metadata=metadata)
+        except BaseException as exc:  # noqa: BLE001 - preserve original caller errors.
+            _log_runtime_handler_failure("record runtime failure", exc)
+            return None
 
     def defer_stage(
         self,
@@ -244,24 +434,27 @@ class USStageRuntimeWriter:
     ) -> dict[str, Any]:
         """Mark one stage as intentionally deferred."""
 
-        self._validate_stage_id(stage_id)
-        now = _now()
-        payload = self._stage_payload(stage_id)
-        payload["complete"] = False
-        payload["lifecycleStatus"] = "deferred"
-        payload["updatedAt"] = now
-        payload["deferredReason"] = reason
-        payload["metadata"] = {
-            **dict(payload.get("metadata", {})),
-            **dict(metadata or {}),
-        }
-        payload["events"] = [
-            *list(payload.get("events", [])),
-            _event("stage_deferred", now, {"reason": reason}),
-        ]
-        self._write_stage_payload(stage_id, payload)
-        self._refresh_aggregate()
-        return payload
+        with self._lock:
+            self._validate_stage_id(stage_id)
+            now = _now()
+            payload = self._stage_payload(stage_id)
+            payload["complete"] = False
+            payload["lifecycleStatus"] = "deferred"
+            payload["updatedAt"] = now
+            payload["deferredReason"] = reason
+            payload["metadata"] = {
+                **dict(payload.get("metadata", {})),
+                **dict(metadata or {}),
+            }
+            payload["events"] = [
+                *list(payload.get("events", [])),
+                _event("stage_deferred", now, {"reason": reason}),
+            ]
+            if self._active_stage_id == stage_id:
+                self._active_stage_id = None
+            self._write_stage_payload(stage_id, payload)
+            self._refresh_aggregate()
+            return payload
 
     def finalize_from_artifact_manifest(
         self,
@@ -269,68 +462,95 @@ class USStageRuntimeWriter:
     ) -> dict[str, Any]:
         """Finalize typed manifests from a completed saved artifact manifest."""
 
-        self.manifest_payload = dict(manifest_payload)
-        self._run_writer = USStageRunWriter(
-            self.artifact_root,
-            manifest_payload=self.manifest_payload,
-            allow_stage_input_overrides=self.allow_stage_input_overrides,
-            stage_input_overrides=self.stage_input_overrides,
-        )
-        for outputs in build_us_stage_output_manifests_from_artifact_manifest(
-            self.artifact_root,
-            self.manifest_payload,
-        ):
-            existing = self._stage_payload(outputs.stage_id)
-            now = _now()
-            existing_events = tuple(
-                dict(event)
-                for event in existing.get("events", ())
-                if isinstance(event, dict)
+        with self._lock:
+            previous_recorded = {
+                outputs.stage_id: outputs for outputs in self._run_writer.recorded_stages
+            }
+            self.manifest_payload = dict(manifest_payload)
+            self._run_writer = USStageRunWriter(
+                self.artifact_root,
+                manifest_payload=self.manifest_payload,
+                allow_stage_input_overrides=self.allow_stage_input_overrides,
+                stage_input_overrides=self.stage_input_overrides,
             )
-            existing_lifecycle = _terminal_lifecycle(existing)
-            if existing_lifecycle is not None:
-                lifecycle_status = existing_lifecycle
-                complete = bool(existing.get("complete"))
-                started_at = _optional_str(existing.get("startedAt"))
-                updated_at = _optional_str(existing.get("updatedAt"))
-                completed_at = _optional_str(existing.get("completedAt"))
-                failed_at = _optional_str(existing.get("failedAt"))
-                deferred_reason = _optional_str(existing.get("deferredReason"))
-                failure = existing.get("failure")
-                events = existing_events
-            else:
-                lifecycle_status = _final_lifecycle_status(outputs)
-                complete = outputs.complete
-                started_at = _optional_str(existing.get("startedAt")) or now
-                updated_at = now
-                completed_at = now if lifecycle_status == "complete" else None
-                failed_at = None
-                deferred_reason = (
-                    outputs.deferred_reason if lifecycle_status == "deferred" else None
+            for outputs in build_us_stage_output_manifests_from_artifact_manifest(
+                self.artifact_root,
+                self.manifest_payload,
+            ):
+                existing = self._stage_payload(outputs.stage_id)
+                previous_outputs = previous_recorded.get(outputs.stage_id)
+                output_base = previous_outputs or outputs
+                now = _now()
+                existing_events = tuple(
+                    dict(event)
+                    for event in existing.get("events", ())
+                    if isinstance(event, dict)
                 )
-                failure = None
-                events = (
-                    *existing_events,
-                    *tuple(outputs.events),
-                    _event(f"stage_{lifecycle_status}", now),
+                existing_lifecycle = _terminal_lifecycle(existing)
+                if previous_outputs is not None:
+                    lifecycle_status = previous_outputs.resolved_lifecycle_status()
+                    complete = previous_outputs.complete
+                    started_at = previous_outputs.started_at
+                    updated_at = previous_outputs.updated_at
+                    completed_at = previous_outputs.completed_at
+                    failed_at = previous_outputs.failed_at
+                    deferred_reason = previous_outputs.deferred_reason
+                    failure = previous_outputs.failure
+                    metadata = dict(previous_outputs.metadata)
+                    events = tuple(previous_outputs.events)
+                elif existing_lifecycle is not None:
+                    lifecycle_status = existing_lifecycle
+                    complete = bool(existing.get("complete"))
+                    started_at = _optional_str(existing.get("startedAt"))
+                    updated_at = _optional_str(existing.get("updatedAt"))
+                    completed_at = _optional_str(existing.get("completedAt"))
+                    failed_at = _optional_str(existing.get("failedAt"))
+                    deferred_reason = _optional_str(existing.get("deferredReason"))
+                    failure = existing.get("failure")
+                    metadata = dict(existing.get("metadata", {}))
+                    events = existing_events
+                else:
+                    lifecycle_status = _final_lifecycle_status(outputs)
+                    complete = outputs.complete
+                    started_at = _optional_str(existing.get("startedAt")) or now
+                    updated_at = now
+                    completed_at = now if lifecycle_status == "complete" else None
+                    failed_at = None
+                    deferred_reason = (
+                        outputs.deferred_reason if lifecycle_status == "deferred" else None
+                    )
+                    failure = None
+                    metadata = {
+                        **dict(existing.get("metadata", {})),
+                        **dict(outputs.metadata),
+                    }
+                    events = (
+                        *existing_events,
+                        *tuple(outputs.events),
+                        _event(f"stage_{lifecycle_status}", now),
+                    )
+                lifecycle_outputs = replace(
+                    output_base,
+                    complete=complete,
+                    input_stage_manifest=(
+                        output_base.input_stage_manifest
+                        or outputs.input_stage_manifest
+                        or self._previous_stage_manifest_ref(outputs.stage_id)
+                    ),
+                    lifecycle_status=lifecycle_status,
+                    started_at=started_at,
+                    updated_at=updated_at,
+                    completed_at=completed_at,
+                    failed_at=failed_at,
+                    deferred_reason=deferred_reason,
+                    failure=failure,
+                    metadata=metadata,
+                    events=events,
                 )
-            lifecycle_outputs = replace(
-                outputs,
-                complete=complete,
-                input_stage_manifest=outputs.input_stage_manifest
-                or self._previous_stage_manifest_ref(outputs.stage_id),
-                lifecycle_status=lifecycle_status,
-                started_at=started_at,
-                updated_at=updated_at,
-                completed_at=completed_at,
-                failed_at=failed_at,
-                deferred_reason=deferred_reason,
-                failure=failure,
-                events=events,
-            )
-            self._run_writer.record_stage(lifecycle_outputs)
-        self.manifest_payload = self._run_writer.write_manifest_files()
-        return self.manifest_payload
+                self._run_writer.record_stage(lifecycle_outputs)
+            self.manifest_payload = self._run_writer.write_manifest_files()
+            self._active_stage_id = None
+            return self.manifest_payload
 
     def _stage_payload(self, stage_id: str) -> dict[str, Any]:
         path = self._stage_output_manifest_path(stage_id)
@@ -639,7 +859,76 @@ def _write_json_atomically(path: Path, payload: Any) -> None:
     temporary.replace(path)
 
 
+@contextmanager
+def runtime_stage_interrupt_handler(
+    writer: USStageRuntimeWriter,
+) -> Iterator[None]:
+    """Record active-stage failure before propagating interrupt signals."""
+
+    signals = tuple(
+        signum
+        for signum in (
+            getattr(signal, "SIGINT", None),
+            getattr(signal, "SIGTERM", None),
+        )
+        if signum is not None
+    )
+    previous_handlers = {signum: signal.getsignal(signum) for signum in signals}
+
+    def _handler(signum: int, frame: FrameType | None) -> None:
+        interrupted = USStageInterruptedError(signum)
+        stage_id = writer.active_stage_id
+        if stage_id is not None:
+            writer.best_effort_fail_stage(
+                stage_id,
+                interrupted,
+                metadata={
+                    "interrupted": True,
+                    "signalNumber": interrupted.signal_number,
+                    "signalName": interrupted.signal_name,
+                },
+            )
+        raise interrupted
+
+    installed_handlers: dict[int, Any] = {}
+    try:
+        for signum in signals:
+            try:
+                signal.signal(signum, _handler)
+            except ValueError as exc:
+                _log_runtime_handler_failure("install signal handler", exc)
+                break
+            installed_handlers[signum] = previous_handlers[signum]
+        yield
+    finally:
+        for signum, previous in installed_handlers.items():
+            try:
+                signal.signal(signum, previous)
+            except ValueError as exc:
+                _log_runtime_handler_failure("restore signal handler", exc)
+
+
+def _signal_name(signal_number: int) -> str:
+    try:
+        return signal.Signals(signal_number).name
+    except ValueError:
+        return f"SIG{signal_number}"
+
+
+def _log_runtime_handler_failure(action: str, error: BaseException) -> None:
+    try:
+        _LOGGER.warning(
+            "Failed to %s while handling a runtime stage error",
+            action,
+            exc_info=(type(error), error, error.__traceback__),
+        )
+    except BaseException:
+        pass
+
+
 __all__ = [
     "RuntimeUpdateSection",
+    "USStageInterruptedError",
     "USStageRuntimeWriter",
+    "runtime_stage_interrupt_handler",
 ]

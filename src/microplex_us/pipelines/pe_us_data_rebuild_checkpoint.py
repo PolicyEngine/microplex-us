@@ -33,6 +33,7 @@ from microplex_us.pipelines.stage_contracts import (
     resolve_us_stage_artifact_contract_path,
 )
 from microplex_us.pipelines.stage_metrics import stage_metrics
+from microplex_us.pipelines.stage_runtime import USStageInterruptedError
 
 if TYPE_CHECKING:
     from microplex.core import (
@@ -2558,51 +2559,54 @@ def main(argv: list[str] | None = None) -> None:
             args.capital_gains_lots_random_seed
         )
 
-    result = run_policyengine_us_data_rebuild_checkpoint(
-        output_root=args.output_root,
-        policyengine_baseline_dataset=args.baseline_dataset,
-        policyengine_targets_db=args.targets_db,
-        target_period=args.target_period,
-        target_profile=args.target_profile,
-        calibration_target_profile=args.calibration_target_profile,
-        target_variables=tuple(args.target_variable),
-        target_domains=tuple(args.target_domain),
-        target_geo_levels=tuple(args.target_geo_level),
-        calibration_target_variables=tuple(args.calibration_target_variable),
-        calibration_target_domains=tuple(args.calibration_target_domain),
-        calibration_target_geo_levels=tuple(args.calibration_target_geo_level),
-        config_overrides=config_overrides,
-        cps_source_year=args.cps_source_year,
-        cps_cache_dir=args.cps_cache_dir,
-        cps_download=not args.no_cps_download,
-        puf_target_year=args.puf_target_year,
-        puf_cps_reference_year=args.puf_cps_reference_year,
-        puf_cache_dir=args.puf_cache_dir,
-        puf_path=args.puf_path,
-        puf_demographics_path=args.puf_demographics_path,
-        puf_expand_persons=not args.no_puf_expand_persons,
-        include_donor_surveys=args.include_donor_surveys,
-        include_sipp=args.include_sipp,
-        include_scf=args.include_scf,
-        acs_year=args.acs_year,
-        sipp_year=args.sipp_year,
-        scf_year=args.scf_year,
-        donor_cache_dir=args.donor_cache_dir,
-        policyengine_us_data_repo=args.policyengine_us_data_repo,
-        policyengine_us_data_python=args.policyengine_us_data_python,
-        cps_sample_n=args.cps_sample_n,
-        puf_sample_n=args.puf_sample_n,
-        donor_sample_n=args.donor_sample_n,
-        query_random_seed=args.query_random_seed,
-        version_id=args.version_id,
-        defer_policyengine_harness=args.defer_policyengine_harness,
-        require_policyengine_native_score=args.require_policyengine_native_score,
-        defer_policyengine_native_score=args.defer_policyengine_native_score,
-        defer_native_audit=args.defer_native_audit,
-        defer_imputation_ablation=args.defer_imputation_ablation,
-        allow_stage_input_overrides=args.allow_stage_input_overrides,
-        stage_input_overrides=stage_input_overrides,
-    )
+    try:
+        result = run_policyengine_us_data_rebuild_checkpoint(
+            output_root=args.output_root,
+            policyengine_baseline_dataset=args.baseline_dataset,
+            policyengine_targets_db=args.targets_db,
+            target_period=args.target_period,
+            target_profile=args.target_profile,
+            calibration_target_profile=args.calibration_target_profile,
+            target_variables=tuple(args.target_variable),
+            target_domains=tuple(args.target_domain),
+            target_geo_levels=tuple(args.target_geo_level),
+            calibration_target_variables=tuple(args.calibration_target_variable),
+            calibration_target_domains=tuple(args.calibration_target_domain),
+            calibration_target_geo_levels=tuple(args.calibration_target_geo_level),
+            config_overrides=config_overrides,
+            cps_source_year=args.cps_source_year,
+            cps_cache_dir=args.cps_cache_dir,
+            cps_download=not args.no_cps_download,
+            puf_target_year=args.puf_target_year,
+            puf_cps_reference_year=args.puf_cps_reference_year,
+            puf_cache_dir=args.puf_cache_dir,
+            puf_path=args.puf_path,
+            puf_demographics_path=args.puf_demographics_path,
+            puf_expand_persons=not args.no_puf_expand_persons,
+            include_donor_surveys=args.include_donor_surveys,
+            include_sipp=args.include_sipp,
+            include_scf=args.include_scf,
+            acs_year=args.acs_year,
+            sipp_year=args.sipp_year,
+            scf_year=args.scf_year,
+            donor_cache_dir=args.donor_cache_dir,
+            policyengine_us_data_repo=args.policyengine_us_data_repo,
+            policyengine_us_data_python=args.policyengine_us_data_python,
+            cps_sample_n=args.cps_sample_n,
+            puf_sample_n=args.puf_sample_n,
+            donor_sample_n=args.donor_sample_n,
+            query_random_seed=args.query_random_seed,
+            version_id=args.version_id,
+            defer_policyengine_harness=args.defer_policyengine_harness,
+            require_policyengine_native_score=args.require_policyengine_native_score,
+            defer_policyengine_native_score=args.defer_policyengine_native_score,
+            defer_native_audit=args.defer_native_audit,
+            defer_imputation_ablation=args.defer_imputation_ablation,
+            allow_stage_input_overrides=args.allow_stage_input_overrides,
+            stage_input_overrides=stage_input_overrides,
+        )
+    except USStageInterruptedError as exc:
+        raise SystemExit(128 + exc.signal_number) from None
 
     print(result.artifacts.artifact_paths.output_dir)
     print(result.parity_path)

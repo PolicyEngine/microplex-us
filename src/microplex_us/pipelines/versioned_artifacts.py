@@ -26,7 +26,10 @@ from microplex_us.pipelines.stage_run import (
     USRunProfileOutputs,
     USStageInputOverride,
 )
-from microplex_us.pipelines.stage_runtime import USStageRuntimeWriter
+from microplex_us.pipelines.stage_runtime import (
+    USStageRuntimeWriter,
+    runtime_stage_interrupt_handler,
+)
 from microplex_us.pipelines.us import (
     USMicroplexBuildConfig,
     USMicroplexBuildResult,
@@ -337,33 +340,34 @@ def build_and_save_versioned_us_microplex_from_source_providers(
         resolved_config,
         stage_runtime_writer=stage_runtime_writer,
     )
-    build_result = pipeline.build_from_source_providers(providers, queries=queries)
-    return _finalize_via_facade(
-        build_result,
-        output_root=output_root,
-        version_id=version_id,
-        preallocated_output_dir=preallocated_output_dir,
-        frontier_metric=frontier_metric,
-        policyengine_comparison_cache=policyengine_comparison_cache,
-        policyengine_target_provider=policyengine_target_provider,
-        policyengine_baseline_dataset=policyengine_baseline_dataset,
-        policyengine_harness_slices=policyengine_harness_slices,
-        policyengine_harness_metadata=policyengine_harness_metadata,
-        policyengine_us_data_repo=policyengine_us_data_repo,
-        defer_policyengine_harness=defer_policyengine_harness,
-        require_policyengine_native_score=require_policyengine_native_score,
-        defer_policyengine_native_score=defer_policyengine_native_score,
-        precomputed_policyengine_harness_payload=precomputed_policyengine_harness_payload,
-        precomputed_policyengine_native_scores=precomputed_policyengine_native_scores,
-        run_registry_path=run_registry_path,
-        run_index_path=run_index_path,
-        run_registry_metadata=run_registry_metadata,
-        enable_child_tax_unit_agi_drift=enable_child_tax_unit_agi_drift,
-        child_tax_unit_agi_drift_variables=child_tax_unit_agi_drift_variables,
-        allow_stage_input_overrides=allow_stage_input_overrides,
-        stage_input_overrides=stage_input_overrides,
-        stage_runtime_writer=stage_runtime_writer,
-    )
+    with runtime_stage_interrupt_handler(stage_runtime_writer):
+        build_result = pipeline.build_from_source_providers(providers, queries=queries)
+        return _finalize_via_facade(
+            build_result,
+            output_root=output_root,
+            version_id=version_id,
+            preallocated_output_dir=preallocated_output_dir,
+            frontier_metric=frontier_metric,
+            policyengine_comparison_cache=policyengine_comparison_cache,
+            policyengine_target_provider=policyengine_target_provider,
+            policyengine_baseline_dataset=policyengine_baseline_dataset,
+            policyengine_harness_slices=policyengine_harness_slices,
+            policyengine_harness_metadata=policyengine_harness_metadata,
+            policyengine_us_data_repo=policyengine_us_data_repo,
+            defer_policyengine_harness=defer_policyengine_harness,
+            require_policyengine_native_score=require_policyengine_native_score,
+            defer_policyengine_native_score=defer_policyengine_native_score,
+            precomputed_policyengine_harness_payload=precomputed_policyengine_harness_payload,
+            precomputed_policyengine_native_scores=precomputed_policyengine_native_scores,
+            run_registry_path=run_registry_path,
+            run_index_path=run_index_path,
+            run_registry_metadata=run_registry_metadata,
+            enable_child_tax_unit_agi_drift=enable_child_tax_unit_agi_drift,
+            child_tax_unit_agi_drift_variables=child_tax_unit_agi_drift_variables,
+            allow_stage_input_overrides=allow_stage_input_overrides,
+            stage_input_overrides=stage_input_overrides,
+            stage_runtime_writer=stage_runtime_writer,
+        )
 
 
 def build_and_save_versioned_us_microplex_from_data_dir(
@@ -503,7 +507,6 @@ def _finalize_versioned_build_artifacts(
             child_tax_unit_agi_drift_variables=child_tax_unit_agi_drift_variables,
             allow_stage_input_overrides=allow_stage_input_overrides,
             stage_input_overrides=stage_input_overrides,
-            stage_runtime_writer=stage_runtime_writer,
         )
     current_entry = None
     frontier_entry = None

@@ -26,6 +26,12 @@ from microplex.targets import TargetAggregation, TargetQuery, TargetSpec
 
 import microplex_us.pipelines.us as us_pipeline_module
 from microplex_us.geography import BlockGeography
+from microplex_us.pipelines.stage_run import (
+    USArtifactRef,
+    USDiagnosticOutput,
+    USRunProfileOutputs,
+)
+from microplex_us.pipelines.stage_runtime import USStageRuntimeWriter
 from microplex_us.pipelines.us import (
     USMicroplexBuildConfig,
     USMicroplexBuildResult,
@@ -228,6 +234,84 @@ def _create_policyengine_calibration_db_with_unsupported_target(path) -> None:
     )
     conn.commit()
     conn.close()
+
+
+def _runtime_writer_with_completed_profile(tmp_path) -> USStageRuntimeWriter:
+    writer = USStageRuntimeWriter(tmp_path)
+    writer.start_stage("01_run_profile")
+    writer.complete_stage(
+        USRunProfileOutputs(
+            manifest=USArtifactRef(
+                key="manifest",
+                path="manifest.json",
+                format="json",
+                required=True,
+                assume_exists=True,
+            ),
+            resolved_config={"calibration_backend": "none"},
+            provider_query_plan={"source_names": ["source"]},
+            diagnostics={
+                "stage_summary": USDiagnosticOutput(
+                    key="stage_summary",
+                    summary={"source_names": ["source"]},
+                )
+            },
+        )
+    )
+    return writer
+
+
+def _source_loading_test_frame(
+    source_name: str,
+    *,
+    household_ids: tuple[int, ...] = (1, 2),
+) -> ObservationFrame:
+    households = pd.DataFrame(
+        {
+            "household_id": list(household_ids),
+            "hh_weight": [100.0] * len(household_ids),
+        }
+    )
+    persons = pd.DataFrame(
+        {
+            "person_id": [household_id * 10 for household_id in household_ids],
+            "household_id": list(household_ids),
+            "age": [40] * len(household_ids),
+        }
+    )
+    return ObservationFrame(
+        source=SourceDescriptor(
+            name=source_name,
+            shareability=Shareability.PUBLIC,
+            time_structure=TimeStructure.REPEATED_CROSS_SECTION,
+            observations=(
+                EntityObservation(
+                    entity=EntityType.HOUSEHOLD,
+                    key_column="household_id",
+                    weight_column="hh_weight",
+                    variable_names=("hh_weight",),
+                ),
+                EntityObservation(
+                    entity=EntityType.PERSON,
+                    key_column="person_id",
+                    variable_names=("household_id", "age"),
+                ),
+            ),
+        ),
+        tables={
+            EntityType.HOUSEHOLD: households,
+            EntityType.PERSON: persons,
+        },
+        relationships=(
+            EntityRelationship(
+                parent_entity=EntityType.HOUSEHOLD,
+                child_entity=EntityType.PERSON,
+                parent_key="household_id",
+                child_key="household_id",
+                cardinality=RelationshipCardinality.ONE_TO_MANY,
+            ),
+        ),
+    )
 
 
 def test_select_ssi_takeup_by_age_amount_matches_reported_age_group_amounts():
@@ -7573,6 +7657,151 @@ class TestUSMicroplexPipeline:
         assert result.fusion_plan.source_names == ("test_cps",)
         assert result.seed_data["hh_weight"].sum() == pytest.approx(900.0)
         assert {"person_id", "household_id"}.issubset(result.seed_data.columns)
+
+    def test_build_from_source_providers_records_source_loading_progress(
+        self,
+        tmp_path,
+        monkeypatch,
+    ):
+        class FakeProvider:
+            year = 2024
+
+            def __init__(self, frame: ObservationFrame) -> None:
+                self._frame = frame
+                self.last_query = None
+
+            @property
+            def descriptor(self):
+                return self._frame.source
+
+            def load_frame(self, query=None):
+                self.last_query = query
+                return self._frame
+
+        writer = _runtime_writer_with_completed_profile(tmp_path)
+        pipeline = USMicroplexPipeline(
+            USMicroplexBuildConfig(n_synthetic=1),
+            stage_runtime_writer=writer,
+        )
+        monkeypatch.setattr(
+            pipeline,
+            "build_from_frames",
+            lambda frames: SimpleNamespace(source_frames=tuple(frames)),
+        )
+        first = FakeProvider(_source_loading_test_frame("first_source"))
+        second = FakeProvider(
+            _source_loading_test_frame("second_source", household_ids=(3,))
+        )
+        query = SourceQuery(provider_filters={"sample_n": 2})
+
+        pipeline.build_from_source_providers(
+            [first, second],
+            queries={"first_source": query},
+        )
+
+        stage2 = json.loads(
+            (
+                tmp_path
+                / "stage_artifacts"
+                / "manifests"
+                / "02_source_loading.json"
+            ).read_text()
+        )
+        progress = stage2["metadata"]["sourceLoadingProgress"]
+        events = [event["event"] for event in stage2["events"]]
+
+        assert first.last_query is query
+        assert second.last_query is None
+        assert progress["providerCount"] == 2
+        assert progress["completedProviderCount"] == 2
+        assert progress["failedProviderCount"] == 0
+        assert progress["currentProviderName"] is None
+        assert progress["providers"][0]["queryKey"] == "first_source"
+        assert progress["providers"][0]["query"]["provider_filters"] == {
+            "sample_n": 2
+        }
+        assert progress["providers"][0]["status"] == "complete"
+        assert progress["providers"][0]["tableRows"] == {
+            "household": 2,
+            "person": 2,
+        }
+        assert progress["providers"][1]["sourceName"] == "second_source"
+        assert events.count("source_provider_started") == 2
+        assert events.count("source_provider_completed") == 2
+
+    def test_source_loading_provenance_errors_do_not_block_provider_load(
+        self,
+        tmp_path,
+        monkeypatch,
+    ):
+        class BadProvenanceProvider:
+            def __init__(self, frame: ObservationFrame) -> None:
+                self._frame = frame
+
+            @property
+            def descriptor(self):
+                return self._frame.source
+
+            @property
+            def year(self):
+                raise RuntimeError("provenance failed")
+
+            def load_frame(self, query=None):
+                return self._frame
+
+        writer = _runtime_writer_with_completed_profile(tmp_path)
+        pipeline = USMicroplexPipeline(
+            USMicroplexBuildConfig(n_synthetic=1),
+            stage_runtime_writer=writer,
+        )
+        monkeypatch.setattr(
+            pipeline,
+            "build_from_frames",
+            lambda frames: SimpleNamespace(source_frames=tuple(frames)),
+        )
+        frame = _source_loading_test_frame("bad_provenance")
+
+        pipeline.build_from_source_providers([BadProvenanceProvider(frame)])
+
+        stage2 = json.loads(
+            (
+                tmp_path
+                / "stage_artifacts"
+                / "manifests"
+                / "02_source_loading.json"
+            ).read_text()
+        )
+        provider_progress = stage2["metadata"]["sourceLoadingProgress"]["providers"][0]
+        assert provider_progress["status"] == "complete"
+        assert provider_progress["sourceName"] == "bad_provenance"
+        assert "year" not in provider_progress["provenance"]
+
+    def test_source_loading_failure_recording_preserves_provider_error(
+        self,
+        tmp_path,
+        monkeypatch,
+    ):
+        class FailingProvider:
+            descriptor = _source_loading_test_frame("failing_source").source
+
+            def load_frame(self, query=None):
+                raise RuntimeError("provider load failed")
+
+        writer = _runtime_writer_with_completed_profile(tmp_path)
+
+        def broken_handler(*args, **kwargs):
+            raise RuntimeError("handler broke")
+
+        monkeypatch.setattr(writer, "record_metadata", broken_handler)
+        monkeypatch.setattr(writer, "record_event", broken_handler)
+        monkeypatch.setattr(writer, "fail_stage", broken_handler)
+        pipeline = USMicroplexPipeline(
+            USMicroplexBuildConfig(n_synthetic=1),
+            stage_runtime_writer=writer,
+        )
+
+        with pytest.raises(RuntimeError, match="provider load failed"):
+            pipeline.build_from_source_providers([FailingProvider()])
 
     def test_build_from_source_provider_requires_household_person_relationship(
         self, persons, households

@@ -8,7 +8,9 @@ import time
 import warnings
 from collections import Counter
 from collections.abc import Iterable, Mapping
+from contextlib import nullcontext
 from dataclasses import asdict, dataclass, field
+from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -81,6 +83,9 @@ from microplex_us.pipelines.stage_contracts import (
     resolve_us_stage_artifact_contract_path,
 )
 from microplex_us.pipelines.stage_manifest_io import write_json_atomically
+from microplex_us.pipelines.stage_manifest_types import (
+    USSourceLoadingProgressRecord,
+)
 from microplex_us.pipelines.stage_policyengine_artifacts import (
     write_us_policyengine_entity_stage_artifact,
 )
@@ -2459,6 +2464,239 @@ def _source_loading_stage_outputs(
     )
 
 
+_SOURCE_LOADING_STAGE_ID = "02_source_loading"
+_SOURCE_LOADING_PROGRESS_KEY = "sourceLoadingProgress"
+
+
+def _initial_source_loading_progress(
+    provider_entries: list[tuple[SourceProvider, str | None, SourceQuery | None]],
+) -> USSourceLoadingProgressRecord:
+    provider_count = len(provider_entries)
+    return {
+        "schemaVersion": 1,
+        "stageId": _SOURCE_LOADING_STAGE_ID,
+        "providerCount": provider_count,
+        "completedProviderCount": 0,
+        "failedProviderCount": 0,
+        "currentProviderName": None,
+        "providers": [
+            {
+                "providerName": _source_provider_name(provider),
+                "providerClass": _source_provider_class(provider),
+                "providerIndex": index,
+                "providerCount": provider_count,
+                "queryKey": query_key,
+                "query": _runtime_source_query_payload(query),
+                "provenance": _source_provider_provenance(provider),
+                "status": "pending",
+                "startedAt": None,
+                "updatedAt": None,
+                "completedAt": None,
+                "failedAt": None,
+                "elapsedSeconds": None,
+                "sourceName": None,
+                "tableRows": {},
+                "relationshipCount": None,
+                "failure": None,
+            }
+            for index, (provider, query_key, query) in enumerate(provider_entries)
+        ],
+    }
+
+
+def _mark_source_provider_started(
+    progress: USSourceLoadingProgressRecord,
+    provider_index: int,
+) -> dict[str, Any]:
+    now = _runtime_timestamp()
+    record = progress["providers"][provider_index]
+    record["status"] = "running"
+    record["startedAt"] = now
+    record["updatedAt"] = now
+    record["completedAt"] = None
+    record["failedAt"] = None
+    record["elapsedSeconds"] = None
+    record["failure"] = None
+    progress["currentProviderName"] = record["providerName"]
+    _refresh_source_loading_progress_counts(progress)
+    return record
+
+
+def _mark_source_provider_completed(
+    progress: USSourceLoadingProgressRecord,
+    provider_index: int,
+    frame: ObservationFrame,
+) -> dict[str, Any]:
+    now = _runtime_timestamp()
+    record = progress["providers"][provider_index]
+    record["status"] = "complete"
+    record["updatedAt"] = now
+    record["completedAt"] = now
+    record["failedAt"] = None
+    record["elapsedSeconds"] = _elapsed_seconds(record.get("startedAt"), now)
+    record["sourceName"] = frame.source.name
+    record["tableRows"] = _source_frame_table_rows(frame)
+    record["relationshipCount"] = len(frame.relationships)
+    record["failure"] = None
+    progress["currentProviderName"] = None
+    _refresh_source_loading_progress_counts(progress)
+    return record
+
+
+def _mark_source_provider_failed(
+    progress: USSourceLoadingProgressRecord,
+    provider_index: int,
+    error: BaseException,
+) -> dict[str, Any]:
+    now = _runtime_timestamp()
+    record = progress["providers"][provider_index]
+    record["status"] = "failed"
+    record["updatedAt"] = now
+    record["failedAt"] = now
+    record["completedAt"] = None
+    record["elapsedSeconds"] = _elapsed_seconds(record.get("startedAt"), now)
+    record["failure"] = {
+        "errorType": type(error).__name__,
+        "message": str(error),
+        "traceback": None,
+    }
+    progress["currentProviderName"] = record["providerName"]
+    _refresh_source_loading_progress_counts(progress)
+    return record
+
+
+def _record_source_loading_progress(
+    writer: USStageRuntimeWriter | None,
+    progress: USSourceLoadingProgressRecord,
+    *,
+    event: str | None = None,
+    provider_record: Mapping[str, Any] | None = None,
+) -> None:
+    if writer is None:
+        return
+    writer.best_effort_record_metadata(
+        _SOURCE_LOADING_STAGE_ID,
+        _SOURCE_LOADING_PROGRESS_KEY,
+        progress,
+    )
+    if event is not None:
+        writer.best_effort_record_event(
+            _SOURCE_LOADING_STAGE_ID,
+            event,
+            _source_provider_event_details(provider_record),
+        )
+
+
+def _source_loading_heartbeat_details(
+    progress: USSourceLoadingProgressRecord,
+) -> dict[str, Any]:
+    return {
+        "currentProviderName": progress.get("currentProviderName"),
+        "completedProviderCount": progress.get("completedProviderCount", 0),
+        "failedProviderCount": progress.get("failedProviderCount", 0),
+        "providerCount": progress.get("providerCount", 0),
+    }
+
+
+def _source_provider_event_details(
+    provider_record: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    if provider_record is None:
+        return {}
+    return {
+        "providerName": provider_record.get("providerName"),
+        "providerIndex": provider_record.get("providerIndex"),
+        "providerCount": provider_record.get("providerCount"),
+        "status": provider_record.get("status"),
+        "sourceName": provider_record.get("sourceName"),
+        "elapsedSeconds": provider_record.get("elapsedSeconds"),
+    }
+
+
+def _refresh_source_loading_progress_counts(
+    progress: USSourceLoadingProgressRecord,
+) -> None:
+    providers = progress["providers"]
+    progress["completedProviderCount"] = sum(
+        1 for record in providers if record.get("status") == "complete"
+    )
+    progress["failedProviderCount"] = sum(
+        1 for record in providers if record.get("status") == "failed"
+    )
+
+
+def _source_provider_name(provider: SourceProvider) -> str:
+    return str(provider.descriptor.name)
+
+
+def _source_provider_class(provider: SourceProvider) -> str:
+    cls = provider.__class__
+    return f"{cls.__module__}.{cls.__qualname__}"
+
+
+def _source_provider_provenance(provider: SourceProvider) -> dict[str, Any]:
+    provenance: dict[str, Any] = {}
+    for attr_name in (
+        "cache_dir",
+        "data_dir",
+        "download",
+        "path",
+        "year",
+        "target_year",
+    ):
+        try:
+            value = getattr(provider, attr_name)
+        except Exception:
+            # Provenance is diagnostic; it must not block source loading.
+            continue
+        provenance[attr_name] = _runtime_json_ready(value)
+    return provenance
+
+
+def _runtime_source_query_payload(query: SourceQuery | None) -> dict[str, Any] | None:
+    if query is None:
+        return None
+    if hasattr(query, "to_dict"):
+        return _runtime_json_ready(query.to_dict())
+    return _runtime_json_ready(query)
+
+
+def _source_frame_table_rows(frame: ObservationFrame) -> dict[str, int]:
+    return {
+        entity.value: int(len(table)) for entity, table in frame.tables.items()
+    }
+
+
+def _runtime_json_ready(value: Any) -> Any:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, Mapping):
+        return {str(key): _runtime_json_ready(item) for key, item in value.items()}
+    if isinstance(value, tuple | list | set | frozenset):
+        return [_runtime_json_ready(item) for item in value]
+    try:
+        return _runtime_json_ready(asdict(value))
+    except TypeError:
+        return str(value)
+
+
+def _runtime_timestamp() -> str:
+    return datetime.now(UTC).isoformat()
+
+
+def _elapsed_seconds(started_at: Any, ended_at: str) -> float | None:
+    if started_at is None:
+        return None
+    try:
+        started = datetime.fromisoformat(str(started_at))
+        ended = datetime.fromisoformat(ended_at)
+    except ValueError:
+        return None
+    return max(0.0, (ended - started).total_seconds())
+
+
 def _runtime_stage_artifact_path(
     writer: USStageRuntimeWriter,
     stage_id: str,
@@ -2661,16 +2899,58 @@ class USMicroplexPipeline:
         provider: SourceProvider,
         query: SourceQuery | None = None,
     ) -> USMicroplexBuildResult:
-        if self.stage_runtime_writer is not None:
-            self.stage_runtime_writer.start_stage("02_source_loading")
+        writer = self.stage_runtime_writer
+        provider_entries = [
+            (
+                provider,
+                provider.descriptor.name if query is not None else None,
+                query,
+            )
+        ]
+        progress = _initial_source_loading_progress(provider_entries)
+        if writer is not None:
+            writer.start_stage(_SOURCE_LOADING_STAGE_ID)
+            _record_source_loading_progress(writer, progress)
+        provider_record = _mark_source_provider_started(progress, 0)
+        _record_source_loading_progress(
+            writer,
+            progress,
+            event="source_provider_started",
+            provider_record=provider_record,
+        )
         try:
-            frame = provider.load_frame(query)
-        except Exception as exc:
-            if self.stage_runtime_writer is not None:
-                self.stage_runtime_writer.fail_stage("02_source_loading", exc)
+            heartbeat = (
+                writer.auto_heartbeat(
+                    _SOURCE_LOADING_STAGE_ID,
+                    details_factory=lambda: _source_loading_heartbeat_details(
+                        progress
+                    ),
+                )
+                if writer is not None
+                else nullcontext()
+            )
+            with heartbeat:
+                frame = provider.load_frame(query)
+        except BaseException as exc:
+            provider_record = _mark_source_provider_failed(progress, 0, exc)
+            _record_source_loading_progress(
+                writer,
+                progress,
+                event="source_provider_failed",
+                provider_record=provider_record,
+            )
+            if writer is not None:
+                writer.best_effort_fail_stage(_SOURCE_LOADING_STAGE_ID, exc)
             raise
-        if self.stage_runtime_writer is not None:
-            self.stage_runtime_writer.complete_stage(
+        provider_record = _mark_source_provider_completed(progress, 0, frame)
+        _record_source_loading_progress(
+            writer,
+            progress,
+            event="source_provider_completed",
+            provider_record=provider_record,
+        )
+        if writer is not None:
+            writer.complete_stage(
                 _source_loading_stage_outputs([frame])
             )
         return self.build_from_frames([frame])
@@ -2685,21 +2965,76 @@ class USMicroplexPipeline:
                 "USMicroplexPipeline requires at least one source provider"
             )
 
-        if self.stage_runtime_writer is not None:
-            self.stage_runtime_writer.start_stage("02_source_loading")
+        writer = self.stage_runtime_writer
+        provider_entries = [
+            (
+                provider,
+                *self._resolve_source_query_entry(provider, queries or {}),
+            )
+            for provider in providers
+        ]
+        progress = _initial_source_loading_progress(provider_entries)
+        if writer is not None:
+            writer.start_stage(_SOURCE_LOADING_STAGE_ID)
+            _record_source_loading_progress(writer, progress)
         frames: list[ObservationFrame] = []
         try:
-            for provider in providers:
-                frame = provider.load_frame(
-                    self._resolve_source_query(provider, queries or {})
+            for provider_index, (provider, _query_key, source_query) in enumerate(
+                provider_entries
+            ):
+                provider_record = _mark_source_provider_started(
+                    progress,
+                    provider_index,
                 )
+                _record_source_loading_progress(
+                    writer,
+                    progress,
+                    event="source_provider_started",
+                    provider_record=provider_record,
+                )
+                heartbeat = (
+                    writer.auto_heartbeat(
+                        _SOURCE_LOADING_STAGE_ID,
+                        details_factory=lambda: _source_loading_heartbeat_details(
+                            progress
+                        ),
+                    )
+                    if writer is not None
+                    else nullcontext()
+                )
+                with heartbeat:
+                    frame = provider.load_frame(source_query)
                 frames.append(frame)
-        except Exception as exc:
-            if self.stage_runtime_writer is not None:
-                self.stage_runtime_writer.fail_stage("02_source_loading", exc)
+                provider_record = _mark_source_provider_completed(
+                    progress,
+                    provider_index,
+                    frame,
+                )
+                _record_source_loading_progress(
+                    writer,
+                    progress,
+                    event="source_provider_completed",
+                    provider_record=provider_record,
+                )
+        except BaseException as exc:
+            failed_index = len(frames)
+            if failed_index < len(provider_entries):
+                provider_record = _mark_source_provider_failed(
+                    progress,
+                    failed_index,
+                    exc,
+                )
+                _record_source_loading_progress(
+                    writer,
+                    progress,
+                    event="source_provider_failed",
+                    provider_record=provider_record,
+                )
+            if writer is not None:
+                writer.best_effort_fail_stage(_SOURCE_LOADING_STAGE_ID, exc)
             raise
-        if self.stage_runtime_writer is not None:
-            self.stage_runtime_writer.complete_stage(
+        if writer is not None:
+            writer.complete_stage(
                 _source_loading_stage_outputs(frames)
             )
         return self.build_from_frames(frames)
@@ -3139,22 +3474,36 @@ class USMicroplexPipeline:
         provider: SourceProvider,
         queries: dict[str, SourceQuery],
     ) -> SourceQuery | None:
+        _query_key, query = self._resolve_source_query_entry(provider, queries)
+        return query
+
+    def _resolve_source_query_entry(
+        self,
+        provider: SourceProvider,
+        queries: dict[str, SourceQuery],
+    ) -> tuple[str | None, SourceQuery | None]:
         for key in self._source_query_keys(provider):
             query = queries.get(key)
             if query is not None:
-                return query
-        return None
+                return key, query
+        return None, None
 
     def _source_query_keys(self, provider: SourceProvider) -> tuple[str, ...]:
         base_name = provider.descriptor.name
         keys: list[str] = [base_name]
         for attr_name in ("year", "target_year"):
-            attr_value = getattr(provider, attr_name, None)
+            try:
+                attr_value = getattr(provider, attr_name, None)
+            except Exception:
+                attr_value = None
             if attr_value is None:
                 continue
             keys.append(f"{base_name}_{attr_value}")
-        descriptor_cache = getattr(provider, "_descriptor_cache", None)
-        cached_name = getattr(descriptor_cache, "name", None)
+        try:
+            descriptor_cache = getattr(provider, "_descriptor_cache", None)
+            cached_name = getattr(descriptor_cache, "name", None)
+        except Exception:
+            cached_name = None
         if cached_name is not None:
             keys.append(cached_name)
         return tuple(dict.fromkeys(keys))

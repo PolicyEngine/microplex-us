@@ -26,13 +26,36 @@ artifacts.
 
 Live runs can use `USStageRuntimeWriter` to write those same per-stage manifests
 incrementally. The writer exposes `start_stage`, `update`, `record_output`,
-`record_diagnostic`, `complete_stage`, `fail_stage`, `defer_stage`, and
+`record_diagnostic`, `record_metadata`, `record_event`, `heartbeat_stage`,
+`complete_stage`, `fail_stage`, `defer_stage`, and
 `finalize_from_artifact_manifest`. A stage can start only after the immediately
 previous stage is complete unless explicit stage-input overrides are enabled.
 The canonical multi-source versioned build path reserves the versioned artifact
-directory before loading sources, writes Stage 1 immediately, writes Stage 2 as
-source frames load, then finalizes all stage manifests against the completed
-artifact manifest during save.
+directory before loading sources, writes Stage 1 immediately, updates Stage 2
+while source frames load, then finalizes all stage manifests against the
+completed artifact manifest during save.
+
+Stage 2 source loading records live provider progress under
+`metadata.sourceLoadingProgress` in `stage_artifacts/manifests/02_source_loading.json`.
+That payload has `schemaVersion: 1`, stage/provider counts, the current provider
+name, and one record per provider with provider name/class, matched query key,
+JSON-ready query payload, cache/path/year provenance where available, status,
+timestamps, elapsed seconds, loaded source name, table row counts, relationship
+count, and failure details. Provider transitions are also recorded as
+`source_provider_started`, `source_provider_completed`, and
+`source_provider_failed` events.
+
+Long source loads use heartbeat updates so `updatedAt` and
+`metadata.lastHeartbeat` move even while the provider call is still blocking.
+Runtime error recording is best-effort: if progress, heartbeat, failure
+manifest writing, or the logger itself fails while handling a provider error or
+interrupt, that handler failure is suppressed so the original error remains the
+one propagated to the caller.
+
+Interrupted live runs keep using `lifecycleStatus: failed`. The failure record
+contains the interruption error, and metadata includes `interrupted`,
+`signalNumber`, and `signalName` when the scoped runtime signal handler catches
+`SIGINT` or `SIGTERM`.
 
 Other versioned convenience entry points still reconstruct their stage manifests
 from the completed saved artifact manifest. They expose the same saved-run

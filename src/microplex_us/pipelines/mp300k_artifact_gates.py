@@ -80,13 +80,6 @@ _CORE_BENCHMARK_ECPS_TARGET_FAMILIES = (
 _PROTECTED_FAMILY_RELATIVE_LOSS_TOLERANCE = 0.05
 _PROTECTED_FAMILY_ABSOLUTE_LOSS_TOLERANCE = 0.005
 _DEFAULT_MAX_SUPPORT_WEIGHT_SHARE = 0.25
-_KNOWN_PEUS_COMPUTED_ECPS_CONTRACT_COLUMNS = frozenset(
-    {
-        "medicare_enrolled",
-        "self_employed_health_insurance_ald",
-        "self_employed_pension_contribution_ald",
-    }
-)
 _FORBIDDEN_SOURCE_DIAGNOSTIC_VARIABLES = frozenset(
     {
         "ssi_reported",
@@ -456,68 +449,69 @@ def _column_contract_gate(
     baseline_dataset: Path | None,
     period: int,
 ) -> dict[str, Any]:
-    if baseline_dataset is None:
-        return _gate(
-            "unmeasured",
-            "pinned eCPS baseline H5 has not been attached for column-contract comparison",
-        )
-    if not candidate_dataset.exists() or not baseline_dataset.exists():
-        missing = [
-            str(path)
-            for path in (candidate_dataset, baseline_dataset)
-            if not path.exists()
-        ]
+    if not candidate_dataset.exists():
         return _gate(
             "fail",
-            "column-contract comparison files are missing",
-            details={"missing": missing},
+            "column-contract comparison file is missing",
+            details={"missing": [str(candidate_dataset)]},
         )
 
-    period_key = str(int(period))
-    candidate_columns = _h5_period_columns(candidate_dataset, period_key=period_key)
-    baseline_columns = _h5_period_columns(baseline_dataset, period_key=period_key)
-    excluded_baseline_computed_columns = sorted(
-        _computed_policyengine_us_export_columns(baseline_columns)
+    from microplex_us.pipelines.check_export_columns import (
+        DEFAULT_CONTRACT_PATH,
+        compute_column_diff,
+        load_contract,
     )
-    contract_columns = sorted(
-        set(baseline_columns) - set(excluded_baseline_computed_columns)
+
+    contract = load_contract(DEFAULT_CONTRACT_PATH)
+    required = set(contract["required"])
+    forbidden = set(contract["forbidden"])
+    optional = set(contract.get("ecps_internal_optional", []))
+    excluded = set(contract.get("formula_owned_excluded", []))
+    candidate_column_set = _h5_top_level_columns(candidate_dataset)
+    diff = compute_column_diff(
+        candidate_column_set,
+        required=required,
+        forbidden=forbidden,
+        optional=optional,
+        excluded=excluded,
     )
-    candidate_column_set = set(candidate_columns)
-    contract_column_set = set(contract_columns)
-    missing_contract_columns = sorted(contract_column_set - candidate_column_set)
-    extra_candidate_columns = sorted(set(candidate_columns) - set(contract_columns))
-    satisfied_count = len(contract_columns) - len(missing_contract_columns)
+    satisfied_count = len(required) - len(diff.missing_required)
     contract_share = (
-        float(satisfied_count / len(contract_columns)) if contract_columns else None
+        float(satisfied_count / len(required)) if required else None
     )
     metrics = {
         "period": int(period),
-        "baseline_column_count": len(baseline_columns),
-        "candidate_column_count": len(candidate_columns),
-        "excluded_baseline_computed_column_count": len(
-            excluded_baseline_computed_columns
-        ),
-        "contract_column_count": len(contract_columns),
+        "candidate_column_count": len(candidate_column_set),
+        "required_contract_column_count": len(required),
+        "forbidden_contract_column_count": len(forbidden),
+        "optional_contract_column_count": len(optional),
+        "excluded_contract_column_count": len(excluded),
+        "contract_column_count": len(required),
         "candidate_contract_column_count": satisfied_count,
-        "missing_contract_column_count": len(missing_contract_columns),
-        "extra_candidate_column_count": len(extra_candidate_columns),
+        "missing_contract_column_count": len(diff.missing_required),
+        "forbidden_present_column_count": len(diff.forbidden_present),
+        "extra_unknown_column_count": len(diff.extra_unknown),
+        # Kept for compatibility with existing reports. Unknown columns are
+        # informational, matching check_export_columns.
+        "extra_candidate_column_count": len(diff.extra_unknown),
         "column_contract_share": contract_share,
     }
     details = {
-        "missing_contract_columns": missing_contract_columns,
-        "extra_candidate_columns": extra_candidate_columns,
-        "excluded_baseline_computed_columns": excluded_baseline_computed_columns,
+        "missing_contract_columns": diff.missing_required,
+        "forbidden_present_columns": diff.forbidden_present,
+        "extra_unknown_columns": diff.extra_unknown,
+        "extra_candidate_columns": diff.extra_unknown,
     }
-    if missing_contract_columns or extra_candidate_columns:
+    if diff.missing_required or diff.forbidden_present:
         return _gate(
             "fail",
-            "candidate H5 leaf-input column set differs from the pinned eCPS contract",
+            "candidate H5 leaf-input column set violates the frozen eCPS contract",
             metrics=metrics,
             details=details,
         )
     return _gate(
         "pass",
-        "candidate H5 leaf-input column set matches the pinned eCPS contract",
+        "candidate H5 leaf-input column set satisfies the frozen eCPS contract",
         metrics=metrics,
         details=details,
     )
@@ -546,17 +540,15 @@ def _export_support_gate(
             details={"missing": missing},
         )
 
-    period_key = str(int(period))
-    baseline_columns = _h5_period_columns(baseline_dataset, period_key=period_key)
-    excluded_baseline_computed_columns = sorted(
-        _computed_policyengine_us_export_columns(baseline_columns)
-    )
-    required_columns = set(baseline_columns) - set(excluded_baseline_computed_columns)
     from microplex_us.pipelines.check_export_columns import (
+        DEFAULT_CONTRACT_PATH,
         compute_support_diff,
+        load_contract,
         support_diff_to_dict,
     )
 
+    contract = load_contract(DEFAULT_CONTRACT_PATH)
+    required_columns = set(contract["required"])
     support_diff = compute_support_diff(
         candidate_dataset,
         baseline_h5=baseline_dataset,
@@ -571,14 +563,9 @@ def _export_support_gate(
         ),
         "ecps_filler_export_column_count": len(support_diff.baseline_filler_columns),
         "unsupported_populated_export_column_count": len(support_diff.issues),
-        "excluded_baseline_computed_column_count": len(
-            excluded_baseline_computed_columns
-        ),
+        "required_contract_column_count": len(required_columns),
     }
-    details = {
-        **support_diff_to_dict(support_diff),
-        "excluded_baseline_computed_columns": excluded_baseline_computed_columns,
-    }
+    details = support_diff_to_dict(support_diff)
     if support_diff.issues:
         return _gate(
             "fail",
@@ -645,27 +632,6 @@ def _export_lineage_gate(
     )
 
 
-def _computed_policyengine_us_export_columns(columns: list[str]) -> set[str]:
-    try:
-        import policyengine_us
-
-        from microplex_us.policyengine.us import (
-            detect_policyengine_computed_export_variables,
-        )
-    except ImportError:
-        return set(columns) & _KNOWN_PEUS_COMPUTED_ECPS_CONTRACT_COLUMNS
-
-    tax_benefit_system = getattr(
-        policyengine_us.system,
-        "system",
-        policyengine_us.system,
-    )
-    return detect_policyengine_computed_export_variables(
-        tax_benefit_system,
-        tuple(columns),
-    )
-
-
 def _h5_top_level_columns(candidate_dataset: Path) -> set[str]:
     """Return base column names at the top level of an exported H5.
 
@@ -678,15 +644,6 @@ def _h5_top_level_columns(candidate_dataset: Path) -> set[str]:
     """
     with h5py.File(candidate_dataset, "r") as handle:
         return {name.split("/")[0] for name in handle.keys()}
-
-
-def _h5_period_columns(path: Path, *, period_key: str) -> list[str]:
-    with h5py.File(path, "r") as handle:
-        return sorted(
-            name
-            for name, value in handle.items()
-            if isinstance(value, h5py.Group) and period_key in value
-        )
 
 
 def _compatibility_gate(candidate_dataset: Path, *, period: int) -> dict[str, Any]:

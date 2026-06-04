@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from microplex_us.pipeline_metadata import pipeline_node
 from microplex_us.pipelines.pe_native_scores import compute_us_pe_native_scores
 from microplex_us.pipelines.stage_manifest_io import write_json_atomically
 from microplex_us.pipelines.stage_validation_evidence import (
@@ -27,6 +28,13 @@ class USStage9ReplayResult:
     policyengine_native_scores: Path | None = None
 
 
+@pipeline_node(
+    id="us.stage9.replay_validation_benchmarking",
+    label="Replay Stage 9 validation",
+    description="Rerun validation and benchmark evidence against an existing Stage 8 dataset bundle.",
+    artifacts_in=("policyengine_dataset", "artifact_manifest"),
+    artifacts_out=("validation_evidence_manifest",),
+)
 def replay_us_stage9_validation_benchmarking(
     artifact_dir: str | Path,
     *,

@@ -26,6 +26,7 @@ from microplex.targets import (
 )
 
 from microplex_us.microdata_roles import POLICYENGINE_US_TAKEUP_INPUT_VARIABLES
+from microplex_us.pipeline_metadata import pipeline_node
 from microplex_us.policyengine.target_profiles import PolicyEngineUSTargetCell
 
 GEOGRAPHIC_CONSTRAINT_VARIABLES: set[str] = {
@@ -172,6 +173,13 @@ _ALLOWED_CHECKPOINT_STAGES: frozenset[str] = frozenset(
 )
 
 
+@pipeline_node(
+    id="us.policyengine.save_us_pipeline_checkpoint",
+    label="Save PE entity checkpoint",
+    description="Persist PolicyEngine entity tables as parquet files plus checkpoint metadata.",
+    artifacts_in=("policyengine_entity_tables",),
+    artifacts_out=("policyengine_checkpoint",),
+)
 def save_us_pipeline_checkpoint(
     bundle: PolicyEngineUSEntityTableBundle,
     path: str | Path,
@@ -2141,6 +2149,13 @@ def _merge_materialized_policyengine_bindings(
     return merged_tables
 
 
+@pipeline_node(
+    id="us.policyengine.load_policyengine_us_entity_tables",
+    label="Load PE entity tables",
+    description="Load a PolicyEngine H5 dataset into multientity tables for validation or replay.",
+    artifacts_in=("policyengine_dataset",),
+    artifacts_out=("policyengine_entity_tables",),
+)
 def load_policyengine_us_entity_tables(
     dataset: str | Path | Any,
     *,

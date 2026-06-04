@@ -58,6 +58,7 @@ from microplex_us.pe_source_impute_engine import (
     PESourceImputeBlockRunRequest,
     PESourceImputeConditionedBlockRunRequest,
 )
+from microplex_us.pipeline_metadata import pipeline_node
 from microplex_us.pipelines.check_export_columns import (
     _format_report as _format_export_column_report,
 )
@@ -1956,6 +1957,13 @@ def _evaluate_policyengine_target_fit_context(
     }
 
 
+@pipeline_node(
+    id="us.pipeline.select_feasible_policyengine_calibration_constraints",
+    label="Select feasible PE constraints",
+    description="Filter PolicyEngine target constraints to those supportable by the current tables.",
+    artifacts_in=("policyengine_targets", "policyengine_entity_tables"),
+    artifacts_out=("feasible_policyengine_constraints",),
+)
 def _select_feasible_policyengine_calibration_constraints(
     targets: list[TargetSpec],
     constraints: tuple[Any, ...],
@@ -2676,6 +2684,13 @@ class USMicroplexPipeline:
             )
         return self.build_from_frames([frame])
 
+    @pipeline_node(
+        id="us.pipeline.build_from_source_providers",
+        label="Build from source providers",
+        node_type="entrypoint",
+        description="Canonical library entrypoint for a multi-provider US build.",
+        artifacts_out=("build_result",),
+    )
     def build_from_source_providers(
         self,
         providers: list[SourceProvider],
@@ -3160,6 +3175,12 @@ class USMicroplexPipeline:
             keys.append(cached_name)
         return tuple(dict.fromkeys(keys))
 
+    @pipeline_node(
+        id="us.pipeline.prepare_source_input",
+        label="Prepare source input",
+        description="Resolve provider queries into source frames used by the build.",
+        artifacts_out=("source_frames",),
+    )
     def prepare_source_input(
         self,
         frame: ObservationFrame,
@@ -3209,6 +3230,13 @@ class USMicroplexPipeline:
             persons=persons,
         )
 
+    @pipeline_node(
+        id="us.pipeline.prepare_seed_data_from_source",
+        label="Prepare scaffold seed data",
+        description="Project the selected scaffold source into seed household and person records.",
+        artifacts_in=("scaffold_source",),
+        artifacts_out=("scaffold_seed_data",),
+    )
     def prepare_seed_data_from_source(
         self,
         source_input: USMicroplexSourceInput,
@@ -3435,6 +3463,12 @@ class USMicroplexPipeline:
         frame.validate()
         return frame
 
+    @pipeline_node(
+        id="us.pipeline.build_targets",
+        label="Build calibration targets",
+        description="Materialize target specs and counts for synthesis and calibration.",
+        artifacts_out=("targets", "target_counts"),
+    )
     def build_targets(
         self,
         seed_data: pd.DataFrame,
@@ -3503,6 +3537,13 @@ class USMicroplexPipeline:
             continuous_targets[target.column] = float(computed[target.name])
         return continuous_targets
 
+    @pipeline_node(
+        id="us.pipeline.ensure_target_support",
+        label="Ensure target support",
+        description="Clone or adjust records so synthetic data can support required targets.",
+        artifacts_in=("synthetic_data", "targets"),
+        artifacts_out=("supported_synthetic_data",),
+    )
     def ensure_target_support(
         self,
         synthetic_data: pd.DataFrame,
@@ -3572,6 +3613,13 @@ class USMicroplexPipeline:
         )
         return self._finalize_synthetic_population(base, initial_weight=initial_weight)
 
+    @pipeline_node(
+        id="us.pipeline.synthesize",
+        label="Synthesize records",
+        description="Run the microplex synthesizer over seed data and selected variables.",
+        artifacts_in=("seed_data", "synthesis_variables"),
+        artifacts_out=("synthetic_data",),
+    )
     def synthesize(
         self,
         seed_data: pd.DataFrame,
@@ -3651,6 +3699,13 @@ class USMicroplexPipeline:
         )
         return synthetic, synthesizer, {"backend": "synthesizer"}
 
+    @pipeline_node(
+        id="us.pipeline.calibrate",
+        label="Calibrate generic tables",
+        description="Run the generic dataframe calibration path when PE-native calibration is not selected.",
+        artifacts_in=("synthetic_data", "targets"),
+        artifacts_out=("calibrated_data", "calibration_summary"),
+    )
     def calibrate(
         self,
         synthetic_data: pd.DataFrame,
@@ -3782,6 +3837,13 @@ class USMicroplexPipeline:
             f"Unsupported calibration backend: {self.config.calibration_backend}"
         )
 
+    @pipeline_node(
+        id="us.pipeline.select_policyengine_household_budget",
+        label="Select household budget",
+        description="Choose a household budget for PE-native calibration from configured limits and table size.",
+        artifacts_in=("policyengine_entity_tables",),
+        artifacts_out=("household_budget",),
+    )
     def _select_policyengine_household_budget(
         self,
         tables: PolicyEngineUSEntityTableBundle,
@@ -4245,6 +4307,13 @@ class USMicroplexPipeline:
             "pre_clone_original_weight_sum": original_weight_sum,
         }
 
+    @pipeline_node(
+        id="us.pipeline.calibrate_policyengine_tables",
+        label="Calibrate PolicyEngine tables",
+        description="Run PE-native calibration over entity tables and PolicyEngine target constraints.",
+        artifacts_in=("policyengine_entity_tables", "policyengine_targets"),
+        artifacts_out=("calibrated_policyengine_tables", "calibration_summary"),
+    )
     def calibrate_policyengine_tables(
         self,
         tables: PolicyEngineUSEntityTableBundle,
@@ -4996,6 +5065,12 @@ class USMicroplexPipeline:
             warnings.warn(message, stacklevel=2)
         return updated_tables, calibrated_persons, summary
 
+    @pipeline_node(
+        id="us.pipeline.check_policyengine_export_column_contract",
+        label="Check PE export columns",
+        description="Validate the exported entity-table column surface against the export contract.",
+        artifacts_in=("policyengine_entity_tables",),
+    )
     def _check_policyengine_export_column_contract(
         self,
         tables: PolicyEngineUSEntityTableBundle,
@@ -5059,6 +5134,12 @@ class USMicroplexPipeline:
             },
         )
 
+    @pipeline_node(
+        id="us.pipeline.resolve_policyengine_calibration_targets",
+        label="Resolve PE calibration targets",
+        description="Load and filter PolicyEngine target DB rows into supported calibration constraints.",
+        artifacts_out=("policyengine_targets",),
+    )
     def _resolve_policyengine_calibration_targets(
         self,
         tables: PolicyEngineUSEntityTableBundle,
@@ -5429,6 +5510,13 @@ class USMicroplexPipeline:
             },
         )
 
+    @pipeline_node(
+        id="us.pipeline.build_policyengine_entity_tables",
+        label="Build PolicyEngine entity tables",
+        description="Convert synthetic or calibrated records into PolicyEngine entity tables.",
+        artifacts_in=("synthetic_data",),
+        artifacts_out=("policyengine_entity_tables",),
+    )
     def build_policyengine_entity_tables(
         self,
         population: pd.DataFrame,
@@ -5711,6 +5799,13 @@ class USMicroplexPipeline:
 
         return result
 
+    @pipeline_node(
+        id="us.pipeline.export_policyengine_dataset",
+        label="Export PolicyEngine dataset",
+        description="Write PolicyEngine entity tables into the final H5 dataset format.",
+        artifacts_in=("policyengine_entity_tables",),
+        artifacts_out=("policyengine_dataset",),
+    )
     def export_policyengine_dataset(
         self,
         result: USMicroplexBuildResult,
@@ -5805,6 +5900,13 @@ class USMicroplexPipeline:
         )
         return synthesizer
 
+    @pipeline_node(
+        id="us.pipeline.build_donor_imputer",
+        label="Build donor imputer",
+        description="Choose and configure the donor-imputation model for missing variable families.",
+        artifacts_in=("donor_frames",),
+        artifacts_out=("donor_imputer",),
+    )
     def _build_donor_imputer(
         self,
         *,
@@ -5857,6 +5959,13 @@ class USMicroplexPipeline:
             zero_threshold=self.config.donor_imputer_qrf_zero_threshold,
         )
 
+    @pipeline_node(
+        id="us.pipeline.resolve_synthesis_variables",
+        label="Resolve synthesis variables",
+        description="Determine which variables synthesis must preserve or generate.",
+        artifacts_in=("targets", "seed_data"),
+        artifacts_out=("synthesis_variables",),
+    )
     def _resolve_synthesis_variables(
         self,
         source_input: USMicroplexSourceInput,
@@ -5952,6 +6061,13 @@ class USMicroplexPipeline:
             return False
         return bool(series.nunique(dropna=True) > 1)
 
+    @pipeline_node(
+        id="us.pipeline.select_scaffold_source",
+        label="Select scaffold source",
+        description="Choose the source frame that provides the structural household-person backbone.",
+        artifacts_in=("source_frames", "fusion_plan"),
+        artifacts_out=("scaffold_source", "scaffold_selection"),
+    )
     def _select_scaffold_source(
         self,
         source_inputs: list[USMicroplexSourceInput],
@@ -6354,6 +6470,13 @@ class USMicroplexPipeline:
         }
         return combined, summary
 
+    @pipeline_node(
+        id="us.pipeline.integrate_donor_sources",
+        label="Integrate donor sources",
+        description="Impute donor variables onto the scaffold seed before synthesis.",
+        artifacts_in=("scaffold_seed_data", "donor_frames"),
+        artifacts_out=("seed_data",),
+    )
     def _integrate_donor_sources(
         self,
         seed_data: pd.DataFrame,
@@ -7557,6 +7680,13 @@ class USMicroplexPipeline:
         )
         return result
 
+    @pipeline_node(
+        id="us.pipeline.strip_generated_entity_ids",
+        label="Strip generated entity ids",
+        description="Normalize generated identifiers before the seed handoff is persisted.",
+        artifacts_in=("scaffold_seed_data",),
+        artifacts_out=("normalized_scaffold_seed_data",),
+    )
     def _strip_generated_entity_ids(
         self,
         frame: pd.DataFrame,

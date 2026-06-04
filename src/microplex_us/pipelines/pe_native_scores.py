@@ -13,6 +13,8 @@ from pathlib import Path
 from time import perf_counter
 from typing import Any
 
+from microplex_us.pipeline_metadata import pipeline_node
+
 _DEFAULT_PE_US_DATA_REPO = Path.home() / "PolicyEngine" / "policyengine-us-data"
 _PE_US_DATA_PYTHON_ENV = "MICROPLEX_US_POLICYENGINE_US_DATA_PYTHON"
 _PE_US_DATA_REPO_ENV = "MICROPLEX_US_POLICYENGINE_US_DATA_REPO"
@@ -2515,6 +2517,13 @@ def score_policyengine_us_native_broad_loss(
     )
 
 
+@pipeline_node(
+    id="us.stage9.compute_pe_native_scores",
+    label="Compute PE-native scores",
+    description="Score a candidate H5 against a baseline with the PolicyEngine-US-data loss implementation.",
+    artifacts_in=("policyengine_dataset", "baseline_policyengine_dataset"),
+    artifacts_out=("policyengine_native_scores",),
+)
 def compute_us_pe_native_scores(
     *,
     candidate_dataset_path: str | Path,

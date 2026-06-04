@@ -67,7 +67,8 @@ When reviewing recent changes here, check:
 ## Pipeline docs regeneration
 
 Regenerate pipeline docs when changing stage contracts, stage manifest schemas,
-pipeline overlay schemas, graph generation, or viewer fixtures:
+pipeline overlay schemas, graph generation, `docs/us_pipeline_internals.map.json`,
+`@pipeline_node` decorators, or viewer fixtures:
 
 ```bash
 microplex-us-generate-pipeline-docs --output-dir docs/generated
@@ -86,9 +87,16 @@ microplex-us-generate-pipeline-docs \
   --artifact-root tests/fixtures/pipeline_docs/failed_run
 ```
 
-The pipeline diagram must use the generated graph/overlay JSON and ELK-style
-edge routing. Do not replace it with Mermaid; Mermaid does not provide the edge
-routing control this diagram needs.
+Update the viewer internals fixture after regenerating the public internals JSON:
+
+```bash
+cp docs/generated/us_pipeline_internals.json \
+  pipeline_viewer/src/fixtures/us_pipeline_internals.json
+```
+
+The pipeline diagram must use the generated graph/internals/overlay JSON and
+ELK-style edge routing. Do not replace it with Mermaid; Mermaid does not provide
+the edge routing control this diagram needs.
 
 ## Claude/Codex review shortcut
 

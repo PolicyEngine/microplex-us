@@ -12,8 +12,10 @@ import pytest
 
 from microplex_us.pipelines.pipeline_docs import (
     US_PIPELINE_GRAPH_SCHEMA_VERSION,
+    US_PIPELINE_INTERNALS_SCHEMA_VERSION,
     US_PIPELINE_OVERLAY_SCHEMA_VERSION,
     build_us_pipeline_graph,
+    build_us_pipeline_internals,
     build_us_pipeline_overlay,
     write_us_pipeline_docs,
 )
@@ -41,9 +43,7 @@ def test_pipeline_overlay_uses_saved_stage_manifest_without_absolute_paths() -> 
 
     assert overlay["schemaVersion"] == US_PIPELINE_OVERLAY_SCHEMA_VERSION
     assert overlay["artifactRoot"] == "complete_run"
-    assert [stage["id"] for stage in overlay["stages"]] == list(
-        US_CANONICAL_STAGE_IDS
-    )
+    assert [stage["id"] for stage in overlay["stages"]] == list(US_CANONICAL_STAGE_IDS)
     stage8 = _stage(overlay, "08_dataset_assembly")
     assert stage8["status"] == "ready"
     assert all(
@@ -63,6 +63,48 @@ def test_pipeline_overlay_exposes_partial_and_failed_lifecycle_state() -> None:
     assert stage5["lifecycleStatus"] == "failed"
     assert stage5["failure"]["errorType"] == "RuntimeError"
     assert stage6["lifecycleStatus"] == "pending"
+
+
+def test_pipeline_internals_include_substages_and_decorated_objects() -> None:
+    internals = build_us_pipeline_internals()
+
+    assert internals["schemaVersion"] == US_PIPELINE_INTERNALS_SCHEMA_VERSION
+    assert [stage["id"] for stage in internals["stages"]] == list(
+        US_CANONICAL_STAGE_IDS
+    )
+    assert all(stage["substages"] for stage in internals["stages"])
+
+    stage5 = _internals_stage(internals, "05_donor_integration_synthesis")
+    donor_node = _internals_node(stage5, "us.pipeline.integrate_donor_sources")
+    assert donor_node["sourceFile"] == "src/microplex_us/pipelines/us.py"
+    assert isinstance(donor_node["line"], int)
+    assert donor_node["signature"].startswith("_integrate_donor_sources(")
+    assert donor_node["pydoc"].endswith("USMicroplexPipeline._integrate_donor_sources")
+
+
+def test_pipeline_internals_edges_reference_materialized_nodes() -> None:
+    internals = build_us_pipeline_internals()
+
+    for stage in internals["stages"]:
+        for substage in stage["substages"]:
+            node_ids = {node["id"] for node in substage["nodes"]}
+            for edge in substage["edges"]:
+                assert edge["source"] in node_ids, (substage["id"], edge)
+                assert edge["target"] in node_ids, (substage["id"], edge)
+
+
+def test_pipeline_viewer_internals_fixture_is_current() -> None:
+    repo_root = Path(__file__).parents[2]
+    generated = json.loads(
+        (repo_root / "docs/generated/us_pipeline_internals.json").read_text()
+    )
+    fixture = json.loads(
+        (
+            repo_root / "pipeline_viewer/src/fixtures/us_pipeline_internals.json"
+        ).read_text()
+    )
+
+    assert fixture == generated
 
 
 def test_write_us_pipeline_docs_check_detects_stale_generated_files(tmp_path) -> None:
@@ -127,3 +169,15 @@ def _fixture_path(name: str) -> Path:
 
 def _stage(overlay: dict, stage_id: str) -> dict:
     return next(stage for stage in overlay["stages"] if stage["id"] == stage_id)
+
+
+def _internals_stage(internals: dict, stage_id: str) -> dict:
+    return next(stage for stage in internals["stages"] if stage["id"] == stage_id)
+
+
+def _internals_node(stage: dict, node_id: str) -> dict:
+    for substage in stage["substages"]:
+        for node in substage["nodes"]:
+            if node["id"] == node_id:
+                return node
+    raise AssertionError(f"node not found: {node_id}")

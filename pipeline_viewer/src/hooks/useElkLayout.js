@@ -18,10 +18,11 @@ const ELK_OPTIONS = {
 };
 
 function estimateNodeSize(node) {
-  const purpose = node.data?.purpose || "";
+  const purpose = node.data?.purpose || node.data?.description || "";
+  const width = node.data?.nodeWidth || (node.type === "pipelineInternal" ? 260 : 300);
   return {
-    width: 300,
-    height: Math.max(126, 90 + Math.ceil(purpose.length / 60) * 18),
+    width,
+    height: Math.max(112, 82 + Math.ceil(purpose.length / 60) * 18),
   };
 }
 
@@ -65,14 +66,14 @@ export default function useElkLayout(initialNodes, initialEdges) {
       const graph = {
         id: "root",
         layoutOptions: ELK_OPTIONS,
-        children: initialNodes.map((node) => {
+        children: initialNodes.map((node, index) => {
           const size = estimateNodeSize(node);
           return {
             id: node.id,
             width: size.width,
             height: size.height,
             layoutOptions: {
-              "elk.partitioning.partition": String(node.data.order),
+              "elk.partitioning.partition": String(node.data.order ?? index),
             },
           };
         }),

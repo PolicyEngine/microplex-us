@@ -23,6 +23,7 @@ from microplex.core import (
 )
 from microplex.targets import assert_valid_benchmark_artifact_manifest
 
+from microplex_us.pipeline_metadata import pipeline_node
 from microplex_us.pipelines.artifacts import (
     USMicroplexArtifactPaths,
     USMicroplexVersionedBuildArtifacts,
@@ -1506,6 +1507,13 @@ def _build_checkpoint_harness_context(
     )
 
 
+@pipeline_node(
+    id="us.stage9.attach_rebuild_checkpoint_evidence",
+    label="Attach PE rebuild evidence",
+    description="Attach PolicyEngine comparison, native-score, and audit evidence to a saved artifact bundle.",
+    artifacts_in=("artifact_manifest", "policyengine_dataset"),
+    artifacts_out=("benchmark_summary", "validation_evidence"),
+)
 def attach_policyengine_us_data_rebuild_checkpoint_evidence(
     artifact_dir: str | Path,
     *,

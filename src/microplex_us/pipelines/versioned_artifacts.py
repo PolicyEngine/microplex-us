@@ -11,6 +11,7 @@ from typing import Any
 from microplex.core import SourceProvider, SourceQuery
 from microplex.targets import TargetProvider
 
+from microplex_us.pipeline_metadata import pipeline_node
 from microplex_us.pipelines.artifact_types import (
     USMicroplexArtifactPaths,
     USMicroplexVersionedBuildArtifacts,
@@ -63,6 +64,13 @@ def _finalize_via_facade(
     return finalize(build_result, **kwargs)
 
 
+@pipeline_node(
+    id="us.artifacts.save_versioned_us_microplex_artifacts",
+    label="Save versioned artifacts",
+    description="Allocate a versioned output directory and save the reproducible artifact bundle there.",
+    artifacts_in=("build_result",),
+    artifacts_out=("versioned_artifact_bundle",),
+)
 def save_versioned_us_microplex_artifacts(
     result: USMicroplexBuildResult,
     output_root: str | Path,

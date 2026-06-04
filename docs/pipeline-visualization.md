@@ -1,9 +1,12 @@
 # Pipeline visualization
 
-`microplex-us` exposes the canonical US build path as generated graph data plus
-saved-run overlays. The graph is static and comes from the stage registry. An
-overlay is run-specific evidence derived from `stage_manifest.json`, per-stage
-manifests, and validation or benchmark evidence.
+`microplex-us` exposes the canonical US build path as generated graph data,
+substage machinery data, and saved-run overlays. The stage graph is static and
+comes from the stage registry. The machinery layer comes from
+[`us_pipeline_internals.map.json`](./us_pipeline_internals.map.json) plus
+`@pipeline_node` decorators in the runtime code. An overlay is run-specific
+evidence derived from `stage_manifest.json`, per-stage manifests, and validation
+or benchmark evidence.
 
 ## Generated data
 
@@ -11,8 +14,13 @@ The public generated files live under `docs/generated/`:
 
 - [`us_pipeline_graph.json`](./generated/us_pipeline_graph.json): the canonical
   9-stage graph.
+- [`us_pipeline_internals.json`](./generated/us_pipeline_internals.json): the
+  substage, function, artifact, library, external-source, and validation graph
+  for each canonical stage.
 - [`us_pipeline_graph.schema.json`](./generated/us_pipeline_graph.schema.json):
   schema for graph consumers.
+- [`us_pipeline_internals.schema.json`](./generated/us_pipeline_internals.schema.json):
+  schema for substage machinery graph consumers.
 - [`us_pipeline_overlay.schema.json`](./generated/us_pipeline_overlay.schema.json):
   schema for saved-run overlays.
 
@@ -20,13 +28,13 @@ Small complete and failed overlay fixtures live under
 `tests/fixtures/pipeline_docs/generated/`. Those are test fixtures, not
 production run evidence.
 
-Regenerate the public graph and schemas with:
+Regenerate the public graph, machinery map, and schemas with:
 
 ```bash
 microplex-us-generate-pipeline-docs --output-dir docs/generated
 ```
 
-Check that the committed graph and schemas are current with:
+Check that the committed generated files are current with:
 
 ```bash
 microplex-us-generate-pipeline-docs --output-dir docs/generated --check
@@ -44,7 +52,9 @@ microplex-us-generate-pipeline-docs \
 
 The separate `pipeline_viewer/` app renders the generated graph with ELK-routed
 React Flow edges. It intentionally does not reuse the existing `dashboard/`
-target diagnostics page.
+target diagnostics page. The top panel shows the canonical stage flow; the lower
+panel shows the selected stage's machinery graph. Use the substage selector to
+focus on a single function/artifact path within that stage.
 
 Run the viewer locally with:
 
@@ -54,8 +64,25 @@ npm install
 npm run dev
 ```
 
-The viewer ships with small fixture graph and overlay JSON files. Use the file
-loaders in the header to inspect a different graph or saved-run overlay.
+The viewer ships with fixture graph, internals, and overlay JSON files. Use the
+file loaders in the header to inspect different generated graph data or a
+saved-run overlay.
+
+After regenerating `docs/generated/us_pipeline_internals.json`, update the
+viewer fixture with:
+
+```bash
+cp docs/generated/us_pipeline_internals.json \
+  pipeline_viewer/src/fixtures/us_pipeline_internals.json
+```
+
+When durable build machinery changes, update the authored map and decorators:
+
+- add or revise substages, artifact nodes, library nodes, and edges in
+  `docs/us_pipeline_internals.map.json`
+- add `@pipeline_node(...)` to stable runtime functions that should appear as
+  function nodes
+- rerun `microplex-us-generate-pipeline-docs --output-dir docs/generated`
 
 Build-check the viewer with:
 

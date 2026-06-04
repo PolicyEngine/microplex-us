@@ -1,0 +1,2722 @@
+{
+  "apiNodes": [],
+  "contractVersion": "us-runtime-stages-v2",
+  "generatedFrom": [
+    "microplex_us.pipelines.stage_contracts",
+    "docs/us_pipeline_internals.map.json",
+    "microplex_us.pipeline_metadata.pipeline_node"
+  ],
+  "graphSchemaVersion": 1,
+  "pipeline": "us_microplex",
+  "schemaVersion": 1,
+  "stages": [
+    {
+      "id": "01_run_profile",
+      "purpose": "Resolve the build profile, runtime config, providers, queries, and run-level options.",
+      "step": "01",
+      "substages": [
+        {
+          "description": "Resolve build configuration, provider query choices, output locations, and optional validation settings before any data is loaded.",
+          "edges": [
+            {
+              "edgeType": "data_flow",
+              "id": "config.build_config__config.provider_queries",
+              "label": "resolves",
+              "notes": [],
+              "source": "config.build_config",
+              "stability": "stable",
+              "status": "current",
+              "target": "config.provider_queries"
+            },
+            {
+              "edgeType": "data_flow",
+              "id": "config.build_config__us.pipeline.build_from_source_providers",
+              "label": "starts build",
+              "notes": [],
+              "source": "config.build_config",
+              "stability": "stable",
+              "status": "current",
+              "target": "us.pipeline.build_from_source_providers"
+            },
+            {
+              "edgeType": "produces_artifact",
+              "id": "us.pipeline.build_from_source_providers__artifact.run_profile",
+              "label": "initializes",
+              "notes": [],
+              "source": "us.pipeline.build_from_source_providers",
+              "stability": "stable",
+              "status": "current",
+              "target": "artifact.run_profile"
+            }
+          ],
+          "id": "01a_resolve_run_profile",
+          "nodes": [
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "Stage 1 run metadata consumed by later stage manifests.",
+              "details": "",
+              "docstring": null,
+              "id": "artifact.run_profile",
+              "kind": null,
+              "label": "Run profile manifest",
+              "line": null,
+              "nodeType": "artifact",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "User-facing configuration object for a US build.",
+              "details": "",
+              "docstring": null,
+              "id": "config.build_config",
+              "kind": null,
+              "label": "USMicroplexBuildConfig",
+              "line": null,
+              "nodeType": "artifact",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "Resolved source-provider query settings.",
+              "details": "",
+              "docstring": null,
+              "id": "config.provider_queries",
+              "kind": null,
+              "label": "Provider query plan",
+              "line": null,
+              "nodeType": "artifact",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [
+                "build_result"
+              ],
+              "description": "Canonical library entrypoint for a multi-provider US build.",
+              "details": "",
+              "docstring": "",
+              "id": "us.pipeline.build_from_source_providers",
+              "kind": "method",
+              "label": "Build from source providers",
+              "line": 2694,
+              "nodeType": "entrypoint",
+              "notes": [],
+              "objectPath": "microplex_us.pipelines.us.USMicroplexPipeline.build_from_source_providers",
+              "pydoc": "microplex_us.pipelines.us.USMicroplexPipeline.build_from_source_providers",
+              "signature": "build_from_source_providers(self, providers, queries)",
+              "sourceFile": "src/microplex_us/pipelines/us.py",
+              "stability": "stable",
+              "status": "current"
+            }
+          ],
+          "stability": "evolving",
+          "stageId": "01_run_profile",
+          "status": "current",
+          "title": "Resolve run profile"
+        }
+      ],
+      "title": "Run profile, config, and source bundle"
+    },
+    {
+      "id": "02_source_loading",
+      "purpose": "Load external datasets into validated Microplex observation frames.",
+      "step": "02",
+      "substages": [
+        {
+          "description": "Ask each configured provider for the requested source data and normalize it into source input records.",
+          "edges": [
+            {
+              "edgeType": "external_source",
+              "id": "external.source_providers__us.pipeline.prepare_source_input",
+              "label": "queries",
+              "notes": [],
+              "source": "external.source_providers",
+              "stability": "stable",
+              "status": "current",
+              "target": "us.pipeline.prepare_source_input"
+            },
+            {
+              "edgeType": "produces_artifact",
+              "id": "us.pipeline.prepare_source_input__artifact.source_frames",
+              "label": "loads",
+              "notes": [],
+              "source": "us.pipeline.prepare_source_input",
+              "stability": "stable",
+              "status": "current",
+              "target": "artifact.source_frames"
+            }
+          ],
+          "id": "02a_prepare_source_input",
+          "nodes": [
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "Loaded source tables plus entity and relationship metadata.",
+              "details": "",
+              "docstring": null,
+              "id": "artifact.source_frames",
+              "kind": null,
+              "label": "Observation frames",
+              "line": null,
+              "nodeType": "artifact",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "CPS, PUF, ACS, SIPP, and other provider implementations available to the run.",
+              "details": "",
+              "docstring": null,
+              "id": "external.source_providers",
+              "kind": null,
+              "label": "Source providers",
+              "line": null,
+              "nodeType": "external",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [
+                "source_frames"
+              ],
+              "description": "Resolve provider queries into source frames used by the build.",
+              "details": "",
+              "docstring": "Validate and extract the source-planning context for a US build.",
+              "id": "us.pipeline.prepare_source_input",
+              "kind": "method",
+              "label": "Prepare source input",
+              "line": 3184,
+              "nodeType": "process",
+              "notes": [],
+              "objectPath": "microplex_us.pipelines.us.USMicroplexPipeline.prepare_source_input",
+              "pydoc": "microplex_us.pipelines.us.USMicroplexPipeline.prepare_source_input",
+              "signature": "prepare_source_input(self, frame)",
+              "sourceFile": "src/microplex_us/pipelines/us.py",
+              "stability": "stable",
+              "status": "current"
+            }
+          ],
+          "stability": "evolving",
+          "stageId": "02_source_loading",
+          "status": "current",
+          "title": "Prepare source input"
+        },
+        {
+          "description": "Carry source descriptors, entity observations, and household-person relationships with loaded tables.",
+          "edges": [
+            {
+              "edgeType": "uses_library",
+              "id": "artifact.source_frames__core.observation_frame",
+              "label": "represented as",
+              "notes": [],
+              "source": "artifact.source_frames",
+              "stability": "stable",
+              "status": "current",
+              "target": "core.observation_frame"
+            },
+            {
+              "edgeType": "produces_artifact",
+              "id": "core.observation_frame__artifact.source_semantics",
+              "label": "describes",
+              "notes": [],
+              "source": "core.observation_frame",
+              "stability": "stable",
+              "status": "current",
+              "target": "artifact.source_semantics"
+            }
+          ],
+          "id": "02b_attach_source_semantics",
+          "nodes": [
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "Loaded source tables plus entity and relationship metadata.",
+              "details": "",
+              "docstring": null,
+              "id": "artifact.source_frames",
+              "kind": null,
+              "label": "Observation frames",
+              "line": null,
+              "nodeType": "artifact",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "Source availability, table, entity, relationship, and geography metadata.",
+              "details": "",
+              "docstring": null,
+              "id": "artifact.source_semantics",
+              "kind": null,
+              "label": "Source semantics",
+              "line": null,
+              "nodeType": "artifact",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [
+                "microplex.core.ObservationFrame",
+                "microplex.core.SourceDescriptor"
+              ],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "microplex core source container for tables and relationships.",
+              "details": "",
+              "docstring": null,
+              "id": "core.observation_frame",
+              "kind": null,
+              "label": "ObservationFrame",
+              "line": null,
+              "nodeType": "library",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            }
+          ],
+          "stability": "stable",
+          "stageId": "02_source_loading",
+          "status": "current",
+          "title": "Attach source semantics"
+        }
+      ],
+      "title": "Source contracts and source loading"
+    },
+    {
+      "id": "03_source_planning",
+      "purpose": "Choose the scaffold source and map donor/source coverage before seed construction.",
+      "step": "03",
+      "substages": [
+        {
+          "description": "Summarize variable coverage and source contribution roles before choosing the build backbone.",
+          "edges": [
+            {
+              "edgeType": "uses_library",
+              "id": "artifact.source_frames__core.fusion_planning",
+              "label": "coverage",
+              "notes": [],
+              "source": "artifact.source_frames",
+              "stability": "stable",
+              "status": "current",
+              "target": "core.fusion_planning"
+            },
+            {
+              "edgeType": "produces_artifact",
+              "id": "core.fusion_planning__artifact.fusion_plan",
+              "label": "plans",
+              "notes": [],
+              "source": "core.fusion_planning",
+              "stability": "stable",
+              "status": "current",
+              "target": "artifact.fusion_plan"
+            }
+          ],
+          "id": "03a_build_fusion_plan",
+          "nodes": [
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "Variable-family source coverage and synthetic-release requirements.",
+              "details": "",
+              "docstring": null,
+              "id": "artifact.fusion_plan",
+              "kind": null,
+              "label": "Fusion plan",
+              "line": null,
+              "nodeType": "artifact",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "Loaded source tables plus entity and relationship metadata.",
+              "details": "",
+              "docstring": null,
+              "id": "artifact.source_frames",
+              "kind": null,
+              "label": "Observation frames",
+              "line": null,
+              "nodeType": "artifact",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [
+                "microplex.fusion.FusionPlan"
+              ],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "microplex source-mix planning utilities.",
+              "details": "",
+              "docstring": null,
+              "id": "core.fusion_planning",
+              "kind": null,
+              "label": "Fusion planning",
+              "line": null,
+              "nodeType": "library",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            }
+          ],
+          "stability": "evolving",
+          "stageId": "03_source_planning",
+          "status": "current",
+          "title": "Build fusion plan"
+        },
+        {
+          "description": "Pick the household-person source that becomes the structural backbone of the national population.",
+          "edges": [
+            {
+              "edgeType": "data_flow",
+              "id": "artifact.fusion_plan__us.pipeline.select_scaffold_source",
+              "label": "scores",
+              "notes": [],
+              "source": "artifact.fusion_plan",
+              "stability": "stable",
+              "status": "current",
+              "target": "us.pipeline.select_scaffold_source"
+            },
+            {
+              "edgeType": "produces_artifact",
+              "id": "us.pipeline.select_scaffold_source__artifact.scaffold_selection",
+              "label": "chooses",
+              "notes": [],
+              "source": "us.pipeline.select_scaffold_source",
+              "stability": "stable",
+              "status": "current",
+              "target": "artifact.scaffold_selection"
+            },
+            {
+              "edgeType": "produces_artifact",
+              "id": "artifact.scaffold_selection__artifact.source_plan",
+              "label": "records",
+              "notes": [],
+              "source": "artifact.scaffold_selection",
+              "stability": "stable",
+              "status": "current",
+              "target": "artifact.source_plan"
+            }
+          ],
+          "id": "03b_select_scaffold_source",
+          "nodes": [
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "Variable-family source coverage and synthetic-release requirements.",
+              "details": "",
+              "docstring": null,
+              "id": "artifact.fusion_plan",
+              "kind": null,
+              "label": "Fusion plan",
+              "line": null,
+              "nodeType": "artifact",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "Selected source plus selection scores and rationale.",
+              "details": "",
+              "docstring": null,
+              "id": "artifact.scaffold_selection",
+              "kind": null,
+              "label": "Scaffold selection",
+              "line": null,
+              "nodeType": "artifact",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "Stage 3 plan artifact consumed by the seed/scaffold stage.",
+              "details": "",
+              "docstring": null,
+              "id": "artifact.source_plan",
+              "kind": null,
+              "label": "Source plan",
+              "line": null,
+              "nodeType": "artifact",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [
+                "source_frames",
+                "fusion_plan"
+              ],
+              "artifactsOut": [
+                "scaffold_source",
+                "scaffold_selection"
+              ],
+              "description": "Choose the source frame that provides the structural household-person backbone.",
+              "details": "",
+              "docstring": "",
+              "id": "us.pipeline.select_scaffold_source",
+              "kind": "method",
+              "label": "Select scaffold source",
+              "line": 6071,
+              "nodeType": "process",
+              "notes": [],
+              "objectPath": "microplex_us.pipelines.us.USMicroplexPipeline._select_scaffold_source",
+              "pydoc": "microplex_us.pipelines.us.USMicroplexPipeline._select_scaffold_source",
+              "signature": "_select_scaffold_source(self, source_inputs)",
+              "sourceFile": "src/microplex_us/pipelines/us.py",
+              "stability": "stable",
+              "status": "current"
+            }
+          ],
+          "stability": "evolving",
+          "stageId": "03_source_planning",
+          "status": "current",
+          "title": "Select scaffold source"
+        }
+      ],
+      "title": "Source planning, fusion planning, and scaffold selection"
+    },
+    {
+      "id": "04_seed_scaffold",
+      "purpose": "Project the selected scaffold source into the canonical seed structure.",
+      "step": "04",
+      "substages": [
+        {
+          "description": "Convert the selected scaffold source into initial household and person seed tables.",
+          "edges": [
+            {
+              "edgeType": "data_flow",
+              "id": "artifact.scaffold_selection__us.pipeline.prepare_seed_data_from_source",
+              "label": "projects",
+              "notes": [],
+              "source": "artifact.scaffold_selection",
+              "stability": "stable",
+              "status": "current",
+              "target": "us.pipeline.prepare_seed_data_from_source"
+            },
+            {
+              "edgeType": "produces_artifact",
+              "id": "us.pipeline.prepare_seed_data_from_source__artifact.scaffold_seed_data",
+              "label": "writes",
+              "notes": [],
+              "source": "us.pipeline.prepare_seed_data_from_source",
+              "stability": "stable",
+              "status": "current",
+              "target": "artifact.scaffold_seed_data"
+            }
+          ],
+          "id": "04a_project_scaffold_seed",
+          "nodes": [
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "Pre-donor seed tables built from the chosen scaffold source.",
+              "details": "",
+              "docstring": null,
+              "id": "artifact.scaffold_seed_data",
+              "kind": null,
+              "label": "Scaffold seed data",
+              "line": null,
+              "nodeType": "artifact",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "Selected source plus selection scores and rationale.",
+              "details": "",
+              "docstring": null,
+              "id": "artifact.scaffold_selection",
+              "kind": null,
+              "label": "Scaffold selection",
+              "line": null,
+              "nodeType": "artifact",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [
+                "scaffold_source"
+              ],
+              "artifactsOut": [
+                "scaffold_seed_data"
+              ],
+              "description": "Project the selected scaffold source into seed household and person records.",
+              "details": "",
+              "docstring": "Project an observation frame into the canonical US seed schema.",
+              "id": "us.pipeline.prepare_seed_data_from_source",
+              "kind": "method",
+              "label": "Prepare scaffold seed data",
+              "line": 3240,
+              "nodeType": "process",
+              "notes": [],
+              "objectPath": "microplex_us.pipelines.us.USMicroplexPipeline.prepare_seed_data_from_source",
+              "pydoc": "microplex_us.pipelines.us.USMicroplexPipeline.prepare_seed_data_from_source",
+              "signature": "prepare_seed_data_from_source(self, source_input)",
+              "sourceFile": "src/microplex_us/pipelines/us.py",
+              "stability": "stable",
+              "status": "current"
+            }
+          ],
+          "stability": "evolving",
+          "stageId": "04_seed_scaffold",
+          "status": "current",
+          "title": "Project scaffold seed"
+        },
+        {
+          "description": "Remove generated IDs that should not leak across the stage boundary.",
+          "edges": [
+            {
+              "edgeType": "data_flow",
+              "id": "artifact.scaffold_seed_data__us.pipeline.strip_generated_entity_ids",
+              "label": "normalizes",
+              "notes": [],
+              "source": "artifact.scaffold_seed_data",
+              "stability": "stable",
+              "status": "current",
+              "target": "us.pipeline.strip_generated_entity_ids"
+            },
+            {
+              "edgeType": "produces_artifact",
+              "id": "us.pipeline.strip_generated_entity_ids__artifact.normalized_scaffold_seed_data",
+              "label": "hands off",
+              "notes": [],
+              "source": "us.pipeline.strip_generated_entity_ids",
+              "stability": "stable",
+              "status": "current",
+              "target": "artifact.normalized_scaffold_seed_data"
+            }
+          ],
+          "id": "04b_normalize_scaffold_ids",
+          "nodes": [
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "Scaffold seed data after generated ID cleanup.",
+              "details": "",
+              "docstring": null,
+              "id": "artifact.normalized_scaffold_seed_data",
+              "kind": null,
+              "label": "Normalized scaffold seed",
+              "line": null,
+              "nodeType": "artifact",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "Pre-donor seed tables built from the chosen scaffold source.",
+              "details": "",
+              "docstring": null,
+              "id": "artifact.scaffold_seed_data",
+              "kind": null,
+              "label": "Scaffold seed data",
+              "line": null,
+              "nodeType": "artifact",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [
+                "scaffold_seed_data"
+              ],
+              "artifactsOut": [
+                "normalized_scaffold_seed_data"
+              ],
+              "description": "Normalize generated identifiers before the seed handoff is persisted.",
+              "details": "",
+              "docstring": "",
+              "id": "us.pipeline.strip_generated_entity_ids",
+              "kind": "method",
+              "label": "Strip generated entity ids",
+              "line": 7690,
+              "nodeType": "process",
+              "notes": [],
+              "objectPath": "microplex_us.pipelines.us.USMicroplexPipeline._strip_generated_entity_ids",
+              "pydoc": "microplex_us.pipelines.us.USMicroplexPipeline._strip_generated_entity_ids",
+              "signature": "_strip_generated_entity_ids(self, frame, *, scaffold_input)",
+              "sourceFile": "src/microplex_us/pipelines/us.py",
+              "stability": "stable",
+              "status": "current"
+            }
+          ],
+          "stability": "stable",
+          "stageId": "04_seed_scaffold",
+          "status": "current",
+          "title": "Normalize scaffold identifiers"
+        }
+      ],
+      "title": "Seed/scaffold construction"
+    },
+    {
+      "id": "05_donor_integration_synthesis",
+      "purpose": "Integrate donor variables and produce the candidate population that will be calibrated.",
+      "step": "05",
+      "substages": [
+        {
+          "description": "Impute donor variables from secondary sources onto the scaffold seed.",
+          "edges": [
+            {
+              "edgeType": "data_flow",
+              "id": "artifact.donor_frames__us.pipeline.build_donor_imputer",
+              "label": "fits",
+              "notes": [],
+              "source": "artifact.donor_frames",
+              "stability": "stable",
+              "status": "current",
+              "target": "us.pipeline.build_donor_imputer"
+            },
+            {
+              "edgeType": "uses_utility",
+              "id": "us.pipeline.build_donor_imputer__us.pipeline.integrate_donor_sources",
+              "label": "imputes",
+              "notes": [],
+              "source": "us.pipeline.build_donor_imputer",
+              "stability": "stable",
+              "status": "current",
+              "target": "us.pipeline.integrate_donor_sources"
+            },
+            {
+              "edgeType": "data_flow",
+              "id": "artifact.normalized_scaffold_seed_data__us.pipeline.integrate_donor_sources",
+              "label": "augments",
+              "notes": [],
+              "source": "artifact.normalized_scaffold_seed_data",
+              "stability": "stable",
+              "status": "current",
+              "target": "us.pipeline.integrate_donor_sources"
+            },
+            {
+              "edgeType": "produces_artifact",
+              "id": "us.pipeline.integrate_donor_sources__artifact.seed_data",
+              "label": "produces",
+              "notes": [],
+              "source": "us.pipeline.integrate_donor_sources",
+              "stability": "stable",
+              "status": "current",
+              "target": "artifact.seed_data"
+            }
+          ],
+          "id": "05a_integrate_donor_sources",
+          "nodes": [
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "Secondary source frames used for imputation.",
+              "details": "",
+              "docstring": null,
+              "id": "artifact.donor_frames",
+              "kind": null,
+              "label": "Donor frames",
+              "line": null,
+              "nodeType": "artifact",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "Scaffold seed data after generated ID cleanup.",
+              "details": "",
+              "docstring": null,
+              "id": "artifact.normalized_scaffold_seed_data",
+              "kind": null,
+              "label": "Normalized scaffold seed",
+              "line": null,
+              "nodeType": "artifact",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "Donor-integrated seed data consumed by synthesis.",
+              "details": "",
+              "docstring": null,
+              "id": "artifact.seed_data",
+              "kind": null,
+              "label": "Seed data",
+              "line": null,
+              "nodeType": "artifact",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [
+                "donor_frames"
+              ],
+              "artifactsOut": [
+                "donor_imputer"
+              ],
+              "description": "Choose and configure the donor-imputation model for missing variable families.",
+              "details": "",
+              "docstring": "",
+              "id": "us.pipeline.build_donor_imputer",
+              "kind": "method",
+              "label": "Build donor imputer",
+              "line": 5910,
+              "nodeType": "process",
+              "notes": [],
+              "objectPath": "microplex_us.pipelines.us.USMicroplexPipeline._build_donor_imputer",
+              "pydoc": "microplex_us.pipelines.us.USMicroplexPipeline._build_donor_imputer",
+              "signature": "_build_donor_imputer(self, *, condition_vars, target_vars)",
+              "sourceFile": "src/microplex_us/pipelines/us.py",
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [
+                "scaffold_seed_data",
+                "donor_frames"
+              ],
+              "artifactsOut": [
+                "seed_data"
+              ],
+              "description": "Impute donor variables onto the scaffold seed before synthesis.",
+              "details": "",
+              "docstring": "",
+              "id": "us.pipeline.integrate_donor_sources",
+              "kind": "method",
+              "label": "Integrate donor sources",
+              "line": 6480,
+              "nodeType": "process",
+              "notes": [],
+              "objectPath": "microplex_us.pipelines.us.USMicroplexPipeline._integrate_donor_sources",
+              "pydoc": "microplex_us.pipelines.us.USMicroplexPipeline._integrate_donor_sources",
+              "signature": "_integrate_donor_sources(self, seed_data, *, scaffold_input, donor_inputs)",
+              "sourceFile": "src/microplex_us/pipelines/us.py",
+              "stability": "stable",
+              "status": "current"
+            }
+          ],
+          "stability": "evolving",
+          "stageId": "05_donor_integration_synthesis",
+          "status": "current",
+          "title": "Integrate donor sources"
+        },
+        {
+          "description": "Build target counts and decide which variables the synthesizer must carry forward.",
+          "edges": [
+            {
+              "edgeType": "uses_library",
+              "id": "core.targets__us.pipeline.build_targets",
+              "label": "materializes",
+              "notes": [],
+              "source": "core.targets",
+              "stability": "stable",
+              "status": "current",
+              "target": "us.pipeline.build_targets"
+            },
+            {
+              "edgeType": "produces_artifact",
+              "id": "us.pipeline.build_targets__artifact.targets",
+              "label": "counts",
+              "notes": [],
+              "source": "us.pipeline.build_targets",
+              "stability": "stable",
+              "status": "current",
+              "target": "artifact.targets"
+            },
+            {
+              "edgeType": "data_flow",
+              "id": "artifact.targets__us.pipeline.resolve_synthesis_variables",
+              "label": "requires",
+              "notes": [],
+              "source": "artifact.targets",
+              "stability": "stable",
+              "status": "current",
+              "target": "us.pipeline.resolve_synthesis_variables"
+            },
+            {
+              "edgeType": "produces_artifact",
+              "id": "us.pipeline.resolve_synthesis_variables__artifact.synthesis_variables",
+              "label": "selects",
+              "notes": [],
+              "source": "us.pipeline.resolve_synthesis_variables",
+              "stability": "stable",
+              "status": "current",
+              "target": "artifact.synthesis_variables"
+            }
+          ],
+          "id": "05b_build_targets_and_variables",
+          "nodes": [
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "Variables preserved or generated during synthesis.",
+              "details": "",
+              "docstring": null,
+              "id": "artifact.synthesis_variables",
+              "kind": null,
+              "label": "Synthesis variables",
+              "line": null,
+              "nodeType": "artifact",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "Calibration and synthesis target surface.",
+              "details": "",
+              "docstring": null,
+              "id": "artifact.targets",
+              "kind": null,
+              "label": "Targets",
+              "line": null,
+              "nodeType": "artifact",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [
+                "microplex.targets.TargetSpec",
+                "microplex.targets.TargetQuery"
+              ],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "microplex target-query and target-spec machinery.",
+              "details": "",
+              "docstring": null,
+              "id": "core.targets",
+              "kind": null,
+              "label": "Target specs",
+              "line": null,
+              "nodeType": "library",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [
+                "targets",
+                "target_counts"
+              ],
+              "description": "Materialize target specs and counts for synthesis and calibration.",
+              "details": "",
+              "docstring": "Build weighted calibration targets from the seed data.",
+              "id": "us.pipeline.build_targets",
+              "kind": "method",
+              "label": "Build calibration targets",
+              "line": 3472,
+              "nodeType": "process",
+              "notes": [],
+              "objectPath": "microplex_us.pipelines.us.USMicroplexPipeline.build_targets",
+              "pydoc": "microplex_us.pipelines.us.USMicroplexPipeline.build_targets",
+              "signature": "build_targets(self, seed_data, weight_col)",
+              "sourceFile": "src/microplex_us/pipelines/us.py",
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [
+                "targets",
+                "seed_data"
+              ],
+              "artifactsOut": [
+                "synthesis_variables"
+              ],
+              "description": "Determine which variables synthesis must preserve or generate.",
+              "details": "",
+              "docstring": "Select the observed variables to feed into synthesis.",
+              "id": "us.pipeline.resolve_synthesis_variables",
+              "kind": "method",
+              "label": "Resolve synthesis variables",
+              "line": 5969,
+              "nodeType": "process",
+              "notes": [],
+              "objectPath": "microplex_us.pipelines.us.USMicroplexPipeline._resolve_synthesis_variables",
+              "pydoc": "microplex_us.pipelines.us.USMicroplexPipeline._resolve_synthesis_variables",
+              "signature": "_resolve_synthesis_variables(self, source_input, *, fusion_plan, include_all_observed_targets, available_columns, observed_frame)",
+              "sourceFile": "src/microplex_us/pipelines/us.py",
+              "stability": "stable",
+              "status": "current"
+            }
+          ],
+          "stability": "evolving",
+          "stageId": "05_donor_integration_synthesis",
+          "status": "current",
+          "title": "Build targets and synthesis variables"
+        },
+        {
+          "description": "Generate the synthetic candidate population and enforce target support.",
+          "edges": [
+            {
+              "edgeType": "data_flow",
+              "id": "artifact.seed_data__us.pipeline.synthesize",
+              "label": "seeds",
+              "notes": [],
+              "source": "artifact.seed_data",
+              "stability": "stable",
+              "status": "current",
+              "target": "us.pipeline.synthesize"
+            },
+            {
+              "edgeType": "uses_library",
+              "id": "core.synthesizer__us.pipeline.synthesize",
+              "label": "runs",
+              "notes": [],
+              "source": "core.synthesizer",
+              "stability": "stable",
+              "status": "current",
+              "target": "us.pipeline.synthesize"
+            },
+            {
+              "edgeType": "data_flow",
+              "id": "us.pipeline.synthesize__us.pipeline.ensure_target_support",
+              "label": "supports",
+              "notes": [],
+              "source": "us.pipeline.synthesize",
+              "stability": "stable",
+              "status": "current",
+              "target": "us.pipeline.ensure_target_support"
+            },
+            {
+              "edgeType": "produces_artifact",
+              "id": "us.pipeline.ensure_target_support__artifact.synthetic_data",
+              "label": "outputs",
+              "notes": [],
+              "source": "us.pipeline.ensure_target_support",
+              "stability": "stable",
+              "status": "current",
+              "target": "artifact.synthetic_data"
+            }
+          ],
+          "id": "05c_synthesize_population",
+          "nodes": [
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "Donor-integrated seed data consumed by synthesis.",
+              "details": "",
+              "docstring": null,
+              "id": "artifact.seed_data",
+              "kind": null,
+              "label": "Seed data",
+              "line": null,
+              "nodeType": "artifact",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "Generated records before calibration.",
+              "details": "",
+              "docstring": null,
+              "id": "artifact.synthetic_data",
+              "kind": null,
+              "label": "Synthetic data",
+              "line": null,
+              "nodeType": "artifact",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [
+                "microplex.synthesizer.Synthesizer"
+              ],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "microplex synthesizer used to generate candidate records.",
+              "details": "",
+              "docstring": null,
+              "id": "core.synthesizer",
+              "kind": null,
+              "label": "Synthesizer",
+              "line": null,
+              "nodeType": "library",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [
+                "synthetic_data",
+                "targets"
+              ],
+              "artifactsOut": [
+                "supported_synthetic_data"
+              ],
+              "description": "Clone or adjust records so synthetic data can support required targets.",
+              "details": "",
+              "docstring": "Ensure every marginal target category has support in the synthetic sample.",
+              "id": "us.pipeline.ensure_target_support",
+              "kind": "method",
+              "label": "Ensure target support",
+              "line": 3547,
+              "nodeType": "process",
+              "notes": [],
+              "objectPath": "microplex_us.pipelines.us.USMicroplexPipeline.ensure_target_support",
+              "pydoc": "microplex_us.pipelines.us.USMicroplexPipeline.ensure_target_support",
+              "signature": "ensure_target_support(self, synthetic_data, seed_data, targets)",
+              "sourceFile": "src/microplex_us/pipelines/us.py",
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [
+                "seed_data",
+                "synthesis_variables"
+              ],
+              "artifactsOut": [
+                "synthetic_data"
+              ],
+              "description": "Run the microplex synthesizer over seed data and selected variables.",
+              "details": "",
+              "docstring": "Generate synthetic records from the seed data.",
+              "id": "us.pipeline.synthesize",
+              "kind": "method",
+              "label": "Synthesize records",
+              "line": 3623,
+              "nodeType": "process",
+              "notes": [],
+              "objectPath": "microplex_us.pipelines.us.USMicroplexPipeline.synthesize",
+              "pydoc": "microplex_us.pipelines.us.USMicroplexPipeline.synthesize",
+              "signature": "synthesize(self, seed_data, synthesis_variables)",
+              "sourceFile": "src/microplex_us/pipelines/us.py",
+              "stability": "stable",
+              "status": "current"
+            }
+          ],
+          "stability": "evolving",
+          "stageId": "05_donor_integration_synthesis",
+          "status": "current",
+          "title": "Synthesize population"
+        }
+      ],
+      "title": "Donor integration, synthesis, and support enforcement"
+    },
+    {
+      "id": "06_policyengine_entities",
+      "purpose": "Convert candidate rows into PE entity tables and materialize PE-facing inputs.",
+      "step": "06",
+      "substages": [
+        {
+          "description": "Convert synthetic records into household, person, tax-unit, family, and SPM entity tables.",
+          "edges": [
+            {
+              "edgeType": "data_flow",
+              "id": "artifact.synthetic_data__us.pipeline.build_policyengine_entity_tables",
+              "label": "maps",
+              "notes": [],
+              "source": "artifact.synthetic_data",
+              "stability": "stable",
+              "status": "current",
+              "target": "us.pipeline.build_policyengine_entity_tables"
+            },
+            {
+              "edgeType": "produces_artifact",
+              "id": "us.pipeline.build_policyengine_entity_tables__artifact.policyengine_entity_tables",
+              "label": "builds",
+              "notes": [],
+              "source": "us.pipeline.build_policyengine_entity_tables",
+              "stability": "stable",
+              "status": "current",
+              "target": "artifact.policyengine_entity_tables"
+            }
+          ],
+          "id": "06a_materialize_policyengine_tables",
+          "nodes": [
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "In-memory entity-table bundle used for PE-native calibration and export.",
+              "details": "",
+              "docstring": null,
+              "id": "artifact.policyengine_entity_tables",
+              "kind": null,
+              "label": "PolicyEngine entity tables",
+              "line": null,
+              "nodeType": "artifact",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "Generated records before calibration.",
+              "details": "",
+              "docstring": null,
+              "id": "artifact.synthetic_data",
+              "kind": null,
+              "label": "Synthetic data",
+              "line": null,
+              "nodeType": "artifact",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [
+                "synthetic_data"
+              ],
+              "artifactsOut": [
+                "policyengine_entity_tables"
+              ],
+              "description": "Convert synthetic or calibrated records into PolicyEngine entity tables.",
+              "details": "",
+              "docstring": "Build a PolicyEngine-oriented multientity bundle from person rows.",
+              "id": "us.pipeline.build_policyengine_entity_tables",
+              "kind": "method",
+              "label": "Build PolicyEngine entity tables",
+              "line": 5520,
+              "nodeType": "process",
+              "notes": [],
+              "objectPath": "microplex_us.pipelines.us.USMicroplexPipeline.build_policyengine_entity_tables",
+              "pydoc": "microplex_us.pipelines.us.USMicroplexPipeline.build_policyengine_entity_tables",
+              "signature": "build_policyengine_entity_tables(self, population)",
+              "sourceFile": "src/microplex_us/pipelines/us.py",
+              "stability": "stable",
+              "status": "current"
+            }
+          ],
+          "stability": "evolving",
+          "stageId": "06_policyengine_entities",
+          "status": "current",
+          "title": "Materialize PolicyEngine tables"
+        },
+        {
+          "description": "Optionally persist pre-calibration entity tables and verify the export-column surface.",
+          "edges": [
+            {
+              "edgeType": "produces_artifact",
+              "id": "artifact.policyengine_entity_tables__us.policyengine.save_us_pipeline_checkpoint",
+              "label": "optional",
+              "notes": [],
+              "source": "artifact.policyengine_entity_tables",
+              "stability": "stable",
+              "status": "current",
+              "target": "us.policyengine.save_us_pipeline_checkpoint"
+            },
+            {
+              "edgeType": "produces_artifact",
+              "id": "us.policyengine.save_us_pipeline_checkpoint__artifact.policyengine_checkpoint",
+              "label": "writes",
+              "notes": [],
+              "source": "us.policyengine.save_us_pipeline_checkpoint",
+              "stability": "stable",
+              "status": "current",
+              "target": "artifact.policyengine_checkpoint"
+            },
+            {
+              "edgeType": "validates",
+              "id": "artifact.policyengine_entity_tables__us.pipeline.check_policyengine_export_column_contract",
+              "label": "checks",
+              "notes": [],
+              "source": "artifact.policyengine_entity_tables",
+              "stability": "stable",
+              "status": "current",
+              "target": "us.pipeline.check_policyengine_export_column_contract"
+            }
+          ],
+          "id": "06b_checkpoint_and_contract_check",
+          "nodes": [
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "Parquet checkpoint for PE entity tables at a resumable boundary.",
+              "details": "",
+              "docstring": null,
+              "id": "artifact.policyengine_checkpoint",
+              "kind": null,
+              "label": "PolicyEngine checkpoint",
+              "line": null,
+              "nodeType": "artifact",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "In-memory entity-table bundle used for PE-native calibration and export.",
+              "details": "",
+              "docstring": null,
+              "id": "artifact.policyengine_entity_tables",
+              "kind": null,
+              "label": "PolicyEngine entity tables",
+              "line": null,
+              "nodeType": "artifact",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [
+                "policyengine_entity_tables"
+              ],
+              "artifactsOut": [],
+              "description": "Validate the exported entity-table column surface against the export contract.",
+              "details": "",
+              "docstring": "",
+              "id": "us.pipeline.check_policyengine_export_column_contract",
+              "kind": "method",
+              "label": "Check PE export columns",
+              "line": 5074,
+              "nodeType": "process",
+              "notes": [],
+              "objectPath": "microplex_us.pipelines.us.USMicroplexPipeline._check_policyengine_export_column_contract",
+              "pydoc": "microplex_us.pipelines.us.USMicroplexPipeline._check_policyengine_export_column_contract",
+              "signature": "_check_policyengine_export_column_contract(self, tables, *, stage)",
+              "sourceFile": "src/microplex_us/pipelines/us.py",
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [
+                "policyengine_entity_tables"
+              ],
+              "artifactsOut": [
+                "policyengine_checkpoint"
+              ],
+              "description": "Persist PolicyEngine entity tables as parquet files plus checkpoint metadata.",
+              "details": "",
+              "docstring": "Persist a pipeline-stage bundle to ``path`` as parquet + metadata.\n\nWrites one parquet file per non-None entity table plus a\n``metadata.json`` index tagged with the pipeline ``stage``. Two\nstages are supported:\n\n* ``\"post_imputation\"`` \u2014 after donor imputation, before PE microsim\n  materializes target variables. Resuming from here reruns\n  microsim + calibration.\n* ``\"post_microsim\"`` \u2014 after microsim materialization, before the\n  calibration fit loop. Resuming from here reruns only calibration.\n* ``\"post_calibration\"`` \u2014 after calibration, ready for dataset export.",
+              "id": "us.policyengine.save_us_pipeline_checkpoint",
+              "kind": "function",
+              "label": "Save PE entity checkpoint",
+              "line": 183,
+              "nodeType": "process",
+              "notes": [],
+              "objectPath": "microplex_us.policyengine.us.save_us_pipeline_checkpoint",
+              "pydoc": "microplex_us.policyengine.us.save_us_pipeline_checkpoint",
+              "signature": "save_us_pipeline_checkpoint(bundle, path, *, stage)",
+              "sourceFile": "src/microplex_us/policyengine/us.py",
+              "stability": "stable",
+              "status": "current"
+            }
+          ],
+          "stability": "stable",
+          "stageId": "06_policyengine_entities",
+          "status": "current",
+          "title": "Checkpoint and contract-check entity tables"
+        }
+      ],
+      "title": "PolicyEngine entity construction and microsimulation materialization"
+    },
+    {
+      "id": "07_calibration",
+      "purpose": "Resolve target constraints, solve weights, and summarize fit quality.",
+      "step": "07",
+      "substages": [
+        {
+          "description": "Load PE target rows, filter unsupported constraints, and choose the calibration household budget.",
+          "edges": [
+            {
+              "edgeType": "external_source",
+              "id": "external.policyengine_targets_db__us.pipeline.resolve_policyengine_calibration_targets",
+              "label": "loads",
+              "notes": [],
+              "source": "external.policyengine_targets_db",
+              "stability": "stable",
+              "status": "current",
+              "target": "us.pipeline.resolve_policyengine_calibration_targets"
+            },
+            {
+              "edgeType": "data_flow",
+              "id": "us.pipeline.resolve_policyengine_calibration_targets__us.pipeline.select_feasible_policyengine_calibration_constraints",
+              "label": "filters",
+              "notes": [],
+              "source": "us.pipeline.resolve_policyengine_calibration_targets",
+              "stability": "stable",
+              "status": "current",
+              "target": "us.pipeline.select_feasible_policyengine_calibration_constraints"
+            },
+            {
+              "edgeType": "uses_utility",
+              "id": "us.pipeline.select_policyengine_household_budget__us.pipeline.select_feasible_policyengine_calibration_constraints",
+              "label": "limits",
+              "notes": [],
+              "source": "us.pipeline.select_policyengine_household_budget",
+              "stability": "stable",
+              "status": "current",
+              "target": "us.pipeline.select_feasible_policyengine_calibration_constraints"
+            },
+            {
+              "edgeType": "produces_artifact",
+              "id": "us.pipeline.select_feasible_policyengine_calibration_constraints__artifact.policyengine_targets",
+              "label": "selects",
+              "notes": [],
+              "source": "us.pipeline.select_feasible_policyengine_calibration_constraints",
+              "stability": "stable",
+              "status": "current",
+              "target": "artifact.policyengine_targets"
+            }
+          ],
+          "id": "07a_resolve_policyengine_constraints",
+          "nodes": [
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "Supported PE-native calibration targets and constraints.",
+              "details": "",
+              "docstring": null,
+              "id": "artifact.policyengine_targets",
+              "kind": null,
+              "label": "PolicyEngine targets",
+              "line": null,
+              "nodeType": "artifact",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "Optional PolicyEngine target database used for PE-native calibration.",
+              "details": "",
+              "docstring": null,
+              "id": "external.policyengine_targets_db",
+              "kind": null,
+              "label": "PolicyEngine targets DB",
+              "line": null,
+              "nodeType": "external",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [
+                "policyengine_targets"
+              ],
+              "description": "Load and filter PolicyEngine target DB rows into supported calibration constraints.",
+              "details": "",
+              "docstring": "",
+              "id": "us.pipeline.resolve_policyengine_calibration_targets",
+              "kind": "method",
+              "label": "Resolve PE calibration targets",
+              "line": 5143,
+              "nodeType": "process",
+              "notes": [],
+              "objectPath": "microplex_us.pipelines.us.USMicroplexPipeline._resolve_policyengine_calibration_targets",
+              "pydoc": "microplex_us.pipelines.us.USMicroplexPipeline._resolve_policyengine_calibration_targets",
+              "signature": "_resolve_policyengine_calibration_targets(self, tables, *, provider, target_period, forbes_fixed_spine)",
+              "sourceFile": "src/microplex_us/pipelines/us.py",
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [
+                "policyengine_targets",
+                "policyengine_entity_tables"
+              ],
+              "artifactsOut": [
+                "feasible_policyengine_constraints"
+              ],
+              "description": "Filter PolicyEngine target constraints to those supportable by the current tables.",
+              "details": "",
+              "docstring": "",
+              "id": "us.pipeline.select_feasible_policyengine_calibration_constraints",
+              "kind": "function",
+              "label": "Select feasible PE constraints",
+              "line": 1967,
+              "nodeType": "process",
+              "notes": [],
+              "objectPath": "microplex_us.pipelines.us._select_feasible_policyengine_calibration_constraints",
+              "pydoc": "microplex_us.pipelines.us._select_feasible_policyengine_calibration_constraints",
+              "signature": "_select_feasible_policyengine_calibration_constraints(targets, constraints, *, household_count, max_constraints, max_constraints_per_household, min_active_households, priority_scores)",
+              "sourceFile": "src/microplex_us/pipelines/us.py",
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [
+                "policyengine_entity_tables"
+              ],
+              "artifactsOut": [
+                "household_budget"
+              ],
+              "description": "Choose a household budget for PE-native calibration from configured limits and table size.",
+              "details": "",
+              "docstring": "",
+              "id": "us.pipeline.select_policyengine_household_budget",
+              "kind": "method",
+              "label": "Select household budget",
+              "line": 3847,
+              "nodeType": "process",
+              "notes": [],
+              "objectPath": "microplex_us.pipelines.us.USMicroplexPipeline._select_policyengine_household_budget",
+              "pydoc": "microplex_us.pipelines.us.USMicroplexPipeline._select_policyengine_household_budget",
+              "signature": "_select_policyengine_household_budget(self, tables, supported_targets, constraints)",
+              "sourceFile": "src/microplex_us/pipelines/us.py",
+              "stability": "stable",
+              "status": "current"
+            }
+          ],
+          "stability": "evolving",
+          "stageId": "07_calibration",
+          "status": "current",
+          "title": "Resolve PolicyEngine constraints"
+        },
+        {
+          "description": "Run either PE-native table calibration or the generic dataframe calibration fallback.",
+          "edges": [
+            {
+              "edgeType": "conditional",
+              "id": "artifact.policyengine_targets__us.pipeline.calibrate_policyengine_tables",
+              "label": "PE-native path",
+              "notes": [],
+              "source": "artifact.policyengine_targets",
+              "stability": "stable",
+              "status": "current",
+              "target": "us.pipeline.calibrate_policyengine_tables"
+            },
+            {
+              "edgeType": "conditional",
+              "id": "artifact.targets__us.pipeline.calibrate",
+              "label": "generic path",
+              "notes": [],
+              "source": "artifact.targets",
+              "stability": "stable",
+              "status": "current",
+              "target": "us.pipeline.calibrate"
+            },
+            {
+              "edgeType": "uses_library",
+              "id": "core.calibrator__us.pipeline.calibrate_policyengine_tables",
+              "label": "optimizes",
+              "notes": [],
+              "source": "core.calibrator",
+              "stability": "stable",
+              "status": "current",
+              "target": "us.pipeline.calibrate_policyengine_tables"
+            },
+            {
+              "edgeType": "produces_artifact",
+              "id": "us.pipeline.calibrate_policyengine_tables__artifact.calibrated_data",
+              "label": "writes",
+              "notes": [],
+              "source": "us.pipeline.calibrate_policyengine_tables",
+              "stability": "stable",
+              "status": "current",
+              "target": "artifact.calibrated_data"
+            },
+            {
+              "edgeType": "produces_artifact",
+              "id": "us.pipeline.calibrate__artifact.calibrated_data",
+              "label": "fallback",
+              "notes": [],
+              "source": "us.pipeline.calibrate",
+              "stability": "stable",
+              "status": "current",
+              "target": "artifact.calibrated_data"
+            },
+            {
+              "edgeType": "produces_artifact",
+              "id": "artifact.calibrated_data__artifact.calibration_summary",
+              "label": "summarizes",
+              "notes": [],
+              "source": "artifact.calibrated_data",
+              "stability": "stable",
+              "status": "current",
+              "target": "artifact.calibration_summary"
+            }
+          ],
+          "id": "07b_run_calibration",
+          "nodes": [
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "Calibrated synthetic records or entity tables.",
+              "details": "",
+              "docstring": null,
+              "id": "artifact.calibrated_data",
+              "kind": null,
+              "label": "Calibrated data",
+              "line": null,
+              "nodeType": "artifact",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "Calibration loss, constraints, and convergence diagnostics.",
+              "details": "",
+              "docstring": null,
+              "id": "artifact.calibration_summary",
+              "kind": null,
+              "label": "Calibration summary",
+              "line": null,
+              "nodeType": "artifact",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "Supported PE-native calibration targets and constraints.",
+              "details": "",
+              "docstring": null,
+              "id": "artifact.policyengine_targets",
+              "kind": null,
+              "label": "PolicyEngine targets",
+              "line": null,
+              "nodeType": "artifact",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "Calibration and synthesis target surface.",
+              "details": "",
+              "docstring": null,
+              "id": "artifact.targets",
+              "kind": null,
+              "label": "Targets",
+              "line": null,
+              "nodeType": "artifact",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [
+                "microplex.calibration.Calibrator",
+                "microplex.calibration.LinearConstraint"
+              ],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "microplex calibrator implementations and linear constraints.",
+              "details": "",
+              "docstring": null,
+              "id": "core.calibrator",
+              "kind": null,
+              "label": "Calibrator",
+              "line": null,
+              "nodeType": "library",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [
+                "synthetic_data",
+                "targets"
+              ],
+              "artifactsOut": [
+                "calibrated_data",
+                "calibration_summary"
+              ],
+              "description": "Run the generic dataframe calibration path when PE-native calibration is not selected.",
+              "details": "",
+              "docstring": "Calibrate synthetic records to weighted targets.",
+              "id": "us.pipeline.calibrate",
+              "kind": "method",
+              "label": "Calibrate generic tables",
+              "line": 3709,
+              "nodeType": "process",
+              "notes": [],
+              "objectPath": "microplex_us.pipelines.us.USMicroplexPipeline.calibrate",
+              "pydoc": "microplex_us.pipelines.us.USMicroplexPipeline.calibrate",
+              "signature": "calibrate(self, synthetic_data, targets)",
+              "sourceFile": "src/microplex_us/pipelines/us.py",
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [
+                "policyengine_entity_tables",
+                "policyengine_targets"
+              ],
+              "artifactsOut": [
+                "calibrated_policyengine_tables",
+                "calibration_summary"
+              ],
+              "description": "Run PE-native calibration over entity tables and PolicyEngine target constraints.",
+              "details": "",
+              "docstring": "Calibrate household weights using PolicyEngine US target DB constraints.",
+              "id": "us.pipeline.calibrate_policyengine_tables",
+              "kind": "method",
+              "label": "Calibrate PolicyEngine tables",
+              "line": 4317,
+              "nodeType": "process",
+              "notes": [],
+              "objectPath": "microplex_us.pipelines.us.USMicroplexPipeline.calibrate_policyengine_tables",
+              "pydoc": "microplex_us.pipelines.us.USMicroplexPipeline.calibrate_policyengine_tables",
+              "signature": "calibrate_policyengine_tables(self, tables)",
+              "sourceFile": "src/microplex_us/pipelines/us.py",
+              "stability": "stable",
+              "status": "current"
+            }
+          ],
+          "stability": "evolving",
+          "stageId": "07_calibration",
+          "status": "current",
+          "title": "Run calibration"
+        }
+      ],
+      "title": "Target resolution, selection, and calibration"
+    },
+    {
+      "id": "08_dataset_assembly",
+      "purpose": "Assemble the calibrated output into the distributable PE dataset artifact.",
+      "step": "08",
+      "substages": [
+        {
+          "description": "Write the final calibrated entity tables into the PolicyEngine H5 dataset format.",
+          "edges": [
+            {
+              "edgeType": "data_flow",
+              "id": "artifact.calibrated_data__us.pipeline.export_policyengine_dataset",
+              "label": "exports",
+              "notes": [],
+              "source": "artifact.calibrated_data",
+              "stability": "stable",
+              "status": "current",
+              "target": "us.pipeline.export_policyengine_dataset"
+            },
+            {
+              "edgeType": "produces_artifact",
+              "id": "us.pipeline.export_policyengine_dataset__artifact.policyengine_dataset",
+              "label": "writes",
+              "notes": [],
+              "source": "us.pipeline.export_policyengine_dataset",
+              "stability": "stable",
+              "status": "current",
+              "target": "artifact.policyengine_dataset"
+            }
+          ],
+          "id": "08a_export_policyengine_dataset",
+          "nodes": [
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "Calibrated synthetic records or entity tables.",
+              "details": "",
+              "docstring": null,
+              "id": "artifact.calibrated_data",
+              "kind": null,
+              "label": "Calibrated data",
+              "line": null,
+              "nodeType": "artifact",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "Final H5 dataset consumable by PolicyEngine-US.",
+              "details": "",
+              "docstring": null,
+              "id": "artifact.policyengine_dataset",
+              "kind": null,
+              "label": "PolicyEngine H5 dataset",
+              "line": null,
+              "nodeType": "artifact",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [
+                "policyengine_entity_tables"
+              ],
+              "artifactsOut": [
+                "policyengine_dataset"
+              ],
+              "description": "Write PolicyEngine entity tables into the final H5 dataset format.",
+              "details": "",
+              "docstring": "Export a build result as a PolicyEngine-readable HDF5 dataset.",
+              "id": "us.pipeline.export_policyengine_dataset",
+              "kind": "method",
+              "label": "Export PolicyEngine dataset",
+              "line": 5809,
+              "nodeType": "process",
+              "notes": [],
+              "objectPath": "microplex_us.pipelines.us.USMicroplexPipeline.export_policyengine_dataset",
+              "pydoc": "microplex_us.pipelines.us.USMicroplexPipeline.export_policyengine_dataset",
+              "signature": "export_policyengine_dataset(self, result, path, *, period, direct_override_variables)",
+              "sourceFile": "src/microplex_us/pipelines/us.py",
+              "stability": "stable",
+              "status": "current"
+            }
+          ],
+          "stability": "stable",
+          "stageId": "08_dataset_assembly",
+          "status": "current",
+          "title": "Export PolicyEngine dataset"
+        },
+        {
+          "description": "Persist stage artifacts, manifests, registry/index entries, and versioned publication outputs.",
+          "edges": [
+            {
+              "edgeType": "data_flow",
+              "id": "artifact.policyengine_dataset__us.artifacts.save_us_microplex_artifacts",
+              "label": "persists",
+              "notes": [],
+              "source": "artifact.policyengine_dataset",
+              "stability": "stable",
+              "status": "current",
+              "target": "us.artifacts.save_us_microplex_artifacts"
+            },
+            {
+              "edgeType": "produces_artifact",
+              "id": "us.artifacts.save_us_microplex_artifacts__artifact.artifact_manifest",
+              "label": "writes",
+              "notes": [],
+              "source": "us.artifacts.save_us_microplex_artifacts",
+              "stability": "stable",
+              "status": "current",
+              "target": "artifact.artifact_manifest"
+            },
+            {
+              "edgeType": "conditional",
+              "id": "artifact.policyengine_dataset__us.artifacts.save_versioned_us_microplex_artifacts",
+              "label": "versioned run",
+              "notes": [],
+              "source": "artifact.policyengine_dataset",
+              "stability": "stable",
+              "status": "current",
+              "target": "us.artifacts.save_versioned_us_microplex_artifacts"
+            },
+            {
+              "edgeType": "uses_utility",
+              "id": "us.artifacts.save_versioned_us_microplex_artifacts__us.artifacts.save_us_microplex_artifacts",
+              "label": "delegates",
+              "notes": [],
+              "source": "us.artifacts.save_versioned_us_microplex_artifacts",
+              "stability": "stable",
+              "status": "current",
+              "target": "us.artifacts.save_us_microplex_artifacts"
+            },
+            {
+              "edgeType": "produces_artifact",
+              "id": "us.artifacts.save_versioned_us_microplex_artifacts__artifact.versioned_bundle",
+              "label": "publishes",
+              "notes": [],
+              "source": "us.artifacts.save_versioned_us_microplex_artifacts",
+              "stability": "stable",
+              "status": "current",
+              "target": "artifact.versioned_bundle"
+            }
+          ],
+          "id": "08b_save_dataset_bundle",
+          "nodes": [
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "Top-level artifact manifest for a saved build.",
+              "details": "",
+              "docstring": null,
+              "id": "artifact.artifact_manifest",
+              "kind": null,
+              "label": "Artifact manifest",
+              "line": null,
+              "nodeType": "artifact",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "Final H5 dataset consumable by PolicyEngine-US.",
+              "details": "",
+              "docstring": null,
+              "id": "artifact.policyengine_dataset",
+              "kind": null,
+              "label": "PolicyEngine H5 dataset",
+              "line": null,
+              "nodeType": "artifact",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "Versioned output directory and registry-facing bundle metadata.",
+              "details": "",
+              "docstring": null,
+              "id": "artifact.versioned_bundle",
+              "kind": null,
+              "label": "Versioned bundle",
+              "line": null,
+              "nodeType": "artifact",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [
+                "build_result"
+              ],
+              "artifactsOut": [
+                "artifact_manifest",
+                "stage_artifacts",
+                "policyengine_dataset"
+              ],
+              "description": "Persist the build result, stage artifacts, diagnostics, manifests, and optional benchmark evidence.",
+              "details": "",
+              "docstring": "Persist a build result as a reproducible artifact bundle.",
+              "id": "us.artifacts.save_us_microplex_artifacts",
+              "kind": "function",
+              "label": "Save artifact bundle",
+              "line": 132,
+              "nodeType": "process",
+              "notes": [],
+              "objectPath": "microplex_us.pipelines.artifacts.save_us_microplex_artifacts",
+              "pydoc": "microplex_us.pipelines.artifacts.save_us_microplex_artifacts",
+              "signature": "save_us_microplex_artifacts(result, output_dir, *, policyengine_comparison_cache, policyengine_target_provider, policyengine_baseline_dataset, policyengine_harness_slices, policyengine_harness_metadata, policyengine_us_data_repo, defer_policyengine_harness, require_policyengine_native_score, defer_policyengine_native_score, precomputed_policyengine_harness_payload, precomputed_policyengine_native_scores, run_registry_path, run_index_path, run_registry_metadata, enable_child_tax_unit_agi_drift, child_tax_unit_agi_drift_variables, allow_stage_input_overrides, stage_input_overrides, stage_runtime_writer)",
+              "sourceFile": "src/microplex_us/pipelines/artifacts.py",
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [
+                "build_result"
+              ],
+              "artifactsOut": [
+                "versioned_artifact_bundle"
+              ],
+              "description": "Allocate a versioned output directory and save the reproducible artifact bundle there.",
+              "details": "",
+              "docstring": "Persist a build under a stable versioned directory beneath one output root.",
+              "id": "us.artifacts.save_versioned_us_microplex_artifacts",
+              "kind": "function",
+              "label": "Save versioned artifacts",
+              "line": 74,
+              "nodeType": "process",
+              "notes": [],
+              "objectPath": "microplex_us.pipelines.versioned_artifacts.save_versioned_us_microplex_artifacts",
+              "pydoc": "microplex_us.pipelines.versioned_artifacts.save_versioned_us_microplex_artifacts",
+              "signature": "save_versioned_us_microplex_artifacts(result, output_root, *, version_id, policyengine_comparison_cache, policyengine_target_provider, policyengine_baseline_dataset, policyengine_harness_slices, policyengine_harness_metadata, policyengine_us_data_repo, defer_policyengine_harness, require_policyengine_native_score, defer_policyengine_native_score, precomputed_policyengine_harness_payload, precomputed_policyengine_native_scores, run_registry_path, run_index_path, run_registry_metadata, enable_child_tax_unit_agi_drift, child_tax_unit_agi_drift_variables, allow_stage_input_overrides, stage_input_overrides)",
+              "sourceFile": "src/microplex_us/pipelines/versioned_artifacts.py",
+              "stability": "stable",
+              "status": "current"
+            }
+          ],
+          "stability": "evolving",
+          "stageId": "08_dataset_assembly",
+          "status": "current",
+          "title": "Save dataset bundle"
+        }
+      ],
+      "title": "Dataset assembly and publication"
+    },
+    {
+      "id": "09_validation_benchmarking",
+      "purpose": "Evaluate the assembled dataset and attach benchmark evidence.",
+      "step": "09",
+      "substages": [
+        {
+          "description": "Load the final H5 and previously written artifact manifest for replayable validation.",
+          "edges": [
+            {
+              "edgeType": "data_flow",
+              "id": "artifact.policyengine_dataset__us.policyengine.load_policyengine_us_entity_tables",
+              "label": "loads",
+              "notes": [],
+              "source": "artifact.policyengine_dataset",
+              "stability": "stable",
+              "status": "current",
+              "target": "us.policyengine.load_policyengine_us_entity_tables"
+            },
+            {
+              "edgeType": "data_flow",
+              "id": "artifact.artifact_manifest__artifact.validation_inputs",
+              "label": "indexes",
+              "notes": [],
+              "source": "artifact.artifact_manifest",
+              "stability": "stable",
+              "status": "current",
+              "target": "artifact.validation_inputs"
+            },
+            {
+              "edgeType": "produces_artifact",
+              "id": "us.policyengine.load_policyengine_us_entity_tables__artifact.validation_inputs",
+              "label": "tables",
+              "notes": [],
+              "source": "us.policyengine.load_policyengine_us_entity_tables",
+              "stability": "stable",
+              "status": "current",
+              "target": "artifact.validation_inputs"
+            }
+          ],
+          "id": "09a_load_validation_inputs",
+          "nodes": [
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "Top-level artifact manifest for a saved build.",
+              "details": "",
+              "docstring": null,
+              "id": "artifact.artifact_manifest",
+              "kind": null,
+              "label": "Artifact manifest",
+              "line": null,
+              "nodeType": "artifact",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "Final H5 dataset consumable by PolicyEngine-US.",
+              "details": "",
+              "docstring": null,
+              "id": "artifact.policyengine_dataset",
+              "kind": null,
+              "label": "PolicyEngine H5 dataset",
+              "line": null,
+              "nodeType": "artifact",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "Final dataset, manifest, optional baseline, and configured target provider.",
+              "details": "",
+              "docstring": null,
+              "id": "artifact.validation_inputs",
+              "kind": null,
+              "label": "Validation inputs",
+              "line": null,
+              "nodeType": "artifact",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [
+                "policyengine_dataset"
+              ],
+              "artifactsOut": [
+                "policyengine_entity_tables"
+              ],
+              "description": "Load a PolicyEngine H5 dataset into multientity tables for validation or replay.",
+              "details": "",
+              "docstring": "Load a PE-US time-period dataset into a multientity table bundle.",
+              "id": "us.policyengine.load_policyengine_us_entity_tables",
+              "kind": "function",
+              "label": "Load PE entity tables",
+              "line": 2159,
+              "nodeType": "process",
+              "notes": [],
+              "objectPath": "microplex_us.policyengine.us.load_policyengine_us_entity_tables",
+              "pydoc": "microplex_us.policyengine.us.load_policyengine_us_entity_tables",
+              "signature": "load_policyengine_us_entity_tables(dataset, *, period, variables)",
+              "sourceFile": "src/microplex_us/policyengine/us.py",
+              "stability": "stable",
+              "status": "current"
+            }
+          ],
+          "stability": "stable",
+          "stageId": "09_validation_benchmarking",
+          "status": "current",
+          "title": "Load validation inputs"
+        },
+        {
+          "description": "Run configured validation and benchmark evidence, including PE target harness and PE-native scores.",
+          "edges": [
+            {
+              "edgeType": "validates",
+              "id": "artifact.validation_inputs__us.stage9.evaluate_policyengine_us_harness",
+              "label": "target harness",
+              "notes": [],
+              "source": "artifact.validation_inputs",
+              "stability": "stable",
+              "status": "current",
+              "target": "us.stage9.evaluate_policyengine_us_harness"
+            },
+            {
+              "edgeType": "produces_artifact",
+              "id": "us.stage9.evaluate_policyengine_us_harness__artifact.policyengine_harness",
+              "label": "writes",
+              "notes": [],
+              "source": "us.stage9.evaluate_policyengine_us_harness",
+              "stability": "stable",
+              "status": "current",
+              "target": "artifact.policyengine_harness"
+            },
+            {
+              "edgeType": "validates",
+              "id": "artifact.validation_inputs__us.stage9.compute_pe_native_scores",
+              "label": "native score",
+              "notes": [],
+              "source": "artifact.validation_inputs",
+              "stability": "stable",
+              "status": "current",
+              "target": "us.stage9.compute_pe_native_scores"
+            },
+            {
+              "edgeType": "produces_artifact",
+              "id": "us.stage9.compute_pe_native_scores__artifact.policyengine_native_scores",
+              "label": "writes",
+              "notes": [],
+              "source": "us.stage9.compute_pe_native_scores",
+              "stability": "stable",
+              "status": "current",
+              "target": "artifact.policyengine_native_scores"
+            },
+            {
+              "edgeType": "produces_artifact",
+              "id": "us.stage9.attach_rebuild_checkpoint_evidence__artifact.benchmark_summary",
+              "label": "summarizes",
+              "notes": [],
+              "source": "us.stage9.attach_rebuild_checkpoint_evidence",
+              "stability": "stable",
+              "status": "current",
+              "target": "artifact.benchmark_summary"
+            }
+          ],
+          "id": "09b_compute_benchmark_evidence",
+          "nodes": [
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "Saved summary of validation and benchmark evidence.",
+              "details": "",
+              "docstring": null,
+              "id": "artifact.benchmark_summary",
+              "kind": null,
+              "label": "Benchmark summary",
+              "line": null,
+              "nodeType": "artifact",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "Target-slice benchmark comparison against configured targets and baseline.",
+              "details": "",
+              "docstring": null,
+              "id": "artifact.policyengine_harness",
+              "kind": null,
+              "label": "PolicyEngine harness",
+              "line": null,
+              "nodeType": "artifact",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "Loss payload from the PE-US-data native score implementation.",
+              "details": "",
+              "docstring": null,
+              "id": "artifact.policyengine_native_scores",
+              "kind": null,
+              "label": "PE-native scores",
+              "line": null,
+              "nodeType": "artifact",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "Final dataset, manifest, optional baseline, and configured target provider.",
+              "details": "",
+              "docstring": null,
+              "id": "artifact.validation_inputs",
+              "kind": null,
+              "label": "Validation inputs",
+              "line": null,
+              "nodeType": "artifact",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [
+                "artifact_manifest",
+                "policyengine_dataset"
+              ],
+              "artifactsOut": [
+                "benchmark_summary",
+                "validation_evidence"
+              ],
+              "description": "Attach PolicyEngine comparison, native-score, and audit evidence to a saved artifact bundle.",
+              "details": "",
+              "docstring": "Attach PE comparison evidence to an already-saved rebuild artifact.",
+              "id": "us.stage9.attach_rebuild_checkpoint_evidence",
+              "kind": "function",
+              "label": "Attach PE rebuild evidence",
+              "line": 1517,
+              "nodeType": "process",
+              "notes": [],
+              "objectPath": "microplex_us.pipelines.pe_us_data_rebuild_checkpoint.attach_policyengine_us_data_rebuild_checkpoint_evidence",
+              "pydoc": "microplex_us.pipelines.pe_us_data_rebuild_checkpoint.attach_policyengine_us_data_rebuild_checkpoint_evidence",
+              "signature": "attach_policyengine_us_data_rebuild_checkpoint_evidence(artifact_dir, *, build_result, program, policyengine_comparison_cache, policyengine_target_provider, policyengine_baseline_dataset, policyengine_harness_slices, policyengine_harness_metadata, policyengine_us_data_repo, policyengine_us_data_python, compute_harness, compute_native_scores, compute_native_audit, compute_imputation_ablation, require_policyengine_native_score, precomputed_policyengine_harness_payload, precomputed_policyengine_native_scores, precomputed_imputation_ablation_payload, run_registry_path, run_index_path, run_registry_metadata)",
+              "sourceFile": "src/microplex_us/pipelines/pe_us_data_rebuild_checkpoint.py",
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [
+                "policyengine_dataset",
+                "baseline_policyengine_dataset"
+              ],
+              "artifactsOut": [
+                "policyengine_native_scores"
+              ],
+              "description": "Score a candidate H5 against a baseline with the PolicyEngine-US-data loss implementation.",
+              "details": "",
+              "docstring": "Build the saved manifest payload for PE-native broad scoring.",
+              "id": "us.stage9.compute_pe_native_scores",
+              "kind": "function",
+              "label": "Compute PE-native scores",
+              "line": 2527,
+              "nodeType": "process",
+              "notes": [],
+              "objectPath": "microplex_us.pipelines.pe_native_scores.compute_us_pe_native_scores",
+              "pydoc": "microplex_us.pipelines.pe_native_scores.compute_us_pe_native_scores",
+              "signature": "compute_us_pe_native_scores(*, candidate_dataset_path, baseline_dataset_path, period, policyengine_us_data_repo, policyengine_us_data_python, target_scope_filter)",
+              "sourceFile": "src/microplex_us/pipelines/pe_native_scores.py",
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [
+                "policyengine_entity_tables",
+                "policyengine_targets"
+              ],
+              "artifactsOut": [
+                "policyengine_harness"
+              ],
+              "description": "Evaluate candidate entity tables against PolicyEngine target slices and baseline evidence.",
+              "details": "",
+              "docstring": "Evaluate a candidate bundle against a baseline across named target slices.",
+              "id": "us.stage9.evaluate_policyengine_us_harness",
+              "kind": "function",
+              "label": "Evaluate PE target harness",
+              "line": 794,
+              "nodeType": "process",
+              "notes": [],
+              "objectPath": "microplex_us.policyengine.harness.evaluate_policyengine_us_harness",
+              "pydoc": "microplex_us.policyengine.harness.evaluate_policyengine_us_harness",
+              "signature": "evaluate_policyengine_us_harness(candidate_tables, provider, slices, *, baseline_dataset, dataset_year, simulation_cls, candidate_label, baseline_label, metadata, strict_materialization, cache, candidate_direct_override_variables)",
+              "sourceFile": "src/microplex_us/policyengine/harness.py",
+              "stability": "stable",
+              "status": "current"
+            }
+          ],
+          "stability": "evolving",
+          "stageId": "09_validation_benchmarking",
+          "status": "current",
+          "title": "Compute benchmark evidence"
+        },
+        {
+          "description": "Index validation artifacts for saved-run overlays and allow Stage 9 replay without mutating Stage 8 outputs.",
+          "edges": [
+            {
+              "edgeType": "data_flow",
+              "id": "artifact.benchmark_summary__us.stage9.build_validation_evidence_manifest",
+              "label": "indexes",
+              "notes": [],
+              "source": "artifact.benchmark_summary",
+              "stability": "stable",
+              "status": "current",
+              "target": "us.stage9.build_validation_evidence_manifest"
+            },
+            {
+              "edgeType": "data_flow",
+              "id": "us.stage9.build_validation_evidence_manifest__us.stage9.write_validation_evidence_manifest",
+              "label": "persists",
+              "notes": [],
+              "source": "us.stage9.build_validation_evidence_manifest",
+              "stability": "stable",
+              "status": "current",
+              "target": "us.stage9.write_validation_evidence_manifest"
+            },
+            {
+              "edgeType": "produces_artifact",
+              "id": "us.stage9.write_validation_evidence_manifest__artifact.validation_evidence_manifest",
+              "label": "writes",
+              "notes": [],
+              "source": "us.stage9.write_validation_evidence_manifest",
+              "stability": "stable",
+              "status": "current",
+              "target": "artifact.validation_evidence_manifest"
+            },
+            {
+              "edgeType": "conditional",
+              "id": "artifact.validation_inputs__us.stage9.replay_validation_benchmarking",
+              "label": "replay path",
+              "notes": [],
+              "source": "artifact.validation_inputs",
+              "stability": "stable",
+              "status": "current",
+              "target": "us.stage9.replay_validation_benchmarking"
+            },
+            {
+              "edgeType": "produces_artifact",
+              "id": "us.stage9.replay_validation_benchmarking__artifact.validation_evidence_manifest",
+              "label": "replays",
+              "notes": [],
+              "source": "us.stage9.replay_validation_benchmarking",
+              "stability": "stable",
+              "status": "current",
+              "target": "artifact.validation_evidence_manifest"
+            }
+          ],
+          "id": "09c_write_validation_evidence",
+          "nodes": [
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "Saved summary of validation and benchmark evidence.",
+              "details": "",
+              "docstring": null,
+              "id": "artifact.benchmark_summary",
+              "kind": null,
+              "label": "Benchmark summary",
+              "line": null,
+              "nodeType": "artifact",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "Stage 9 evidence index used by overlays, checks, and replay.",
+              "details": "",
+              "docstring": null,
+              "id": "artifact.validation_evidence_manifest",
+              "kind": null,
+              "label": "Validation evidence manifest",
+              "line": null,
+              "nodeType": "artifact",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [],
+              "artifactsOut": [],
+              "description": "Final dataset, manifest, optional baseline, and configured target provider.",
+              "details": "",
+              "docstring": null,
+              "id": "artifact.validation_inputs",
+              "kind": null,
+              "label": "Validation inputs",
+              "line": null,
+              "nodeType": "artifact",
+              "notes": [],
+              "objectPath": null,
+              "pydoc": null,
+              "signature": null,
+              "sourceFile": null,
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [
+                "artifact_manifest"
+              ],
+              "artifactsOut": [
+                "validation_evidence_manifest"
+              ],
+              "description": "Index validation and benchmark evidence files written for Stage 9.",
+              "details": "",
+              "docstring": "Build a compact Stage 9 evidence index from a saved artifact manifest.",
+              "id": "us.stage9.build_validation_evidence_manifest",
+              "kind": "function",
+              "label": "Build validation evidence manifest",
+              "line": 26,
+              "nodeType": "process",
+              "notes": [],
+              "objectPath": "microplex_us.pipelines.stage_validation_evidence.build_us_validation_evidence_manifest",
+              "pydoc": "microplex_us.pipelines.stage_validation_evidence.build_us_validation_evidence_manifest",
+              "signature": "build_us_validation_evidence_manifest(artifact_dir, *, manifest_payload)",
+              "sourceFile": "src/microplex_us/pipelines/stage_validation_evidence.py",
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [
+                "policyengine_dataset",
+                "artifact_manifest"
+              ],
+              "artifactsOut": [
+                "validation_evidence_manifest"
+              ],
+              "description": "Rerun validation and benchmark evidence against an existing Stage 8 dataset bundle.",
+              "details": "",
+              "docstring": "Rerun safe Stage 9 evidence against an existing Stage 8 dataset.\n\nThe original artifact bundle is left untouched. New evidence is written under\na replay directory and indexed by a replay-local evidence manifest.",
+              "id": "us.stage9.replay_validation_benchmarking",
+              "kind": "function",
+              "label": "Replay Stage 9 validation",
+              "line": 38,
+              "nodeType": "process",
+              "notes": [],
+              "objectPath": "microplex_us.pipelines.stage9_replay.replay_us_stage9_validation_benchmarking",
+              "pydoc": "microplex_us.pipelines.stage9_replay.replay_us_stage9_validation_benchmarking",
+              "signature": "replay_us_stage9_validation_benchmarking(artifact_dir, *, output_dir, baseline_dataset, policyengine_us_data_repo, period, precomputed_policyengine_harness, precomputed_policyengine_native_scores, run_id, allow_overwrite)",
+              "sourceFile": "src/microplex_us/pipelines/stage9_replay.py",
+              "stability": "stable",
+              "status": "current"
+            },
+            {
+              "apiRefs": [],
+              "artifactsIn": [
+                "validation_evidence_manifest"
+              ],
+              "artifactsOut": [
+                "validation_evidence_manifest_file"
+              ],
+              "description": "Persist the Stage 9 validation evidence manifest.",
+              "details": "",
+              "docstring": "Write a Stage 9 evidence manifest for validation/benchmark sidecars.",
+              "id": "us.stage9.write_validation_evidence_manifest",
+              "kind": "function",
+              "label": "Write validation evidence manifest",
+              "line": 94,
+              "nodeType": "process",
+              "notes": [],
+              "objectPath": "microplex_us.pipelines.stage_validation_evidence.write_us_validation_evidence_manifest",
+              "pydoc": "microplex_us.pipelines.stage_validation_evidence.write_us_validation_evidence_manifest",
+              "signature": "write_us_validation_evidence_manifest(artifact_dir, output_path, *, manifest_payload)",
+              "sourceFile": "src/microplex_us/pipelines/stage_validation_evidence.py",
+              "stability": "stable",
+              "status": "current"
+            }
+          ],
+          "stability": "evolving",
+          "stageId": "09_validation_benchmarking",
+          "status": "current",
+          "title": "Write validation evidence manifest"
+        }
+      ],
+      "title": "Validation and benchmarking"
+    }
+  ]
+}

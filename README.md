@@ -40,8 +40,9 @@ labels with structured target IDs and flags legacy-only gaps.
 
 ## Pipeline viewer
 
-The separate `pipeline_viewer/` app renders generated pipeline graph and overlay
-JSON with ELK-routed React Flow edges. Regenerate the public graph data with:
+The separate `pipeline_viewer/` app renders generated pipeline graph, substage
+machinery, and overlay JSON with ELK-routed React Flow edges. Regenerate the
+public graph data with:
 
 ```bash
 microplex-us-generate-pipeline-docs --output-dir docs/generated

@@ -28,6 +28,7 @@ from microplex.targets import (
     union_target_sets,
 )
 
+from microplex_us.pipeline_metadata import pipeline_node
 from microplex_us.policyengine.comparison import (
     POLICYENGINE_US_BENCHMARK_GROUP_FIELDS,
     PolicyEngineUSComparisonCache,
@@ -783,6 +784,13 @@ class _PolicyEngineUSBaselineBatchResultEvaluator(BatchBenchmarkResultEvaluator)
         return {name: report.benchmark_result for name, report in reports.items()}
 
 
+@pipeline_node(
+    id="us.stage9.evaluate_policyengine_us_harness",
+    label="Evaluate PE target harness",
+    description="Evaluate candidate entity tables against PolicyEngine target slices and baseline evidence.",
+    artifacts_in=("policyengine_entity_tables", "policyengine_targets"),
+    artifacts_out=("policyengine_harness",),
+)
 def evaluate_policyengine_us_harness(
     candidate_tables: PolicyEngineUSEntityTableBundle,
     provider: TargetProvider,

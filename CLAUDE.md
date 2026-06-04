@@ -104,7 +104,8 @@ To check whether embeddings exist, inspect `.gitnexus/meta.json` — the `stats.
 
 Regenerate the committed canonical pipeline graph and schema files whenever
 stage contracts, stage manifest schemas, pipeline overlay schemas, graph
-generation code, or viewer fixtures change:
+generation code, `docs/us_pipeline_internals.map.json`, `@pipeline_node`
+decorators, or viewer fixtures change:
 
 ```bash
 microplex-us-generate-pipeline-docs --output-dir docs/generated
@@ -121,5 +122,6 @@ npm run build
 ```
 
 Use the generated graph and overlay JSON as the source of truth for visual
-pipeline docs. Do not use Mermaid for this diagram; the viewer relies on
-ELK-routed edges so stage handoffs remain legible as overlays change.
+pipeline docs. Use the generated internals JSON for substage/function machinery.
+Do not use Mermaid for this diagram; the viewer relies on ELK-routed edges so
+stage handoffs and substage paths remain legible as overlays change.

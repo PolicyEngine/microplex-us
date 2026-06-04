@@ -1,0 +1,203 @@
+{
+  "$defs": {
+    "edge": {
+      "properties": {
+        "edgeType": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "source",
+        "target",
+        "edgeType",
+        "label"
+      ],
+      "type": "object"
+    },
+    "node": {
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "line": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "nodeType": {
+          "type": "string"
+        },
+        "objectPath": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pydoc": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "signature": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sourceFile": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "stability": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "nodeType",
+        "status",
+        "stability"
+      ],
+      "type": "object"
+    },
+    "stage": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "purpose": {
+          "type": "string"
+        },
+        "step": {
+          "type": "string"
+        },
+        "substages": {
+          "items": {
+            "$ref": "#/$defs/substage"
+          },
+          "type": "array"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "step",
+        "title",
+        "purpose",
+        "substages"
+      ],
+      "type": "object"
+    },
+    "substage": {
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "edges": {
+          "items": {
+            "$ref": "#/$defs/edge"
+          },
+          "type": "array"
+        },
+        "id": {
+          "type": "string"
+        },
+        "nodes": {
+          "items": {
+            "$ref": "#/$defs/node"
+          },
+          "type": "array"
+        },
+        "stageId": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "stageId",
+        "title",
+        "description",
+        "nodes",
+        "edges"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://policyengine.org/schemas/microplex-us/pipeline-internals-v1.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "apiNodes": {
+      "items": {
+        "$ref": "#/$defs/node"
+      },
+      "type": "array"
+    },
+    "contractVersion": {
+      "type": "string"
+    },
+    "generatedFrom": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "graphSchemaVersion": {
+      "const": 1
+    },
+    "pipeline": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "stages": {
+      "items": {
+        "$ref": "#/$defs/stage"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "graphSchemaVersion",
+    "contractVersion",
+    "generatedFrom",
+    "pipeline",
+    "stages",
+    "apiNodes"
+  ],
+  "title": "Microplex-US pipeline internals",
+  "type": "object"
+}

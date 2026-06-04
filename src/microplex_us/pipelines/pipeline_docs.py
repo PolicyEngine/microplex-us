@@ -9,6 +9,8 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, Literal, TypedDict, cast
 
+from microplex_us.pipeline_extractor import collect_pipeline_nodes
+from microplex_us.pipeline_schema import PipelineEdge, PipelineNode
 from microplex_us.pipelines.stage_contracts import (
     US_STAGE_CONTRACT_VERSION,
     USPipelineStageContract,
@@ -23,6 +25,8 @@ from microplex_us.pipelines.stage_manifest_types import (
 
 US_PIPELINE_GRAPH_SCHEMA_VERSION = 1
 US_PIPELINE_OVERLAY_SCHEMA_VERSION = 1
+US_PIPELINE_INTERNALS_SCHEMA_VERSION = 1
+DEFAULT_US_PIPELINE_INTERNALS_MAP = "docs/us_pipeline_internals.map.json"
 
 
 class USPipelineGraphNode(TypedDict):
@@ -101,6 +105,18 @@ class USPipelineOverlay(TypedDict):
     stages: list[USPipelineOverlayStage]
 
 
+class USPipelineInternals(TypedDict):
+    """Static substage and machinery graph generated from docs metadata."""
+
+    schemaVersion: int
+    graphSchemaVersion: int
+    contractVersion: str
+    generatedFrom: list[str]
+    pipeline: str
+    stages: list[dict[str, Any]]
+    apiNodes: list[dict[str, Any]]
+
+
 def build_us_pipeline_graph() -> USPipelineGraph:
     """Build canonical US pipeline graph data from stage contracts."""
 
@@ -120,6 +136,77 @@ def build_us_pipeline_graph() -> USPipelineGraph:
         "pipeline": "us_microplex",
         "nodes": nodes,
         "edges": edges,
+    }
+
+
+def build_us_pipeline_internals(
+    *,
+    repo_root: str | Path | None = None,
+    map_path: str | Path | None = None,
+) -> USPipelineInternals:
+    """Build stage machinery graph data from the authored map and decorators."""
+
+    root = Path(repo_root) if repo_root is not None else _default_repo_root()
+    source_map_path = (
+        Path(map_path)
+        if map_path is not None
+        else root / DEFAULT_US_PIPELINE_INTERNALS_MAP
+    )
+    source_map = _load_pipeline_internals_map(source_map_path)
+    contract_list = default_us_pipeline_stage_contracts()
+    contracts = {contract.id: contract for contract in contract_list}
+    expected_stage_ids = [contract.id for contract in contract_list]
+    decorated_nodes = collect_pipeline_nodes(repo_root=root)
+    authored_nodes = _pipeline_internals_authored_nodes(source_map)
+    referenced_decorated_node_ids: set[str] = set()
+    stages: list[dict[str, Any]] = []
+    stage_payloads = _list_of_mappings(source_map.get("stages"))
+    actual_stage_ids = [str(stage.get("id", "")) for stage in stage_payloads]
+    if actual_stage_ids != expected_stage_ids:
+        raise ValueError(
+            "pipeline internals map stage ids must match canonical stage order: "
+            f"{', '.join(expected_stage_ids)}"
+        )
+    for stage_payload in stage_payloads:
+        stage_id = str(stage_payload.get("id", ""))
+        if stage_id not in contracts:
+            raise ValueError(f"unknown pipeline internals stage id: {stage_id}")
+        contract = contracts[stage_id]
+        substages: list[dict[str, Any]] = []
+        for substage_payload in _list_of_mappings(stage_payload.get("substages")):
+            substage, referenced_ids = _pipeline_internals_substage(
+                stage_id=stage_id,
+                payload=substage_payload,
+                decorated_nodes=decorated_nodes,
+                authored_nodes=authored_nodes,
+            )
+            substages.append(substage)
+            referenced_decorated_node_ids.update(referenced_ids)
+        stages.append(
+            {
+                "id": stage_id,
+                "step": contract.step,
+                "title": contract.title,
+                "purpose": contract.purpose,
+                "substages": substages,
+            }
+        )
+    api_nodes = [
+        decorated_nodes[node_id].to_node()
+        for node_id in sorted(set(decorated_nodes) - referenced_decorated_node_ids)
+    ]
+    return {
+        "schemaVersion": US_PIPELINE_INTERNALS_SCHEMA_VERSION,
+        "graphSchemaVersion": US_PIPELINE_GRAPH_SCHEMA_VERSION,
+        "contractVersion": US_STAGE_CONTRACT_VERSION,
+        "generatedFrom": [
+            "microplex_us.pipelines.stage_contracts",
+            DEFAULT_US_PIPELINE_INTERNALS_MAP,
+            "microplex_us.pipeline_metadata.pipeline_node",
+        ],
+        "pipeline": str(source_map.get("pipeline", "us_microplex")),
+        "stages": stages,
+        "apiNodes": api_nodes,
     }
 
 
@@ -155,6 +242,98 @@ def build_us_pipeline_overlay(
             for stage in stage_manifest.get("stages", ())
             if isinstance(stage, dict)
         ],
+    }
+
+
+def pipeline_internals_json_schema() -> dict[str, Any]:
+    """Return the JSON schema for substage machinery graph data."""
+
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "https://policyengine.org/schemas/microplex-us/pipeline-internals-v1.json",
+        "title": "Microplex-US pipeline internals",
+        "type": "object",
+        "required": [
+            "schemaVersion",
+            "graphSchemaVersion",
+            "contractVersion",
+            "generatedFrom",
+            "pipeline",
+            "stages",
+            "apiNodes",
+        ],
+        "properties": {
+            "schemaVersion": {"const": US_PIPELINE_INTERNALS_SCHEMA_VERSION},
+            "graphSchemaVersion": {"const": US_PIPELINE_GRAPH_SCHEMA_VERSION},
+            "contractVersion": {"type": "string"},
+            "generatedFrom": {"type": "array", "items": {"type": "string"}},
+            "pipeline": {"type": "string"},
+            "stages": {"type": "array", "items": {"$ref": "#/$defs/stage"}},
+            "apiNodes": {"type": "array", "items": {"$ref": "#/$defs/node"}},
+        },
+        "$defs": {
+            "stage": {
+                "type": "object",
+                "required": ["id", "step", "title", "purpose", "substages"],
+                "properties": {
+                    "id": {"type": "string"},
+                    "step": {"type": "string"},
+                    "title": {"type": "string"},
+                    "purpose": {"type": "string"},
+                    "substages": {
+                        "type": "array",
+                        "items": {"$ref": "#/$defs/substage"},
+                    },
+                },
+            },
+            "substage": {
+                "type": "object",
+                "required": [
+                    "id",
+                    "stageId",
+                    "title",
+                    "description",
+                    "nodes",
+                    "edges",
+                ],
+                "properties": {
+                    "id": {"type": "string"},
+                    "stageId": {"type": "string"},
+                    "title": {"type": "string"},
+                    "description": {"type": "string"},
+                    "nodes": {"type": "array", "items": {"$ref": "#/$defs/node"}},
+                    "edges": {"type": "array", "items": {"$ref": "#/$defs/edge"}},
+                },
+            },
+            "node": {
+                "type": "object",
+                "required": ["id", "label", "nodeType", "status", "stability"],
+                "properties": {
+                    "id": {"type": "string"},
+                    "label": {"type": "string"},
+                    "nodeType": {"type": "string"},
+                    "description": {"type": "string"},
+                    "sourceFile": {"type": ["string", "null"]},
+                    "line": {"type": ["integer", "null"]},
+                    "objectPath": {"type": ["string", "null"]},
+                    "signature": {"type": ["string", "null"]},
+                    "pydoc": {"type": ["string", "null"]},
+                    "status": {"type": "string"},
+                    "stability": {"type": "string"},
+                },
+            },
+            "edge": {
+                "type": "object",
+                "required": ["id", "source", "target", "edgeType", "label"],
+                "properties": {
+                    "id": {"type": "string"},
+                    "source": {"type": "string"},
+                    "target": {"type": "string"},
+                    "edgeType": {"type": "string"},
+                    "label": {"type": "string"},
+                },
+            },
+        },
     }
 
 
@@ -292,7 +471,12 @@ def build_us_pipeline_docs_payloads(
     payloads = {
         "us_pipeline_graph.schema.json": pipeline_graph_json_schema(),
         "us_pipeline_overlay.schema.json": pipeline_overlay_json_schema(),
+        "us_pipeline_internals.schema.json": pipeline_internals_json_schema(),
         "us_pipeline_graph.json": cast(dict[str, Any], build_us_pipeline_graph()),
+        "us_pipeline_internals.json": cast(
+            dict[str, Any],
+            build_us_pipeline_internals(),
+        ),
     }
     if artifact_root is not None:
         payloads["us_pipeline_overlay.json"] = cast(
@@ -419,6 +603,84 @@ def _graph_edge(
     }
 
 
+def _load_pipeline_internals_map(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        raise FileNotFoundError(f"pipeline internals map not found: {path}")
+    payload = json.loads(path.read_text())
+    if not isinstance(payload, dict):
+        raise ValueError(f"pipeline internals map must be a JSON object: {path}")
+    if payload.get("schemaVersion") != US_PIPELINE_INTERNALS_SCHEMA_VERSION:
+        raise ValueError(
+            "pipeline internals map schemaVersion must be "
+            f"{US_PIPELINE_INTERNALS_SCHEMA_VERSION}"
+        )
+    return payload
+
+
+def _pipeline_internals_substage(
+    *,
+    stage_id: str,
+    payload: Mapping[str, Any],
+    decorated_nodes: Mapping[str, Any],
+    authored_nodes: Mapping[str, dict[str, Any]],
+) -> tuple[dict[str, Any], set[str]]:
+    substage_id = str(payload.get("id", ""))
+    if not substage_id:
+        raise ValueError(f"pipeline internals substage for {stage_id} requires an id")
+    nodes_by_id: dict[str, dict[str, Any]] = {}
+    for node_payload in _list_of_mappings(payload.get("nodes")):
+        node = PipelineNode.from_mapping(node_payload).to_dict()
+        node_id = str(node["id"])
+        if node_id in nodes_by_id:
+            raise ValueError(f"duplicate node id '{node_id}' in {substage_id}")
+        nodes_by_id[node_id] = node
+    edges = [
+        PipelineEdge.from_mapping(edge_payload).to_dict()
+        for edge_payload in _list_of_mappings(payload.get("edges"))
+    ]
+    referenced_node_ids = {
+        str(edge[endpoint]) for edge in edges for endpoint in ("source", "target")
+    }
+    referenced_decorated_node_ids = {
+        node_id for node_id in referenced_node_ids if node_id in decorated_nodes
+    }
+    for node_id in sorted(referenced_decorated_node_ids):
+        nodes_by_id.setdefault(node_id, decorated_nodes[node_id].to_node())
+    for node_id in sorted(referenced_node_ids):
+        if node_id in authored_nodes:
+            nodes_by_id.setdefault(node_id, authored_nodes[node_id])
+    missing = sorted(referenced_node_ids - set(nodes_by_id))
+    if missing:
+        raise ValueError(
+            f"{substage_id} references unknown pipeline node ids: {', '.join(missing)}"
+        )
+    return (
+        {
+            "id": substage_id,
+            "stageId": stage_id,
+            "title": str(payload.get("title", substage_id)),
+            "description": str(payload.get("description", "")),
+            "status": str(payload.get("status", "current")),
+            "stability": str(payload.get("stability", "stable")),
+            "nodes": sorted(nodes_by_id.values(), key=lambda node: str(node["id"])),
+            "edges": edges,
+        },
+        referenced_decorated_node_ids,
+    )
+
+
+def _pipeline_internals_authored_nodes(
+    source_map: Mapping[str, Any],
+) -> dict[str, dict[str, Any]]:
+    nodes_by_id: dict[str, dict[str, Any]] = {}
+    for stage_payload in _list_of_mappings(source_map.get("stages")):
+        for substage_payload in _list_of_mappings(stage_payload.get("substages")):
+            for node_payload in _list_of_mappings(substage_payload.get("nodes")):
+                node = PipelineNode.from_mapping(node_payload).to_dict()
+                nodes_by_id.setdefault(str(node["id"]), node)
+    return nodes_by_id
+
+
 def _load_or_build_stage_manifest(
     artifact_root: Path,
     manifest: dict[str, Any],
@@ -501,7 +763,9 @@ def _benchmark_summary(stage: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def _node_kind(stage_id: str) -> Literal[
+def _node_kind(
+    stage_id: str,
+) -> Literal[
     "configuration",
     "source",
     "planning",
@@ -574,18 +838,26 @@ def _json_diff(path: Path, existing: str, expected: str) -> str:
     return "\n".join(diff)
 
 
+def _default_repo_root() -> Path:
+    return Path(__file__).resolve().parents[3]
+
+
 __all__ = [
     "US_PIPELINE_GRAPH_SCHEMA_VERSION",
+    "US_PIPELINE_INTERNALS_SCHEMA_VERSION",
     "US_PIPELINE_OVERLAY_SCHEMA_VERSION",
     "USPipelineGraph",
     "USPipelineGraphEdge",
     "USPipelineGraphNode",
+    "USPipelineInternals",
     "USPipelineOverlay",
     "USPipelineOverlayStage",
     "build_us_pipeline_docs_payloads",
     "build_us_pipeline_graph",
+    "build_us_pipeline_internals",
     "build_us_pipeline_overlay",
     "pipeline_graph_json_schema",
+    "pipeline_internals_json_schema",
     "pipeline_overlay_json_schema",
     "write_us_pipeline_docs",
 ]

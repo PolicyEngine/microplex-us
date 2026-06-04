@@ -1,0 +1,866 @@
+{
+  "schemaVersion": 1,
+  "pipeline": "us_microplex",
+  "stages": [
+    {
+      "id": "01_run_profile",
+      "substages": [
+        {
+          "id": "01a_resolve_run_profile",
+          "title": "Resolve run profile",
+          "description": "Resolve build configuration, provider query choices, output locations, and optional validation settings before any data is loaded.",
+          "status": "current",
+          "stability": "evolving",
+          "nodes": [
+            {
+              "id": "config.build_config",
+              "label": "USMicroplexBuildConfig",
+              "nodeType": "artifact",
+              "description": "User-facing configuration object for a US build."
+            },
+            {
+              "id": "config.provider_queries",
+              "label": "Provider query plan",
+              "nodeType": "artifact",
+              "description": "Resolved source-provider query settings."
+            },
+            {
+              "id": "artifact.run_profile",
+              "label": "Run profile manifest",
+              "nodeType": "artifact",
+              "description": "Stage 1 run metadata consumed by later stage manifests."
+            }
+          ],
+          "edges": [
+            {
+              "source": "config.build_config",
+              "target": "config.provider_queries",
+              "edgeType": "data_flow",
+              "label": "resolves"
+            },
+            {
+              "source": "config.build_config",
+              "target": "us.pipeline.build_from_source_providers",
+              "edgeType": "data_flow",
+              "label": "starts build"
+            },
+            {
+              "source": "us.pipeline.build_from_source_providers",
+              "target": "artifact.run_profile",
+              "edgeType": "produces_artifact",
+              "label": "initializes"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "02_source_loading",
+      "substages": [
+        {
+          "id": "02a_prepare_source_input",
+          "title": "Prepare source input",
+          "description": "Ask each configured provider for the requested source data and normalize it into source input records.",
+          "status": "current",
+          "stability": "evolving",
+          "nodes": [
+            {
+              "id": "external.source_providers",
+              "label": "Source providers",
+              "nodeType": "external",
+              "description": "CPS, PUF, ACS, SIPP, and other provider implementations available to the run."
+            },
+            {
+              "id": "artifact.source_frames",
+              "label": "Observation frames",
+              "nodeType": "artifact",
+              "description": "Loaded source tables plus entity and relationship metadata."
+            }
+          ],
+          "edges": [
+            {
+              "source": "external.source_providers",
+              "target": "us.pipeline.prepare_source_input",
+              "edgeType": "external_source",
+              "label": "queries"
+            },
+            {
+              "source": "us.pipeline.prepare_source_input",
+              "target": "artifact.source_frames",
+              "edgeType": "produces_artifact",
+              "label": "loads"
+            }
+          ]
+        },
+        {
+          "id": "02b_attach_source_semantics",
+          "title": "Attach source semantics",
+          "description": "Carry source descriptors, entity observations, and household-person relationships with loaded tables.",
+          "status": "current",
+          "stability": "stable",
+          "nodes": [
+            {
+              "id": "core.observation_frame",
+              "label": "ObservationFrame",
+              "nodeType": "library",
+              "description": "microplex core source container for tables and relationships.",
+              "apiRefs": [
+                "microplex.core.ObservationFrame",
+                "microplex.core.SourceDescriptor"
+              ]
+            },
+            {
+              "id": "artifact.source_semantics",
+              "label": "Source semantics",
+              "nodeType": "artifact",
+              "description": "Source availability, table, entity, relationship, and geography metadata."
+            }
+          ],
+          "edges": [
+            {
+              "source": "artifact.source_frames",
+              "target": "core.observation_frame",
+              "edgeType": "uses_library",
+              "label": "represented as"
+            },
+            {
+              "source": "core.observation_frame",
+              "target": "artifact.source_semantics",
+              "edgeType": "produces_artifact",
+              "label": "describes"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "03_source_planning",
+      "substages": [
+        {
+          "id": "03a_build_fusion_plan",
+          "title": "Build fusion plan",
+          "description": "Summarize variable coverage and source contribution roles before choosing the build backbone.",
+          "status": "current",
+          "stability": "evolving",
+          "nodes": [
+            {
+              "id": "core.fusion_planning",
+              "label": "Fusion planning",
+              "nodeType": "library",
+              "description": "microplex source-mix planning utilities.",
+              "apiRefs": [
+                "microplex.fusion.FusionPlan"
+              ]
+            },
+            {
+              "id": "artifact.fusion_plan",
+              "label": "Fusion plan",
+              "nodeType": "artifact",
+              "description": "Variable-family source coverage and synthetic-release requirements."
+            }
+          ],
+          "edges": [
+            {
+              "source": "artifact.source_frames",
+              "target": "core.fusion_planning",
+              "edgeType": "uses_library",
+              "label": "coverage"
+            },
+            {
+              "source": "core.fusion_planning",
+              "target": "artifact.fusion_plan",
+              "edgeType": "produces_artifact",
+              "label": "plans"
+            }
+          ]
+        },
+        {
+          "id": "03b_select_scaffold_source",
+          "title": "Select scaffold source",
+          "description": "Pick the household-person source that becomes the structural backbone of the national population.",
+          "status": "current",
+          "stability": "evolving",
+          "nodes": [
+            {
+              "id": "artifact.scaffold_selection",
+              "label": "Scaffold selection",
+              "nodeType": "artifact",
+              "description": "Selected source plus selection scores and rationale."
+            },
+            {
+              "id": "artifact.source_plan",
+              "label": "Source plan",
+              "nodeType": "artifact",
+              "description": "Stage 3 plan artifact consumed by the seed/scaffold stage."
+            }
+          ],
+          "edges": [
+            {
+              "source": "artifact.fusion_plan",
+              "target": "us.pipeline.select_scaffold_source",
+              "edgeType": "data_flow",
+              "label": "scores"
+            },
+            {
+              "source": "us.pipeline.select_scaffold_source",
+              "target": "artifact.scaffold_selection",
+              "edgeType": "produces_artifact",
+              "label": "chooses"
+            },
+            {
+              "source": "artifact.scaffold_selection",
+              "target": "artifact.source_plan",
+              "edgeType": "produces_artifact",
+              "label": "records"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "04_seed_scaffold",
+      "substages": [
+        {
+          "id": "04a_project_scaffold_seed",
+          "title": "Project scaffold seed",
+          "description": "Convert the selected scaffold source into initial household and person seed tables.",
+          "status": "current",
+          "stability": "evolving",
+          "nodes": [
+            {
+              "id": "artifact.scaffold_seed_data",
+              "label": "Scaffold seed data",
+              "nodeType": "artifact",
+              "description": "Pre-donor seed tables built from the chosen scaffold source."
+            }
+          ],
+          "edges": [
+            {
+              "source": "artifact.scaffold_selection",
+              "target": "us.pipeline.prepare_seed_data_from_source",
+              "edgeType": "data_flow",
+              "label": "projects"
+            },
+            {
+              "source": "us.pipeline.prepare_seed_data_from_source",
+              "target": "artifact.scaffold_seed_data",
+              "edgeType": "produces_artifact",
+              "label": "writes"
+            }
+          ]
+        },
+        {
+          "id": "04b_normalize_scaffold_ids",
+          "title": "Normalize scaffold identifiers",
+          "description": "Remove generated IDs that should not leak across the stage boundary.",
+          "status": "current",
+          "stability": "stable",
+          "nodes": [
+            {
+              "id": "artifact.normalized_scaffold_seed_data",
+              "label": "Normalized scaffold seed",
+              "nodeType": "artifact",
+              "description": "Scaffold seed data after generated ID cleanup."
+            }
+          ],
+          "edges": [
+            {
+              "source": "artifact.scaffold_seed_data",
+              "target": "us.pipeline.strip_generated_entity_ids",
+              "edgeType": "data_flow",
+              "label": "normalizes"
+            },
+            {
+              "source": "us.pipeline.strip_generated_entity_ids",
+              "target": "artifact.normalized_scaffold_seed_data",
+              "edgeType": "produces_artifact",
+              "label": "hands off"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "05_donor_integration_synthesis",
+      "substages": [
+        {
+          "id": "05a_integrate_donor_sources",
+          "title": "Integrate donor sources",
+          "description": "Impute donor variables from secondary sources onto the scaffold seed.",
+          "status": "current",
+          "stability": "evolving",
+          "nodes": [
+            {
+              "id": "artifact.donor_frames",
+              "label": "Donor frames",
+              "nodeType": "artifact",
+              "description": "Secondary source frames used for imputation."
+            },
+            {
+              "id": "artifact.seed_data",
+              "label": "Seed data",
+              "nodeType": "artifact",
+              "description": "Donor-integrated seed data consumed by synthesis."
+            }
+          ],
+          "edges": [
+            {
+              "source": "artifact.donor_frames",
+              "target": "us.pipeline.build_donor_imputer",
+              "edgeType": "data_flow",
+              "label": "fits"
+            },
+            {
+              "source": "us.pipeline.build_donor_imputer",
+              "target": "us.pipeline.integrate_donor_sources",
+              "edgeType": "uses_utility",
+              "label": "imputes"
+            },
+            {
+              "source": "artifact.normalized_scaffold_seed_data",
+              "target": "us.pipeline.integrate_donor_sources",
+              "edgeType": "data_flow",
+              "label": "augments"
+            },
+            {
+              "source": "us.pipeline.integrate_donor_sources",
+              "target": "artifact.seed_data",
+              "edgeType": "produces_artifact",
+              "label": "produces"
+            }
+          ]
+        },
+        {
+          "id": "05b_build_targets_and_variables",
+          "title": "Build targets and synthesis variables",
+          "description": "Build target counts and decide which variables the synthesizer must carry forward.",
+          "status": "current",
+          "stability": "evolving",
+          "nodes": [
+            {
+              "id": "core.targets",
+              "label": "Target specs",
+              "nodeType": "library",
+              "description": "microplex target-query and target-spec machinery.",
+              "apiRefs": [
+                "microplex.targets.TargetSpec",
+                "microplex.targets.TargetQuery"
+              ]
+            },
+            {
+              "id": "artifact.targets",
+              "label": "Targets",
+              "nodeType": "artifact",
+              "description": "Calibration and synthesis target surface."
+            },
+            {
+              "id": "artifact.synthesis_variables",
+              "label": "Synthesis variables",
+              "nodeType": "artifact",
+              "description": "Variables preserved or generated during synthesis."
+            }
+          ],
+          "edges": [
+            {
+              "source": "core.targets",
+              "target": "us.pipeline.build_targets",
+              "edgeType": "uses_library",
+              "label": "materializes"
+            },
+            {
+              "source": "us.pipeline.build_targets",
+              "target": "artifact.targets",
+              "edgeType": "produces_artifact",
+              "label": "counts"
+            },
+            {
+              "source": "artifact.targets",
+              "target": "us.pipeline.resolve_synthesis_variables",
+              "edgeType": "data_flow",
+              "label": "requires"
+            },
+            {
+              "source": "us.pipeline.resolve_synthesis_variables",
+              "target": "artifact.synthesis_variables",
+              "edgeType": "produces_artifact",
+              "label": "selects"
+            }
+          ]
+        },
+        {
+          "id": "05c_synthesize_population",
+          "title": "Synthesize population",
+          "description": "Generate the synthetic candidate population and enforce target support.",
+          "status": "current",
+          "stability": "evolving",
+          "nodes": [
+            {
+              "id": "core.synthesizer",
+              "label": "Synthesizer",
+              "nodeType": "library",
+              "description": "microplex synthesizer used to generate candidate records.",
+              "apiRefs": [
+                "microplex.synthesizer.Synthesizer"
+              ]
+            },
+            {
+              "id": "artifact.synthetic_data",
+              "label": "Synthetic data",
+              "nodeType": "artifact",
+              "description": "Generated records before calibration."
+            }
+          ],
+          "edges": [
+            {
+              "source": "artifact.seed_data",
+              "target": "us.pipeline.synthesize",
+              "edgeType": "data_flow",
+              "label": "seeds"
+            },
+            {
+              "source": "core.synthesizer",
+              "target": "us.pipeline.synthesize",
+              "edgeType": "uses_library",
+              "label": "runs"
+            },
+            {
+              "source": "us.pipeline.synthesize",
+              "target": "us.pipeline.ensure_target_support",
+              "edgeType": "data_flow",
+              "label": "supports"
+            },
+            {
+              "source": "us.pipeline.ensure_target_support",
+              "target": "artifact.synthetic_data",
+              "edgeType": "produces_artifact",
+              "label": "outputs"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "06_policyengine_entities",
+      "substages": [
+        {
+          "id": "06a_materialize_policyengine_tables",
+          "title": "Materialize PolicyEngine tables",
+          "description": "Convert synthetic records into household, person, tax-unit, family, and SPM entity tables.",
+          "status": "current",
+          "stability": "evolving",
+          "nodes": [
+            {
+              "id": "artifact.policyengine_entity_tables",
+              "label": "PolicyEngine entity tables",
+              "nodeType": "artifact",
+              "description": "In-memory entity-table bundle used for PE-native calibration and export."
+            }
+          ],
+          "edges": [
+            {
+              "source": "artifact.synthetic_data",
+              "target": "us.pipeline.build_policyengine_entity_tables",
+              "edgeType": "data_flow",
+              "label": "maps"
+            },
+            {
+              "source": "us.pipeline.build_policyengine_entity_tables",
+              "target": "artifact.policyengine_entity_tables",
+              "edgeType": "produces_artifact",
+              "label": "builds"
+            }
+          ]
+        },
+        {
+          "id": "06b_checkpoint_and_contract_check",
+          "title": "Checkpoint and contract-check entity tables",
+          "description": "Optionally persist pre-calibration entity tables and verify the export-column surface.",
+          "status": "current",
+          "stability": "stable",
+          "nodes": [
+            {
+              "id": "artifact.policyengine_checkpoint",
+              "label": "PolicyEngine checkpoint",
+              "nodeType": "artifact",
+              "description": "Parquet checkpoint for PE entity tables at a resumable boundary."
+            }
+          ],
+          "edges": [
+            {
+              "source": "artifact.policyengine_entity_tables",
+              "target": "us.policyengine.save_us_pipeline_checkpoint",
+              "edgeType": "produces_artifact",
+              "label": "optional"
+            },
+            {
+              "source": "us.policyengine.save_us_pipeline_checkpoint",
+              "target": "artifact.policyengine_checkpoint",
+              "edgeType": "produces_artifact",
+              "label": "writes"
+            },
+            {
+              "source": "artifact.policyengine_entity_tables",
+              "target": "us.pipeline.check_policyengine_export_column_contract",
+              "edgeType": "validates",
+              "label": "checks"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "07_calibration",
+      "substages": [
+        {
+          "id": "07a_resolve_policyengine_constraints",
+          "title": "Resolve PolicyEngine constraints",
+          "description": "Load PE target rows, filter unsupported constraints, and choose the calibration household budget.",
+          "status": "current",
+          "stability": "evolving",
+          "nodes": [
+            {
+              "id": "external.policyengine_targets_db",
+              "label": "PolicyEngine targets DB",
+              "nodeType": "external",
+              "description": "Optional PolicyEngine target database used for PE-native calibration."
+            },
+            {
+              "id": "artifact.policyengine_targets",
+              "label": "PolicyEngine targets",
+              "nodeType": "artifact",
+              "description": "Supported PE-native calibration targets and constraints."
+            }
+          ],
+          "edges": [
+            {
+              "source": "external.policyengine_targets_db",
+              "target": "us.pipeline.resolve_policyengine_calibration_targets",
+              "edgeType": "external_source",
+              "label": "loads"
+            },
+            {
+              "source": "us.pipeline.resolve_policyengine_calibration_targets",
+              "target": "us.pipeline.select_feasible_policyengine_calibration_constraints",
+              "edgeType": "data_flow",
+              "label": "filters"
+            },
+            {
+              "source": "us.pipeline.select_policyengine_household_budget",
+              "target": "us.pipeline.select_feasible_policyengine_calibration_constraints",
+              "edgeType": "uses_utility",
+              "label": "limits"
+            },
+            {
+              "source": "us.pipeline.select_feasible_policyengine_calibration_constraints",
+              "target": "artifact.policyengine_targets",
+              "edgeType": "produces_artifact",
+              "label": "selects"
+            }
+          ]
+        },
+        {
+          "id": "07b_run_calibration",
+          "title": "Run calibration",
+          "description": "Run either PE-native table calibration or the generic dataframe calibration fallback.",
+          "status": "current",
+          "stability": "evolving",
+          "nodes": [
+            {
+              "id": "core.calibrator",
+              "label": "Calibrator",
+              "nodeType": "library",
+              "description": "microplex calibrator implementations and linear constraints.",
+              "apiRefs": [
+                "microplex.calibration.Calibrator",
+                "microplex.calibration.LinearConstraint"
+              ]
+            },
+            {
+              "id": "artifact.calibrated_data",
+              "label": "Calibrated data",
+              "nodeType": "artifact",
+              "description": "Calibrated synthetic records or entity tables."
+            },
+            {
+              "id": "artifact.calibration_summary",
+              "label": "Calibration summary",
+              "nodeType": "artifact",
+              "description": "Calibration loss, constraints, and convergence diagnostics."
+            }
+          ],
+          "edges": [
+            {
+              "source": "artifact.policyengine_targets",
+              "target": "us.pipeline.calibrate_policyengine_tables",
+              "edgeType": "conditional",
+              "label": "PE-native path"
+            },
+            {
+              "source": "artifact.targets",
+              "target": "us.pipeline.calibrate",
+              "edgeType": "conditional",
+              "label": "generic path"
+            },
+            {
+              "source": "core.calibrator",
+              "target": "us.pipeline.calibrate_policyengine_tables",
+              "edgeType": "uses_library",
+              "label": "optimizes"
+            },
+            {
+              "source": "us.pipeline.calibrate_policyengine_tables",
+              "target": "artifact.calibrated_data",
+              "edgeType": "produces_artifact",
+              "label": "writes"
+            },
+            {
+              "source": "us.pipeline.calibrate",
+              "target": "artifact.calibrated_data",
+              "edgeType": "produces_artifact",
+              "label": "fallback"
+            },
+            {
+              "source": "artifact.calibrated_data",
+              "target": "artifact.calibration_summary",
+              "edgeType": "produces_artifact",
+              "label": "summarizes"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "08_dataset_assembly",
+      "substages": [
+        {
+          "id": "08a_export_policyengine_dataset",
+          "title": "Export PolicyEngine dataset",
+          "description": "Write the final calibrated entity tables into the PolicyEngine H5 dataset format.",
+          "status": "current",
+          "stability": "stable",
+          "nodes": [
+            {
+              "id": "artifact.policyengine_dataset",
+              "label": "PolicyEngine H5 dataset",
+              "nodeType": "artifact",
+              "description": "Final H5 dataset consumable by PolicyEngine-US."
+            }
+          ],
+          "edges": [
+            {
+              "source": "artifact.calibrated_data",
+              "target": "us.pipeline.export_policyengine_dataset",
+              "edgeType": "data_flow",
+              "label": "exports"
+            },
+            {
+              "source": "us.pipeline.export_policyengine_dataset",
+              "target": "artifact.policyengine_dataset",
+              "edgeType": "produces_artifact",
+              "label": "writes"
+            }
+          ]
+        },
+        {
+          "id": "08b_save_dataset_bundle",
+          "title": "Save dataset bundle",
+          "description": "Persist stage artifacts, manifests, registry/index entries, and versioned publication outputs.",
+          "status": "current",
+          "stability": "evolving",
+          "nodes": [
+            {
+              "id": "artifact.artifact_manifest",
+              "label": "Artifact manifest",
+              "nodeType": "artifact",
+              "description": "Top-level artifact manifest for a saved build."
+            },
+            {
+              "id": "artifact.versioned_bundle",
+              "label": "Versioned bundle",
+              "nodeType": "artifact",
+              "description": "Versioned output directory and registry-facing bundle metadata."
+            }
+          ],
+          "edges": [
+            {
+              "source": "artifact.policyengine_dataset",
+              "target": "us.artifacts.save_us_microplex_artifacts",
+              "edgeType": "data_flow",
+              "label": "persists"
+            },
+            {
+              "source": "us.artifacts.save_us_microplex_artifacts",
+              "target": "artifact.artifact_manifest",
+              "edgeType": "produces_artifact",
+              "label": "writes"
+            },
+            {
+              "source": "artifact.policyengine_dataset",
+              "target": "us.artifacts.save_versioned_us_microplex_artifacts",
+              "edgeType": "conditional",
+              "label": "versioned run"
+            },
+            {
+              "source": "us.artifacts.save_versioned_us_microplex_artifacts",
+              "target": "us.artifacts.save_us_microplex_artifacts",
+              "edgeType": "uses_utility",
+              "label": "delegates"
+            },
+            {
+              "source": "us.artifacts.save_versioned_us_microplex_artifacts",
+              "target": "artifact.versioned_bundle",
+              "edgeType": "produces_artifact",
+              "label": "publishes"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "09_validation_benchmarking",
+      "substages": [
+        {
+          "id": "09a_load_validation_inputs",
+          "title": "Load validation inputs",
+          "description": "Load the final H5 and previously written artifact manifest for replayable validation.",
+          "status": "current",
+          "stability": "stable",
+          "nodes": [
+            {
+              "id": "artifact.validation_inputs",
+              "label": "Validation inputs",
+              "nodeType": "artifact",
+              "description": "Final dataset, manifest, optional baseline, and configured target provider."
+            }
+          ],
+          "edges": [
+            {
+              "source": "artifact.policyengine_dataset",
+              "target": "us.policyengine.load_policyengine_us_entity_tables",
+              "edgeType": "data_flow",
+              "label": "loads"
+            },
+            {
+              "source": "artifact.artifact_manifest",
+              "target": "artifact.validation_inputs",
+              "edgeType": "data_flow",
+              "label": "indexes"
+            },
+            {
+              "source": "us.policyengine.load_policyengine_us_entity_tables",
+              "target": "artifact.validation_inputs",
+              "edgeType": "produces_artifact",
+              "label": "tables"
+            }
+          ]
+        },
+        {
+          "id": "09b_compute_benchmark_evidence",
+          "title": "Compute benchmark evidence",
+          "description": "Run configured validation and benchmark evidence, including PE target harness and PE-native scores.",
+          "status": "current",
+          "stability": "evolving",
+          "nodes": [
+            {
+              "id": "artifact.policyengine_harness",
+              "label": "PolicyEngine harness",
+              "nodeType": "artifact",
+              "description": "Target-slice benchmark comparison against configured targets and baseline."
+            },
+            {
+              "id": "artifact.policyengine_native_scores",
+              "label": "PE-native scores",
+              "nodeType": "artifact",
+              "description": "Loss payload from the PE-US-data native score implementation."
+            },
+            {
+              "id": "artifact.benchmark_summary",
+              "label": "Benchmark summary",
+              "nodeType": "artifact",
+              "description": "Saved summary of validation and benchmark evidence."
+            }
+          ],
+          "edges": [
+            {
+              "source": "artifact.validation_inputs",
+              "target": "us.stage9.evaluate_policyengine_us_harness",
+              "edgeType": "validates",
+              "label": "target harness"
+            },
+            {
+              "source": "us.stage9.evaluate_policyengine_us_harness",
+              "target": "artifact.policyengine_harness",
+              "edgeType": "produces_artifact",
+              "label": "writes"
+            },
+            {
+              "source": "artifact.validation_inputs",
+              "target": "us.stage9.compute_pe_native_scores",
+              "edgeType": "validates",
+              "label": "native score"
+            },
+            {
+              "source": "us.stage9.compute_pe_native_scores",
+              "target": "artifact.policyengine_native_scores",
+              "edgeType": "produces_artifact",
+              "label": "writes"
+            },
+            {
+              "source": "us.stage9.attach_rebuild_checkpoint_evidence",
+              "target": "artifact.benchmark_summary",
+              "edgeType": "produces_artifact",
+              "label": "summarizes"
+            }
+          ]
+        },
+        {
+          "id": "09c_write_validation_evidence",
+          "title": "Write validation evidence manifest",
+          "description": "Index validation artifacts for saved-run overlays and allow Stage 9 replay without mutating Stage 8 outputs.",
+          "status": "current",
+          "stability": "evolving",
+          "nodes": [
+            {
+              "id": "artifact.validation_evidence_manifest",
+              "label": "Validation evidence manifest",
+              "nodeType": "artifact",
+              "description": "Stage 9 evidence index used by overlays, checks, and replay."
+            }
+          ],
+          "edges": [
+            {
+              "source": "artifact.benchmark_summary",
+              "target": "us.stage9.build_validation_evidence_manifest",
+              "edgeType": "data_flow",
+              "label": "indexes"
+            },
+            {
+              "source": "us.stage9.build_validation_evidence_manifest",
+              "target": "us.stage9.write_validation_evidence_manifest",
+              "edgeType": "data_flow",
+              "label": "persists"
+            },
+            {
+              "source": "us.stage9.write_validation_evidence_manifest",
+              "target": "artifact.validation_evidence_manifest",
+              "edgeType": "produces_artifact",
+              "label": "writes"
+            },
+            {
+              "source": "artifact.validation_inputs",
+              "target": "us.stage9.replay_validation_benchmarking",
+              "edgeType": "conditional",
+              "label": "replay path"
+            },
+            {
+              "source": "us.stage9.replay_validation_benchmarking",
+              "target": "artifact.validation_evidence_manifest",
+              "edgeType": "produces_artifact",
+              "label": "replays"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

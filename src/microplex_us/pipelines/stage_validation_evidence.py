@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from microplex_us.pipeline_metadata import pipeline_node
 from microplex_us.pipelines.stage_manifest_io import write_json_atomically
 from microplex_us.pipelines.stage_manifest_types import (
     US_VALIDATION_STAGE_ID,
@@ -15,6 +16,13 @@ from microplex_us.pipelines.stage_manifest_types import (
 )
 
 
+@pipeline_node(
+    id="us.stage9.build_validation_evidence_manifest",
+    label="Build validation evidence manifest",
+    description="Index validation and benchmark evidence files written for Stage 9.",
+    artifacts_in=("artifact_manifest",),
+    artifacts_out=("validation_evidence_manifest",),
+)
 def build_us_validation_evidence_manifest(
     artifact_dir: str | Path,
     *,
@@ -76,6 +84,13 @@ def build_us_validation_evidence_manifest(
     }
 
 
+@pipeline_node(
+    id="us.stage9.write_validation_evidence_manifest",
+    label="Write validation evidence manifest",
+    description="Persist the Stage 9 validation evidence manifest.",
+    artifacts_in=("validation_evidence_manifest",),
+    artifacts_out=("validation_evidence_manifest_file",),
+)
 def write_us_validation_evidence_manifest(
     artifact_dir: str | Path,
     output_path: str | Path,

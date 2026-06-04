@@ -12,6 +12,7 @@ from microplex.targets import (
     assert_valid_benchmark_artifact_manifest,
 )
 
+from microplex_us.pipeline_metadata import pipeline_node
 from microplex_us.pipelines.artifact_dataset_assembly import (
     _maybe_write_capital_gains_lot_artifact,
 )
@@ -121,6 +122,13 @@ __all__ = [
 ]
 
 
+@pipeline_node(
+    id="us.artifacts.save_us_microplex_artifacts",
+    label="Save artifact bundle",
+    description="Persist the build result, stage artifacts, diagnostics, manifests, and optional benchmark evidence.",
+    artifacts_in=("build_result",),
+    artifacts_out=("artifact_manifest", "stage_artifacts", "policyengine_dataset"),
+)
 def save_us_microplex_artifacts(
     result: USMicroplexBuildResult,
     output_dir: str | Path,

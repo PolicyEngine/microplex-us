@@ -11055,18 +11055,23 @@ class USMicroplexPipeline:
             return first_present("rental_income")
 
         def first_signed_or_present(*columns: str) -> pd.Series:
-            fallback: pd.Series | None = None
+            candidates: list[pd.Series] = []
             for column in columns:
                 if column not in result.columns:
                     continue
-                candidate = first_present(column)
-                if fallback is None:
-                    fallback = candidate
-                if candidate.lt(0.0).any():
-                    if fallback is not None:
-                        return candidate.where(candidate.ne(0.0), fallback)
-                    return candidate
-            return fallback if fallback is not None else zero.copy()
+                candidates.append(first_present(column))
+            if not candidates:
+                return zero.copy()
+            signed = next(
+                (candidate for candidate in candidates if candidate.lt(0.0).any()),
+                candidates[0],
+            )
+            values = signed.copy()
+            for candidate in candidates:
+                if candidate is signed:
+                    continue
+                values = values.where(values.ne(0.0), candidate)
+            return values
 
         signed_self_employment_income = first_signed_or_present(
             "self_employment_income_before_lsr",

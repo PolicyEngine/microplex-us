@@ -9,6 +9,7 @@ from microplex.core import EntityType, SourceArchetype, SourceProvider, SourceQu
 from microplex_us.data_sources import CPSASECParquetSourceProvider
 from microplex_us.data_sources.cps import (
     CPS_ASEC_PROCESSED_CACHE_VERSION,
+    PERSON_CACHE_REQUIRED_COLUMNS,
     CPSASECSourceProvider,
     _attach_cps_ssn_card_type,
     _cps_age_band_key,
@@ -147,6 +148,7 @@ def test_attach_cps_ssn_card_type_derives_pe_style_categories():
         {
             "PRCITSHP": [1, 5, 5, 5],
             "PEINUSYR": [0, 20, 20, 20],
+            "PENATVTY": [57, 303, 303, 303],
             "A_HSCOL": [0, 0, 0, 0],
             "A_AGE": [30, 40, 28, 35],
             "A_MARITL": [0, 0, 0, 0],
@@ -525,7 +527,7 @@ def test_load_cps_asec_falls_back_last_year_income_to_current_earnings(tmp_path)
             "A_AGE": [34, 31, 45, 17],
             "A_FNLWGT": [100, 100, 200, 200],
             "WSAL_VAL": [60_000, 10_000, 20_000, 0],
-            "SEMP_VAL": [5_000, 0, 3_000, 0],
+            "SEMP_VAL": [5_000, 0, -3_000, 0],
             "I_ERNVAL": [0, 1, 0, 0],
             "I_SEVAL": [0, 0, 0, 0],
         }
@@ -549,7 +551,13 @@ def test_load_cps_asec_falls_back_last_year_income_to_current_earnings(tmp_path)
     assert persons["self_employment_income_last_year"].tolist() == [
         5_000.0,
         0.0,
-        3_000.0,
+        -3_000.0,
+        0.0,
+    ]
+    assert persons["self_employment_income"].tolist() == [
+        5_000.0,
+        0.0,
+        -3_000.0,
         0.0,
     ]
     assert persons["previous_year_income_available"].tolist() == [
@@ -620,6 +628,9 @@ def test_cps_source_provider_repeat_loads_are_deterministic_for_cached_processed
             "year": [2023, 2023, 2023, 2023, 2023],
         }
     )
+    for column in PERSON_CACHE_REQUIRED_COLUMNS:
+        if column not in cached_persons.columns:
+            cached_persons = cached_persons.with_columns(pl.lit(0).alias(column))
     cached_persons.write_parquet(
         processed_cps_asec_cache_path(year=2023, cache_dir=tmp_path)
     )

@@ -57,6 +57,7 @@ SIGNED_NUMERIC_SUPPORT_COLUMNS = frozenset(
         "farm_operations_income",
         "partnership_s_corp_income",
         "rental_income",
+        "self_employment_income_before_lsr",
     }
 )
 
@@ -336,9 +337,7 @@ def _satisfies_support_requirement(
             return (stats.positive_count or 0) > 0
         if requirement == "numeric_negative":
             return (stats.negative_count or 0) > 0
-        return (stats.positive_count or 0) > 0 and (
-            stats.negative_count or 0
-        ) > 0
+        return (stats.positive_count or 0) > 0 and (stats.negative_count or 0) > 0
     if requirement == "categorical_variation":
         return stats.unique_count > 1
     raise ValueError(f"Unknown support requirement: {requirement}")

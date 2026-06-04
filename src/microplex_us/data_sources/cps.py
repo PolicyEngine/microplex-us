@@ -39,7 +39,7 @@ from microplex_us.source_registry import resolve_source_variable_capabilities
 
 # Default cache directory
 DEFAULT_CACHE_DIR = Path.home() / ".cache" / "microplex"
-CPS_ASEC_PROCESSED_CACHE_VERSION = "20260604_spm_retirement_target_inputs"
+CPS_ASEC_PROCESSED_CACHE_VERSION = "20260604_signed_self_employment_losses"
 
 CURRENT_HEALTH_COVERAGE_REPORTED_VAR_MAP = {
     "reported_has_direct_purchase_health_coverage_at_interview": "NOW_DIR",
@@ -307,7 +307,6 @@ CPS_INCOME_ALIAS_COMPONENTS = tuple(
 
 PERSON_NONNEGATIVE_VALUE_COLUMNS = (
     "wage_income",
-    "self_employment_income",
     "interest_income",
     "dividend_income",
     "rental_income",

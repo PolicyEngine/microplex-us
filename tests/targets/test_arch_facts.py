@@ -1315,7 +1315,7 @@ def test_arch_consumer_fact_jsonl_provider_maps_tax_exempt_interest(
     qualified_returns = targets_by_arch_variable["qualified_dividends_returns"]
     qualified_amount = targets_by_arch_variable["qualified_dividends_amount"]
 
-    assert returns.metadata["variable"] == "tax_exempt_interest_income"
+    assert returns.metadata["variable"] == "tax_unit_count"
     assert returns.aggregation.value == "count"
     assert {
         (
@@ -1330,7 +1330,7 @@ def test_arch_consumer_fact_jsonl_provider_maps_tax_exempt_interest(
     }
     assert amount.metadata["variable"] == "tax_exempt_interest_income"
     assert amount.measure == "tax_exempt_interest_income"
-    assert qualified_returns.metadata["variable"] == "qualified_dividend_income"
+    assert qualified_returns.metadata["variable"] == "tax_unit_count"
     assert qualified_returns.aggregation.value == "count"
     assert {
         (
@@ -1408,7 +1408,7 @@ def test_arch_consumer_fact_jsonl_provider_maps_schedule_c_self_employment(
     partnership_returns = targets_by_arch_variable["partnership_scorp_income_returns"]
     partnership_amount = targets_by_arch_variable["partnership_scorp_income_amount"]
 
-    assert returns.metadata["variable"] == "self_employment_income"
+    assert returns.metadata["variable"] == "tax_unit_count"
     assert {
         (
             target_filter.feature,
@@ -1423,8 +1423,7 @@ def test_arch_consumer_fact_jsonl_provider_maps_schedule_c_self_employment(
     assert amount.metadata["variable"] == "self_employment_income"
     assert amount.measure == "self_employment_income"
     assert (
-        partnership_returns.metadata["variable"]
-        == "tax_unit_partnership_s_corp_income"
+        partnership_returns.metadata["variable"] == "tax_unit_count"
     )
     assert {
         (
@@ -1656,7 +1655,7 @@ def test_arch_consumer_fact_jsonl_provider_maps_table_2_1_itemized_details(
     assert ("itemized_deductions", ">", "0") in _target_filter_tuples(charitable)
 
     charitable_count = targets_by_arch_variable["charitable_returns"]
-    assert charitable_count.metadata["variable"] == "charitable_deduction"
+    assert charitable_count.metadata["variable"] == "tax_unit_count"
     assert charitable_count.aggregation.value == "count"
     assert ("charitable_deduction", ">", "0") in _target_filter_tuples(
         charitable_count
@@ -2217,7 +2216,7 @@ def test_arch_consumer_fact_jsonl_provider_maps_state_broad_soi_concepts(
     }
 
     schedule_c_returns = targets_by_arch_variable["schedule_c_income_returns"]
-    assert schedule_c_returns.metadata["variable"] == "self_employment_income"
+    assert schedule_c_returns.metadata["variable"] == "tax_unit_count"
     assert schedule_c_returns.aggregation.value == "count"
     assert ("self_employment_income", ">", "0") in _target_filter_tuples(
         schedule_c_returns
@@ -2238,10 +2237,7 @@ def test_arch_consumer_fact_jsonl_provider_maps_state_broad_soi_concepts(
     assert qbi.measure == "qualified_business_income_deduction"
 
     qbi_claims = targets_by_arch_variable["qbi_claims"]
-    assert (
-        qbi_claims.metadata["variable"]
-        == "qualified_business_income_deduction"
-    )
+    assert qbi_claims.metadata["variable"] == "tax_unit_count"
     assert qbi_claims.aggregation.value == "count"
     assert (
         "qualified_business_income_deduction",
@@ -2254,7 +2250,7 @@ def test_arch_consumer_fact_jsonl_provider_maps_state_broad_soi_concepts(
     assert rental.measure == "rental_income"
 
     rental_returns = targets_by_arch_variable["rental_royalty_income_returns"]
-    assert rental_returns.metadata["variable"] == "rental_income"
+    assert rental_returns.metadata["variable"] == "tax_unit_count"
     assert rental_returns.aggregation.value == "count"
     assert ("rental_income", ">", "0") in _target_filter_tuples(
         rental_returns
@@ -2265,7 +2261,7 @@ def test_arch_consumer_fact_jsonl_provider_maps_state_broad_soi_concepts(
     assert ctc.measure == "non_refundable_ctc"
 
     ctc_claims = targets_by_arch_variable["ctc_claims"]
-    assert ctc_claims.metadata["variable"] == "non_refundable_ctc"
+    assert ctc_claims.metadata["variable"] == "tax_unit_count"
     assert ctc_claims.aggregation.value == "count"
     assert ("non_refundable_ctc", ">", "0") in _target_filter_tuples(
         ctc_claims
@@ -2276,7 +2272,7 @@ def test_arch_consumer_fact_jsonl_provider_maps_state_broad_soi_concepts(
     assert actc.measure == "refundable_ctc"
 
     actc_claims = targets_by_arch_variable["actc_claims"]
-    assert actc_claims.metadata["variable"] == "refundable_ctc"
+    assert actc_claims.metadata["variable"] == "tax_unit_count"
     assert actc_claims.aggregation.value == "count"
     assert ("refundable_ctc", ">", "0") in _target_filter_tuples(
         actc_claims
@@ -2403,7 +2399,7 @@ def test_arch_consumer_fact_jsonl_provider_maps_eitc_by_agi_and_children(
     target = target_set.targets[0]
 
     assert target.metadata["arch_variable"] == "eitc_claims"
-    assert target.metadata["variable"] == "eitc"
+    assert target.metadata["variable"] == "tax_unit_count"
     assert target.aggregation.value == "count"
     assert _target_filter_tuples(target) == {
         ("eitc", ">", "0"),
@@ -2912,7 +2908,7 @@ def test_arch_consumer_fact_jsonl_provider_maps_ssi_detail_targets(
 
     aged_count = find_target(
         "ssi_recipients",
-        {("ssi_category", "==", "AGED"), ("ssi", ">", 0)},
+        {("is_ssi_aged", ">", 0), ("ssi", ">", 0)},
     )
     assert aged_count.measure is None
     assert aged_count.entity.value == "person"
@@ -2921,7 +2917,7 @@ def test_arch_consumer_fact_jsonl_provider_maps_ssi_detail_targets(
     assert {
         (target_filter.feature, target_filter.operator.value, target_filter.value)
         for target_filter in aged_count.filters
-    } == {("ssi_category", "==", "AGED"), ("ssi", ">", 0)}
+    } == {("is_ssi_aged", ">", 0), ("ssi", ">", 0)}
 
     ca_payments = find_target(
         "ssi_total_payments",
@@ -2939,7 +2935,7 @@ def test_arch_consumer_fact_jsonl_provider_maps_ssi_detail_targets(
     ca_disabled_count = find_target(
         "ssi_recipients",
         {
-            ("ssi_category", "==", "DISABLED"),
+            ("is_ssi_disabled", ">", 0),
             ("ssi", ">", 0),
             ("state_fips", "==", "06"),
         },
@@ -2950,7 +2946,7 @@ def test_arch_consumer_fact_jsonl_provider_maps_ssi_detail_targets(
         (target_filter.feature, target_filter.operator.value, target_filter.value)
         for target_filter in ca_disabled_count.filters
     } == {
-        ("ssi_category", "==", "DISABLED"),
+        ("is_ssi_disabled", ">", 0),
         ("ssi", ">", 0),
         ("state_fips", "==", "06"),
     }
@@ -4144,7 +4140,7 @@ def test_arch_fact_provider_maps_soi_table_1_4_income_source_facts(
         == "count"
     )
     assert getattr(wages_returns.entity, "value", wages_returns.entity) == "tax_unit"
-    assert wages_returns.metadata["variable"] == "employment_income"
+    assert wages_returns.metadata["variable"] == "tax_unit_count"
     assert (
         "employment_income",
         ">",

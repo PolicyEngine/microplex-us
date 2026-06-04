@@ -205,8 +205,20 @@ ARCH_IRS_SOI_CREDIT_AGI_DOMAIN_VARIABLES = frozenset(
 ARCH_STATE_TO_NATIONAL_ROLLUP_VARIABLES = frozenset(
     {
         "aca_aptc_amount",
+        "actc_amount",
+        "actc_claims",
+        "charitable_amount",
+        "charitable_claims",
         "ctc_amount",
         "ctc_claims",
+        "medical_amount",
+        "medical_claims",
+        "mortgage_interest_amount",
+        "mortgage_interest_claims",
+        "qbi_amount",
+        "qbi_claims",
+        "salt_amount",
+        "salt_claims",
     }
 )
 
@@ -4582,7 +4594,7 @@ def arch_target_record_to_canonical_spec(
                     )
                 )
         elif positive_measure is not None:
-            model_variable = positive_measure
+            model_variable = "tax_unit_count"
             entity = EntityType.TAX_UNIT
             filters.append(
                 TargetFilter(feature=positive_measure, operator=">", value=0)
@@ -5429,12 +5441,17 @@ def _ssi_category_filters_for_arch_constraint(
     value: str,
 ) -> tuple[TargetFilter, ...]:
     category = str(value).strip().lower()
-    if operator == "==" and category in {"aged", "blind", "disabled"}:
+    category_feature = {
+        "aged": "is_ssi_aged",
+        "blind": "is_blind",
+        "disabled": "is_ssi_disabled",
+    }.get(category)
+    if operator == "==" and category_feature is not None:
         return (
             TargetFilter(
-                feature="ssi_category",
-                operator=operator,
-                value=category.upper(),
+                feature=category_feature,
+                operator=">",
+                value=0,
             ),
         )
     return (TargetFilter(feature="ssi_category", operator=operator, value=value),)
@@ -5720,12 +5737,25 @@ def _arch_target_query_variables(
     record: ArchTargetRecord,
     target: CanonicalTargetSpec,
 ) -> set[str]:
+    metadata_variable = str(target.metadata.get("variable") or "")
+    domain_variables = _arch_target_domain_variables(target)
     variables = {
         record.variable,
-        str(target.metadata.get("variable")),
     }
+    if not (
+        target.aggregation is TargetAggregation.COUNT
+        and metadata_variable in {
+            "household_count",
+            "person_count",
+            "spm_unit_count",
+            "tax_unit_count",
+        }
+        and domain_variables
+    ):
+        variables.add(metadata_variable)
     if target.measure is not None:
         variables.add(str(target.measure))
+    variables.update(domain_variables)
     if target.aggregation is TargetAggregation.SUM:
         variables.update(_arch_target_cell_variables(target))
     return {variable for variable in variables if variable}
@@ -5888,6 +5918,18 @@ def _target_domain_variables_match(
         and model_variable
         and cell_domain_variables
         == effective_target_domain_variables - {model_variable}
+    ):
+        return True
+
+    count_positive_measure = _positive_measure_for_count_record(
+        str(target.metadata.get("arch_variable") or "")
+    )
+    if (
+        target.aggregation is TargetAggregation.COUNT
+        and count_positive_measure
+        and count_positive_measure in effective_target_domain_variables
+        and cell_domain_variables
+        == effective_target_domain_variables - {count_positive_measure}
     ):
         return True
 

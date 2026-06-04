@@ -508,6 +508,30 @@ def _insert_complete_state_rollup_targets(path: Path) -> None:
         )
         for index, (stratum_id, *_rest) in enumerate(ctc_strata)
     ]
+    deduction_targets = [
+        (
+            30_000 + index * 4 + offset,
+            stratum_id,
+            variable,
+            2024,
+            value + index,
+            target_type,
+            None,
+            "IRS_SOI",
+            "SOI Individual Returns - Itemized Deductions",
+            None,
+            None,
+        )
+        for index, (stratum_id, *_rest) in enumerate(ctc_strata)
+        for offset, (variable, value, target_type) in enumerate(
+            (
+                ("qbi_amount", 2_000.0, "AMOUNT"),
+                ("qbi_claims", 200.0, "COUNT"),
+                ("medical_amount", 300.0, "AMOUNT"),
+                ("medical_claims", 30.0, "COUNT"),
+            )
+        )
+    ]
     aca_targets = [
         (
             20_000 + index,
@@ -540,7 +564,7 @@ def _insert_complete_state_rollup_targets(path: Path) -> None:
             notes
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        [*ctc_targets, *ctc_count_targets, *aca_targets],
+        [*ctc_targets, *ctc_count_targets, *deduction_targets, *aca_targets],
     )
     conn.commit()
     conn.close()
@@ -583,6 +607,7 @@ def test_arch_provider_ages_soi_and_maps_return_counts_to_positive_amounts(tmp_p
     assert count_target.metadata["display_label"] == count_target.description
     assert count_target.metadata["target_semantic"] == "count"
     assert count_target.metadata["model_variable_role"] == "preserved_input"
+    assert count_target.metadata["variable"] == "tax_unit_count"
     assert count_target.measure is None
     assert count_target.value == pytest.approx(11.0)
     assert {
@@ -1057,8 +1082,8 @@ def test_arch_provider_matches_current_profile_aliases(tmp_path):
         10: "self_employment_income",
         11: "person_count",
         12: "employment_income",
-        13: "employment_income",
-        14: "self_employment_income",
+        13: "tax_unit_count",
+        14: "tax_unit_count",
     }
 
 
@@ -2258,7 +2283,8 @@ def test_arch_provider_maps_real_estate_tax_targets(tmp_path):
 
     assert {target.metadata["target_id"] for target in target_set.targets} == {8, 9}
     assert {target.metadata["variable"] for target in target_set.targets} == {
-        "real_estate_taxes"
+        "real_estate_taxes",
+        "tax_unit_count",
     }
 
 
@@ -3401,6 +3427,26 @@ def test_arch_target_profile_coverage_rolls_complete_state_targets_to_national(
                 domain_variable="adjusted_gross_income,non_refundable_ctc",
             ),
             PolicyEngineUSTargetCell(
+                "qualified_business_income_deduction",
+                geo_level="national",
+                domain_variable="qualified_business_income_deduction",
+            ),
+            PolicyEngineUSTargetCell(
+                "tax_unit_count",
+                geo_level="national",
+                domain_variable="qualified_business_income_deduction",
+            ),
+            PolicyEngineUSTargetCell(
+                "medical_expense_deduction",
+                geo_level="national",
+                domain_variable="medical_expense_deduction,tax_unit_itemizes",
+            ),
+            PolicyEngineUSTargetCell(
+                "tax_unit_count",
+                geo_level="national",
+                domain_variable="medical_expense_deduction,tax_unit_itemizes",
+            ),
+            PolicyEngineUSTargetCell(
                 "aca_ptc",
                 geo_level="national",
                 domain_variable="aca_ptc",
@@ -3408,8 +3454,8 @@ def test_arch_target_profile_coverage_rolls_complete_state_targets_to_national(
         ),
     )
 
-    assert report.target_cell_count == 5
-    assert report.covered_cell_count == 5
+    assert report.target_cell_count == 9
+    assert report.covered_cell_count == 9
     target_set = provider.load_target_set(
         TargetQuery(
             period=2024,
@@ -3419,20 +3465,40 @@ def test_arch_target_profile_coverage_rolls_complete_state_targets_to_national(
         )
     )
     rollup_targets = {
-        (target.measure or target.metadata["variable"], target.aggregation): target
+        (
+            target.measure or target.metadata["variable"],
+            target.aggregation,
+            target.metadata["arch_variable"],
+        ): target
         for target in target_set.targets
         if target.metadata["geo_level"] == "national"
         and str(target.metadata["target_id"]).startswith("-")
     }
     assert rollup_targets[
-        ("non_refundable_ctc", TargetAggregation.SUM)
+        ("non_refundable_ctc", TargetAggregation.SUM, "ctc_amount")
     ].value == pytest.approx(sum(1_000.0 + index for index in range(51)))
     assert rollup_targets[
-        ("non_refundable_ctc", TargetAggregation.COUNT)
+        ("tax_unit_count", TargetAggregation.COUNT, "ctc_claims")
     ].value == pytest.approx(sum(100.0 + index for index in range(51)))
-    assert rollup_targets[("aca_ptc", TargetAggregation.SUM)].value == pytest.approx(
-        sum(10_000.0 + index for index in range(51))
-    )
+    assert rollup_targets[
+        (
+            "qualified_business_income_deduction",
+            TargetAggregation.SUM,
+            "qbi_amount",
+        )
+    ].value == pytest.approx(sum(2_000.0 + index for index in range(51)))
+    assert rollup_targets[
+        ("tax_unit_count", TargetAggregation.COUNT, "qbi_claims")
+    ].value == pytest.approx(sum(200.0 + index for index in range(51)))
+    assert rollup_targets[
+        ("medical_expense_deduction", TargetAggregation.SUM, "medical_amount")
+    ].value == pytest.approx(sum(300.0 + index for index in range(51)))
+    assert rollup_targets[
+        ("tax_unit_count", TargetAggregation.COUNT, "medical_claims")
+    ].value == pytest.approx(sum(30.0 + index for index in range(51)))
+    assert rollup_targets[
+        ("aca_ptc", TargetAggregation.SUM, "aca_aptc_amount")
+    ].value == pytest.approx(sum(10_000.0 + index for index in range(51)))
 
 
 def test_arch_target_profile_coverage_reports_current_pe_profile(tmp_path):

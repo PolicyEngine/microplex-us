@@ -163,6 +163,41 @@ def test_rewrite_policyengine_us_dataset_weights_updates_group_weights(tmp_path:
         assert np.allclose(handle["tax_unit_weight"]["2024"][:], np.asarray([7.0, 3.0]))
 
 
+def test_rewrite_policyengine_us_dataset_weights_skips_empty_derived_weight_group(
+    tmp_path: Path,
+):
+    """Published datasets (e.g. the production enhanced CPS) can leave derived
+    entity-weight groups empty because PolicyEngine computes those weights from
+    household_weight at runtime. Rewriting must skip such groups instead of
+    raising KeyError on the missing period dataset."""
+    source_path = _build_stub_dataset(tmp_path / "input.h5")
+    # Mirror the production layout: a derived-weight group that exists but has
+    # no value for the period, with its id arrays present.
+    with h5py.File(source_path, "a") as handle:
+        handle.create_group("family_weight")  # empty: no "2024" dataset
+        _write_time_period_array(
+            handle, "family_id", np.asarray([1000, 2000], dtype=np.int64)
+        )
+        _write_time_period_array(
+            handle,
+            "person_family_id",
+            np.asarray([1000, 1000, 2000], dtype=np.int64),
+        )
+    output_path = tmp_path / "output.h5"
+
+    rewritten = rewrite_policyengine_us_dataset_weights(
+        input_dataset_path=source_path,
+        output_dataset_path=output_path,
+        household_weights=np.asarray([7.0, 3.0], dtype=np.float64),
+    )
+
+    with h5py.File(rewritten, "r") as handle:
+        # The primary household weights are still rewritten.
+        assert np.allclose(handle["household_weight"]["2024"][:], np.asarray([7.0, 3.0]))
+        # The empty derived-weight group is left untouched (still has no period).
+        assert "2024" not in handle["family_weight"]
+
+
 def test_optimize_policyengine_us_native_loss_dataset_rewrites_dataset(tmp_path: Path, monkeypatch):
     source_path = _build_stub_dataset(tmp_path / "input.h5")
     output_path = tmp_path / "optimized.h5"

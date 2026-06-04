@@ -76,29 +76,93 @@ h1 {
 
 .workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 380px;
+  grid-template-columns: 248px minmax(0, 1fr) 360px;
+  height: 100%;
   min-height: 0;
 }
 
-.diagram-stack {
+.pipeline-nav {
+  background: #ffffff;
+  border-right: 1px solid #d9e0ea;
   display: grid;
-  grid-template-rows: minmax(230px, 0.42fr) minmax(330px, 0.58fr);
+  gap: 6px;
+  grid-auto-rows: min-content;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.nav-item {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: #263244;
+  cursor: pointer;
+  display: grid;
+  gap: 3px;
+  min-height: 46px;
+  padding: 8px 9px;
+  text-align: left;
+}
+
+.nav-item:hover {
+  background: #f7f9fc;
+  border-color: #d9e0ea;
+}
+
+.nav-item.active {
+  background: #e8f1ff;
+  border-color: #8fb5ed;
+}
+
+.nav-item span,
+.nav-section-label {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.nav-item strong {
+  color: #18202f;
+  display: block;
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+.nav-item small {
+  color: #536178;
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.nav-section-label {
+  margin: 9px 4px 2px;
+}
+
+.content-panel {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  height: 100%;
   min-height: 0;
   min-width: 0;
 }
 
 .diagram-panel {
+  height: 100%;
   min-width: 0;
   min-height: 0;
 }
 
-.stage-diagram {
-  border-bottom: 1px solid #d9e0ea;
-}
-
+.overview-diagram,
 .machinery-diagram {
   display: grid;
   grid-template-rows: auto 1fr;
+}
+
+.react-flow {
+  height: 100%;
+  width: 100%;
 }
 
 .panel-toolbar {
@@ -446,11 +510,22 @@ h1 {
 
   .workspace {
     grid-template-columns: 1fr;
-    grid-template-rows: 68vh minmax(260px, 32vh);
+    grid-template-rows: auto 64vh minmax(260px, auto);
   }
 
-  .diagram-stack {
-    grid-template-rows: minmax(230px, 0.45fr) minmax(300px, 0.55fr);
+  .pipeline-nav {
+    border-bottom: 1px solid #d9e0ea;
+    border-right: 0;
+    display: flex;
+    gap: 8px;
+    min-height: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 10px;
+  }
+
+  .nav-item {
+    min-width: 176px;
   }
 
   .details-panel {

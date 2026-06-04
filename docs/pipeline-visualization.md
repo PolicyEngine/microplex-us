@@ -52,9 +52,10 @@ microplex-us-generate-pipeline-docs \
 
 The separate `pipeline_viewer/` app renders the generated graph with ELK-routed
 React Flow edges. It intentionally does not reuse the existing `dashboard/`
-target diagnostics page. The top panel shows the canonical stage flow; the lower
-panel shows the selected stage's machinery graph. Use the substage selector to
-focus on a single function/artifact path within that stage.
+target diagnostics page. The left menu switches between the full pipeline view
+and individual stage views. The full pipeline view shows all canonical stages
+and their substages; individual stage views show the deeper machinery graph and
+retain the substage selector for focusing on one function/artifact path.
 
 Run the viewer locally with:
 

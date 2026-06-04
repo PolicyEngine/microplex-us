@@ -22,52 +22,97 @@ const LIFECYCLE_LABELS = {
   deferred: "Deferred",
 };
 
-function PipelineFlow({ graph, overlay, selectedStageId, setSelectedStageId }) {
+function PipelineOverviewFlow({ graph, internals, overlay, setStageView }) {
   const overlayByStage = useMemo(
     () => new Map((overlay?.stages || []).map((stage) => [stage.id, stage])),
     [overlay],
   );
-  const initialNodes = useMemo(
-    () =>
-      graph.nodes.map((node) => {
-        const stageOverlay = overlayByStage.get(node.id);
-        return {
-          id: node.id,
-          type: "pipelineStage",
+  const internalsByStage = useMemo(
+    () => new Map((internals?.stages || []).map((stage) => [stage.id, stage])),
+    [internals],
+  );
+  const initialNodes = useMemo(() => {
+    const nodes = [];
+    graph.nodes.forEach((stage, stageIndex) => {
+      const stageOverlay = overlayByStage.get(stage.id);
+      nodes.push({
+        id: stage.id,
+        type: "pipelineStage",
+        data: {
+          ...stage,
+          overlay: stageOverlay || null,
+          selected: false,
+          order: stageIndex * 100,
+        },
+      });
+      const substages = internalsByStage.get(stage.id)?.substages || [];
+      substages.forEach((substage, substageIndex) => {
+        nodes.push({
+          id: overviewSubstageId(substage.id),
+          type: "pipelineInternal",
           data: {
-            ...node,
-            overlay: stageOverlay || null,
-            selected: selectedStageId === node.id,
+            id: substage.id,
+            stageId: stage.id,
+            label: substage.title,
+            nodeType: "substage",
+            description: substage.description,
+            stability: substage.stability,
+            order: stageIndex * 100 + substageIndex + 1,
+            nodeWidth: 250,
           },
-        };
-      }),
-    [graph, overlayByStage, selectedStageId],
-  );
-  const initialEdges = useMemo(
-    () =>
-      graph.edges.map((edge) => ({
-        id: edge.id,
-        source: edge.source,
-        target: edge.target,
-        label: edge.label,
-        data: edge.viewer,
-        style: {
-          stroke: "#475569",
-          strokeWidth: 2,
-        },
-        markerEnd: {
-          type: "arrowclosed",
-          color: "#475569",
-          width: 16,
-          height: 16,
-        },
-      })),
-    [graph],
-  );
+        });
+      });
+    });
+    return nodes;
+  }, [graph, internalsByStage, overlayByStage]);
+  const initialEdges = useMemo(() => {
+    const edges = graph.edges.map((edge) => ({
+      id: edge.id,
+      source: edge.source,
+      target: edge.target,
+      label: edge.label,
+      data: edge.viewer,
+      style: {
+        stroke: "#475569",
+        strokeWidth: 2,
+      },
+      markerEnd: {
+        type: "arrowclosed",
+        color: "#475569",
+        width: 16,
+        height: 16,
+      },
+    }));
+    graph.nodes.forEach((stage) => {
+      const substages = internalsByStage.get(stage.id)?.substages || [];
+      substages.forEach((substage, index) => {
+        const target = overviewSubstageId(substage.id);
+        edges.push({
+          id: `${stage.id}__${target}`,
+          source: index === 0 ? stage.id : overviewSubstageId(substages[index - 1].id),
+          target,
+          label: index === 0 ? "substages" : "then",
+          data: { edgeKind: "substage_overview" },
+          style: {
+            stroke: "#94a3b8",
+            strokeDasharray: "4 4",
+            strokeWidth: 1.4,
+          },
+          markerEnd: {
+            type: "arrowclosed",
+            color: "#94a3b8",
+            width: 14,
+            height: 14,
+          },
+        });
+      });
+    });
+    return edges;
+  }, [graph, internalsByStage]);
   const { nodes, edges, layoutDone } = useElkLayout(initialNodes, initialEdges);
 
   if (!layoutDone) {
-    return <div className="loading">Computing ELK layout...</div>;
+    return <div className="loading">Computing pipeline overview layout...</div>;
   }
 
   return (
@@ -76,11 +121,19 @@ function PipelineFlow({ graph, overlay, selectedStageId, setSelectedStageId }) {
       edges={edges}
       nodeTypes={nodeTypes}
       edgeTypes={edgeTypes}
-      minZoom={0.15}
+      minZoom={0.08}
       maxZoom={2}
       fitView
-      fitViewOptions={{ padding: 0.16 }}
-      onNodeClick={(_, node) => setSelectedStageId(node.id)}
+      fitViewOptions={{ padding: 0.14 }}
+      onNodeClick={(_, node) => {
+        if (node.type === "pipelineStage") {
+          setStageView(node.id, "all");
+          return;
+        }
+        if (node.data?.stageId) {
+          setStageView(node.data.stageId, node.data.id);
+        }
+      }}
     >
       <Background color="#d8dee9" gap={24} size={1} />
       <Controls position="bottom-right" />
@@ -201,8 +254,9 @@ export default function App() {
   const [graph, setGraph] = useState(defaultGraph);
   const [internals, setInternals] = useState(defaultInternals);
   const [overlay, setOverlay] = useState(defaultOverlay);
-  const [selectedStageId, setSelectedStageId] = useState(defaultGraph.nodes[0].id);
+  const [activeView, setActiveView] = useState("pipeline");
   const [selectedSubstageId, setSelectedSubstageId] = useState("all");
+  const selectedStageId = activeView === "pipeline" ? null : activeView;
   const selectedStage = useMemo(
     () => overlay?.stages?.find((stage) => stage.id === selectedStageId),
     [overlay, selectedStageId],
@@ -215,10 +269,19 @@ export default function App() {
     () => internals.stages.find((stage) => stage.id === selectedStageId),
     [internals, selectedStageId],
   );
+  const pipelineSummary = useMemo(
+    () => buildPipelineSummary(graph, internals),
+    [graph, internals],
+  );
 
   async function loadJsonFile(file, setter) {
     const text = await file.text();
     setter(JSON.parse(text));
+  }
+
+  function setStageView(stageId, substageId = "all") {
+    setActiveView(stageId);
+    setSelectedSubstageId(substageId);
   }
 
   return (
@@ -266,57 +329,163 @@ export default function App() {
       </header>
 
       <section className="workspace">
-        <section className="diagram-stack">
-          <section className="diagram-panel stage-diagram">
-            <ReactFlowProvider>
-              <PipelineFlow
-                graph={graph}
-                overlay={overlay}
-                selectedStageId={selectedStageId}
-                setSelectedStageId={(stageId) => {
-                  setSelectedStageId(stageId);
-                  setSelectedSubstageId("all");
-                }}
-              />
-            </ReactFlowProvider>
-          </section>
-          <section className="diagram-panel machinery-diagram">
-            <div className="panel-toolbar">
-              <div>
-                <p className="eyebrow">Stage Machinery</p>
-                <strong>{selectedInternalsStage?.title || "No stage selected"}</strong>
-              </div>
-              <label>
-                Substage
-                <select
-                  value={selectedSubstageId}
-                  onChange={(event) => setSelectedSubstageId(event.target.value)}
-                >
-                  <option value="all">All substages</option>
-                  {(selectedInternalsStage?.substages || []).map((substage) => (
-                    <option value={substage.id} key={substage.id}>
-                      {substage.id}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <ReactFlowProvider>
-              <StageMachineryFlow
-                internals={internals}
-                selectedStageId={selectedStageId}
-                selectedSubstageId={selectedSubstageId}
-              />
-            </ReactFlowProvider>
-          </section>
-        </section>
-        <StageDetails
-          stage={selectedStage}
-          node={selectedNode}
-          internalsStage={selectedInternalsStage}
+        <PipelineNav
+          activeView={activeView}
+          graph={graph}
+          internals={internals}
+          overlay={overlay}
+          setActiveView={setActiveView}
+          setStageView={setStageView}
         />
+        <section className="content-panel">
+          {activeView === "pipeline" ? (
+            <section className="diagram-panel overview-diagram">
+              <div className="panel-toolbar">
+                <div>
+                  <p className="eyebrow">Entire Pipeline</p>
+                  <strong>Stages and substages</strong>
+                </div>
+              </div>
+              <ReactFlowProvider>
+                <PipelineOverviewFlow
+                  graph={graph}
+                  internals={internals}
+                  overlay={overlay}
+                  setStageView={setStageView}
+                />
+              </ReactFlowProvider>
+            </section>
+          ) : (
+            <section className="diagram-panel machinery-diagram">
+              <div className="panel-toolbar">
+                <div>
+                  <p className="eyebrow">Stage Machinery</p>
+                  <strong>{selectedInternalsStage?.title || "No stage selected"}</strong>
+                </div>
+                <label>
+                  Substage
+                  <select
+                    value={selectedSubstageId}
+                    onChange={(event) => setSelectedSubstageId(event.target.value)}
+                  >
+                    <option value="all">All substages</option>
+                    {(selectedInternalsStage?.substages || []).map((substage) => (
+                      <option value={substage.id} key={substage.id}>
+                        {substage.id}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <ReactFlowProvider>
+                <StageMachineryFlow
+                  internals={internals}
+                  selectedStageId={selectedStageId}
+                  selectedSubstageId={selectedSubstageId}
+                />
+              </ReactFlowProvider>
+            </section>
+          )}
+        </section>
+        {activeView === "pipeline" ? (
+          <PipelineSummaryPanel summary={pipelineSummary} />
+        ) : (
+          <StageDetails
+            stage={selectedStage}
+            node={selectedNode}
+            internalsStage={selectedInternalsStage}
+          />
+        )}
       </section>
     </main>
+  );
+}
+
+function PipelineNav({
+  activeView,
+  graph,
+  internals,
+  overlay,
+  setActiveView,
+  setStageView,
+}) {
+  const overlayByStage = useMemo(
+    () => new Map((overlay?.stages || []).map((stage) => [stage.id, stage])),
+    [overlay],
+  );
+  const internalsByStage = useMemo(
+    () => new Map((internals?.stages || []).map((stage) => [stage.id, stage])),
+    [internals],
+  );
+  return (
+    <nav className="pipeline-nav" aria-label="Pipeline views">
+      <button
+        className={`nav-item ${activeView === "pipeline" ? "active" : ""}`}
+        type="button"
+        onClick={() => setActiveView("pipeline")}
+      >
+        <span>Entire pipeline</span>
+        <small>{graph.nodes.length} stages</small>
+      </button>
+      <div className="nav-section-label">Stages</div>
+      {graph.nodes.map((stage) => {
+        const lifecycle = overlayByStage.get(stage.id)?.lifecycleStatus || "pending";
+        const substageCount = internalsByStage.get(stage.id)?.substages?.length || 0;
+        return (
+          <button
+            className={`nav-item ${activeView === stage.id ? "active" : ""}`}
+            type="button"
+            key={stage.id}
+            onClick={() => setStageView(stage.id)}
+          >
+            <span>{stage.step}</span>
+            <strong>{stage.title}</strong>
+            <small>
+              {substageCount} substages / {lifecycle}
+            </small>
+          </button>
+        );
+      })}
+    </nav>
+  );
+}
+
+function PipelineSummaryPanel({ summary }) {
+  return (
+    <aside className="details-panel">
+      <p className="eyebrow">Pipeline</p>
+      <h2>Complete Build Path</h2>
+      <p className="purpose">
+        Canonical stages with the substage layer generated from the authored
+        internals map.
+      </p>
+      <DetailSection title="Structure">
+        <div className="detail-row">
+          <span>Stages</span>
+          <strong>{summary.stageCount}</strong>
+        </div>
+        <div className="detail-row">
+          <span>Substages</span>
+          <strong>{summary.substageCount}</strong>
+        </div>
+        <div className="detail-row">
+          <span>Machinery nodes</span>
+          <strong>{summary.nodeCount}</strong>
+        </div>
+        <div className="detail-row">
+          <span>Machinery edges</span>
+          <strong>{summary.edgeCount}</strong>
+        </div>
+      </DetailSection>
+      <DetailSection title="Stages">
+        {summary.stages.map((stage) => (
+          <div className="detail-row" key={stage.id}>
+            <span>{stage.step}</span>
+            <strong>{stage.substageCount} substages</strong>
+          </div>
+        ))}
+      </DetailSection>
+    </aside>
   );
 }
 
@@ -425,6 +594,48 @@ function edgeStyle(edgeType) {
     stroke: color,
     strokeDasharray: edgeType === "conditional" ? "6 5" : undefined,
     strokeWidth: 1.8,
+  };
+}
+
+function overviewSubstageId(substageId) {
+  return `overview:${substageId}`;
+}
+
+function buildPipelineSummary(graph, internals) {
+  const stages = graph.nodes.map((stage) => {
+    const internalsStage = internals.stages.find((item) => item.id === stage.id);
+    return {
+      id: stage.id,
+      step: stage.step,
+      title: stage.title,
+      substageCount: internalsStage?.substages?.length || 0,
+    };
+  });
+  return {
+    stageCount: graph.nodes.length,
+    substageCount: internals.stages.reduce(
+      (count, stage) => count + stage.substages.length,
+      0,
+    ),
+    nodeCount: internals.stages.reduce(
+      (count, stage) =>
+        count +
+        stage.substages.reduce(
+          (substageCount, substage) => substageCount + substage.nodes.length,
+          0,
+        ),
+      0,
+    ),
+    edgeCount: internals.stages.reduce(
+      (count, stage) =>
+        count +
+        stage.substages.reduce(
+          (substageCount, substage) => substageCount + substage.edges.length,
+          0,
+        ),
+      0,
+    ),
+    stages,
   };
 }
 

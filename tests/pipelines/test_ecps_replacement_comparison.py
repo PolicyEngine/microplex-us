@@ -295,6 +295,18 @@ def test_robust_loss_terms_match_objective() -> None:
     )
 
 
+def test_comparison_bad_targets_exclude_dataset_derived_source_counts() -> None:
+    bad_targets = ecps._comparison_bad_targets()
+
+    assert len(bad_targets) == len(set(bad_targets))
+    assert set(ecps._ENHANCED_CPS_BAD_TARGETS).issubset(bad_targets)
+    assert {
+        "nation/source/household_count",
+        "nation/source/cps_household_count",
+        "nation/source/puf_clone_household_count",
+    }.issubset(bad_targets)
+
+
 def _artifact_manifest(artifact_dir: Path, baseline_dataset: Path) -> None:
     (artifact_dir / "source_weight_diagnostics.json").write_text(
         json.dumps(
@@ -491,7 +503,8 @@ def test_sound_ecps_replacement_comparison_satisfies_gate_contract(
     )
     gate_report = json.loads(report_path.read_text())
 
-    assert gate_report["summary"]["status"] == "passed"
+    assert gate_report["summary"]["status"] == "failed"
+    assert gate_report["summary"]["failed_required_gates"] == ["column_contract"]
     assert gate_report["gates"]["ecps_comparison"]["status"] == "pass"
 
 

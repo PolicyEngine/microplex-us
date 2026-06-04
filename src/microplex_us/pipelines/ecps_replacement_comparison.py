@@ -51,6 +51,23 @@ _PROTECTED_TARGET_PATTERNS: dict[str, tuple[str, ...]] = {
     "household_net_income": ("household_net_income", "net_income"),
 }
 
+_DATASET_DERIVED_COMPARISON_TARGETS: tuple[str, ...] = (
+    "nation/source/household_count",
+    "nation/source/cps_household_count",
+    "nation/source/puf_clone_household_count",
+)
+
+
+def _comparison_bad_targets() -> tuple[str, ...]:
+    return tuple(
+        dict.fromkeys(
+            (
+                *_ENHANCED_CPS_BAD_TARGETS,
+                *_DATASET_DERIVED_COMPARISON_TARGETS,
+            )
+        )
+    )
+
 
 def build_sound_ecps_replacement_comparison(
     *,
@@ -639,7 +656,7 @@ def _extract_pe_native_loss_inputs(
                 "-c",
                 _PE_NATIVE_BROAD_MATRIX_SCRIPT,
                 str(resolved_repo),
-                json.dumps(_ENHANCED_CPS_BAD_TARGETS),
+                json.dumps(_comparison_bad_targets()),
                 str(int(period)),
                 str(Path(input_dataset_path).expanduser().resolve()),
                 str(prefix),

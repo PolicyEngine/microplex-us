@@ -4247,6 +4247,96 @@ class TestUSMicroplexPipeline:
             "taxable_interest_income",
         ]
 
+    def test_finalize_puf_support_clone_preserves_cps_measured_income_totals(
+        self,
+    ):
+        pipeline = USMicroplexPipeline(
+            USMicroplexBuildConfig(
+                synthesis_backend="seed",
+                puf_support_clone_enabled=True,
+                puf_support_clone_output_mode="collapse_to_scaffold",
+                puf_support_clone_both_halves_override_variables=(),
+            )
+        )
+        original = pd.DataFrame(
+            {
+                "person_id": [10, 20],
+                "household_id": [1, 2],
+                "age": [45, 62],
+                "interest_income": [3.0, 4.0],
+                "dividend_income": [10.0, 5.0],
+                "pension_income": [100.0, 200.0],
+                "unemployment_compensation": [100.0, 0.0],
+            }
+        )
+        clone = pd.DataFrame(
+            {
+                "person_id": [30, 40],
+                "household_id": [3, 4],
+                "age": [45, 62],
+                "taxable_interest_income": [1_000.0, 0.0],
+                "tax_exempt_interest_income": [500.0, 0.0],
+                "qualified_dividend_income": [20.0, 0.0],
+                "non_qualified_dividend_income": [5.0, 0.0],
+                "ordinary_dividend_income": [25.0, 0.0],
+                "dividend_income": [25.0, 0.0],
+                "taxable_pension_income": [90.0, 0.0],
+                "tax_exempt_pension_income": [10.0, 0.0],
+                "taxable_unemployment_compensation": [600.0, 700.0],
+            }
+        )
+
+        result, summary = pipeline._finalize_puf_support_clone_frame(
+            original=original,
+            imputed_clone=clone,
+            donor_source_name="irs_soi_puf_2024",
+            integrated_variables=[
+                "taxable_interest_income",
+                "tax_exempt_interest_income",
+                "qualified_dividend_income",
+                "non_qualified_dividend_income",
+                "taxable_pension_income",
+                "tax_exempt_pension_income",
+                "taxable_unemployment_compensation",
+            ],
+            preclone_columns=set(original.columns),
+            donor_seed_columns=set(clone.columns),
+            donor_observed=set(clone.columns),
+        )
+
+        assert result["taxable_interest_income"].round(6).tolist() == [2.0, 2.72]
+        assert result["tax_exempt_interest_income"].round(6).tolist() == [1.0, 1.28]
+        assert result["taxable_unemployment_compensation"].tolist() == [100.0, 0.0]
+        assert result["dividend_income"].tolist() == [10.0, 5.0]
+        assert result["qualified_dividend_income"].round(6).tolist() == [
+            8.0,
+            3.9,
+        ]
+        assert result["non_qualified_dividend_income"].round(6).tolist() == [
+            2.0,
+            1.1,
+        ]
+        assert result["taxable_pension_income"].round(6).tolist() == [
+            90.0,
+            118.0,
+        ]
+        assert result["tax_exempt_pension_income"].round(6).tolist() == [
+            10.0,
+            82.0,
+        ]
+        assert summary["cps_measured_total_passthrough"] == {
+            "passthrough_variables": [
+                "non_qualified_dividend_income",
+                "qualified_dividend_income",
+                "tax_exempt_interest_income",
+                "tax_exempt_pension_income",
+                "taxable_interest_income",
+                "taxable_pension_income",
+                "taxable_unemployment_compensation",
+            ],
+            "dividend_components_scaled_to_cps_total": True,
+        }
+
     def test_integrate_donor_sources_collapses_puf_support_clone_before_later_donors(
         self, monkeypatch
     ):
@@ -5670,6 +5760,7 @@ class TestUSMicroplexPipeline:
                 "dividend_income": [80.0, 999.0, 0.0],
                 "qualified_dividend_income": [0.0, 5.0, 0.0],
                 "non_qualified_dividend_income": [0.0, 25.0, 0.0],
+                "tax_exempt_pension_income": [40.0, 0.0, 0.0],
                 "long_term_capital_gains_before_response": [0.0, 60.0, -10.0],
                 "long_term_capital_gains": [40.0, 999.0, 0.0],
                 "capital_gains": [999.0, 999.0, 25.0],
@@ -5695,6 +5786,11 @@ class TestUSMicroplexPipeline:
             40.0,
             60.0,
             -10.0,
+        ]
+        assert augmented["tax_exempt_private_pension_income"].tolist() == [
+            40.0,
+            0.0,
+            0.0,
         ]
 
     def test_attach_policyengine_tax_unit_source_inputs_derives_mortgage_structure(

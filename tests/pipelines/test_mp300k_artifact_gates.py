@@ -556,16 +556,13 @@ def test_column_contract_gate_excludes_computed_baseline_outputs(
     _write_minimal_policyengine_dataset(artifact_dir / "candidate.h5")
     baseline_dataset = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
     _add_period_dataset(
-        baseline_dataset, "traditional_ira_contributions", [0.0, 0.0, 0.0]
-    )
-    _add_period_dataset(
         baseline_dataset,
-        "self_employed_pension_contribution_ald",
+        "self_employed_health_insurance_ald",
         [0.0, 0.0],
     )
     _add_period_dataset(
         baseline_dataset,
-        "spm_unit_capped_work_childcare_expenses",
+        "self_employed_pension_contribution_ald",
         [0.0, 0.0],
     )
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
@@ -587,11 +584,10 @@ def test_column_contract_gate_excludes_computed_baseline_outputs(
 
     assert record["summary"]["status"] == "passed"
     assert column_gate["status"] == "pass"
-    assert column_gate["metrics"]["excluded_baseline_computed_column_count"] == 3
+    assert column_gate["metrics"]["excluded_baseline_computed_column_count"] == 2
     assert column_gate["details"]["excluded_baseline_computed_columns"] == [
+        "self_employed_health_insurance_ald",
         "self_employed_pension_contribution_ald",
-        "spm_unit_capped_work_childcare_expenses",
-        "traditional_ira_contributions",
     ]
 
 

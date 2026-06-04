@@ -28,6 +28,7 @@ import polars as pl
 from microplex_us.data_sources.cps import (
     DC_SHARE_OF_RETIREMENT_CONTRIBUTIONS,
     PERSON_VARIABLES,
+    RETIREMENT_CONTRIBUTION_LIMITS_BY_YEAR,
     ROTH_SHARE_OF_DC_CONTRIBUTIONS,
     SE_PENSION_SHARE_OF_RETIREMENT_CONTRIBUTIONS,
     TRADITIONAL_SHARE_OF_IRA_CONTRIBUTIONS,
@@ -40,6 +41,13 @@ _LEAVES = (
     "roth_401k_contributions_desired",
     "traditional_ira_contributions_desired",
     "roth_ira_contributions_desired",
+)
+_CAPPED_LEAVES = (
+    "self_employed_pension_contributions",
+    "traditional_401k_contributions",
+    "roth_401k_contributions",
+    "traditional_ira_contributions",
+    "roth_ira_contributions",
 )
 
 
@@ -70,9 +78,7 @@ def _expected_split(retcb: float, wages: float, se: float) -> dict[str, float]:
     has_wages = wages > 0
     has_se = se > 0
     has_earned = has_wages or has_se
-    se_pension = (
-        retcb * SE_PENSION_SHARE_OF_RETIREMENT_CONTRIBUTIONS if has_se else 0.0
-    )
+    se_pension = retcb * SE_PENSION_SHARE_OF_RETIREMENT_CONTRIBUTIONS if has_se else 0.0
     remaining = max(retcb - se_pension, 0.0)
     dc_pool = remaining * DC_SHARE_OF_RETIREMENT_CONTRIBUTIONS if has_wages else 0.0
     ira_pool = (remaining - dc_pool) if has_earned else 0.0
@@ -85,6 +91,37 @@ def _expected_split(retcb: float, wages: float, se: float) -> dict[str, float]:
         * TRADITIONAL_SHARE_OF_IRA_CONTRIBUTIONS,
         "roth_ira_contributions_desired": ira_pool
         * (1 - TRADITIONAL_SHARE_OF_IRA_CONTRIBUTIONS),
+    }
+
+
+def _expected_capped_split(
+    retcb: float,
+    wages: float,
+    se: float,
+    age: int,
+    *,
+    year: int,
+) -> dict[str, float]:
+    """Recompute eCPS' capped account-order split (cps.py:1500-1537)."""
+    limits = RETIREMENT_CONTRIBUTION_LIMITS_BY_YEAR[year]
+    catch_up = age >= 50
+    limit_401k = limits["401k"] + catch_up * limits["401k_catch_up"]
+    limit_ira = limits["ira"] + catch_up * limits["ira_catch_up"]
+    se_pension = retcb if se > 0 else 0.0
+    remaining = max(retcb - se_pension, 0.0)
+    traditional_401k = min(remaining, limit_401k) if wages > 0 else 0.0
+    remaining = max(remaining - traditional_401k, 0.0)
+    roth_401k = min(remaining, limit_401k) if wages > 0 else 0.0
+    remaining = max(remaining - roth_401k, 0.0)
+    traditional_ira = min(remaining, limit_ira) if wages > 0 else 0.0
+    remaining = max(remaining - traditional_ira, 0.0)
+    roth_ira = min(remaining, limit_ira - traditional_ira) if wages > 0 else 0.0
+    return {
+        "self_employed_pension_contributions": se_pension,
+        "traditional_401k_contributions": traditional_401k,
+        "roth_401k_contributions": roth_401k,
+        "traditional_ira_contributions": traditional_ira,
+        "roth_ira_contributions": roth_ira,
     }
 
 
@@ -101,14 +138,14 @@ def test_person_variables_stages_retcb_val():
     assert PERSON_VARIABLES.get("RETCB_VAL") == "_retirement_contributions"
 
 
-def test_process_persons_produces_all_five_leaves_and_drops_staging():
+def test_process_persons_produces_retirement_leaves_and_drops_staging():
     rows = [
         {"wages": 50_000.0, "se": 0.0, "retcb": 10_000.0},
         {"wages": 0.0, "se": 80_000.0, "retcb": 5_000.0},
         {"wages": 30_000.0, "se": 10_000.0, "retcb": 2_000.0},
     ]
     out = _process_persons(_raw_person_frame(rows), 2023)
-    for leaf in _LEAVES:
+    for leaf in _LEAVES + _CAPPED_LEAVES:
         assert leaf in out.columns, f"{leaf} not produced"
     # Staging column must not leak into the processed frame.
     assert "_retirement_contributions" not in out.columns
@@ -127,9 +164,27 @@ def test_split_matches_ecps_math_exactly():
         expected = _expected_split(row["retcb"], row["wages"], row["se"])
         for leaf in _LEAVES:
             got = out[leaf].to_list()[i]
-            assert got == expected[leaf], (
-                f"row {i} {leaf}: {got} != {expected[leaf]}"
-            )
+            assert got == expected[leaf], f"row {i} {leaf}: {got} != {expected[leaf]}"
+
+
+def test_capped_split_matches_ecps_account_order_exactly():
+    rows = [
+        {"wages": 50_000.0, "se": 0.0, "retcb": 10_000.0, "age": 40},
+        {"wages": 0.0, "se": 80_000.0, "retcb": 5_000.0, "age": 40},
+        {"wages": 90_000.0, "se": 0.0, "retcb": 80_000.0, "age": 52},
+    ]
+    out = _process_persons(_raw_person_frame(rows), 2023)
+    for i, row in enumerate(rows):
+        expected = _expected_capped_split(
+            row["retcb"],
+            row["wages"],
+            row["se"],
+            row["age"],
+            year=2023,
+        )
+        for leaf in _CAPPED_LEAVES:
+            got = out[leaf].to_list()[i]
+            assert got == expected[leaf], f"row {i} {leaf}: {got} != {expected[leaf]}"
 
 
 def test_five_leaves_reconcile_to_retcb_for_earned_income_records():
@@ -182,7 +237,9 @@ def test_no_earned_income_yields_zero_everywhere():
     rows = [{"wages": 0.0, "se": 0.0, "retcb": 9_000.0}]
     out = _process_persons(_raw_person_frame(rows), 2023)
     for leaf in _LEAVES:
-        assert out[leaf].to_list()[0] == 0.0, f"{leaf} should be 0 without earned income"
+        assert out[leaf].to_list()[0] == 0.0, (
+            f"{leaf} should be 0 without earned income"
+        )
 
 
 def test_zero_retcb_yields_zero_everywhere():
@@ -214,7 +271,7 @@ def test_leaves_in_export_allowlist_and_not_aliased():
         SAFE_POLICYENGINE_US_EXPORT_VARIABLES,
     )
 
-    for leaf in _LEAVES:
+    for leaf in _LEAVES + _CAPPED_LEAVES:
         assert leaf in SAFE_POLICYENGINE_US_EXPORT_VARIABLES, f"{leaf} not exported"
         assert POLICYENGINE_US_EXPORT_COLUMN_ALIASES.get(leaf) is None
 

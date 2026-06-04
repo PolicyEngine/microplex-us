@@ -694,6 +694,26 @@ def _add_pipeline_constructed_evidence(
             "CPS retirement distribution split",
             ("DST_SC*", "DST_VAL*"),
         ),
+        "self_employed_pension_contributions": (
+            "CPS retirement-contribution capped-account split",
+            ("RETCB_VAL", "age", "wage_income", "self_employment_income"),
+        ),
+        "traditional_401k_contributions": (
+            "CPS retirement-contribution capped-account split",
+            ("RETCB_VAL", "age", "wage_income", "self_employment_income"),
+        ),
+        "roth_401k_contributions": (
+            "CPS retirement-contribution capped-account split",
+            ("RETCB_VAL", "age", "wage_income", "self_employment_income"),
+        ),
+        "traditional_ira_contributions": (
+            "CPS retirement-contribution capped-account split",
+            ("RETCB_VAL", "age", "wage_income", "self_employment_income"),
+        ),
+        "roth_ira_contributions": (
+            "CPS retirement-contribution capped-account split",
+            ("RETCB_VAL", "age", "wage_income", "self_employment_income"),
+        ),
         "self_employed_pension_contributions_desired": (
             "CPS retirement-contribution desired-account split",
             ("RETCB_VAL", "wage_income", "self_employment_income"),
@@ -725,6 +745,10 @@ def _add_pipeline_constructed_evidence(
         "first_home_mortgage_origination_year": (
             "Tax-unit mortgage support construction",
             ("first_home_mortgage_interest",),
+        ),
+        "spm_unit_capped_work_childcare_expenses": (
+            "CPS SPM capped work-childcare source amount",
+            ("SPM_CAPWKCCXPNS",),
         ),
     }
     aotc_columns = (

@@ -508,15 +508,16 @@ def test_committed_contract_parses_with_expected_categories():
         assert key in contract, f"contract missing '{key}'"
         assert isinstance(contract[key], list)
     # Category sizes of the eCPS contract, aligned to the clone-correct baseline
-    # H5 (postfix_clonecorrect): required exports the 5 *_desired retirement
-    # INPUTS (not the bare formula-computed columns), forbids the
+    # H5 (postfix_clonecorrect plus target-source gap fixes): required exports
+    # both the 5 capped retirement account inputs and the 5 *_desired
+    # retirement inputs, forbids the
     # PUF_REPORTED_CALCULATED_TAX_OUTPUT_VARIABLES tax-credit outputs, and
     # excludes only weeks_worked (the lone pe-us formula var the baseline does
     # not persist). Structural/overridable computed fields
     # (has_tin/has_itin/in_nyc/fsla_overtime_premium/meets_ssi_disability_criteria)
     # are REQUIRED, matching the in-tree _column_contract_gate.
-    # Sizes sum to the 252-column clone-correct baseline: 246 + 5 + 1.
-    assert len(contract["required"]) == 246
+    # Sizes sum to the 258-column source-backed baseline: 252 + 5 + 1.
+    assert len(contract["required"]) == 252
     assert len(contract["ecps_internal_optional"]) == 5
     assert len(contract["forbidden"]) == 22
     assert len(contract["formula_owned_excluded"]) == 1

@@ -357,9 +357,15 @@ SAFE_POLICYENGINE_US_EXPORT_VARIABLES: set[str] = {
     "social_security_retirement",
     "social_security_survivors",
     "social_security_dependents",
-    # Desired retirement-contribution leaves split from CPS RETCB_VAL
-    # (eCPS cps.py:1500-1552; shares in imputation_parameters.yaml).
-    # "Desired" = pre-statutory-limit; PolicyEngine-US applies the limits.
+    "spm_unit_capped_work_childcare_expenses",
+    # Retirement-contribution leaves split from CPS RETCB_VAL. The capped
+    # account-level leaves mirror eCPS' current direct inputs; the desired
+    # leaves preserve the pre-statutory-limit values PE-US formulas use.
+    "self_employed_pension_contributions",
+    "traditional_401k_contributions",
+    "roth_401k_contributions",
+    "traditional_ira_contributions",
+    "roth_ira_contributions",
     "self_employed_pension_contributions_desired",
     "traditional_401k_contributions_desired",
     "roth_401k_contributions_desired",
@@ -607,6 +613,7 @@ POLICYENGINE_US_EXPORT_DEFAULTS: dict[str, Any] = {
     "snap_reported": 0.0,
     "spm_unit_broadband_subsidy_reported": 0.0,
     "spm_unit_capped_housing_subsidy_reported": 0.0,
+    "spm_unit_capped_work_childcare_expenses": 0.0,
     "spm_unit_energy_subsidy_reported": 0.0,
     "spm_unit_federal_tax_reported": 0.0,
     "spm_unit_net_income_reported": 0.0,
@@ -751,6 +758,7 @@ POLICYENGINE_US_LEGACY_CONTRACT_VARIABLE_ENTITIES: dict[str, str] = {
     "snap_reported": "spm_unit",
     "spm_unit_broadband_subsidy_reported": "spm_unit",
     "spm_unit_capped_housing_subsidy_reported": "spm_unit",
+    "spm_unit_capped_work_childcare_expenses": "spm_unit",
     "spm_unit_energy_subsidy": "spm_unit",
     "spm_unit_energy_subsidy_reported": "spm_unit",
     "spm_unit_federal_tax_reported": "spm_unit",
@@ -779,7 +787,13 @@ POLICYENGINE_US_DATA_OVERRIDABLE_COMPUTED_EXPORT_VARIABLES: frozenset[str] = fro
         # inputs for these fallback formulas.
         "fsla_overtime_premium",
         "meets_ssi_disability_criteria",
+        "self_employed_pension_contributions",
+        "traditional_401k_contributions",
+        "roth_401k_contributions",
+        "traditional_ira_contributions",
+        "roth_ira_contributions",
         "spm_unit_energy_subsidy",
+        "spm_unit_capped_work_childcare_expenses",
         # social_security_retirement is a storable INPUT in the pinned pe-us
         # (no formula), reconstructed from the CPS SS_VAL/RESNSS split. Some
         # pe-us versions add a fallback formula; listing it here keeps the

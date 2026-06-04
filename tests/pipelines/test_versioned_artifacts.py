@@ -751,6 +751,14 @@ def test_build_and_save_versioned_us_microplex_from_source_providers(tmp_path):
         )
         assert stage_manifest["lifecycleStatus"] in {"complete", "deferred"}
         assert stage_manifest["events"]
+        if stage_id == "02_source_loading":
+            progress = stage_manifest["metadata"]["sourceLoadingProgress"]
+            assert progress["providerCount"] == 2
+            assert progress["completedProviderCount"] == 2
+            assert progress["failedProviderCount"] == 0
+            assert [
+                provider["sourceName"] for provider in progress["providers"]
+            ] == ["test_cps", "test_puf"]
 
 
 def test_build_and_save_versioned_us_microplex_from_data_dir(tmp_path):

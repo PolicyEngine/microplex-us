@@ -7803,6 +7803,24 @@ class TestUSMicroplexPipeline:
         with pytest.raises(RuntimeError, match="provider load failed"):
             pipeline.build_from_source_providers([FailingProvider()])
 
+    def test_runtime_fail_stage_does_not_raise_handler_error(
+        self,
+        tmp_path,
+        monkeypatch,
+    ):
+        writer = USStageRuntimeWriter(tmp_path)
+
+        def broken_handler(*args, **kwargs):
+            raise RuntimeError("handler broke")
+
+        monkeypatch.setattr(writer, "fail_stage", broken_handler)
+        pipeline = USMicroplexPipeline(
+            USMicroplexBuildConfig(n_synthetic=1),
+            stage_runtime_writer=writer,
+        )
+
+        pipeline._runtime_fail_stage("03_source_planning", ValueError("original"))
+
     def test_build_from_source_provider_requires_household_person_relationship(
         self, persons, households
     ):

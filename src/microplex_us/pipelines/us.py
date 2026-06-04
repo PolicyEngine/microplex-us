@@ -2862,7 +2862,11 @@ class USMicroplexPipeline:
         metadata: Mapping[str, Any] | None = None,
     ) -> None:
         if self.stage_runtime_writer is not None:
-            self.stage_runtime_writer.fail_stage(stage_id, error, metadata=metadata)
+            self.stage_runtime_writer.best_effort_fail_stage(
+                stage_id,
+                error,
+                metadata=metadata,
+            )
 
     def build_from_data_dir(self, data_dir: str | Path) -> USMicroplexBuildResult:
         from microplex_us.data_sources.cps import (

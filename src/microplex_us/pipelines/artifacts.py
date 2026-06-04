@@ -414,7 +414,7 @@ def save_us_microplex_artifacts(
             )
     except Exception as exc:
         if stage_runtime_writer is not None:
-            stage_runtime_writer.fail_stage("08_dataset_assembly", exc)
+            stage_runtime_writer.best_effort_fail_stage("08_dataset_assembly", exc)
         raise
 
     try:
@@ -745,7 +745,10 @@ def save_us_microplex_artifacts(
             )
     except Exception as exc:
         if stage_runtime_writer is not None:
-            stage_runtime_writer.fail_stage("09_validation_benchmarking", exc)
+            stage_runtime_writer.best_effort_fail_stage(
+                "09_validation_benchmarking",
+                exc,
+            )
         raise
     assert_valid_benchmark_artifact_manifest(
         manifest,

@@ -5247,6 +5247,60 @@ class TestUSMicroplexPipeline:
             9_600.0,
         ]
 
+    def test_augment_policyengine_person_inputs_recomposes_signed_rental_income(
+        self,
+    ):
+        pipeline = USMicroplexPipeline(USMicroplexBuildConfig())
+        persons = pd.DataFrame(
+            {
+                "age": [45, 50, 55],
+                "sex": [1, 2, 1],
+                "income": [1_000.0, 1_000.0, 1_000.0],
+                "rental_income": [900.0, 900.0, 900.0],
+                "rental_income_positive": [300.0, 0.0, 50.0],
+                "rental_income_negative": [100.0, 200.0, 0.0],
+            }
+        )
+
+        augmented = pipeline._augment_policyengine_person_inputs(persons)
+
+        assert augmented["rental_income"].tolist() == [200.0, -200.0, 50.0]
+        assert augmented["employment_income_before_lsr"].tolist() == [
+            800.0,
+            1_200.0,
+            950.0,
+        ]
+
+    def test_augment_policyengine_person_inputs_prefers_signed_business_losses(
+        self,
+    ):
+        pipeline = USMicroplexPipeline(USMicroplexBuildConfig())
+        persons = pd.DataFrame(
+            {
+                "age": [45, 50, 55],
+                "sex": [1, 2, 1],
+                "income": [1_000.0, 1_000.0, 1_000.0],
+                "self_employment_income_before_lsr": [50.0, 60.0, 70.0],
+                "self_employment_income": [100.0, -25.0, 0.0],
+                "farm_income": [20.0, 30.0, 40.0],
+                "farm_operations_income": [10.0, -15.0, 0.0],
+            }
+        )
+
+        augmented = pipeline._augment_policyengine_person_inputs(persons)
+
+        assert augmented["self_employment_income_before_lsr"].tolist() == [
+            100.0,
+            -25.0,
+            70.0,
+        ]
+        assert augmented["farm_income"].tolist() == [10.0, -15.0, 40.0]
+        assert augmented["employment_income_before_lsr"].tolist() == [
+            900.0,
+            1_025.0,
+            930.0,
+        ]
+
     def test_augment_policyengine_person_inputs_zeros_part_b_without_medicare(
         self,
     ):

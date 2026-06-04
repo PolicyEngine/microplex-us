@@ -51,6 +51,15 @@ from typing import Any
 # Path to the committed contract shipped alongside this module.
 DEFAULT_CONTRACT_PATH = Path(__file__).with_name("ecps_export_contract.json")
 
+SIGNED_NUMERIC_SUPPORT_COLUMNS = frozenset(
+    {
+        "farm_income",
+        "farm_operations_income",
+        "partnership_s_corp_income",
+        "rental_income",
+    }
+)
+
 
 @dataclass
 class ColumnDiff:
@@ -74,6 +83,8 @@ class ColumnSupportStats:
     kind: str
     row_count: int
     nonzero_count: int | None
+    positive_count: int | None
+    negative_count: int | None
     unique_count: int
 
 
@@ -145,7 +156,8 @@ def compute_support_diff(
     *populates* a required exported column, MP must populate it too:
 
     - numeric columns: eCPS has at least one nonzero value, so MP must also
-      have at least one nonzero value;
+      have at least one nonzero value. Declared signed-income exports must
+      also preserve positive/negative support when eCPS has it;
     - boolean/string/categorical columns: eCPS has more than one unique value,
       so MP must also vary.
 
@@ -178,7 +190,10 @@ def compute_support_diff(
                 continue
             checked_columns.append(column)
             baseline_stats = _support_stats(column, baseline_values)
-            requirement = _support_requirement(baseline_stats)
+            requirement = _support_requirement(
+                baseline_stats,
+                require_signed_numeric=column in SIGNED_NUMERIC_SUPPORT_COLUMNS,
+            )
             if requirement is None:
                 baseline_filler_columns.append(column)
                 continue
@@ -246,16 +261,22 @@ def _support_stats(column: str, values) -> ColumnSupportStats:
     unique_count = int(len(np.unique(flattened))) if flattened.size else 0
     kind = _support_kind(flattened)
     nonzero_count: int | None = None
+    positive_count: int | None = None
+    negative_count: int | None = None
     if kind == "numeric":
         numeric = flattened
         if np.issubdtype(numeric.dtype, np.floating):
             numeric = numeric[np.isfinite(numeric)]
         nonzero_count = int(np.count_nonzero(numeric))
+        positive_count = int(np.count_nonzero(numeric > 0))
+        negative_count = int(np.count_nonzero(numeric < 0))
     return ColumnSupportStats(
         column=column,
         kind=kind,
         row_count=int(flattened.size),
         nonzero_count=nonzero_count,
+        positive_count=positive_count,
+        negative_count=negative_count,
         unique_count=unique_count,
     )
 
@@ -272,10 +293,24 @@ def _support_kind(values) -> str:
     return "categorical"
 
 
-def _support_requirement(stats: ColumnSupportStats) -> str | None:
+def _support_requirement(
+    stats: ColumnSupportStats,
+    *,
+    require_signed_numeric: bool = True,
+) -> str | None:
     """Return the support MP must match for an eCPS column, if any."""
     if stats.kind == "numeric":
-        return "numeric_nonzero" if (stats.nonzero_count or 0) > 0 else None
+        if (stats.nonzero_count or 0) <= 0:
+            return None
+        has_positive = (stats.positive_count or 0) > 0
+        has_negative = (stats.negative_count or 0) > 0
+        if require_signed_numeric and has_positive and has_negative:
+            return "numeric_signed"
+        if has_positive:
+            return "numeric_positive"
+        if has_negative:
+            return "numeric_negative"
+        return "numeric_nonzero"
     return "categorical_variation" if stats.unique_count > 1 else None
 
 
@@ -287,10 +322,23 @@ def _satisfies_support_requirement(
     """Return whether candidate stats meet an eCPS-derived requirement."""
     if stats is None:
         return False
-    if requirement == "numeric_nonzero":
+    if requirement in {
+        "numeric_nonzero",
+        "numeric_positive",
+        "numeric_negative",
+        "numeric_signed",
+    }:
         if stats.kind != "numeric":
             return stats.unique_count > 1
-        return (stats.nonzero_count or 0) > 0
+        if requirement == "numeric_nonzero":
+            return (stats.nonzero_count or 0) > 0
+        if requirement == "numeric_positive":
+            return (stats.positive_count or 0) > 0
+        if requirement == "numeric_negative":
+            return (stats.negative_count or 0) > 0
+        return (stats.positive_count or 0) > 0 and (
+            stats.negative_count or 0
+        ) > 0
     if requirement == "categorical_variation":
         return stats.unique_count > 1
     raise ValueError(f"Unknown support requirement: {requirement}")
@@ -438,7 +486,10 @@ def _compact_stats(stats: ColumnSupportStats | None) -> str:
     if stats is None:
         return "missing"
     if stats.kind == "numeric":
-        return f"nonzero {stats.nonzero_count}/{stats.row_count}"
+        return (
+            f"nonzero {stats.nonzero_count}/{stats.row_count}; "
+            f"+{stats.positive_count}, -{stats.negative_count}"
+        )
     return f"unique {stats.unique_count}/{stats.row_count}"
 
 

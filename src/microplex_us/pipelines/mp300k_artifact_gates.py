@@ -77,6 +77,9 @@ _CORE_BENCHMARK_ECPS_TARGET_FAMILIES = (
     "national_irs_other",
     "state_aca_spending",
 )
+_FAMILY_FLOOR_ALIASES = {
+    "state_aca_spending": ("state_aca_enrollment",),
+}
 _PROTECTED_FAMILY_RELATIVE_LOSS_TOLERANCE = 0.05
 _PROTECTED_FAMILY_ABSOLUTE_LOSS_TOLERANCE = 0.005
 _DEFAULT_MAX_SUPPORT_WEIGHT_SHARE = 0.25
@@ -1322,6 +1325,13 @@ def _family_floor_summary(
     regressions: list[dict[str, Any]] = []
     for family in families:
         row = rows_by_family.get(family)
+        matched_family = family
+        if row is None:
+            for alias in _FAMILY_FLOOR_ALIASES.get(family, ()):
+                row = rows_by_family.get(alias)
+                if row is not None:
+                    matched_family = alias
+                    break
         if row is None:
             missing.append(family)
             continue
@@ -1346,15 +1356,16 @@ def _family_floor_summary(
             _PROTECTED_FAMILY_RELATIVE_LOSS_TOLERANCE * abs(float(baseline_loss)),
         )
         if delta > tolerance:
-            regressions.append(
-                {
-                    "family": family,
-                    "candidate_loss": float(candidate_loss),
-                    "baseline_loss": float(baseline_loss),
-                    "loss_delta": delta,
-                    "allowed_delta": tolerance,
-                }
-            )
+            regression = {
+                "family": family,
+                "candidate_loss": float(candidate_loss),
+                "baseline_loss": float(baseline_loss),
+                "loss_delta": delta,
+                "allowed_delta": tolerance,
+            }
+            if matched_family != family:
+                regression["matched_family"] = matched_family
+            regressions.append(regression)
     passed = not missing and not regressions
     if explicit is not None:
         passed = passed and bool(explicit)

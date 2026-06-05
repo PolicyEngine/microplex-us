@@ -88,6 +88,7 @@ def save_versioned_us_microplex_artifacts(
     child_tax_unit_agi_drift_variables: tuple[str, ...] | None = None,
     allow_stage_input_overrides: bool = False,
     stage_input_overrides: tuple[USStageInputOverride, ...] = (),
+    stage_runtime_writer: USStageRuntimeWriter | None = None,
 ) -> USMicroplexArtifactPaths:
     """Persist a build under a stable versioned directory beneath one output root."""
     output_root = Path(output_root)
@@ -118,6 +119,7 @@ def save_versioned_us_microplex_artifacts(
         child_tax_unit_agi_drift_variables=child_tax_unit_agi_drift_variables,
         allow_stage_input_overrides=allow_stage_input_overrides,
         stage_input_overrides=stage_input_overrides,
+        stage_runtime_writer=stage_runtime_writer,
     )
     return replace(paths, version_id=resolved_version_id)
 

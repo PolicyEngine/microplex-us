@@ -245,6 +245,35 @@ def test_save_versioned_us_microplex_artifacts_accepts_path_config_values(tmp_pa
     assert manifest["config"]["policyengine_baseline_dataset"] == str(baseline_dataset)
 
 
+def test_save_versioned_us_microplex_artifacts_accepts_stage_runtime_writer_keyword(
+    tmp_path,
+):
+    targets_db = tmp_path / "policy_data.db"
+    baseline_dataset = tmp_path / "baseline.h5"
+    _create_policyengine_targets_db(targets_db)
+    _write_baseline_dataset(
+        baseline_dataset,
+        _make_result(
+            targets_db=targets_db,
+            baseline_dataset=baseline_dataset,
+            snap_values=(100.0, 50.0),
+        ).policyengine_tables,
+    )
+
+    artifact_paths = save_versioned_us_microplex_artifacts(
+        _make_result(
+            targets_db=targets_db,
+            baseline_dataset=baseline_dataset,
+            snap_values=(100.0, 50.0),
+        ),
+        tmp_path / "artifacts",
+        stage_runtime_writer=None,
+    )
+
+    assert artifact_paths.policyengine_dataset.exists()
+    assert artifact_paths.manifest.exists()
+
+
 def _make_source_provider(
     *,
     name: str,

@@ -7,14 +7,25 @@ import tomllib
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_uv_lock_requires_macos_x86_64_environment() -> None:
+def test_project_metadata_does_not_omit_torch_on_macos_x86_64() -> None:
     pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())
+    lock_text = (REPO_ROOT / "uv.lock").read_text()
 
-    uv_config = pyproject["tool"]["uv"]
+    uv_config = pyproject.get("tool", {}).get("uv", {})
 
-    assert "sys_platform == 'darwin' and platform_machine == 'x86_64'" in (
-        uv_config["required-environments"]
+    assert "required-environments" not in uv_config
+    assert "override-dependencies" not in uv_config
+    assert "platform_machine != 'x86_64' or sys_platform != 'darwin'" not in (
+        lock_text
     )
-    assert "torch; sys_platform != 'darwin' or platform_machine != 'x86_64'" in (
-        uv_config["override-dependencies"]
-    )
+
+
+def test_intel_macos_conda_forge_environment_is_declared() -> None:
+    env_text = (REPO_ROOT / "envs/macos-intel-conda-forge.yml").read_text()
+
+    assert "name: microplex-us-intel" in env_text
+    assert "  - conda-forge" in env_text
+    assert "  - nodefaults" in env_text
+    assert "  - python=3.13" in env_text
+    assert "  - pytorch=2.11.*" in env_text
+    assert "  - pip" in env_text

@@ -9,12 +9,6 @@ resolution-markers = [
     "python_full_version < '3.14' and sys_platform == 'emscripten'",
     "python_full_version < '3.14' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
-required-markers = [
-    "platform_machine == 'x86_64' and sys_platform == 'darwin'",
-]
-
-[manifest]
-overrides = [{ name = "torch", marker = "platform_machine != 'x86_64' or sys_platform != 'darwin'" }]
 
 [[package]]
 name = "accessible-pygments"
@@ -961,7 +955,7 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
     { name = "scipy" },
-    { name = "torch", marker = "platform_machine != 'x86_64' or sys_platform != 'darwin'" },
+    { name = "torch" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/2a/fe/3929e39c6e30b7b22730a2021cc108f00d0da611b48854eb67b0d49be94e/l0_python-0.6.1.tar.gz", hash = "sha256:8fbea10059813ef408255c93dcd5a61dfdd893612efb7e62c934a93f5701d45a", size = 37782, upload-time = "2026-02-25T16:59:39.84Z" }
 wheels = [
@@ -1107,7 +1101,7 @@ dependencies = [
     { name = "numpy" },
     { name = "optuna" },
     { name = "pandas" },
-    { name = "torch", marker = "platform_machine != 'x86_64' or sys_platform != 'darwin'" },
+    { name = "torch" },
     { name = "tqdm" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/b7/11/dc170c33ab42a1c6437c9094696c149ec780161a2cdb2630b6a70c8234dc/microcalibrate-0.22.0.tar.gz", hash = "sha256:360eb241156f3731902a9aa73aea1d39437d97a6a40db1ddd0ab85ef636596ea", size = 216545, upload-time = "2026-04-18T15:21:59.591Z" }
@@ -1165,7 +1159,7 @@ dependencies = [
     { name = "quantile-forest" },
     { name = "scikit-learn" },
     { name = "scipy" },
-    { name = "torch", marker = "platform_machine != 'x86_64' or sys_platform != 'darwin'" },
+    { name = "torch" },
 ]
 
 [package.optional-dependencies]

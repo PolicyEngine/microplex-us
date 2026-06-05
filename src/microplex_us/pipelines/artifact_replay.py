@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+import h5py
 import pandas as pd
 from microplex.targets import TargetProvider
 
@@ -36,10 +37,87 @@ def _facade_pipeline_cls() -> type[USMicroplexPipeline]:
     return artifacts.USMicroplexPipeline
 
 
+def _infer_baseline_household_weight_sum(
+    baseline_dataset: str | Path,
+    *,
+    target_period: int,
+) -> float | None:
+    """Best-effort household-weight total inferred from a PE baseline H5."""
+
+    dataset_path = Path(baseline_dataset).expanduser()
+    if not dataset_path.exists():
+        return None
+    try:
+        with h5py.File(dataset_path, "r") as handle:
+            weights = handle.get("household_weight")
+            if weights is None:
+                return None
+            period_key = str(int(target_period))
+            if period_key not in weights:
+                return None
+            weight_sum = float(weights[period_key][...].sum())
+    except (FileNotFoundError, OSError, ValueError):
+        return None
+    return weight_sum if weight_sum > 0.0 else None
+
+
+def _refresh_baseline_derived_weight_targets(
+    config_payload: dict[str, Any],
+    *,
+    explicit_override_keys: set[str],
+) -> None:
+    """Refresh derived total-weight knobs after a replay baseline override."""
+
+    if "policyengine_baseline_dataset" not in explicit_override_keys:
+        return
+    baseline_dataset = config_payload.get("policyengine_baseline_dataset")
+    if baseline_dataset in (None, ""):
+        return
+    target_period = int(
+        config_payload.get("policyengine_target_period")
+        or config_payload.get("policyengine_dataset_year")
+        or 2024
+    )
+    baseline_weight_sum = _infer_baseline_household_weight_sum(
+        baseline_dataset,
+        target_period=target_period,
+    )
+    if baseline_weight_sum is None:
+        return
+
+    if "policyengine_selection_target_total_weight" not in explicit_override_keys:
+        config_payload["policyengine_selection_target_total_weight"] = (
+            baseline_weight_sum
+        )
+    if config_payload.get("calibration_backend") == "none":
+        return
+    if config_payload.get("policyengine_calibration_rescale_to_input_weight_sum"):
+        if (
+            "policyengine_calibration_rescale_to_target_total_weight"
+            not in explicit_override_keys
+        ):
+            config_payload["policyengine_calibration_rescale_to_target_total_weight"] = (
+                False
+            )
+        if "policyengine_calibration_target_total_weight" not in explicit_override_keys:
+            config_payload["policyengine_calibration_target_total_weight"] = None
+        return
+    if "policyengine_calibration_target_total_weight" not in explicit_override_keys:
+        config_payload["policyengine_calibration_target_total_weight"] = (
+            baseline_weight_sum
+        )
+    if (
+        "policyengine_calibration_rescale_to_target_total_weight"
+        not in explicit_override_keys
+    ):
+        config_payload["policyengine_calibration_rescale_to_target_total_weight"] = True
+
+
 def replay_us_microplex_policyengine_stage_from_artifact(
     artifact_dir: str | Path,
     *,
     config_overrides: dict[str, Any] | None = None,
+    policyengine_baseline_dataset: str | Path | None = None,
 ) -> USMicroplexBuildResult:
     """Replay calibration/export inputs from a saved artifact without raw ETL.
 
@@ -58,7 +136,20 @@ def replay_us_microplex_policyengine_stage_from_artifact(
 
     manifest = json.loads(manifest_path.read_text())
     config_payload = dict(manifest.get("config", {}))
-    config_payload.update(dict(config_overrides or {}))
+    resolved_config_overrides = dict(config_overrides or {})
+    if (
+        policyengine_baseline_dataset is not None
+        and "policyengine_baseline_dataset" not in resolved_config_overrides
+    ):
+        resolved_config_overrides["policyengine_baseline_dataset"] = str(
+            policyengine_baseline_dataset
+        )
+    explicit_override_keys = set(resolved_config_overrides)
+    config_payload.update(resolved_config_overrides)
+    _refresh_baseline_derived_weight_targets(
+        config_payload,
+        explicit_override_keys=explicit_override_keys,
+    )
     config = USMicroplexBuildConfig(**config_payload)
 
     seed_data = pd.read_parquet(
@@ -151,6 +242,7 @@ def replay_and_save_versioned_us_microplex_policyengine_stage(
     build_result = replay_us_microplex_policyengine_stage_from_artifact(
         artifact_root,
         config_overrides=config_overrides,
+        policyengine_baseline_dataset=policyengine_baseline_dataset,
     )
     resolved_output_root = (
         Path(output_root).expanduser().resolve()

@@ -210,6 +210,87 @@ def test_replay_policyengine_stage_from_artifact_uses_saved_synthetic(
     ] == ["calibration_backend"]
 
 
+def test_replay_policyengine_stage_refreshes_baseline_total_weight_targets(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    artifact_dir = tmp_path / "artifact"
+    artifact_dir.mkdir()
+    baseline_dataset = tmp_path / "baseline.h5"
+    with h5py.File(baseline_dataset, "w") as handle:
+        household_weight = handle.create_group("household_weight")
+        household_weight.create_dataset("2024", data=[2.5, 3.5])
+
+    stale_total_weight = 153_768_768.0
+    config = USMicroplexBuildConfig(
+        policyengine_targets_db=str(tmp_path / "policy_data.db"),
+        policyengine_baseline_dataset="/tmp/stale-baseline.h5",
+        policyengine_dataset_year=2024,
+        policyengine_target_period=2024,
+        calibration_backend="entropy",
+        policyengine_selection_target_total_weight=stale_total_weight,
+        policyengine_calibration_target_total_weight=stale_total_weight,
+        policyengine_calibration_rescale_to_target_total_weight=True,
+    )
+    seed_data = pd.DataFrame(
+        {"person_id": [1], "household_id": [10], "weight": [10.0]}
+    )
+    synthetic_data = pd.DataFrame(
+        {"person_id": [2], "household_id": [20], "weight": [20.0]}
+    )
+    seed_data.to_parquet(artifact_dir / "seed_data.parquet", index=False)
+    synthetic_data.to_parquet(artifact_dir / "synthetic_data.parquet", index=False)
+    synthetic_data.to_parquet(
+        artifact_dir / "calibrated_data.parquet",
+        index=False,
+    )
+    (artifact_dir / "targets.json").write_text(
+        json.dumps({"marginal": {}, "continuous": {}})
+    )
+    (artifact_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "config": config.to_dict(),
+                "artifacts": {
+                    "seed_data": "seed_data.parquet",
+                    "synthetic_data": "synthetic_data.parquet",
+                    "calibrated_data": "calibrated_data.parquet",
+                    "targets": "targets.json",
+                },
+                "synthesis": {"source_names": ["test_source"]},
+            }
+        )
+    )
+
+    captured: dict[str, object] = {}
+
+    class FakePipeline:
+        def __init__(self, config):
+            captured["config"] = config
+
+        def build_policyengine_entity_tables(self, frame):
+            return frame.copy()
+
+        def calibrate_policyengine_tables(self, tables):
+            return tables, synthetic_data.copy(), {"backend": "policyengine_db_entropy"}
+
+    monkeypatch.setattr(
+        "microplex_us.pipelines.artifacts.USMicroplexPipeline",
+        FakePipeline,
+    )
+
+    replay_us_microplex_policyengine_stage_from_artifact(
+        artifact_dir,
+        policyengine_baseline_dataset=baseline_dataset,
+    )
+
+    replay_config = captured["config"]
+    assert replay_config.policyengine_baseline_dataset == str(baseline_dataset)
+    assert replay_config.policyengine_selection_target_total_weight == 6.0
+    assert replay_config.policyengine_calibration_target_total_weight == 6.0
+    assert replay_config.policyengine_calibration_rescale_to_target_total_weight is True
+
+
 def _write_baseline_dataset(
     path: Path,
     tables: PolicyEngineUSEntityTableBundle,

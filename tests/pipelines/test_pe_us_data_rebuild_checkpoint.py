@@ -11,9 +11,14 @@ from typing import Any
 
 import h5py
 import pandas as pd
+import pytest
 from microplex.core import SourceQuery
 
-import microplex_us.pipelines.pe_us_data_rebuild_checkpoint as checkpoint_module
+import microplex_us.pipelines.pe_us_data_rebuild_checkpoint_artifacts as checkpoint_artifacts
+import microplex_us.pipelines.pe_us_data_rebuild_checkpoint_cli as checkpoint_cli
+import microplex_us.pipelines.pe_us_data_rebuild_checkpoint_common as checkpoint_common
+import microplex_us.pipelines.pe_us_data_rebuild_checkpoint_resume as checkpoint_resume
+import microplex_us.pipelines.pe_us_data_rebuild_checkpoint_runner as checkpoint_runner
 from microplex_us.pipelines.artifacts import (
     USMicroplexArtifactPaths,
     USMicroplexVersionedBuildArtifacts,
@@ -28,6 +33,14 @@ from microplex_us.pipelines.pe_us_data_rebuild_checkpoint import (
     run_policyengine_us_data_rebuild_checkpoint,
 )
 from microplex_us.pipelines.registry import load_us_microplex_run_registry
+from microplex_us.pipelines.stage_contracts import (
+    US_CANONICAL_STAGE_IDS,
+    US_STAGE_CONTRACT_VERSION,
+    get_us_pipeline_stage_contract,
+    get_us_stage_artifact_contract,
+    resolve_us_stage_artifact_contract_path,
+)
+from microplex_us.pipelines.stage_resume import preflight_us_stage_resume
 
 
 def test_default_policyengine_us_data_rebuild_checkpoint_config_sets_pe_context() -> (
@@ -132,7 +145,7 @@ def test_default_policyengine_us_data_rebuild_checkpoint_config_infers_total_wei
     monkeypatch,
 ) -> None:
     monkeypatch.setattr(
-        "microplex_us.pipelines.pe_us_data_rebuild_checkpoint._infer_policyengine_baseline_household_weight_sum",
+        "microplex_us.pipelines.pe_us_data_rebuild_checkpoint_config._infer_policyengine_baseline_household_weight_sum",
         lambda dataset, *, target_period: 150_000_000.0,
     )
 
@@ -151,7 +164,7 @@ def test_default_policyengine_us_data_rebuild_checkpoint_config_respects_explici
     monkeypatch,
 ) -> None:
     monkeypatch.setattr(
-        "microplex_us.pipelines.pe_us_data_rebuild_checkpoint._infer_policyengine_baseline_household_weight_sum",
+        "microplex_us.pipelines.pe_us_data_rebuild_checkpoint_config._infer_policyengine_baseline_household_weight_sum",
         lambda dataset, *, target_period: 150_000_000.0,
     )
 
@@ -171,7 +184,7 @@ def test_default_policyengine_us_data_rebuild_checkpoint_config_skips_calibratio
     monkeypatch,
 ) -> None:
     monkeypatch.setattr(
-        "microplex_us.pipelines.pe_us_data_rebuild_checkpoint._infer_policyengine_baseline_household_weight_sum",
+        "microplex_us.pipelines.pe_us_data_rebuild_checkpoint_config._infer_policyengine_baseline_household_weight_sum",
         lambda dataset, *, target_period: 150_000_000.0,
     )
 
@@ -191,7 +204,7 @@ def test_default_policyengine_us_data_rebuild_checkpoint_config_skips_inferred_t
     monkeypatch,
 ) -> None:
     monkeypatch.setattr(
-        "microplex_us.pipelines.pe_us_data_rebuild_checkpoint._infer_policyengine_baseline_household_weight_sum",
+        "microplex_us.pipelines.pe_us_data_rebuild_checkpoint_config._infer_policyengine_baseline_household_weight_sum",
         lambda dataset, *, target_period: 150_000_000.0,
     )
 
@@ -315,6 +328,505 @@ def test_default_policyengine_us_data_rebuild_queries_can_disable_cps_state_age_
 class _FakeProvider:
     descriptor: Any
 
+    def load_frame(self, query: Any | None = None) -> SimpleNamespace:
+        return SimpleNamespace(
+            source=SimpleNamespace(name=self.descriptor.name),
+            query=query,
+        )
+
+
+def _fake_resume_dataframe() -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "household_id": [1],
+            "person_id": [1],
+            "weight": [1.0],
+        }
+    )
+
+
+def _fake_policyengine_entity_tables():
+    return checkpoint_resume.PolicyEngineUSEntityTableBundle(
+        households=pd.DataFrame({"household_id": [1], "weight": [1.0]}),
+        persons=pd.DataFrame({"person_id": [1], "household_id": [1]}),
+        tax_units=pd.DataFrame({"tax_unit_id": [1], "household_id": [1]}),
+        spm_units=pd.DataFrame({"spm_unit_id": [1], "household_id": [1]}),
+        families=pd.DataFrame({"family_id": [1], "household_id": [1]}),
+        marital_units=pd.DataFrame({"marital_unit_id": [1], "household_id": [1]}),
+    )
+
+
+def _fake_resume_targets():
+    return checkpoint_resume.USMicroplexTargets(marginal={}, continuous={})
+
+
+def _fake_resume_build_result(config, *, scaffold_seed_data=None):
+    policyengine_tables = _fake_policyengine_entity_tables()
+    return checkpoint_resume.USMicroplexBuildResult(
+        config=config,
+        seed_data=_fake_resume_dataframe(),
+        synthetic_data=_fake_resume_dataframe(),
+        calibrated_data=_fake_resume_dataframe(),
+        targets=_fake_resume_targets(),
+        calibration_summary={"converged": True},
+        synthesis_metadata={"source_names": ["fake_source"]},
+        policyengine_tables=policyengine_tables,
+        pre_calibration_policyengine_tables=policyengine_tables,
+        scaffold_seed_data=scaffold_seed_data,
+    )
+
+
+def _install_resume_stage_test_doubles(monkeypatch, artifact_root, captured) -> None:
+    captured.setdefault("finalized", [])
+    captured.setdefault("pipeline_calls", [])
+    captured.setdefault("runtime_started", [])
+    captured.setdefault("loaded_dataframes", [])
+    captured.setdefault("loaded_json", [])
+    captured.setdefault("loaded_policyengine_tables", [])
+    captured.setdefault("written_policyengine_tables", [])
+    captured.setdefault("pipeline_manifest_payloads", [])
+    captured.setdefault("resolved_source_queries", [])
+
+    class FakeResumePipeline:
+        def __init__(self, config=None, *, stage_runtime_writer=None):
+            self.config = config or default_policyengine_us_data_rebuild_checkpoint_config(
+                policyengine_baseline_dataset="/tmp/enhanced_cps_2024.h5",
+                policyengine_targets_db="/tmp/policy_data.db",
+            )
+            self.stage_runtime_writer = stage_runtime_writer
+            if stage_runtime_writer is not None:
+                captured["pipeline_manifest_payloads"].append(
+                    dict(stage_runtime_writer.manifest_payload)
+                )
+
+        def _resolve_source_query(self, provider, queries):
+            captured["resolved_source_queries"].append(provider.descriptor.name)
+            return dict(queries or {}).get(provider.descriptor.name)
+
+        def build_from_source_providers(self, providers, *, queries=None):
+            captured["pipeline_calls"].append(
+                (
+                    "build_from_source_providers",
+                    tuple(provider.descriptor.name for provider in providers),
+                )
+            )
+            return _fake_resume_build_result(self.config)
+
+        def build_from_frames(
+            self,
+            frames,
+            *,
+            resume_from_stage=None,
+            restored_scaffold_seed_data=None,
+        ):
+            captured["pipeline_calls"].append(
+                (
+                    "build_from_frames",
+                    resume_from_stage,
+                    restored_scaffold_seed_data is not None,
+                    tuple(frame.source.name for frame in frames),
+                )
+            )
+            return _fake_resume_build_result(
+                self.config,
+                scaffold_seed_data=restored_scaffold_seed_data,
+            )
+
+        def _runtime_start_stage(self, stage_id):
+            captured["runtime_started"].append(stage_id)
+            if self.stage_runtime_writer is not None:
+                self.stage_runtime_writer.start_stage(stage_id)
+
+        def _runtime_fail_stage(self, stage_id, exc):
+            if self.stage_runtime_writer is not None:
+                self.stage_runtime_writer.fail_stage(stage_id, exc)
+
+        def build_policyengine_entity_tables(self, synthetic_data):
+            captured["pipeline_calls"].append(
+                ("build_policyengine_entity_tables", len(synthetic_data))
+            )
+            return _fake_policyengine_entity_tables()
+
+        def _check_policyengine_export_column_contract(self, tables, *, stage):
+            captured["pipeline_calls"].append(
+                ("check_policyengine_export_column_contract", stage)
+            )
+
+        def _has_policyengine_calibration_targets(self):
+            return False
+
+        def calibrate(self, synthetic_data, targets):
+            captured["pipeline_calls"].append(("calibrate", len(synthetic_data)))
+            return _fake_resume_dataframe(), {"converged": True}
+
+        def calibrate_policyengine_tables(self, synthetic_tables):
+            captured["pipeline_calls"].append(("calibrate_policyengine_tables", None))
+            return (
+                _fake_policyengine_entity_tables(),
+                _fake_resume_dataframe(),
+                {"converged": True},
+            )
+
+    def fake_load_resume_dataframe_artifact(
+        _artifact_root,
+        _manifest,
+        artifact_key,
+        *,
+        stage_id,
+    ):
+        captured["loaded_dataframes"].append((stage_id, artifact_key))
+        return _fake_resume_dataframe()
+
+    def fake_load_resume_json_artifact(
+        _artifact_root,
+        _manifest,
+        artifact_key,
+        *,
+        stage_id,
+    ):
+        captured["loaded_json"].append((stage_id, artifact_key))
+        return {"converged": True}
+
+    def fake_load_resume_policyengine_tables(
+        _artifact_root,
+        _manifest,
+        artifact_key,
+        *,
+        stage_id,
+        expected_stage,
+    ):
+        captured["loaded_policyengine_tables"].append(
+            (stage_id, artifact_key, expected_stage)
+        )
+        return _fake_policyengine_entity_tables()
+
+    def fake_load_resume_targets(*_args, **_kwargs):
+        return _fake_resume_targets()
+
+    def fake_read_parquet(path, *_args, **_kwargs):
+        captured.setdefault("read_parquet_paths", []).append(Path(path))
+        return _fake_resume_dataframe()
+
+    def fake_write_policyengine_tables(
+        _tables,
+        artifact_root_arg,
+        *,
+        stage_id,
+        artifact_key,
+        checkpoint_stage,
+    ):
+        captured["written_policyengine_tables"].append(
+            (stage_id, artifact_key, checkpoint_stage)
+        )
+        path = resolve_us_stage_artifact_contract_path(
+            Path(artifact_root_arg),
+            stage_id,
+            artifact_key,
+        )
+        path.parent.mkdir(parents=True, exist_ok=True)
+        metadata = {
+            "format_version": 1,
+            "stage": checkpoint_stage,
+        }
+        for table_name in (
+            "households",
+            "persons",
+            "tax_units",
+            "spm_units",
+            "families",
+            "marital_units",
+        ):
+            metadata[table_name] = {"rows": 1, "columns": [f"{table_name}_id"]}
+            (path.parent / f"{table_name}.parquet").write_text("placeholder")
+        path.write_text(json.dumps(metadata))
+
+    def fake_finalize(build_result, **kwargs):
+        captured["finalized"].append(kwargs["version_id"])
+        return _fake_versioned_artifacts(artifact_root, build_result)
+
+    def fake_attach(artifact_dir, **kwargs):
+        captured["attach_build_result"] = kwargs["build_result"]
+        return _fake_evidence_result(Path(artifact_dir))
+
+    def fake_load_artifacts(*, build_result, artifact_root, frontier_metric):
+        captured["loaded_build_result"] = build_result
+        return _fake_versioned_artifacts(artifact_root, build_result)
+
+    monkeypatch.setattr(checkpoint_resume, "USMicroplexPipeline", FakeResumePipeline)
+    monkeypatch.setattr(
+        checkpoint_resume,
+        "_load_resume_dataframe_artifact",
+        fake_load_resume_dataframe_artifact,
+    )
+    monkeypatch.setattr(
+        checkpoint_resume,
+        "_load_resume_json_artifact",
+        fake_load_resume_json_artifact,
+    )
+    monkeypatch.setattr(
+        checkpoint_resume,
+        "_load_resume_policyengine_tables",
+        fake_load_resume_policyengine_tables,
+    )
+    monkeypatch.setattr(
+        checkpoint_resume,
+        "_load_resume_targets",
+        fake_load_resume_targets,
+    )
+    monkeypatch.setattr(checkpoint_resume.pd, "read_parquet", fake_read_parquet)
+    monkeypatch.setattr(
+        checkpoint_resume,
+        "write_us_policyengine_entity_stage_artifact",
+        fake_write_policyengine_tables,
+    )
+    monkeypatch.setattr(
+        checkpoint_resume,
+        "_finalize_versioned_build_artifacts",
+        fake_finalize,
+    )
+    monkeypatch.setattr(
+        checkpoint_resume,
+        "attach_policyengine_us_data_rebuild_checkpoint_evidence",
+        fake_attach,
+    )
+    monkeypatch.setattr(
+        checkpoint_resume,
+        "_load_checkpoint_versioned_artifacts",
+        fake_load_artifacts,
+    )
+
+
+@pytest.mark.parametrize("resume_from_stage", US_CANONICAL_STAGE_IDS)
+def test_run_policyengine_us_data_rebuild_checkpoint_can_resume_from_each_stage(
+    monkeypatch,
+    tmp_path,
+    resume_from_stage,
+) -> None:
+    artifact_root = _write_complete_resume_artifact_root(
+        tmp_path / "artifacts" / "run-1"
+    )
+    provider = _FakeProvider(descriptor=SimpleNamespace(name="fake_source"))
+    captured: dict[str, Any] = {"finalized": []}
+    _install_resume_stage_test_doubles(monkeypatch, artifact_root, captured)
+
+    result = run_policyengine_us_data_rebuild_checkpoint(
+        output_root=tmp_path / "artifacts",
+        policyengine_baseline_dataset="/tmp/enhanced_cps_2024.h5",
+        policyengine_targets_db="/tmp/policy_data.db",
+        providers=(provider,),
+        queries={},
+        version_id="run-1",
+        resume_from_stage=resume_from_stage,
+        defer_policyengine_harness=True,
+        defer_policyengine_native_score=True,
+        defer_native_audit=True,
+        defer_imputation_ablation=True,
+    )
+
+    calls = captured["pipeline_calls"]
+    if resume_from_stage in {"01_run_profile", "02_source_loading"}:
+        assert ("build_from_source_providers", ("fake_source",)) in calls
+    elif resume_from_stage in {
+        "03_source_planning",
+        "04_seed_scaffold",
+        "05_donor_integration_synthesis",
+    }:
+        assert captured["resolved_source_queries"] == ["fake_source"]
+        assert (
+            "build_from_frames",
+            resume_from_stage,
+            resume_from_stage == "05_donor_integration_synthesis",
+            ("fake_source",),
+        ) in calls
+        if resume_from_stage == "05_donor_integration_synthesis":
+            assert (
+                "04_seed_scaffold",
+                "scaffold_seed_data",
+            ) in captured["loaded_dataframes"]
+    elif resume_from_stage == "06_policyengine_entities":
+        assert "06_policyengine_entities" in captured["runtime_started"]
+        assert "07_calibration" in captured["runtime_started"]
+        assert (
+            "06_policyengine_entities",
+            "pre_calibration_policyengine_entity_tables",
+            "post_microsim",
+        ) in captured["written_policyengine_tables"]
+        assert (
+            "07_calibration",
+            "policyengine_entity_tables",
+            "post_calibration",
+        ) in captured["written_policyengine_tables"]
+    elif resume_from_stage == "07_calibration":
+        assert "06_policyengine_entities" not in captured["runtime_started"]
+        assert "07_calibration" in captured["runtime_started"]
+        assert (
+            "06_policyengine_entities",
+            "pre_calibration_policyengine_entity_tables",
+            "post_microsim",
+        ) in captured["loaded_policyengine_tables"]
+        assert (
+            "07_calibration",
+            "policyengine_entity_tables",
+            "post_calibration",
+        ) in captured["written_policyengine_tables"]
+    else:
+        assert captured["runtime_started"] == []
+        assert (
+            "06_policyengine_entities",
+            "pre_calibration_policyengine_entity_tables",
+            "post_microsim",
+        ) in captured["loaded_policyengine_tables"]
+        assert (
+            "07_calibration",
+            "policyengine_entity_tables",
+            "post_calibration",
+        ) in captured["loaded_policyengine_tables"]
+        assert (
+            "07_calibration",
+            "calibration_summary",
+        ) in captured["loaded_json"]
+
+    if resume_from_stage == "09_validation_benchmarking":
+        assert captured["finalized"] == []
+    else:
+        assert captured["finalized"] == ["run-1"]
+    assert captured["attach_build_result"] is result.artifacts.build_result
+    assert captured["loaded_build_result"] is result.artifacts.build_result
+
+
+def test_artifact_backed_resume_preflights_before_default_provider_setup(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    artifact_root = tmp_path / "artifacts" / "run-1"
+    manifest_dir = artifact_root / "stage_artifacts" / "manifests"
+    manifest_dir.mkdir(parents=True)
+    (artifact_root / "manifest.json").write_text(
+        json.dumps(
+            {
+                "artifacts": {
+                    "synthetic_data": "synthetic_data.parquet",
+                }
+            }
+        )
+    )
+    (manifest_dir / "05_donor_integration_synthesis.json").write_text(
+        json.dumps(
+            {
+                "contractVersion": US_STAGE_CONTRACT_VERSION,
+                "stageId": "05_donor_integration_synthesis",
+                "complete": True,
+                "lifecycleStatus": "complete",
+                "requiredOutputs": ["seed_data", "synthetic_data"],
+                "outputs": {
+                    "synthetic_data": {
+                        "path": "synthetic_data.parquet",
+                        "exists": False,
+                    },
+                },
+            }
+        )
+    )
+
+    def fail_provider_setup(**_kwargs):
+        raise AssertionError("default provider setup should not run before preflight")
+
+    monkeypatch.setattr(
+        checkpoint_runner,
+        "default_policyengine_us_data_rebuild_source_providers",
+        fail_provider_setup,
+    )
+
+    with pytest.raises(ValueError, match="US pipeline resume preflight failed"):
+        run_policyengine_us_data_rebuild_checkpoint(
+            output_root=tmp_path / "artifacts",
+            policyengine_baseline_dataset="/tmp/enhanced_cps_2024.h5",
+            policyengine_targets_db="/tmp/policy_data.db",
+            version_id="run-1",
+            resume_from_stage="06_policyengine_entities",
+            defer_policyengine_harness=True,
+            defer_policyengine_native_score=True,
+            defer_native_audit=True,
+            defer_imputation_ablation=True,
+        )
+
+
+def test_stage_resume_preflight_allows_stage1_without_manifest(tmp_path) -> None:
+    preflight = preflight_us_stage_resume(tmp_path, "01_run_profile")
+
+    assert preflight.ok
+
+
+@pytest.mark.parametrize("use_version_id", [True, False])
+def test_run_policyengine_us_data_rebuild_checkpoint_stage1_resume_allows_missing_manifest(
+    monkeypatch,
+    tmp_path,
+    use_version_id,
+) -> None:
+    artifact_root = tmp_path / "artifacts" / "run-1"
+    artifact_root.mkdir(parents=True)
+    provider = _FakeProvider(descriptor=SimpleNamespace(name="fake_source"))
+    captured: dict[str, Any] = {}
+    _install_resume_stage_test_doubles(monkeypatch, artifact_root, captured)
+
+    output_root = tmp_path / "artifacts" if use_version_id else artifact_root
+    version_id = "run-1" if use_version_id else None
+    result = run_policyengine_us_data_rebuild_checkpoint(
+        output_root=output_root,
+        policyengine_baseline_dataset="/tmp/enhanced_cps_2024.h5",
+        policyengine_targets_db="/tmp/policy_data.db",
+        providers=(provider,),
+        queries={},
+        version_id=version_id,
+        resume_from_stage="01_run_profile",
+        defer_policyengine_harness=True,
+        defer_policyengine_native_score=True,
+        defer_native_audit=True,
+        defer_imputation_ablation=True,
+    )
+
+    manifest_path = artifact_root / "manifest.json"
+    stage_manifest_path = (
+        artifact_root / "stage_artifacts" / "manifests" / "01_run_profile.json"
+    )
+    assert manifest_path.exists()
+    assert stage_manifest_path.exists()
+    assert captured["pipeline_manifest_payloads"][0] == {}
+    assert ("build_from_source_providers", ("fake_source",)) in captured[
+        "pipeline_calls"
+    ]
+    manifest = json.loads(manifest_path.read_text())
+    stage_manifest = json.loads(stage_manifest_path.read_text())
+    assert manifest["stage_output_manifests"]["01_run_profile"] == (
+        "stage_artifacts/manifests/01_run_profile.json"
+    )
+    assert stage_manifest["stageId"] == "01_run_profile"
+    assert stage_manifest["complete"] is True
+    assert captured["attach_build_result"] is result.artifacts.build_result
+    assert captured["loaded_build_result"] is result.artifacts.build_result
+
+
+def test_stage_resume_preflight_reports_missing_policyengine_bundle_member(
+    tmp_path,
+) -> None:
+    artifact_root = _write_complete_resume_artifact_root(tmp_path / "run-1")
+    missing_member = (
+        artifact_root / "stage_artifacts" / "06_policyengine_entities" / "persons.parquet"
+    )
+    missing_member.unlink()
+
+    preflight = preflight_us_stage_resume(
+        artifact_root,
+        "07_calibration",
+    )
+
+    assert not preflight.ok
+    missing = {item.label: item for item in preflight.missing}
+    assert "06_policyengine_entities.pre_calibration_policyengine_entity_tables" in missing
+    assert missing[
+        "06_policyengine_entities.pre_calibration_policyengine_entity_tables"
+    ].path == missing_member
+
 
 def test_run_policyengine_us_data_rebuild_checkpoint_builds_bundle_and_parity(
     monkeypatch,
@@ -323,7 +835,7 @@ def test_run_policyengine_us_data_rebuild_checkpoint_builds_bundle_and_parity(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
-        "microplex_us.pipelines.pe_us_data_rebuild_checkpoint._infer_policyengine_baseline_household_weight_sum",
+        "microplex_us.pipelines.pe_us_data_rebuild_checkpoint_config._infer_policyengine_baseline_household_weight_sum",
         lambda dataset, *, target_period: 150_000_000.0,
     )
     artifact_dir = tmp_path / "artifacts" / "run-1"
@@ -465,7 +977,7 @@ def test_run_policyengine_us_data_rebuild_checkpoint_builds_bundle_and_parity(
             "verdict": {"hasRealPolicyEngineComparison": False},
         }
 
-    module_name = "microplex_us.pipelines.pe_us_data_rebuild_checkpoint"
+    module_name = "microplex_us.pipelines.pe_us_data_rebuild_checkpoint_runner"
     monkeypatch.setattr(
         f"{module_name}.build_and_save_versioned_us_microplex_from_source_providers",
         fake_build_and_save_versioned_us_microplex_from_source_providers,
@@ -693,10 +1205,10 @@ def test_emit_checkpoint_progress_falls_back_to_stderr_when_no_logger_handlers(
         def info(self, message: str) -> None:
             emitted.append(message)
 
-    monkeypatch.setattr(checkpoint_module, "LOGGER", _FakeLogger())
-    monkeypatch.setattr(checkpoint_module, "_root_logger_has_handlers", lambda: False)
+    monkeypatch.setattr(checkpoint_common, "LOGGER", _FakeLogger())
+    monkeypatch.setattr(checkpoint_common, "_root_logger_has_handlers", lambda: False)
 
-    checkpoint_module._emit_checkpoint_progress(
+    checkpoint_common._emit_checkpoint_progress(
         "PE-US-data rebuild checkpoint: starting build",
         version_id="run-1",
         providers="fake_source",
@@ -731,12 +1243,12 @@ def test_main_passes_donor_condition_selection_override(monkeypatch, capsys) -> 
         )
 
     monkeypatch.setattr(
-        checkpoint_module,
+        checkpoint_cli,
         "run_policyengine_us_data_rebuild_checkpoint",
         fake_run_policyengine_us_data_rebuild_checkpoint,
     )
 
-    checkpoint_module.main(
+    checkpoint_cli.main(
         [
             "--output-root",
             "/tmp/artifacts",
@@ -783,12 +1295,12 @@ def test_main_passes_arch_calibration_target_source(monkeypatch, capsys) -> None
         )
 
     monkeypatch.setattr(
-        checkpoint_module,
+        checkpoint_cli,
         "run_policyengine_us_data_rebuild_checkpoint",
         fake_run_policyengine_us_data_rebuild_checkpoint,
     )
 
-    checkpoint_module.main(
+    checkpoint_cli.main(
         [
             "--output-root",
             "/tmp/artifacts",
@@ -818,6 +1330,109 @@ def test_main_passes_arch_calibration_target_source(monkeypatch, capsys) -> None
     )
     stdout = capsys.readouterr().out
     assert "/tmp/artifacts/run-1" in stdout
+
+
+def test_main_passes_resume_from_stage(monkeypatch, capsys) -> None:
+    captured: dict[str, Any] = {}
+    artifact_dir = Path("/tmp/artifacts/run-1")
+    parity_path = artifact_dir / "pe_us_data_rebuild_parity.json"
+
+    def fake_run_policyengine_us_data_rebuild_checkpoint(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(
+            artifacts=SimpleNamespace(
+                artifact_paths=SimpleNamespace(output_dir=artifact_dir)
+            ),
+            parity_path=parity_path,
+            parity_payload={
+                "verdict": {"hasRealPolicyEngineComparison": True},
+            },
+        )
+
+    monkeypatch.setattr(
+        checkpoint_cli,
+        "run_policyengine_us_data_rebuild_checkpoint",
+        fake_run_policyengine_us_data_rebuild_checkpoint,
+    )
+
+    checkpoint_cli.main(
+        [
+            "--output-root",
+            "/tmp/artifacts",
+            "--baseline-dataset",
+            "/tmp/enhanced_cps_2024.h5",
+            "--targets-db",
+            "/tmp/policy_data.db",
+            "--version-id",
+            "run-1",
+            "--resume-from-stage",
+            "07_calibration",
+            "--defer-native-audit",
+            "--defer-imputation-ablation",
+        ]
+    )
+
+    assert captured["resume_from_stage"] == "07_calibration"
+    stdout = capsys.readouterr().out
+    assert "/tmp/artifacts/run-1" in stdout
+
+
+def test_run_resume_preflight_reports_missing_required_artifacts(tmp_path) -> None:
+    artifact_root = tmp_path / "artifacts" / "run-1"
+    manifest_dir = artifact_root / "stage_artifacts" / "manifests"
+    manifest_dir.mkdir(parents=True)
+    (artifact_root / "manifest.json").write_text(
+        json.dumps(
+            {
+                "artifacts": {
+                    "seed_data": "seed_data.parquet",
+                    "synthetic_data": "synthetic_data.parquet",
+                }
+            }
+        )
+    )
+    (manifest_dir / "05_donor_integration_synthesis.json").write_text(
+        json.dumps(
+            {
+                "contractVersion": "us-runtime-stages-v2",
+                "stageId": "05_donor_integration_synthesis",
+                "complete": True,
+                "lifecycleStatus": "complete",
+                "requiredOutputs": ["seed_data", "synthetic_data"],
+                "outputs": {
+                    "seed_data": {
+                        "path": "seed_data.parquet",
+                        "exists": False,
+                    },
+                    "synthetic_data": {
+                        "path": "synthetic_data.parquet",
+                        "exists": False,
+                    },
+                },
+            }
+        )
+    )
+    provider = _FakeProvider(descriptor=SimpleNamespace(name="fake_source"))
+
+    with pytest.raises(ValueError) as exc_info:
+        run_policyengine_us_data_rebuild_checkpoint(
+            output_root=tmp_path / "artifacts",
+            policyengine_baseline_dataset="/tmp/enhanced_cps_2024.h5",
+            policyengine_targets_db="/tmp/policy_data.db",
+            providers=(provider,),
+            queries={},
+            version_id="run-1",
+            resume_from_stage="06_policyengine_entities",
+            defer_policyengine_harness=True,
+            defer_policyengine_native_score=True,
+            defer_native_audit=True,
+            defer_imputation_ablation=True,
+        )
+
+    message = str(exc_info.value)
+    assert "US pipeline resume preflight failed for 06_policyengine_entities" in message
+    assert "05_donor_integration_synthesis.seed_data" in message
+    assert "05_donor_integration_synthesis.synthetic_data" in message
 
 
 def test_run_policyengine_us_data_rebuild_checkpoint_rejects_empty_provider_sequence(
@@ -1045,7 +1660,7 @@ def test_attach_policyengine_us_data_rebuild_checkpoint_evidence_updates_manifes
         "skipped_sources": [],
     }
 
-    module_name = "microplex_us.pipelines.pe_us_data_rebuild_checkpoint"
+    module_name = "microplex_us.pipelines.pe_us_data_rebuild_checkpoint_evidence"
     monkeypatch.setattr(
         f"{module_name}.write_policyengine_us_data_rebuild_parity_artifact",
         lambda artifact_dir_arg, **kwargs: (
@@ -1272,7 +1887,7 @@ def test_attach_policyengine_us_data_rebuild_checkpoint_evidence_registers_calib
     ):
         (artifact_dir / name).write_text("{}")
 
-    module_name = "microplex_us.pipelines.pe_us_data_rebuild_checkpoint"
+    module_name = "microplex_us.pipelines.pe_us_data_rebuild_checkpoint_evidence"
     monkeypatch.setattr(
         f"{module_name}.write_policyengine_us_data_rebuild_parity_artifact",
         lambda artifact_dir_arg, **kwargs: (
@@ -1371,7 +1986,7 @@ def test_load_checkpoint_versioned_artifacts_hydrates_stage_sidecar_paths(
     }
     (artifact_dir / "manifest.json").write_text(json.dumps(manifest))
 
-    loaded = checkpoint_module._load_checkpoint_versioned_artifacts(
+    loaded = checkpoint_artifacts._load_checkpoint_versioned_artifacts(
         build_result=SimpleNamespace(),
         artifact_root=artifact_dir,
         frontier_metric="full_oracle_mean_abs_relative_error",
@@ -1488,7 +2103,7 @@ def test_attach_policyengine_us_data_rebuild_checkpoint_evidence_computes_imputa
         config=SimpleNamespace(donor_imputer_condition_selection="pe_prespecified")
     )
 
-    module_name = "microplex_us.pipelines.pe_us_data_rebuild_checkpoint"
+    module_name = "microplex_us.pipelines.pe_us_data_rebuild_checkpoint_evidence"
     monkeypatch.setattr(
         f"{module_name}.write_policyengine_us_data_rebuild_parity_artifact",
         lambda artifact_dir_arg, **kwargs: (
@@ -1579,7 +2194,7 @@ def test_attach_policyengine_us_data_rebuild_checkpoint_evidence_computes_imputa
 def test_build_checkpoint_imputation_ablation_payload_returns_none_when_no_donor_reports(
     monkeypatch,
 ) -> None:
-    from microplex_us.pipelines.pe_us_data_rebuild_checkpoint import (
+    from microplex_us.pipelines.pe_us_data_rebuild_checkpoint_ablation import (
         _build_checkpoint_imputation_ablation_payload,
     )
 
@@ -1614,3 +2229,144 @@ def test_build_checkpoint_imputation_ablation_payload_returns_none_when_no_donor
     )
 
     assert payload is None
+
+
+def _fake_versioned_artifacts(
+    artifact_root: Path,
+    build_result: Any,
+) -> USMicroplexVersionedBuildArtifacts:
+    return USMicroplexVersionedBuildArtifacts(
+        build_result=build_result,
+        artifact_paths=USMicroplexArtifactPaths(
+            output_dir=artifact_root,
+            version_id=artifact_root.name,
+            seed_data=artifact_root / "seed_data.parquet",
+            synthetic_data=artifact_root / "synthetic_data.parquet",
+            calibrated_data=artifact_root / "calibrated_data.parquet",
+            targets=artifact_root / "targets.json",
+            manifest=artifact_root / "manifest.json",
+            policyengine_dataset=artifact_root / "policyengine_us.h5",
+        ),
+    )
+
+
+def _fake_evidence_result(artifact_root: Path) -> SimpleNamespace:
+    return SimpleNamespace(
+        artifact_dir=artifact_root,
+        manifest_path=artifact_root / "manifest.json",
+        harness_path=None,
+        native_scores_path=None,
+        parity_path=artifact_root / "pe_us_data_rebuild_parity.json",
+        parity_payload={"verdict": {"hasRealPolicyEngineComparison": False}},
+        native_audit_path=None,
+        native_audit_payload=None,
+        imputation_ablation_path=None,
+        imputation_ablation_payload=None,
+    )
+
+
+def _write_complete_resume_artifact_root(artifact_root: Path) -> Path:
+    artifact_root.mkdir(parents=True)
+    artifacts: dict[str, str] = {}
+    stage_output_manifests: dict[str, str] = {}
+    for stage_id in US_CANONICAL_STAGE_IDS:
+        contract = get_us_pipeline_stage_contract(stage_id)
+        outputs: dict[str, Any] = {}
+        required_outputs: list[str] = []
+        for resource in contract.outputs:
+            if not resource.required:
+                continue
+            required_outputs.append(resource.key)
+            if resource.kind == "artifact":
+                artifact_key = resource.artifact_key or resource.key
+                path = _write_resume_artifact_file(
+                    artifact_root,
+                    resource.stage_id or stage_id,
+                    artifact_key,
+                )
+                artifacts[artifact_key] = str(path.relative_to(artifact_root))
+                outputs[resource.key] = {
+                    "path": str(path.relative_to(artifact_root)),
+                    "exists": True,
+                }
+            else:
+                outputs[resource.key] = {"value": True}
+
+        stage_manifest_path = (
+            artifact_root / "stage_artifacts" / "manifests" / f"{stage_id}.json"
+        )
+        stage_manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        stage_manifest_path.write_text(
+            json.dumps(
+                {
+                    "contractVersion": US_STAGE_CONTRACT_VERSION,
+                    "stageId": stage_id,
+                    "complete": True,
+                    "lifecycleStatus": "complete",
+                    "requiredOutputs": required_outputs,
+                    "outputs": outputs,
+                }
+            )
+        )
+        stage_output_manifests[stage_id] = str(
+            stage_manifest_path.relative_to(artifact_root)
+        )
+
+    manifest = {
+        "created_at": "2026-04-06T00:00:00+00:00",
+        "config": default_policyengine_us_data_rebuild_checkpoint_config(
+            policyengine_baseline_dataset="/tmp/enhanced_cps_2024.h5",
+            policyengine_targets_db="/tmp/policy_data.db",
+        ).to_dict(),
+        "rows": {"seed": 1, "synthetic": 1, "calibrated": 1},
+        "weights": {"nonzero": 1, "total": 1.0},
+        "targets": {"n_marginal_groups": 0, "n_continuous": 0},
+        "synthesis": {
+            "source_names": ["fake_source"],
+            "scaffold_source": "fake_source",
+            "backend": "seed",
+        },
+        "calibration": {"converged": True},
+        "artifacts": artifacts,
+        "stage_output_manifests": stage_output_manifests,
+    }
+    (artifact_root / "manifest.json").write_text(json.dumps(manifest))
+    return artifact_root
+
+
+def _write_resume_artifact_file(
+    artifact_root: Path,
+    stage_id: str,
+    artifact_key: str,
+) -> Path:
+    contract = get_us_stage_artifact_contract(stage_id, artifact_key)
+    path = resolve_us_stage_artifact_contract_path(
+        artifact_root,
+        stage_id,
+        artifact_key,
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if contract.format == "policyengine_entity_bundle":
+        stage = (
+            "post_microsim"
+            if artifact_key == "pre_calibration_policyengine_entity_tables"
+            else "post_calibration"
+        )
+        metadata = {"format_version": 1, "stage": stage}
+        for table_name in (
+            "households",
+            "persons",
+            "tax_units",
+            "spm_units",
+            "families",
+            "marital_units",
+        ):
+            metadata[table_name] = {"rows": 1, "columns": [f"{table_name}_id"]}
+            (path.parent / f"{table_name}.parquet").write_text("placeholder")
+        path.write_text(json.dumps(metadata))
+        return path
+    if contract.format == "json":
+        path.write_text("{}")
+    else:
+        path.write_text("placeholder")
+    return path

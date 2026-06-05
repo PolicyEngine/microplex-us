@@ -14,7 +14,11 @@ import pandas as pd
 import pytest
 from microplex.core import SourceQuery
 
-import microplex_us.pipelines.pe_us_data_rebuild_checkpoint as checkpoint_module
+import microplex_us.pipelines.pe_us_data_rebuild_checkpoint_artifacts as checkpoint_artifacts
+import microplex_us.pipelines.pe_us_data_rebuild_checkpoint_cli as checkpoint_cli
+import microplex_us.pipelines.pe_us_data_rebuild_checkpoint_common as checkpoint_common
+import microplex_us.pipelines.pe_us_data_rebuild_checkpoint_resume as checkpoint_resume
+import microplex_us.pipelines.pe_us_data_rebuild_checkpoint_runner as checkpoint_runner
 from microplex_us.pipelines.artifacts import (
     USMicroplexArtifactPaths,
     USMicroplexVersionedBuildArtifacts,
@@ -141,7 +145,7 @@ def test_default_policyengine_us_data_rebuild_checkpoint_config_infers_total_wei
     monkeypatch,
 ) -> None:
     monkeypatch.setattr(
-        "microplex_us.pipelines.pe_us_data_rebuild_checkpoint._infer_policyengine_baseline_household_weight_sum",
+        "microplex_us.pipelines.pe_us_data_rebuild_checkpoint_config._infer_policyengine_baseline_household_weight_sum",
         lambda dataset, *, target_period: 150_000_000.0,
     )
 
@@ -160,7 +164,7 @@ def test_default_policyengine_us_data_rebuild_checkpoint_config_respects_explici
     monkeypatch,
 ) -> None:
     monkeypatch.setattr(
-        "microplex_us.pipelines.pe_us_data_rebuild_checkpoint._infer_policyengine_baseline_household_weight_sum",
+        "microplex_us.pipelines.pe_us_data_rebuild_checkpoint_config._infer_policyengine_baseline_household_weight_sum",
         lambda dataset, *, target_period: 150_000_000.0,
     )
 
@@ -180,7 +184,7 @@ def test_default_policyengine_us_data_rebuild_checkpoint_config_skips_calibratio
     monkeypatch,
 ) -> None:
     monkeypatch.setattr(
-        "microplex_us.pipelines.pe_us_data_rebuild_checkpoint._infer_policyengine_baseline_household_weight_sum",
+        "microplex_us.pipelines.pe_us_data_rebuild_checkpoint_config._infer_policyengine_baseline_household_weight_sum",
         lambda dataset, *, target_period: 150_000_000.0,
     )
 
@@ -200,7 +204,7 @@ def test_default_policyengine_us_data_rebuild_checkpoint_config_skips_inferred_t
     monkeypatch,
 ) -> None:
     monkeypatch.setattr(
-        "microplex_us.pipelines.pe_us_data_rebuild_checkpoint._infer_policyengine_baseline_household_weight_sum",
+        "microplex_us.pipelines.pe_us_data_rebuild_checkpoint_config._infer_policyengine_baseline_household_weight_sum",
         lambda dataset, *, target_period: 150_000_000.0,
     )
 
@@ -366,27 +370,27 @@ def test_run_policyengine_us_data_rebuild_checkpoint_can_resume_from_each_stage(
         return _fake_versioned_artifacts(artifact_root, build_result)
 
     monkeypatch.setattr(
-        checkpoint_module,
+        checkpoint_resume,
         "_resume_checkpoint_build_from_source_stage",
         fake_resume_from_source_stage,
     )
     monkeypatch.setattr(
-        checkpoint_module,
+        checkpoint_resume,
         "_resume_checkpoint_build_from_saved_stage",
         fake_resume_from_saved_stage,
     )
     monkeypatch.setattr(
-        checkpoint_module,
+        checkpoint_resume,
         "_finalize_versioned_build_artifacts",
         fake_finalize,
     )
     monkeypatch.setattr(
-        checkpoint_module,
+        checkpoint_resume,
         "attach_policyengine_us_data_rebuild_checkpoint_evidence",
         fake_attach,
     )
     monkeypatch.setattr(
-        checkpoint_module,
+        checkpoint_resume,
         "_load_checkpoint_versioned_artifacts",
         fake_load_artifacts,
     )
@@ -456,7 +460,7 @@ def test_artifact_backed_resume_preflights_before_default_provider_setup(
         raise AssertionError("default provider setup should not run before preflight")
 
     monkeypatch.setattr(
-        checkpoint_module,
+        checkpoint_runner,
         "default_policyengine_us_data_rebuild_source_providers",
         fail_provider_setup,
     )
@@ -518,22 +522,22 @@ def test_run_policyengine_us_data_rebuild_checkpoint_stage1_resume_allows_missin
         return _fake_versioned_artifacts(artifact_root, build_result)
 
     monkeypatch.setattr(
-        checkpoint_module,
+        checkpoint_resume,
         "_resume_checkpoint_build_from_source_stage",
         fake_resume_from_source_stage,
     )
     monkeypatch.setattr(
-        checkpoint_module,
+        checkpoint_resume,
         "_finalize_versioned_build_artifacts",
         fake_finalize,
     )
     monkeypatch.setattr(
-        checkpoint_module,
+        checkpoint_resume,
         "attach_policyengine_us_data_rebuild_checkpoint_evidence",
         fake_attach,
     )
     monkeypatch.setattr(
-        checkpoint_module,
+        checkpoint_resume,
         "_load_checkpoint_versioned_artifacts",
         fake_load_artifacts,
     )
@@ -592,7 +596,7 @@ def test_run_policyengine_us_data_rebuild_checkpoint_builds_bundle_and_parity(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
-        "microplex_us.pipelines.pe_us_data_rebuild_checkpoint._infer_policyengine_baseline_household_weight_sum",
+        "microplex_us.pipelines.pe_us_data_rebuild_checkpoint_config._infer_policyengine_baseline_household_weight_sum",
         lambda dataset, *, target_period: 150_000_000.0,
     )
     artifact_dir = tmp_path / "artifacts" / "run-1"
@@ -734,7 +738,7 @@ def test_run_policyengine_us_data_rebuild_checkpoint_builds_bundle_and_parity(
             "verdict": {"hasRealPolicyEngineComparison": False},
         }
 
-    module_name = "microplex_us.pipelines.pe_us_data_rebuild_checkpoint"
+    module_name = "microplex_us.pipelines.pe_us_data_rebuild_checkpoint_runner"
     monkeypatch.setattr(
         f"{module_name}.build_and_save_versioned_us_microplex_from_source_providers",
         fake_build_and_save_versioned_us_microplex_from_source_providers,
@@ -962,10 +966,10 @@ def test_emit_checkpoint_progress_falls_back_to_stderr_when_no_logger_handlers(
         def info(self, message: str) -> None:
             emitted.append(message)
 
-    monkeypatch.setattr(checkpoint_module, "LOGGER", _FakeLogger())
-    monkeypatch.setattr(checkpoint_module, "_root_logger_has_handlers", lambda: False)
+    monkeypatch.setattr(checkpoint_common, "LOGGER", _FakeLogger())
+    monkeypatch.setattr(checkpoint_common, "_root_logger_has_handlers", lambda: False)
 
-    checkpoint_module._emit_checkpoint_progress(
+    checkpoint_common._emit_checkpoint_progress(
         "PE-US-data rebuild checkpoint: starting build",
         version_id="run-1",
         providers="fake_source",
@@ -1000,12 +1004,12 @@ def test_main_passes_donor_condition_selection_override(monkeypatch, capsys) -> 
         )
 
     monkeypatch.setattr(
-        checkpoint_module,
+        checkpoint_cli,
         "run_policyengine_us_data_rebuild_checkpoint",
         fake_run_policyengine_us_data_rebuild_checkpoint,
     )
 
-    checkpoint_module.main(
+    checkpoint_cli.main(
         [
             "--output-root",
             "/tmp/artifacts",
@@ -1052,12 +1056,12 @@ def test_main_passes_arch_calibration_target_source(monkeypatch, capsys) -> None
         )
 
     monkeypatch.setattr(
-        checkpoint_module,
+        checkpoint_cli,
         "run_policyengine_us_data_rebuild_checkpoint",
         fake_run_policyengine_us_data_rebuild_checkpoint,
     )
 
-    checkpoint_module.main(
+    checkpoint_cli.main(
         [
             "--output-root",
             "/tmp/artifacts",
@@ -1107,12 +1111,12 @@ def test_main_passes_resume_from_stage(monkeypatch, capsys) -> None:
         )
 
     monkeypatch.setattr(
-        checkpoint_module,
+        checkpoint_cli,
         "run_policyengine_us_data_rebuild_checkpoint",
         fake_run_policyengine_us_data_rebuild_checkpoint,
     )
 
-    checkpoint_module.main(
+    checkpoint_cli.main(
         [
             "--output-root",
             "/tmp/artifacts",
@@ -1417,7 +1421,7 @@ def test_attach_policyengine_us_data_rebuild_checkpoint_evidence_updates_manifes
         "skipped_sources": [],
     }
 
-    module_name = "microplex_us.pipelines.pe_us_data_rebuild_checkpoint"
+    module_name = "microplex_us.pipelines.pe_us_data_rebuild_checkpoint_evidence"
     monkeypatch.setattr(
         f"{module_name}.write_policyengine_us_data_rebuild_parity_artifact",
         lambda artifact_dir_arg, **kwargs: (
@@ -1644,7 +1648,7 @@ def test_attach_policyengine_us_data_rebuild_checkpoint_evidence_registers_calib
     ):
         (artifact_dir / name).write_text("{}")
 
-    module_name = "microplex_us.pipelines.pe_us_data_rebuild_checkpoint"
+    module_name = "microplex_us.pipelines.pe_us_data_rebuild_checkpoint_evidence"
     monkeypatch.setattr(
         f"{module_name}.write_policyengine_us_data_rebuild_parity_artifact",
         lambda artifact_dir_arg, **kwargs: (
@@ -1743,7 +1747,7 @@ def test_load_checkpoint_versioned_artifacts_hydrates_stage_sidecar_paths(
     }
     (artifact_dir / "manifest.json").write_text(json.dumps(manifest))
 
-    loaded = checkpoint_module._load_checkpoint_versioned_artifacts(
+    loaded = checkpoint_artifacts._load_checkpoint_versioned_artifacts(
         build_result=SimpleNamespace(),
         artifact_root=artifact_dir,
         frontier_metric="full_oracle_mean_abs_relative_error",
@@ -1860,7 +1864,7 @@ def test_attach_policyengine_us_data_rebuild_checkpoint_evidence_computes_imputa
         config=SimpleNamespace(donor_imputer_condition_selection="pe_prespecified")
     )
 
-    module_name = "microplex_us.pipelines.pe_us_data_rebuild_checkpoint"
+    module_name = "microplex_us.pipelines.pe_us_data_rebuild_checkpoint_evidence"
     monkeypatch.setattr(
         f"{module_name}.write_policyengine_us_data_rebuild_parity_artifact",
         lambda artifact_dir_arg, **kwargs: (
@@ -1951,7 +1955,7 @@ def test_attach_policyengine_us_data_rebuild_checkpoint_evidence_computes_imputa
 def test_build_checkpoint_imputation_ablation_payload_returns_none_when_no_donor_reports(
     monkeypatch,
 ) -> None:
-    from microplex_us.pipelines.pe_us_data_rebuild_checkpoint import (
+    from microplex_us.pipelines.pe_us_data_rebuild_checkpoint_ablation import (
         _build_checkpoint_imputation_ablation_payload,
     )
 

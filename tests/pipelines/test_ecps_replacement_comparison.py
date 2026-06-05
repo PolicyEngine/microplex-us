@@ -70,7 +70,7 @@ def _fake_loss_inputs(input_dataset_path: str | Path, **_kwargs) -> dict[str, ob
     if path.name.startswith("candidate"):
         matrix = np.tile(np.asarray([[1.0], [0.0]]), (1, len(_TARGET_NAMES)))
     else:
-        matrix = np.tile(np.asarray([[0.5], [0.5]]), (1, len(_TARGET_NAMES)))
+        matrix = np.tile(np.asarray([[0.9], [0.0]]), (1, len(_TARGET_NAMES)))
     return {
         "scaled_matrix": matrix,
         "scaled_target": np.ones(len(_TARGET_NAMES), dtype=np.float64),
@@ -601,6 +601,55 @@ def test_sound_ecps_replacement_comparison_flags_score_mismatch(
     assert payload["summary"]["candidate_score_abs_error"] == pytest.approx(0.1)
 
 
+def test_sound_ecps_replacement_comparison_forwards_targets_db(
+    monkeypatch,
+    tmp_path,
+):
+    candidate = _write_minimal_policyengine_dataset(tmp_path / "candidate.h5")
+    baseline = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    targets_db = tmp_path / "policy_data.db"
+    targets_db.write_bytes(b"sqlite placeholder")
+    captured_loss_calls: list[dict[str, object]] = []
+    captured_score_call: dict[str, object] = {}
+
+    def fake_loss_inputs_with_capture(**kwargs):
+        captured_loss_calls.append(kwargs)
+        return _fake_loss_inputs(kwargs["input_dataset_path"])
+
+    def fake_scores_with_capture(**kwargs):
+        captured_score_call.update(kwargs)
+        return _fake_pe_native_scores(**kwargs)
+
+    monkeypatch.setattr(
+        ecps,
+        "_extract_pe_native_loss_inputs",
+        fake_loss_inputs_with_capture,
+    )
+    monkeypatch.setattr(ecps, "compute_us_pe_native_scores", fake_scores_with_capture)
+    monkeypatch.setattr(ecps, "compute_us_pe_native_support_audit", _fake_support_audit)
+
+    payload = ecps.build_sound_ecps_replacement_comparison(
+        candidate_dataset_path=candidate,
+        baseline_dataset_path=baseline,
+        output_dir=tmp_path / "comparison",
+        optimizer_max_iter=50,
+        exact_rescore=True,
+        policyengine_targets_db_path=targets_db,
+    )
+
+    assert len(captured_loss_calls) == 2
+    assert {
+        Path(call["policyengine_targets_db_path"])
+        for call in captured_loss_calls
+    } == {targets_db.resolve()}
+    assert Path(captured_score_call["policyengine_targets_db_path"]) == (
+        targets_db.resolve()
+    )
+    assert payload["summary"]["policyengine_targets_db"]["path"] == str(
+        targets_db.resolve()
+    )
+
+
 def test_sound_ecps_replacement_comparison_refuses_stale_matched_files(
     monkeypatch,
     tmp_path,
@@ -639,6 +688,7 @@ def test_ecps_replacement_comparison_module_cli_help_runs():
     assert "Build a sound Microplex-vs-eCPS replacement comparison payload" in (
         completed.stdout
     )
+    assert "--policyengine-targets-db" in completed.stdout
 
 
 def test_assert_refit_effective_passes_when_loss_drops():

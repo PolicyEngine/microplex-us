@@ -44,8 +44,11 @@ _ENHANCED_CPS_BAD_TARGETS: tuple[str, ...] = (
 )
 
 _PE_NATIVE_BROAD_SCORE_SCRIPT = """
+import hashlib
 import json
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -56,7 +59,7 @@ if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
 from policyengine_us import Microsimulation
-from policyengine_us_data.utils.loss import build_loss_matrix
+import policyengine_us_data.utils.loss as loss_utils
 
 
 def patch_policyengine_us_data_uprating_aliases():
@@ -114,6 +117,44 @@ PERIOD = int(sys.argv[3])
 CANDIDATE_DATASET = sys.argv[4]
 BASELINE_DATASET = sys.argv[5]
 TARGET_SCOPE_FILTER = sys.argv[6] if len(sys.argv) >= 7 and sys.argv[6] else None
+TARGET_DB_PATH = (
+    Path(sys.argv[7]).expanduser().resolve()
+    if len(sys.argv) >= 8 and sys.argv[7]
+    else None
+)
+_TARGET_DB_TEMP_DIR = None
+
+
+def sha256_path(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def patch_policyengine_us_data_target_db(target_db_path: Path | None):
+    if target_db_path is None:
+        return None
+    if not target_db_path.exists():
+        raise FileNotFoundError(f"PolicyEngine target DB not found: {target_db_path}")
+    global _TARGET_DB_TEMP_DIR
+    _TARGET_DB_TEMP_DIR = tempfile.TemporaryDirectory(
+        prefix="microplex-pe-target-db-"
+    )
+    temp_storage = Path(_TARGET_DB_TEMP_DIR.name)
+    calibration_dir = temp_storage / "calibration"
+    calibration_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(target_db_path, calibration_dir / "policy_data.db")
+    loss_utils.STORAGE_FOLDER = temp_storage
+    return {
+        "path": str(target_db_path),
+        "sha256": sha256_path(target_db_path),
+        "size_bytes": int(target_db_path.stat().st_size),
+    }
+
+
+TARGET_DB_DESCRIPTOR = patch_policyengine_us_data_target_db(TARGET_DB_PATH)
 
 
 def dataset_from_path(dataset_path: str, dataset_name: str):
@@ -224,7 +265,7 @@ def compute(dataset_path: str) -> dict[str, float | int]:
         dataset_path,
         Path(dataset_path).stem.replace("-", "_"),
     )
-    loss_matrix, targets_array = build_loss_matrix(dataset_cls, PERIOD)
+    loss_matrix, targets_array = loss_utils.build_loss_matrix(dataset_cls, PERIOD)
     target_names = np.asarray(loss_matrix.columns)
     zero_mask = np.isclose(targets_array, 0.0, atol=0.1)
     bad_mask = np.isin(target_names, BAD_TARGETS)
@@ -309,6 +350,7 @@ payload = {
     "n_national_targets": candidate["n_national_targets"],
     "n_state_targets": candidate["n_state_targets"],
     "target_scope_filter": TARGET_SCOPE_FILTER,
+    "policyengine_targets_db": TARGET_DB_DESCRIPTOR,
     "candidate_weight_sum": candidate["weight_sum"],
     "baseline_weight_sum": baseline["weight_sum"],
     "family_breakdown": build_family_breakdown(
@@ -2460,10 +2502,18 @@ def compute_policyengine_us_enhanced_cps_native_scores(
     policyengine_us_data_python: str | Path | None = None,
     policyengine_us_data_repo: str | Path | None = None,
     target_scope_filter: str | None = None,
+    policyengine_targets_db_path: str | Path | None = None,
 ) -> PolicyEngineUSEnhancedCPSNativeScores:
     """Score one candidate and baseline under the exact enhanced-CPS loss."""
     resolved_repo = resolve_policyengine_us_data_repo_root(policyengine_us_data_repo)
     env = build_policyengine_us_data_subprocess_env(resolved_repo)
+    resolved_targets_db = (
+        Path(policyengine_targets_db_path).expanduser().resolve()
+        if policyengine_targets_db_path is not None
+        else None
+    )
+    if resolved_targets_db is not None and not resolved_targets_db.exists():
+        raise FileNotFoundError(f"PolicyEngine target DB not found: {resolved_targets_db}")
     if policyengine_us_data_python is not None:
         command = [str(Path(policyengine_us_data_python).expanduser())]
     else:
@@ -2479,6 +2529,7 @@ def compute_policyengine_us_enhanced_cps_native_scores(
             str(Path(candidate_dataset).expanduser().resolve()),
             str(Path(baseline_dataset).expanduser().resolve()),
             target_scope_filter or "",
+            str(resolved_targets_db) if resolved_targets_db is not None else "",
         ],
         cwd=resolved_repo,
         env=env,
@@ -2503,6 +2554,7 @@ def score_policyengine_us_native_broad_loss(
     python_executable: str | Path | None = None,
     repo_root: str | Path | None = None,
     target_scope_filter: str | None = None,
+    policyengine_targets_db_path: str | Path | None = None,
 ) -> PolicyEngineUSEnhancedCPSNativeScores:
     """Backward-compatible alias for the exact enhanced-CPS loss scorer."""
     return compute_policyengine_us_enhanced_cps_native_scores(
@@ -2512,6 +2564,7 @@ def score_policyengine_us_native_broad_loss(
         policyengine_us_data_python=python_executable,
         policyengine_us_data_repo=repo_root,
         target_scope_filter=target_scope_filter,
+        policyengine_targets_db_path=policyengine_targets_db_path,
     )
 
 
@@ -2523,6 +2576,7 @@ def compute_us_pe_native_scores(
     policyengine_us_data_repo: str | Path | None = None,
     policyengine_us_data_python: str | Path | None = None,
     target_scope_filter: str | None = None,
+    policyengine_targets_db_path: str | Path | None = None,
 ) -> dict[str, Any]:
     """Build the saved manifest payload for PE-native broad scoring."""
 
@@ -2533,6 +2587,7 @@ def compute_us_pe_native_scores(
         policyengine_us_data_python=policyengine_us_data_python,
         policyengine_us_data_repo=policyengine_us_data_repo,
         target_scope_filter=target_scope_filter,
+        policyengine_targets_db_path=policyengine_targets_db_path,
     )
     return {
         "metric": score.metric,

@@ -5803,6 +5803,33 @@ class TestUSMicroplexPipeline:
             0.0,
         ]
 
+    def test_augment_policyengine_person_inputs_preserves_tax_exempt_interest_split(
+        self,
+    ):
+        pipeline = USMicroplexPipeline(USMicroplexBuildConfig())
+        persons = pd.DataFrame(
+            {
+                "age": [45, 50, 55],
+                "sex": [1, 2, 1],
+                "interest_income": [100.0, 50.0, 75.0],
+                "taxable_interest_income": [0.0, 20.0, 0.0],
+                "tax_exempt_interest_income": [100.0, 30.0, 0.0],
+            }
+        )
+
+        augmented = pipeline._augment_policyengine_person_inputs(persons)
+
+        assert augmented["taxable_interest_income"].tolist() == [0.0, 20.0, 75.0]
+        assert augmented["tax_exempt_interest_income"].tolist() == [
+            100.0,
+            30.0,
+            0.0,
+        ]
+        assert (
+            augmented["taxable_interest_income"]
+            + augmented["tax_exempt_interest_income"]
+        ).tolist() == [100.0, 50.0, 75.0]
+
     def test_attach_policyengine_tax_unit_source_inputs_derives_mortgage_structure(
         self,
     ):

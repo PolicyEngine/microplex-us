@@ -11248,6 +11248,13 @@ class USMicroplexPipeline:
             "self_employment_income_before_lsr",
             "self_employment_income",
         )
+        tax_exempt_interest_income = first_present("tax_exempt_interest_income")
+        explicit_taxable_interest_income = first_present("taxable_interest_income")
+        taxable_interest_income = explicit_taxable_interest_income.where(
+            explicit_taxable_interest_income.ne(0.0)
+            | tax_exempt_interest_income.ne(0.0),
+            first_present("interest_income"),
+        )
 
         if "is_female" in result.columns:
             result["is_female"] = result["is_female"].fillna(False).astype(bool)
@@ -11475,13 +11482,8 @@ class USMicroplexPipeline:
             else fallback_employment_income
         )
         result["self_employment_income_before_lsr"] = signed_self_employment_income
-        result["taxable_interest_income"] = first_nonzero_or_present(
-            "taxable_interest_income",
-            "interest_income",
-        )
-        result["tax_exempt_interest_income"] = first_present(
-            "tax_exempt_interest_income"
-        )
+        result["taxable_interest_income"] = taxable_interest_income
+        result["tax_exempt_interest_income"] = tax_exempt_interest_income
         result["qualified_dividend_income"] = first_present(
             "qualified_dividend_income",
         ).clip(lower=0.0)

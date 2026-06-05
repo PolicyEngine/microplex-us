@@ -140,6 +140,7 @@ def build_sound_ecps_replacement_comparison(
     include_support_audit: bool = True,
     policyengine_us_data_repo: str | Path | None = None,
     policyengine_us_data_python: str | Path | None = None,
+    policyengine_targets_db_path: str | Path | None = None,
     skip_tax_expenditure_targets: bool = False,
     target_scope: str = "all",
     exact_rescore: bool = False,
@@ -162,6 +163,13 @@ def build_sound_ecps_replacement_comparison(
     baseline_path = Path(baseline_dataset_path).expanduser().resolve()
     destination = Path(output_dir).expanduser().resolve()
     destination.mkdir(parents=True, exist_ok=True)
+    resolved_targets_db = (
+        Path(policyengine_targets_db_path).expanduser().resolve()
+        if policyengine_targets_db_path is not None
+        else None
+    )
+    if resolved_targets_db is not None and not resolved_targets_db.exists():
+        raise FileNotFoundError(f"PolicyEngine target DB not found: {resolved_targets_db}")
 
     candidate_household_ids, _ = _household_weights(candidate_path, period=period)
     baseline_household_ids, _ = _household_weights(baseline_path, period=period)
@@ -203,6 +211,7 @@ def build_sound_ecps_replacement_comparison(
         period=period,
         policyengine_us_data_repo=policyengine_us_data_repo,
         policyengine_us_data_python=policyengine_us_data_python,
+        policyengine_targets_db_path=resolved_targets_db,
         skip_tax_expenditure_targets=skip_tax_expenditure_targets,
     )
     baseline_inputs = _extract_pe_native_loss_inputs(
@@ -210,6 +219,7 @@ def build_sound_ecps_replacement_comparison(
         period=period,
         policyengine_us_data_repo=policyengine_us_data_repo,
         policyengine_us_data_python=policyengine_us_data_python,
+        policyengine_targets_db_path=resolved_targets_db,
         skip_tax_expenditure_targets=skip_tax_expenditure_targets,
     )
     candidate_inputs = _filter_loss_inputs_by_scope(
@@ -289,6 +299,7 @@ def build_sound_ecps_replacement_comparison(
             period=period,
             policyengine_us_data_repo=policyengine_us_data_repo,
             policyengine_us_data_python=policyengine_us_data_python,
+            policyengine_targets_db_path=resolved_targets_db,
         )
         score_summary = dict(pe_native_scores.get("summary") or {})
         candidate_score_loss = score_summary.get("candidate_enhanced_cps_native_loss")
@@ -390,6 +401,11 @@ def build_sound_ecps_replacement_comparison(
             "protected_family_losses": protected_family_losses,
             "target_diagnostics": target_diagnostics["summary"],
             "support_audit": support_audit_summary,
+            "policyengine_targets_db": (
+                _dataset_descriptor(resolved_targets_db)
+                if resolved_targets_db is not None
+                else None
+            ),
         }
     )
     payload = {
@@ -700,6 +716,7 @@ def _extract_pe_native_loss_inputs(
     period: int,
     policyengine_us_data_repo: str | Path | None,
     policyengine_us_data_python: str | Path | None,
+    policyengine_targets_db_path: str | Path | None,
     skip_tax_expenditure_targets: bool,
 ) -> dict[str, Any]:
     if skip_tax_expenditure_targets:
@@ -709,6 +726,13 @@ def _extract_pe_native_loss_inputs(
         )
     resolved_repo = resolve_policyengine_us_data_repo_root(policyengine_us_data_repo)
     env = build_policyengine_us_data_subprocess_env(resolved_repo)
+    resolved_targets_db = (
+        Path(policyengine_targets_db_path).expanduser().resolve()
+        if policyengine_targets_db_path is not None
+        else None
+    )
+    if resolved_targets_db is not None and not resolved_targets_db.exists():
+        raise FileNotFoundError(f"PolicyEngine target DB not found: {resolved_targets_db}")
     command = (
         [str(Path(policyengine_us_data_python).expanduser())]
         if policyengine_us_data_python is not None
@@ -725,7 +749,10 @@ def _extract_pe_native_loss_inputs(
                 json.dumps(_comparison_bad_targets()),
                 str(int(period)),
                 str(Path(input_dataset_path).expanduser().resolve()),
+                "1" if skip_tax_expenditure_targets else "0",
                 str(prefix),
+                "",
+                str(resolved_targets_db) if resolved_targets_db is not None else "",
             ],
             cwd=resolved_repo,
             env=env,
@@ -1608,6 +1635,14 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--policyengine-us-data-repo")
     parser.add_argument("--policyengine-us-data-python")
+    parser.add_argument(
+        "--policyengine-targets-db",
+        help=(
+            "Explicit policy_data.db to use for PE-native comparison scoring. "
+            "The scorer subprocess copies this DB into a temporary PE-US-data "
+            "storage folder so the target surface is pinned."
+        ),
+    )
     parser.add_argument("--skip-tax-expenditure-targets", action="store_true")
     parser.add_argument(
         "--target-scope",
@@ -1678,6 +1713,7 @@ def main(argv: list[str] | None = None) -> int:
         include_support_audit=not args.skip_support_audit,
         policyengine_us_data_repo=args.policyengine_us_data_repo,
         policyengine_us_data_python=args.policyengine_us_data_python,
+        policyengine_targets_db_path=args.policyengine_targets_db,
         skip_tax_expenditure_targets=args.skip_tax_expenditure_targets,
         target_scope=args.target_scope,
         exact_rescore=args.exact_rescore,

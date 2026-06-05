@@ -28,8 +28,11 @@ from microplex_us.pipelines.pe_native_scores import (
 )
 
 _PE_NATIVE_BROAD_MATRIX_SCRIPT = """
+import hashlib
 import json
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -40,7 +43,7 @@ if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
 from policyengine_us import Microsimulation
-from policyengine_us_data.utils.loss import build_loss_matrix
+import policyengine_us_data.utils.loss as loss_utils
 
 
 def patch_policyengine_us_data_uprating_aliases():
@@ -101,6 +104,44 @@ else:
     SKIP_TAX_EXPENDITURE_TARGETS = False
     OUTPUT_PREFIX = Path(sys.argv[5])
 TARGET_SCOPE_FILTER = sys.argv[7] if len(sys.argv) >= 8 and sys.argv[7] else None
+TARGET_DB_PATH = (
+    Path(sys.argv[8]).expanduser().resolve()
+    if len(sys.argv) >= 9 and sys.argv[8]
+    else None
+)
+_TARGET_DB_TEMP_DIR = None
+
+
+def sha256_path(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def patch_policyengine_us_data_target_db(target_db_path: Path | None):
+    if target_db_path is None:
+        return None
+    if not target_db_path.exists():
+        raise FileNotFoundError(f"PolicyEngine target DB not found: {target_db_path}")
+    global _TARGET_DB_TEMP_DIR
+    _TARGET_DB_TEMP_DIR = tempfile.TemporaryDirectory(
+        prefix="microplex-pe-target-db-"
+    )
+    temp_storage = Path(_TARGET_DB_TEMP_DIR.name)
+    calibration_dir = temp_storage / "calibration"
+    calibration_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(target_db_path, calibration_dir / "policy_data.db")
+    loss_utils.STORAGE_FOLDER = temp_storage
+    return {
+        "path": str(target_db_path),
+        "sha256": sha256_path(target_db_path),
+        "size_bytes": int(target_db_path.stat().st_size),
+    }
+
+
+TARGET_DB_DESCRIPTOR = patch_policyengine_us_data_target_db(TARGET_DB_PATH)
 
 
 def dataset_from_path(dataset_path: str, dataset_name: str):
@@ -134,7 +175,7 @@ dataset_cls = dataset_from_path(
     DATASET_PATH,
     Path(DATASET_PATH).stem.replace("-", "_"),
 )
-loss_matrix, targets_array = build_loss_matrix(dataset_cls, PERIOD)
+loss_matrix, targets_array = loss_utils.build_loss_matrix(dataset_cls, PERIOD)
 target_names = np.asarray(loss_matrix.columns)
 zero_mask = np.isclose(targets_array, 0.0, atol=0.1)
 bad_mask = np.isin(target_names, BAD_TARGETS)
@@ -187,6 +228,7 @@ with open(OUTPUT_PREFIX.with_suffix(".meta.json"), "w") as handle:
             "n_national_targets": n_national,
             "n_state_targets": n_state,
             "target_scope_filter": TARGET_SCOPE_FILTER,
+            "policyengine_targets_db": TARGET_DB_DESCRIPTOR,
             "weight_sum": float(weights.sum()),
             "candidate_loss_before": float(
                 pe_native_huber_loss(matrix.T @ weights, loss_arrays)

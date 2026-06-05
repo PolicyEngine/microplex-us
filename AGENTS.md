@@ -71,9 +71,20 @@ When reviewing recent changes here, check:
 
 ## Standard commands
 
+- Install, production/runtime: `./scripts/install.sh --prod`
+- Install, development: `./scripts/install.sh --dev`
+- Install, Intel macOS development: `./scripts/install.sh --dev-intel-mac`
 - Ruff: `uv run ruff check src tests`
 - Focused comparison/harness tests: `uv run pytest -q tests/policyengine/test_comparison.py tests/policyengine/test_harness.py`
 - Local reweighting tests: `uv run pytest -q tests/pipelines/test_local_reweighting.py`
+
+## Environment guidance
+
+- Production macOS installs require Apple Silicon (`arm64`).
+- Intel macOS (`x86_64`) is development/testing-only. If uv/PyPI fails on
+  `torch` wheels there, use `./scripts/install.sh --dev-intel-mac`.
+- Do not add torch stubs or no-torch runtime workarounds for Intel macOS; use
+  the conda-forge developer environment instead.
 
 ## Claude/Codex review shortcut
 

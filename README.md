@@ -3,6 +3,29 @@
 US-specific survey adapters, calibration targets, pipelines, and PolicyEngine integration
 built on top of the generic `microplex` engine.
 
+## Installation
+
+Use the install script so platform-specific dependency handling stays explicit:
+
+```bash
+./scripts/install.sh --prod
+```
+
+For development on Apple Silicon macOS or Linux:
+
+```bash
+./scripts/install.sh --dev
+```
+
+Production macOS installs require Apple Silicon (`arm64`). Intel macOS
+(`x86_64`) is supported only for development/testing through conda-forge:
+
+```bash
+./scripts/install.sh --dev-intel-mac
+```
+
+See [developer testing environments](./envs/README.md) for details.
+
 ## Docs
 
 - [Docs index](./docs/README.md)

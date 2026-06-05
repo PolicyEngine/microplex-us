@@ -1,3 +1,15 @@
+## Environment guidance for agents
+
+- Use `./scripts/install.sh --prod` for production/runtime setup.
+- Use `./scripts/install.sh --dev` for normal development setup on Apple
+  Silicon macOS and Linux.
+- Use `./scripts/install.sh --dev-intel-mac` on Intel macOS (`x86_64`) or when
+  PyPI cannot provide modern `torch` wheels for that platform.
+- Production macOS installs require Apple Silicon (`arm64`). Intel macOS is
+  development/testing-only.
+- Do not add torch stubs or no-torch runtime workarounds for Intel macOS; use
+  the conda-forge developer environment instead.
+
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 

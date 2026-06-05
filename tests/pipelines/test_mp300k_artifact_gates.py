@@ -329,6 +329,43 @@ def test_benchmark_manifest_gate_requires_pinned_release_evidence(tmp_path):
     ]
 
 
+def test_core_benchmark_floor_accepts_aca_enrollment_family_alias(tmp_path):
+    artifact_dir = tmp_path / "artifact"
+    artifact_dir.mkdir()
+    _write_contract_policyengine_dataset(artifact_dir / "candidate.h5")
+    baseline_dataset = _write_contract_policyengine_dataset(tmp_path / "baseline.h5")
+    benchmark_manifest = tmp_path / "benchmark_manifest.json"
+    _write_benchmark_manifest(benchmark_manifest)
+    _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
+    comparison = _sound_ecps_comparison_payload()
+    family_breakdown = comparison["score"]["family_breakdown"]
+    for row in family_breakdown:
+        if row["family"] == "state_aca_spending":
+            row["family"] = "state_aca_enrollment"
+
+    report_path = write_mp300k_artifact_gate_report(
+        artifact_dir,
+        ecps_comparison_payload=comparison,
+        arch_coverage_payload=_arch_coverage_payload(),
+        runtime_smoke_payload={"runtime_ratio": 1.0},
+        benchmark_manifest_path=benchmark_manifest,
+        compute_native_scores=False,
+        update_manifest=False,
+    )
+
+    record = json.loads(report_path.read_text())
+    comparison_gate = record["gates"]["ecps_comparison"]
+
+    assert record["summary"]["status"] == "passed"
+    assert comparison_gate["status"] == "pass"
+    assert (
+        comparison_gate["details"]["core_benchmark_family_floor"][
+            "missing_families"
+        ]
+        == []
+    )
+
+
 def test_column_contract_gate_rejects_missing_ecps_contract_column(tmp_path):
     artifact_dir = tmp_path / "artifact"
     artifact_dir.mkdir()

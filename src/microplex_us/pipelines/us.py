@@ -6348,8 +6348,6 @@ class USMicroplexPipeline:
         for target, aliases in PUF_SUPPORT_CLONE_CPS_DIRECT_PASSTHROUGH_ALIASES.items():
             if target not in result.columns or target not in integrated_set:
                 continue
-            if target in preclone_columns:
-                continue
             source = next((alias for alias in aliases if alias in original.columns), None)
             if source is None:
                 continue
@@ -6367,10 +6365,7 @@ class USMicroplexPipeline:
                 continue
             if not all(column in result.columns for column in components):
                 continue
-            if not any(
-                column in integrated_set and column not in preclone_columns
-                for column in components
-            ):
+            if not any(column in integrated_set for column in components):
                 continue
             cps_total = (
                 pd.to_numeric(original[total_alias], errors="coerce")
@@ -6420,7 +6415,6 @@ class USMicroplexPipeline:
             PUF_SUPPORT_CLONE_CPS_DIVIDEND_TOTAL_ALIAS in original.columns
             and all(column in result.columns for column in dividend_components)
             and any(column in integrated_set for column in dividend_components)
-            and any(column not in preclone_columns for column in dividend_components)
         ):
             cps_total = (
                 pd.to_numeric(
@@ -6551,8 +6545,13 @@ class USMicroplexPipeline:
         output_mode = self.config.puf_support_clone_output_mode
         collapse_copy_variables: list[str] = []
         if output_mode == "collapse_to_scaffold":
+            passthrough_override = set(
+                cps_passthrough_summary.get("passthrough_variables", ())
+            )
             collapse_candidates = (
-                (integrated_set - preclone_columns) | both_halves_override
+                (integrated_set - preclone_columns)
+                | both_halves_override
+                | passthrough_override
             ) - set(generated_entity_id_columns)
             for variable in sorted(collapse_candidates):
                 if variable in clone.columns:

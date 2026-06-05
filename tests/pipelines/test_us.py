@@ -4264,9 +4264,19 @@ class TestUSMicroplexPipeline:
                 "household_id": [1, 2],
                 "age": [45, 62],
                 "interest_income": [3.0, 4.0],
+                # Regression coverage for preclone components: these may exist on
+                # the CPS scaffold already, but PUF-integrated leaves must still
+                # be scaled back to the CPS measured total.
+                "taxable_interest_income": [3.0, 4.0],
+                "tax_exempt_interest_income": [3.0, 4.0],
                 "dividend_income": [10.0, 5.0],
+                "qualified_dividend_income": [10.0, 5.0],
+                "non_qualified_dividend_income": [10.0, 5.0],
                 "pension_income": [100.0, 200.0],
+                "taxable_pension_income": [100.0, 200.0],
+                "tax_exempt_pension_income": [100.0, 200.0],
                 "unemployment_compensation": [100.0, 0.0],
+                "taxable_unemployment_compensation": [100.0, 0.0],
             }
         )
         clone = pd.DataFrame(

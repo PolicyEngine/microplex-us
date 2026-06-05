@@ -56,6 +56,9 @@ def _write_minimal_policyengine_dataset(
         "person_family_id": {str(period): np.asarray([1000, 1000, 2000])},
         "marital_unit_id": {str(period): np.asarray([10000, 10001, 20000])},
         "person_marital_unit_id": {str(period): np.asarray([10000, 10001, 20000])},
+        "social_security_retirement": {str(period): np.asarray([1.0, 0.0, 0.0])},
+        "social_security_disability": {str(period): np.asarray([0.0, 1.0, 0.0])},
+        "employment_income_before_lsr": {str(period): np.asarray([100.0, 0.0, 200.0])},
     }
     return write_policyengine_us_time_period_dataset(arrays, path)
 
@@ -407,6 +410,8 @@ def test_sound_ecps_replacement_comparison_satisfies_gate_contract(
     assert summary["exact_rescore_status"] == "skipped"
     assert summary["refit_objective_matches_scoring"] is True
     assert summary["ecps_refit_recovery_passed"] is True
+    assert summary["baseline_sanity"]["mode"] == "msre"
+    assert summary["baseline_sanity"]["status"] == "passed"
     assert (
         summary["candidate_enhanced_cps_native_loss"]
         < summary["baseline_enhanced_cps_native_loss"]
@@ -639,8 +644,7 @@ def test_sound_ecps_replacement_comparison_forwards_targets_db(
 
     assert len(captured_loss_calls) == 2
     assert {
-        Path(call["policyengine_targets_db_path"])
-        for call in captured_loss_calls
+        Path(call["policyengine_targets_db_path"]) for call in captured_loss_calls
     } == {targets_db.resolve()}
     assert Path(captured_score_call["policyengine_targets_db_path"]) == (
         targets_db.resolve()
@@ -723,4 +727,56 @@ def test_assert_baseline_sane_raises_on_mis_scored_surface():
 
 def test_assert_baseline_sane_skips_when_msre_absent():
     # Exact-rescore path has no unweighted MSRE; the gate must no-op, not crash.
-    ecps._assert_baseline_sane({}, 2.0)
+    summary = ecps._assert_baseline_sane({}, 2.0)
+    assert summary["status"] == "skipped"
+
+
+def test_assert_production_baseline_content_sane_passes_on_required_columns(
+    tmp_path,
+):
+    baseline = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+
+    summary = ecps._assert_production_baseline_content_sane(baseline, period=2024)
+
+    assert summary["mode"] == "content"
+    assert summary["status"] == "passed"
+    assert (
+        summary["required_nonzero_columns"]["social_security_retirement"][
+            "nonzero_count"
+        ]
+        == 1
+    )
+
+
+def test_assert_production_baseline_content_sane_raises_on_missing_column(
+    tmp_path,
+):
+    baseline = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    with h5py.File(baseline, "a") as handle:
+        del handle["social_security_retirement"]
+
+    with pytest.raises(ecps.ComparisonGateError) as excinfo:
+        ecps._assert_production_baseline_content_sane(baseline, period=2024)
+
+    assert "missing social_security_retirement/2024" in str(excinfo.value)
+
+
+def test_sound_ecps_replacement_comparison_can_use_content_baseline_sanity(
+    monkeypatch,
+    tmp_path,
+):
+    candidate = _write_minimal_policyengine_dataset(tmp_path / "candidate.h5")
+    baseline = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    monkeypatch.setattr(ecps, "_extract_pe_native_loss_inputs", _fake_loss_inputs)
+    monkeypatch.setattr(ecps, "compute_us_pe_native_support_audit", _fake_support_audit)
+
+    payload = ecps.build_sound_ecps_replacement_comparison(
+        candidate_dataset_path=candidate,
+        baseline_dataset_path=baseline,
+        output_dir=tmp_path / "comparison",
+        optimizer_max_iter=50,
+        baseline_sanity_mode="content",
+    )
+
+    assert payload["summary"]["baseline_sanity"]["mode"] == "content"
+    assert payload["summary"]["baseline_sanity"]["status"] == "passed"

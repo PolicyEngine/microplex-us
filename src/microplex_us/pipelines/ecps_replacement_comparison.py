@@ -57,6 +57,14 @@ _DATASET_DERIVED_COMPARISON_TARGETS: tuple[str, ...] = (
     "nation/source/puf_clone_household_count",
 )
 
+_BASELINE_SANITY_MODES: tuple[str, ...] = ("msre", "content")
+
+_PRODUCTION_BASELINE_REQUIRED_NONZERO_COLUMNS: tuple[str, ...] = (
+    "social_security_retirement",
+    "social_security_disability",
+    "employment_income_before_lsr",
+)
+
 
 def _comparison_bad_targets() -> tuple[str, ...]:
     return tuple(
@@ -101,7 +109,9 @@ def _assert_refit_effective(
         )
 
 
-def _assert_baseline_sane(score_summary: dict[str, Any], max_msre: float) -> None:
+def _assert_baseline_sane(
+    score_summary: dict[str, Any], max_msre: float
+) -> dict[str, Any]:
     """Fail if the production eCPS baseline scores anomalously on this surface.
 
     A correctly-targeted production eCPS fits its own target surface closely; a
@@ -110,7 +120,11 @@ def _assert_baseline_sane(score_summary: dict[str, Any], max_msre: float) -> Non
     """
     msre = score_summary.get("baseline_unweighted_msre")
     if msre is None:
-        return
+        return {
+            "mode": "msre",
+            "status": "skipped",
+            "reason": "baseline_unweighted_msre_absent",
+        }
     if float(msre) > max_msre:
         raise ComparisonGateError(
             f"Baseline (production eCPS) scores anomalously on this target "
@@ -120,6 +134,68 @@ def _assert_baseline_sane(score_summary: dict[str, Any], max_msre: float) -> Non
             f"comparison is invalid. Use the production target surface, or pass "
             f"assert_baseline_sane=False only to deliberately accept this."
         )
+    return {
+        "mode": "msre",
+        "status": "passed",
+        "baseline_unweighted_msre": float(msre),
+        "max_baseline_unweighted_msre": float(max_msre),
+    }
+
+
+def _assert_production_baseline_content_sane(
+    baseline_dataset_path: str | Path,
+    *,
+    period: int,
+    required_nonzero_columns: tuple[str, ...] = (
+        _PRODUCTION_BASELINE_REQUIRED_NONZERO_COLUMNS
+    ),
+) -> dict[str, Any]:
+    """Fail if the production eCPS baseline H5 is missing required content.
+
+    This is the right sanity gate for broad external target surfaces where a
+    high eCPS MSRE may be the comparison's actual signal, not proof of a broken
+    scorer. It still catches the known broken-local-eCPS failure mode by
+    requiring core production columns to be present and nonzero.
+    """
+
+    path = Path(baseline_dataset_path).expanduser().resolve()
+    period_key = str(period)
+    missing: list[str] = []
+    zero_or_nonfinite: list[str] = []
+    column_summaries: dict[str, dict[str, Any]] = {}
+    with h5py.File(path, "r") as handle:
+        for column in required_nonzero_columns:
+            if column not in handle or period_key not in handle[column]:
+                missing.append(f"{column}/{period_key}")
+                continue
+            values = np.asarray(handle[column][period_key], dtype=np.float64)
+            finite = bool(np.isfinite(values).all())
+            abs_sum = float(np.abs(values).sum()) if finite else float("nan")
+            nonzero_count = int(np.count_nonzero(values)) if finite else 0
+            column_summaries[column] = {
+                "abs_sum": abs_sum,
+                "nonzero_count": nonzero_count,
+                "finite": finite,
+            }
+            if not finite or abs_sum <= 0.0 or nonzero_count <= 0:
+                zero_or_nonfinite.append(f"{column}/{period_key}")
+    if missing or zero_or_nonfinite:
+        details = []
+        if missing:
+            details.append(f"missing {', '.join(missing)}")
+        if zero_or_nonfinite:
+            details.append(f"zero_or_nonfinite {', '.join(zero_or_nonfinite)}")
+        raise ComparisonGateError(
+            "Production eCPS baseline content sanity failed: "
+            + "; ".join(details)
+            + ". Use the verified production eCPS blob, not a broken local H5."
+        )
+    return {
+        "mode": "content",
+        "status": "passed",
+        "period": int(period),
+        "required_nonzero_columns": column_summaries,
+    }
 
 
 def build_sound_ecps_replacement_comparison(
@@ -148,6 +224,7 @@ def build_sound_ecps_replacement_comparison(
     assert_refit_effective: bool = True,
     min_refit_loss_reduction: float = 1e-9,
     assert_baseline_sane: bool = True,
+    baseline_sanity_mode: str = "msre",
     max_baseline_unweighted_msre: float = 2.0,
 ) -> dict[str, Any]:
     """Build a release-contract eCPS comparison payload.
@@ -169,7 +246,9 @@ def build_sound_ecps_replacement_comparison(
         else None
     )
     if resolved_targets_db is not None and not resolved_targets_db.exists():
-        raise FileNotFoundError(f"PolicyEngine target DB not found: {resolved_targets_db}")
+        raise FileNotFoundError(
+            f"PolicyEngine target DB not found: {resolved_targets_db}"
+        )
 
     candidate_household_ids, _ = _household_weights(candidate_path, period=period)
     baseline_household_ids, _ = _household_weights(baseline_path, period=period)
@@ -270,9 +349,7 @@ def build_sound_ecps_replacement_comparison(
     )
 
     if assert_refit_effective:
-        _assert_refit_effective(
-            "candidate", candidate_refit, min_refit_loss_reduction
-        )
+        _assert_refit_effective("candidate", candidate_refit, min_refit_loss_reduction)
         _assert_refit_effective("baseline", baseline_refit, min_refit_loss_reduction)
 
     protected_family_losses = _protected_family_losses(
@@ -344,8 +421,26 @@ def build_sound_ecps_replacement_comparison(
         score_source = "refit_loss_matrix"
         exact_rescore_status = "skipped"
 
+    if baseline_sanity_mode not in _BASELINE_SANITY_MODES:
+        raise ValueError(
+            "baseline_sanity_mode must be one of " + ", ".join(_BASELINE_SANITY_MODES)
+        )
+    baseline_sanity: dict[str, Any]
     if assert_baseline_sane:
-        _assert_baseline_sane(score_summary, max_baseline_unweighted_msre)
+        if baseline_sanity_mode == "msre":
+            baseline_sanity = _assert_baseline_sane(
+                score_summary, max_baseline_unweighted_msre
+            )
+        else:
+            baseline_sanity = _assert_production_baseline_content_sane(
+                baseline_path,
+                period=period,
+            )
+    else:
+        baseline_sanity = {
+            "mode": baseline_sanity_mode,
+            "status": "skipped",
+        }
 
     ecps_refit_recovery_passed = baseline_refit[
         "optimized_full_loss"
@@ -401,6 +496,7 @@ def build_sound_ecps_replacement_comparison(
             "protected_family_losses": protected_family_losses,
             "target_diagnostics": target_diagnostics["summary"],
             "support_audit": support_audit_summary,
+            "baseline_sanity": baseline_sanity,
             "policyengine_targets_db": (
                 _dataset_descriptor(resolved_targets_db)
                 if resolved_targets_db is not None
@@ -732,7 +828,9 @@ def _extract_pe_native_loss_inputs(
         else None
     )
     if resolved_targets_db is not None and not resolved_targets_db.exists():
-        raise FileNotFoundError(f"PolicyEngine target DB not found: {resolved_targets_db}")
+        raise FileNotFoundError(
+            f"PolicyEngine target DB not found: {resolved_targets_db}"
+        )
     command = (
         [str(Path(policyengine_us_data_python).expanduser())]
         if policyengine_us_data_python is not None
@@ -1674,6 +1772,18 @@ def main(argv: list[str] | None = None) -> int:
         help="Skip the baseline-sanity gate (allow a mis-scored production baseline).",
     )
     parser.add_argument(
+        "--baseline-sanity-mode",
+        choices=_BASELINE_SANITY_MODES,
+        default="msre",
+        help=(
+            "Baseline-sanity gate to use. 'msre' requires production eCPS to "
+            "score below --max-baseline-unweighted-msre on this exact surface. "
+            "'content' verifies required production eCPS H5 columns are present "
+            "and nonzero, for broad target surfaces where high eCPS loss is "
+            "part of the comparison signal."
+        ),
+    )
+    parser.add_argument(
         "--max-baseline-unweighted-msre",
         type=float,
         default=2.0,
@@ -1721,6 +1831,7 @@ def main(argv: list[str] | None = None) -> int:
         assert_refit_effective=args.assert_refit_effective,
         min_refit_loss_reduction=args.min_refit_loss_reduction,
         assert_baseline_sane=args.assert_baseline_sane,
+        baseline_sanity_mode=args.baseline_sanity_mode,
         max_baseline_unweighted_msre=args.max_baseline_unweighted_msre,
     )
     print(str(written))

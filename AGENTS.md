@@ -8,6 +8,19 @@ This repo is the US country pack for `microplex`. Keep it thin where possible an
 - If a seam is useful for both UK and US, move it to `microplex` instead of polishing a US-only local helper.
 - Keep PolicyEngine-US execution details local unless there is a clean shared protocol.
 
+## Regression discipline (every fix ships a guard)
+
+A bug is not fixed until it ships an **automated guard on the run path** — a
+gate/assertion/CI test that fails loud if it recurs. Do not rely on a human or
+agent re-noticing a known failure mode. Definition of done for any fix: "I added
+the check that would have caught this."
+
+In particular, the eCPS-replacement comparison must refuse to emit a verdict when
+its inputs or result are invalid (see `ecps_replacement_comparison.py` gates):
+the baseline must be production-pinned and score sanely (baseline-sanity gate),
+and the refit must materially reduce loss (refit-effectiveness gate). When a new
+comparison failure mode is found, add a gate there rather than fixing it once.
+
 ## Current architectural intent
 
 - `microplex-us` owns:

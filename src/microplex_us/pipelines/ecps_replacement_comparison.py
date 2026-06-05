@@ -69,6 +69,59 @@ def _comparison_bad_targets() -> tuple[str, ...]:
     )
 
 
+class ComparisonGateError(ValueError):
+    """Raised when a comparison input or result fails a validity gate.
+
+    These gates exist so the harness refuses to emit a misleading verdict
+    instead of relying on a human noticing a mis-scored baseline or a no-op
+    refit. Every recurring comparison failure should add a gate here.
+    """
+
+
+def _assert_refit_effective(
+    label: str, refit: dict[str, Any], min_reduction: float
+) -> None:
+    """Fail if a refit did not materially reduce the loss (a no-op refit).
+
+    A no-op refit (optimized loss ~= initial loss) means that side was never
+    actually reweighted, so its loss is meaningless for comparison -- usually a
+    degenerate loss matrix or a total-weight/population mismatch under
+    ``preserve_input``.
+    """
+    initial = float(refit["initial_full_loss"])
+    optimized = float(refit["optimized_full_loss"])
+    if optimized > initial - min_reduction:
+        raise ComparisonGateError(
+            f"{label} refit was a no-op: optimized loss {optimized:.6g} did not "
+            f"improve on initial {initial:.6g} ({min_reduction:g} reduction "
+            f"required). The refit never reweighted this dataset, so the "
+            f"comparison is meaningless -- likely a degenerate loss matrix or a "
+            f"total-weight/population mismatch under preserve_input. Pass "
+            f"assert_refit_effective=False only to deliberately accept this."
+        )
+
+
+def _assert_baseline_sane(score_summary: dict[str, Any], max_msre: float) -> None:
+    """Fail if the production eCPS baseline scores anomalously on this surface.
+
+    A correctly-targeted production eCPS fits its own target surface closely; a
+    large unweighted MSRE means the target DB/scorer is wrong for this baseline
+    (e.g. an ad-hoc local scorer), so any verdict against it is invalid.
+    """
+    msre = score_summary.get("baseline_unweighted_msre")
+    if msre is None:
+        return
+    if float(msre) > max_msre:
+        raise ComparisonGateError(
+            f"Baseline (production eCPS) scores anomalously on this target "
+            f"surface: unweighted MSRE {float(msre):.3f} > {max_msre:g}. A "
+            f"correctly-targeted production eCPS scores low (~0.2); a large value "
+            f"means the target DB/scorer does not match the baseline, so the "
+            f"comparison is invalid. Use the production target surface, or pass "
+            f"assert_baseline_sane=False only to deliberately accept this."
+        )
+
+
 def build_sound_ecps_replacement_comparison(
     *,
     candidate_dataset_path: str | Path,
@@ -91,6 +144,10 @@ def build_sound_ecps_replacement_comparison(
     target_scope: str = "all",
     exact_rescore: bool = False,
     force: bool = False,
+    assert_refit_effective: bool = True,
+    min_refit_loss_reduction: float = 1e-9,
+    assert_baseline_sane: bool = True,
+    max_baseline_unweighted_msre: float = 2.0,
 ) -> dict[str, Any]:
     """Build a release-contract eCPS comparison payload.
 
@@ -202,6 +259,12 @@ def build_sound_ecps_replacement_comparison(
         tol=optimizer_tol,
     )
 
+    if assert_refit_effective:
+        _assert_refit_effective(
+            "candidate", candidate_refit, min_refit_loss_reduction
+        )
+        _assert_refit_effective("baseline", baseline_refit, min_refit_loss_reduction)
+
     protected_family_losses = _protected_family_losses(
         target_names=target_names,
         candidate_inputs=candidate_inputs,
@@ -269,6 +332,9 @@ def build_sound_ecps_replacement_comparison(
         objective_identity_passed = True
         score_source = "refit_loss_matrix"
         exact_rescore_status = "skipped"
+
+    if assert_baseline_sane:
+        _assert_baseline_sane(score_summary, max_baseline_unweighted_msre)
 
     ecps_refit_recovery_passed = baseline_refit[
         "optimized_full_loss"
@@ -1560,6 +1626,30 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument("--force", action="store_true")
+    parser.add_argument(
+        "--no-assert-refit-effective",
+        dest="assert_refit_effective",
+        action="store_false",
+        help="Skip the refit-effectiveness gate (allow a no-op refit).",
+    )
+    parser.add_argument(
+        "--no-assert-baseline-sane",
+        dest="assert_baseline_sane",
+        action="store_false",
+        help="Skip the baseline-sanity gate (allow a mis-scored production baseline).",
+    )
+    parser.add_argument(
+        "--max-baseline-unweighted-msre",
+        type=float,
+        default=2.0,
+        help="Baseline-sanity gate ceiling on the production eCPS unweighted MSRE.",
+    )
+    parser.add_argument(
+        "--min-refit-loss-reduction",
+        type=float,
+        default=1e-9,
+        help="Minimum loss reduction required by the refit-effectiveness gate.",
+    )
     args = parser.parse_args(argv)
 
     output_dir = Path(args.output_dir).expanduser()
@@ -1592,6 +1682,10 @@ def main(argv: list[str] | None = None) -> int:
         target_scope=args.target_scope,
         exact_rescore=args.exact_rescore,
         force=args.force,
+        assert_refit_effective=args.assert_refit_effective,
+        min_refit_loss_reduction=args.min_refit_loss_reduction,
+        assert_baseline_sane=args.assert_baseline_sane,
+        max_baseline_unweighted_msre=args.max_baseline_unweighted_msre,
     )
     print(str(written))
     return 0

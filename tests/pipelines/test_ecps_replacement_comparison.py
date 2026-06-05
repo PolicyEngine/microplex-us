@@ -639,3 +639,38 @@ def test_ecps_replacement_comparison_module_cli_help_runs():
     assert "Build a sound Microplex-vs-eCPS replacement comparison payload" in (
         completed.stdout
     )
+
+
+def test_assert_refit_effective_passes_when_loss_drops():
+    ecps._assert_refit_effective(
+        "candidate",
+        {"initial_full_loss": 0.05, "optimized_full_loss": 0.03},
+        1e-9,
+    )
+
+
+def test_assert_refit_effective_raises_on_no_op_refit():
+    # optimized == initial: the refit never reweighted (the d2d621b failure mode).
+    with pytest.raises(ecps.ComparisonGateError) as excinfo:
+        ecps._assert_refit_effective(
+            "candidate",
+            {"initial_full_loss": 0.042815, "optimized_full_loss": 0.042815},
+            1e-9,
+        )
+    assert "no-op" in str(excinfo.value)
+
+
+def test_assert_baseline_sane_passes_on_clean_baseline():
+    ecps._assert_baseline_sane({"baseline_unweighted_msre": 0.17}, 2.0)
+
+
+def test_assert_baseline_sane_raises_on_mis_scored_surface():
+    # MSRE 8.17 is the soi-total-se mis-scored surface (eCPS +615% unemployment).
+    with pytest.raises(ecps.ComparisonGateError) as excinfo:
+        ecps._assert_baseline_sane({"baseline_unweighted_msre": 8.166}, 2.0)
+    assert "anomalously" in str(excinfo.value)
+
+
+def test_assert_baseline_sane_skips_when_msre_absent():
+    # Exact-rescore path has no unweighted MSRE; the gate must no-op, not crash.
+    ecps._assert_baseline_sane({}, 2.0)

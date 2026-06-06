@@ -14,7 +14,9 @@ import h5py
 import numpy as np
 
 from microplex_us.pipelines.mp_benchmark_manifest import (
+    frozen_production_ecps_benchmark_manifest_descriptor,
     frozen_production_pin_mismatches,
+    load_frozen_production_ecps_benchmark_manifest,
 )
 
 GateStatus = Literal["pass", "fail", "unmeasured"]
@@ -2187,35 +2189,31 @@ def _benchmark_manifest_gate(
     benchmark_manifest_path: str | Path | None,
 ) -> tuple[dict[str, Any], dict[str, Any] | None]:
     if benchmark_manifest_path is None:
-        return (
-            _gate(
-                "unmeasured",
-                "frozen microsimulation benchmark manifest has not been attached",
-            ),
-            None,
-        )
-    manifest_path = Path(benchmark_manifest_path).expanduser()
-    if not manifest_path.exists():
-        return (
-            _gate(
-                "fail",
-                "frozen microsimulation benchmark manifest path does not exist",
-                details={"path": str(manifest_path)},
-            ),
-            None,
-        )
-    descriptor = _file_descriptor(manifest_path)
-    try:
-        payload = json.loads(manifest_path.read_text())
-    except json.JSONDecodeError as exc:
-        return (
-            _gate(
-                "fail",
-                "frozen microsimulation benchmark manifest is not valid JSON",
-                details={"path": str(manifest_path), "error": str(exc)},
-            ),
-            descriptor,
-        )
+        descriptor = frozen_production_ecps_benchmark_manifest_descriptor()
+        payload = load_frozen_production_ecps_benchmark_manifest()
+    else:
+        manifest_path = Path(benchmark_manifest_path).expanduser()
+        if not manifest_path.exists():
+            return (
+                _gate(
+                    "fail",
+                    "frozen microsimulation benchmark manifest path does not exist",
+                    details={"path": str(manifest_path)},
+                ),
+                None,
+            )
+        descriptor = _file_descriptor(manifest_path)
+        try:
+            payload = json.loads(manifest_path.read_text())
+        except json.JSONDecodeError as exc:
+            return (
+                _gate(
+                    "fail",
+                    "frozen microsimulation benchmark manifest is not valid JSON",
+                    details={"path": str(manifest_path), "error": str(exc)},
+                ),
+                descriptor,
+            )
     evidence = _benchmark_manifest_evidence(payload)
     descriptor = {
         **descriptor,

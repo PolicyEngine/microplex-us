@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import importlib.metadata
+import importlib.resources
 import json
 import subprocess
 from datetime import UTC, datetime
@@ -22,6 +23,21 @@ FROZEN_PRODUCTION_ECPS_TARGET_DB_SHA256 = (
 )
 FROZEN_PRODUCTION_ECPS_TARGET_PROFILE = "pe_native_broad"
 FROZEN_PRODUCTION_ECPS_TARGET_SCOPE = "all"
+FROZEN_PRODUCTION_ECPS_TARGET_COUNT = 3701
+FROZEN_PRODUCTION_ECPS_TARGET_NAMES_SHA256 = (
+    "a49a85a021ef65d5cd5b26d6d605c726ea5ca191ec98d9b5d9cc8b7d5665c25f"
+)
+FROZEN_PRODUCTION_ECPS_SCORING_CONFIG_SHA256 = (
+    "3e67b0ca1f869e4c68f7eba513517b7d4c8dd9aaa195b98c51c100fe65dbabde"
+)
+FROZEN_PRODUCTION_ECPS_BASELINE_ENHANCED_CPS_NATIVE_LOSS = (
+    0.0558541199034061
+)
+FROZEN_PRODUCTION_ECPS_BASELINE_HOLDOUT_LOSS = 0.01266396784689227
+FROZEN_PRODUCTION_ECPS_BASELINE_UNWEIGHTED_MSRE = 3.4642345028776615
+FROZEN_PRODUCTION_ECPS_RESOURCE_NAME = (
+    "frozen_production_ecps_2024_benchmark_manifest.json"
+)
 FROZEN_PRODUCTION_ECPS_REQUIRED_EVIDENCE = {
     "certificate_type": FROZEN_PRODUCTION_ECPS_CERTIFICATE_TYPE,
     "period": FROZEN_PRODUCTION_ECPS_PERIOD,
@@ -30,6 +46,37 @@ FROZEN_PRODUCTION_ECPS_REQUIRED_EVIDENCE = {
     "target_surface.target_profile": FROZEN_PRODUCTION_ECPS_TARGET_PROFILE,
     "target_surface.target_scope": FROZEN_PRODUCTION_ECPS_TARGET_SCOPE,
 }
+
+
+def load_frozen_production_ecps_benchmark_manifest() -> dict[str, Any]:
+    """Load the source-controlled 2024 production eCPS benchmark manifest."""
+
+    payload = json.loads(_frozen_production_ecps_resource_bytes().decode())
+    _assert_manifest_uses_frozen_production_pins(payload)
+    return payload
+
+
+def frozen_production_ecps_benchmark_manifest_descriptor() -> dict[str, Any]:
+    """Return file-like evidence for the packaged production eCPS manifest."""
+
+    payload = _frozen_production_ecps_resource_bytes()
+    return {
+        "path": (
+            "package:microplex_us.pipelines/"
+            f"{FROZEN_PRODUCTION_ECPS_RESOURCE_NAME}"
+        ),
+        "size_bytes": len(payload),
+        "sha256": hashlib.sha256(payload).hexdigest(),
+        "packaged_default": True,
+    }
+
+
+def _frozen_production_ecps_resource_bytes() -> bytes:
+    return (
+        importlib.resources.files(__package__)
+        .joinpath(FROZEN_PRODUCTION_ECPS_RESOURCE_NAME)
+        .read_bytes()
+    )
 
 
 def build_mp_benchmark_manifest(

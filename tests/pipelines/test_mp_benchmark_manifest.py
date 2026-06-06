@@ -10,7 +10,18 @@ from pathlib import Path
 import pytest
 
 from microplex_us.pipelines.mp_benchmark_manifest import (
+    FROZEN_PRODUCTION_ECPS_BASELINE_ENHANCED_CPS_NATIVE_LOSS,
+    FROZEN_PRODUCTION_ECPS_BASELINE_HOLDOUT_LOSS,
+    FROZEN_PRODUCTION_ECPS_BASELINE_SHA256,
+    FROZEN_PRODUCTION_ECPS_BASELINE_UNWEIGHTED_MSRE,
+    FROZEN_PRODUCTION_ECPS_SCORING_CONFIG_SHA256,
+    FROZEN_PRODUCTION_ECPS_TARGET_COUNT,
+    FROZEN_PRODUCTION_ECPS_TARGET_DB_SHA256,
+    FROZEN_PRODUCTION_ECPS_TARGET_NAMES_SHA256,
+    FROZEN_PRODUCTION_ECPS_TARGET_PROFILE,
+    FROZEN_PRODUCTION_ECPS_TARGET_SCOPE,
     build_mp_benchmark_manifest,
+    load_frozen_production_ecps_benchmark_manifest,
     main,
 )
 
@@ -70,6 +81,35 @@ def test_build_mp_benchmark_manifest_pins_release_inputs(tmp_path):
     assert manifest["target_db"]["sha256"] == _sha256(target_contents)
     assert manifest["policyengine_us_data"]["commit"] == "b" * 40
     assert manifest["policyengine_us"]["version"] == "1.587.0"
+
+
+def test_packaged_frozen_production_manifest_matches_canonical_surface():
+    manifest = load_frozen_production_ecps_benchmark_manifest()
+
+    assert manifest["certificate_type"] == "frozen_production_ecps_baseline"
+    assert manifest["period"] == 2024
+    assert manifest["baseline_dataset"]["sha256"] == (
+        FROZEN_PRODUCTION_ECPS_BASELINE_SHA256
+    )
+    assert manifest["target_db"]["sha256"] == FROZEN_PRODUCTION_ECPS_TARGET_DB_SHA256
+    assert manifest["target_surface"] == {
+        "target_profile": FROZEN_PRODUCTION_ECPS_TARGET_PROFILE,
+        "target_scope": FROZEN_PRODUCTION_ECPS_TARGET_SCOPE,
+        "target_count": FROZEN_PRODUCTION_ECPS_TARGET_COUNT,
+        "target_names_sha256": FROZEN_PRODUCTION_ECPS_TARGET_NAMES_SHA256,
+    }
+    assert manifest["scoring_config"]["sha256"] == (
+        FROZEN_PRODUCTION_ECPS_SCORING_CONFIG_SHA256
+    )
+    assert manifest["baseline_metrics"]["baseline_enhanced_cps_native_loss"] == (
+        FROZEN_PRODUCTION_ECPS_BASELINE_ENHANCED_CPS_NATIVE_LOSS
+    )
+    assert manifest["baseline_metrics"]["baseline_holdout_loss"] == (
+        FROZEN_PRODUCTION_ECPS_BASELINE_HOLDOUT_LOSS
+    )
+    assert manifest["baseline_metrics"]["baseline_unweighted_msre"] == (
+        FROZEN_PRODUCTION_ECPS_BASELINE_UNWEIGHTED_MSRE
+    )
 
 
 def test_main_writes_mp_benchmark_manifest(tmp_path, capsys):

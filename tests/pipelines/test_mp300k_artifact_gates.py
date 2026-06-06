@@ -14,8 +14,14 @@ from microplex_us.pipelines.mp300k_artifact_gates import (
     write_mp300k_artifact_gate_report,
 )
 from microplex_us.pipelines.mp_benchmark_manifest import (
+    FROZEN_PRODUCTION_ECPS_BASELINE_ENHANCED_CPS_NATIVE_LOSS,
+    FROZEN_PRODUCTION_ECPS_BASELINE_HOLDOUT_LOSS,
     FROZEN_PRODUCTION_ECPS_BASELINE_SHA256,
+    FROZEN_PRODUCTION_ECPS_BASELINE_UNWEIGHTED_MSRE,
+    FROZEN_PRODUCTION_ECPS_SCORING_CONFIG_SHA256,
+    FROZEN_PRODUCTION_ECPS_TARGET_COUNT,
     FROZEN_PRODUCTION_ECPS_TARGET_DB_SHA256,
+    FROZEN_PRODUCTION_ECPS_TARGET_NAMES_SHA256,
 )
 from microplex_us.policyengine.us import write_policyengine_us_time_period_dataset
 
@@ -208,6 +214,11 @@ def _sound_ecps_comparison_payload(
     baseline_holdout_loss: float = 0.04,
     candidate_unweighted_msre: float = 0.10,
     baseline_unweighted_msre: float = 0.17,
+    target_count: int = 150,
+    target_names_sha256: str = "d" * 64,
+    scoring_config_sha256: str = "e" * 64,
+    policyengine_us_data_commit: str = "b" * 40,
+    policyengine_us_version: str = "1.587.0",
 ) -> dict[str, object]:
     fit_config = {
         "lambda_l0": 0.0,
@@ -259,16 +270,16 @@ def _sound_ecps_comparison_payload(
             },
             "policyengine_us_data": {
                 "repo": "PolicyEngine/policyengine-us-data",
-                "commit": "b" * 40,
+                "commit": policyengine_us_data_commit,
             },
-            "policyengine_us": {"version": "1.587.0"},
+            "policyengine_us": {"version": policyengine_us_version},
             "target_surface": {
                 "target_profile": "pe_native_broad",
                 "target_scope": "all",
-                "target_count": 150,
-                "target_names_sha256": "d" * 64,
+                "target_count": target_count,
+                "target_names_sha256": target_names_sha256,
             },
-            "scoring_config": {"sha256": "e" * 64},
+            "scoring_config": {"sha256": scoring_config_sha256},
             "baseline_metrics": {
                 "baseline_enhanced_cps_native_loss": baseline_loss,
                 "baseline_holdout_loss": baseline_holdout_loss,
@@ -349,6 +360,47 @@ def test_write_mp300k_artifact_gate_report_passes_with_all_evidence(tmp_path):
         manifest["artifacts"]["mp300k_artifact_gates"] == "mp300k_artifact_gates.json"
     )
     assert manifest["mp300k_artifact_gates"]["status"] == "passed"
+
+
+def test_write_mp300k_artifact_gate_report_uses_packaged_benchmark_manifest(
+    tmp_path,
+):
+    artifact_dir = tmp_path / "artifact"
+    artifact_dir.mkdir()
+    _write_contract_policyengine_dataset(artifact_dir / "candidate.h5")
+    baseline_dataset = _write_contract_policyengine_dataset(tmp_path / "baseline.h5")
+    _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
+
+    report_path = write_mp300k_artifact_gate_report(
+        artifact_dir,
+        ecps_comparison_payload=_sound_ecps_comparison_payload(
+            candidate_loss=0.01,
+            baseline_loss=FROZEN_PRODUCTION_ECPS_BASELINE_ENHANCED_CPS_NATIVE_LOSS,
+            candidate_holdout_loss=0.001,
+            baseline_holdout_loss=FROZEN_PRODUCTION_ECPS_BASELINE_HOLDOUT_LOSS,
+            candidate_unweighted_msre=0.1,
+            baseline_unweighted_msre=FROZEN_PRODUCTION_ECPS_BASELINE_UNWEIGHTED_MSRE,
+            target_count=FROZEN_PRODUCTION_ECPS_TARGET_COUNT,
+            target_names_sha256=FROZEN_PRODUCTION_ECPS_TARGET_NAMES_SHA256,
+            scoring_config_sha256=FROZEN_PRODUCTION_ECPS_SCORING_CONFIG_SHA256,
+            policyengine_us_data_commit="f7458313c86fa580fb1e43a2f18252d67cf76e4a",
+            policyengine_us_version="1.715.2",
+        ),
+        arch_coverage_payload=_arch_coverage_payload(),
+        runtime_smoke_payload={"runtime_ratio": 1.0},
+        compute_native_scores=False,
+        update_manifest=False,
+    )
+
+    record = json.loads(report_path.read_text())
+    benchmark_gate = record["gates"]["benchmark_manifest"]
+
+    assert record["summary"]["status"] == "passed"
+    assert benchmark_gate["status"] == "pass"
+    assert record["benchmark_manifest"]["packaged_default"] is True
+    assert benchmark_gate["details"]["present_evidence"][
+        "target_surface.target_count"
+    ] == FROZEN_PRODUCTION_ECPS_TARGET_COUNT
 
 
 def test_benchmark_manifest_gate_requires_pinned_release_evidence(tmp_path):

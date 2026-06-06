@@ -223,6 +223,35 @@ def _sound_ecps_comparison_payload(
         )
     ]
     return {
+        "frozen_ecps_baseline_certificate": {
+            "schema_version": 1,
+            "certificate_type": "frozen_production_ecps_baseline",
+            "period": 2024,
+            "baseline_dataset": {
+                "path": "/tmp/enhanced_cps_2024.h5",
+                "sha256": "a" * 64,
+            },
+            "target_db": {
+                "path": "/tmp/policyengine_targets.db",
+                "sha256": "c" * 64,
+            },
+            "policyengine_us_data": {
+                "repo": "PolicyEngine/policyengine-us-data",
+                "commit": "b" * 40,
+            },
+            "target_surface": {
+                "target_profile": "pe_native_broad",
+                "target_scope": "national",
+                "target_count": 150,
+                "target_names_sha256": "d" * 64,
+            },
+            "scoring_config": {"sha256": "e" * 64},
+            "baseline_metrics": {
+                "baseline_enhanced_cps_native_loss": baseline_loss,
+                "baseline_holdout_loss": 0.04,
+                "baseline_unweighted_msre": 0.17,
+            },
+        },
         "summary": {
             "candidate_enhanced_cps_native_loss": candidate_loss,
             "baseline_enhanced_cps_native_loss": baseline_loss,
@@ -234,7 +263,9 @@ def _sound_ecps_comparison_payload(
             "candidate_refit_config": fit_config,
             "baseline_refit_config": fit_config,
             "refit_objective_matches_scoring": True,
-            "ecps_refit_recovery_passed": True,
+            "ecps_refit_effective_passed": True,
+            "baseline_holdout_loss": 0.04,
+            "baseline_unweighted_msre": 0.17,
             "holdout_target_fraction": 0.2,
             "protected_family_losses": protected_family_losses,
         },
@@ -329,6 +360,110 @@ def test_benchmark_manifest_gate_requires_pinned_release_evidence(tmp_path):
     ]
 
 
+def test_ecps_comparison_gate_requires_frozen_baseline_certificate(tmp_path):
+    artifact_dir = tmp_path / "artifact"
+    artifact_dir.mkdir()
+    _write_contract_policyengine_dataset(artifact_dir / "candidate.h5")
+    baseline_dataset = _write_contract_policyengine_dataset(tmp_path / "baseline.h5")
+    benchmark_manifest = tmp_path / "benchmark_manifest.json"
+    _write_benchmark_manifest(benchmark_manifest)
+    _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
+    payload = _sound_ecps_comparison_payload(candidate_loss=0.10)
+    del payload["frozen_ecps_baseline_certificate"]
+
+    report_path = write_mp300k_artifact_gate_report(
+        artifact_dir,
+        ecps_comparison_payload=payload,
+        arch_coverage_payload=_arch_coverage_payload(),
+        runtime_smoke_payload={"runtime_ratio": 1.0},
+        benchmark_manifest_path=benchmark_manifest,
+        compute_native_scores=False,
+        update_manifest=False,
+    )
+
+    record = json.loads(report_path.read_text())
+    ecps_gate = record["gates"]["ecps_comparison"]
+
+    assert record["summary"]["status"] == "failed"
+    assert ecps_gate["status"] == "fail"
+    assert "frozen_ecps_baseline_certificate" in ecps_gate["summary"]
+    assert ecps_gate["details"]["frozen_ecps_baseline_certificate"][
+        "missing_evidence"
+    ] == ["frozen_ecps_baseline_certificate"]
+
+
+def test_ecps_comparison_gate_rejects_baseline_certificate_metric_drift(tmp_path):
+    artifact_dir = tmp_path / "artifact"
+    artifact_dir.mkdir()
+    _write_contract_policyengine_dataset(artifact_dir / "candidate.h5")
+    baseline_dataset = _write_contract_policyengine_dataset(tmp_path / "baseline.h5")
+    benchmark_manifest = tmp_path / "benchmark_manifest.json"
+    _write_benchmark_manifest(benchmark_manifest)
+    _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
+    payload = _sound_ecps_comparison_payload(candidate_loss=0.10)
+    payload["frozen_ecps_baseline_certificate"]["baseline_metrics"][
+        "baseline_enhanced_cps_native_loss"
+    ] = 0.05
+
+    report_path = write_mp300k_artifact_gate_report(
+        artifact_dir,
+        ecps_comparison_payload=payload,
+        arch_coverage_payload=_arch_coverage_payload(),
+        runtime_smoke_payload={"runtime_ratio": 1.0},
+        benchmark_manifest_path=benchmark_manifest,
+        compute_native_scores=False,
+        update_manifest=False,
+    )
+
+    record = json.loads(report_path.read_text())
+    ecps_gate = record["gates"]["ecps_comparison"]
+
+    assert record["summary"]["status"] == "failed"
+    assert ecps_gate["status"] == "fail"
+    assert ecps_gate["details"]["frozen_ecps_baseline_certificate"]["mismatches"] == [
+        {
+            "field": "baseline_metrics.baseline_enhanced_cps_native_loss",
+            "summary_value": 0.2,
+            "certificate_value": 0.05,
+        }
+    ]
+
+
+def test_ecps_comparison_gate_rejects_benchmark_certificate_mismatch(tmp_path):
+    artifact_dir = tmp_path / "artifact"
+    artifact_dir.mkdir()
+    _write_contract_policyengine_dataset(artifact_dir / "candidate.h5")
+    baseline_dataset = _write_contract_policyengine_dataset(tmp_path / "baseline.h5")
+    benchmark_manifest = tmp_path / "benchmark_manifest.json"
+    _write_benchmark_manifest(benchmark_manifest)
+    _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
+    payload = _sound_ecps_comparison_payload(candidate_loss=0.10)
+    payload["frozen_ecps_baseline_certificate"]["baseline_dataset"]["sha256"] = "f" * 64
+
+    report_path = write_mp300k_artifact_gate_report(
+        artifact_dir,
+        ecps_comparison_payload=payload,
+        arch_coverage_payload=_arch_coverage_payload(),
+        runtime_smoke_payload={"runtime_ratio": 1.0},
+        benchmark_manifest_path=benchmark_manifest,
+        compute_native_scores=False,
+        update_manifest=False,
+    )
+
+    record = json.loads(report_path.read_text())
+    ecps_gate = record["gates"]["ecps_comparison"]
+
+    assert record["summary"]["status"] == "failed"
+    assert ecps_gate["status"] == "fail"
+    assert ecps_gate["details"]["frozen_ecps_baseline_certificate"]["mismatches"] == [
+        {
+            "field": "baseline_dataset.sha256",
+            "benchmark_manifest_value": "a" * 64,
+            "certificate_value": "f" * 64,
+        }
+    ]
+
+
 def test_core_benchmark_floor_accepts_aca_enrollment_family_alias(tmp_path):
     artifact_dir = tmp_path / "artifact"
     artifact_dir.mkdir()
@@ -359,9 +494,7 @@ def test_core_benchmark_floor_accepts_aca_enrollment_family_alias(tmp_path):
     assert record["summary"]["status"] == "passed"
     assert comparison_gate["status"] == "pass"
     assert (
-        comparison_gate["details"]["core_benchmark_family_floor"][
-            "missing_families"
-        ]
+        comparison_gate["details"]["core_benchmark_family_floor"]["missing_families"]
         == []
     )
 
@@ -535,9 +668,10 @@ def test_export_support_gate_ignores_ecps_filler_columns(tmp_path):
 
     assert record["summary"]["status"] == "passed"
     assert support_gate["status"] == "pass"
-    assert "second_home_mortgage_interest" in support_gate["details"][
-        "baseline_filler_columns"
-    ]
+    assert (
+        "second_home_mortgage_interest"
+        in support_gate["details"]["baseline_filler_columns"]
+    )
 
 
 def test_export_lineage_gate_rejects_ecps_populated_default_only_column(tmp_path):
@@ -1230,7 +1364,7 @@ def test_ecps_comparison_rejects_core_benchmark_family_regression(tmp_path):
     ]
 
 
-def test_ecps_comparison_rejects_missing_ecps_refit_recovery(tmp_path):
+def test_ecps_comparison_rejects_missing_ecps_refit_effective(tmp_path):
     artifact_dir = tmp_path / "artifact"
     artifact_dir.mkdir()
     _write_contract_policyengine_dataset(artifact_dir / "candidate.h5")
@@ -1239,7 +1373,7 @@ def test_ecps_comparison_rejects_missing_ecps_refit_recovery(tmp_path):
     _write_benchmark_manifest(benchmark_manifest)
     _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
     payload = _sound_ecps_comparison_payload(candidate_loss=0.10)
-    payload["summary"]["ecps_refit_recovery_passed"] = False
+    payload["summary"]["ecps_refit_effective_passed"] = False
 
     report_path = write_mp300k_artifact_gate_report(
         artifact_dir,
@@ -1256,8 +1390,8 @@ def test_ecps_comparison_rejects_missing_ecps_refit_recovery(tmp_path):
 
     assert record["summary"]["status"] == "failed"
     assert ecps_gate["status"] == "fail"
-    assert "ecps_refit_recovery" in ecps_gate["summary"]
-    assert ecps_gate["details"]["ecps_refit_recovery_passed"] is False
+    assert "ecps_refit_effective" in ecps_gate["summary"]
+    assert ecps_gate["details"]["ecps_refit_effective_passed"] is False
 
 
 def test_ecps_comparison_requires_measured_refit_objective_identity(tmp_path):

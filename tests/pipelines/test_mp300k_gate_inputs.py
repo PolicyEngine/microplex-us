@@ -180,16 +180,52 @@ def _sound_ecps_comparison_payload() -> dict[str, object]:
             "state_aca_spending",
         )
     ]
+    candidate_loss = 0.1
+    baseline_loss = 0.2
     return {
+        "frozen_ecps_baseline_certificate": {
+            "schema_version": 1,
+            "certificate_type": "frozen_production_ecps_baseline",
+            "period": 2024,
+            "baseline_dataset": {
+                "path": "/tmp/enhanced_cps_2024.h5",
+                "sha256": "a" * 64,
+            },
+            "target_db": {
+                "path": "/tmp/policyengine_targets.db",
+                "sha256": "c" * 64,
+            },
+            "policyengine_us_data": {
+                "repo": "PolicyEngine/policyengine-us-data",
+                "commit": "b" * 40,
+            },
+            "target_surface": {
+                "target_profile": "pe_native_broad",
+                "target_scope": "national",
+                "target_count": 150,
+                "target_names_sha256": "d" * 64,
+            },
+            "scoring_config": {"sha256": "e" * 64},
+            "baseline_metrics": {
+                "baseline_enhanced_cps_native_loss": baseline_loss,
+                "baseline_holdout_loss": 0.04,
+                "baseline_unweighted_msre": 0.17,
+            },
+        },
         "summary": {
-            "candidate_enhanced_cps_native_loss": 0.1,
-            "baseline_enhanced_cps_native_loss": 0.2,
+            "candidate_enhanced_cps_native_loss": candidate_loss,
+            "baseline_enhanced_cps_native_loss": baseline_loss,
+            "enhanced_cps_native_loss_delta": candidate_loss - baseline_loss,
+            "candidate_beats_baseline": candidate_loss < baseline_loss,
+            "n_targets_kept": 150,
             "candidate_household_count": 2,
             "baseline_household_count": 2,
             "candidate_refit_config": fit_config,
             "baseline_refit_config": fit_config,
             "refit_objective_matches_scoring": True,
-            "ecps_refit_recovery_passed": True,
+            "ecps_refit_effective_passed": True,
+            "baseline_holdout_loss": 0.04,
+            "baseline_unweighted_msre": 0.17,
             "holdout_target_fraction": 0.2,
             "protected_family_losses": protected_family_losses,
         },
@@ -327,7 +363,9 @@ def test_packaged_inputs_run_gates_from_clean_extract(tmp_path):
     report_path = write_mp300k_artifact_gate_report(
         packaged_artifact_dir,
         ecps_comparison_payload=_sound_ecps_comparison_payload(),
-        arch_coverage_payload=json.loads((output_dir / "arch_coverage.json").read_text()),
+        arch_coverage_payload=json.loads(
+            (output_dir / "arch_coverage.json").read_text()
+        ),
         runtime_smoke_payload={"runtime_ratio": 1.0},
         benchmark_manifest_path=output_dir / "benchmark_manifest.json",
         compute_native_scores=False,

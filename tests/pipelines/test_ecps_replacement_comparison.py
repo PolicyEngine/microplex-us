@@ -68,6 +68,29 @@ def _read_weights(path: Path, *, period: int = 2024) -> np.ndarray:
         return np.asarray(handle["household_weight"][str(period)], dtype=np.float64)
 
 
+def _write_clean_git_repo(path: Path) -> Path:
+    path.mkdir()
+    (path / "README.md").write_text("pinned scorer repo\n")
+    subprocess.run(["git", "init"], cwd=path, check=True, capture_output=True)
+    subprocess.run(["git", "add", "README.md"], cwd=path, check=True)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Microplex Tests",
+            "-c",
+            "user.email=microplex-tests@example.com",
+            "commit",
+            "-m",
+            "Initial scorer pin",
+        ],
+        cwd=path,
+        check=True,
+        capture_output=True,
+    )
+    return path
+
+
 def _fake_loss_inputs(input_dataset_path: str | Path, **_kwargs) -> dict[str, object]:
     path = Path(input_dataset_path)
     if path.name.startswith("candidate"):
@@ -346,26 +369,38 @@ def _artifact_manifest(artifact_dir: Path, baseline_dataset: Path) -> None:
     )
 
 
-def _benchmark_manifest(path: Path) -> None:
+def _benchmark_manifest(
+    path: Path,
+    *,
+    certificate: dict[str, object] | None = None,
+) -> None:
+    if certificate is not None:
+        baseline_dataset = dict(certificate["baseline_dataset"])
+        target_db = dict(certificate["target_db"])
+        policyengine_us_data = dict(certificate["policyengine_us_data"])
+    else:
+        baseline_dataset = {
+            "path": "/tmp/enhanced_cps_2024.h5",
+            "sha256": "a" * 64,
+        }
+        target_db = {
+            "path": "/tmp/policyengine_targets.db",
+            "sha256": "c" * 64,
+        }
+        policyengine_us_data = {
+            "repo": "PolicyEngine/policyengine-us-data",
+            "commit": "b" * 40,
+        }
     path.write_text(
         json.dumps(
             {
                 "schema_version": 1,
                 "period": 2024,
                 "target_profile": "pe_native_broad",
-                "baseline_dataset": {
-                    "path": "/tmp/enhanced_cps_2024.h5",
-                    "sha256": "a" * 64,
-                },
-                "policyengine_us_data": {
-                    "repo": "PolicyEngine/policyengine-us-data",
-                    "commit": "b" * 40,
-                },
+                "baseline_dataset": baseline_dataset,
+                "policyengine_us_data": policyengine_us_data,
                 "policyengine_us": {"version": "1.587.0"},
-                "target_db": {
-                    "path": "/tmp/policyengine_targets.db",
-                    "sha256": "c" * 64,
-                },
+                "target_db": target_db,
             }
         )
     )
@@ -388,6 +423,9 @@ def test_sound_ecps_replacement_comparison_satisfies_gate_contract(
 ):
     candidate = _write_minimal_policyengine_dataset(tmp_path / "candidate.h5")
     baseline = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    targets_db = tmp_path / "policyengine_targets.db"
+    targets_db.write_bytes(b"pinned target database")
+    scorer_repo = _write_clean_git_repo(tmp_path / "policyengine-us-data")
     output_dir = tmp_path / "comparison"
     monkeypatch.setattr(ecps, "_extract_pe_native_loss_inputs", _fake_loss_inputs)
     monkeypatch.setattr(ecps, "compute_us_pe_native_scores", _fake_pe_native_scores)
@@ -398,9 +436,23 @@ def test_sound_ecps_replacement_comparison_satisfies_gate_contract(
         baseline_dataset_path=baseline,
         output_dir=output_dir,
         optimizer_max_iter=50,
+        policyengine_targets_db_path=targets_db,
+        policyengine_us_data_repo=scorer_repo,
     )
 
     summary = payload["summary"]
+    certificate = payload["frozen_ecps_baseline_certificate"]
+    assert certificate["baseline_dataset"]["sha256"]
+    assert certificate["target_db"]["sha256"]
+    assert certificate["policyengine_us_data"]["commit"]
+    assert (
+        certificate["baseline_metrics"]["baseline_enhanced_cps_native_loss"]
+        == (summary["baseline_enhanced_cps_native_loss"])
+    )
+    assert (
+        certificate["baseline_metrics"]["baseline_holdout_loss"]
+        == (summary["baseline_holdout_loss"])
+    )
     assert summary["candidate_household_count"] == 2
     assert summary["baseline_household_count"] == 2
     assert payload["matched_datasets"]["sample_method"] == "uniform"
@@ -410,6 +462,7 @@ def test_sound_ecps_replacement_comparison_satisfies_gate_contract(
     assert summary["exact_rescore_status"] == "skipped"
     assert summary["refit_objective_matches_scoring"] is True
     assert summary["ecps_refit_recovery_passed"] is True
+    assert summary["ecps_refit_effective_passed"] is True
     assert summary["baseline_sanity"]["mode"] == "msre"
     assert summary["baseline_sanity"]["status"] == "passed"
     assert (
@@ -496,7 +549,7 @@ def test_sound_ecps_replacement_comparison_satisfies_gate_contract(
     shutil.copy2(candidate, artifact_dir / "candidate.h5")
     _artifact_manifest(artifact_dir, baseline)
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
-    _benchmark_manifest(benchmark_manifest)
+    _benchmark_manifest(benchmark_manifest, certificate=certificate)
     report_path = write_mp300k_artifact_gate_report(
         artifact_dir,
         ecps_comparison_payload=payload,
@@ -712,6 +765,17 @@ def test_assert_refit_effective_raises_on_no_op_refit():
             1e-9,
         )
     assert "no-op" in str(excinfo.value)
+
+
+def test_assert_refit_effective_passes_when_loss_moves_but_rises():
+    # The refit minimizes the train objective; on an already-well-calibrated
+    # baseline the full-set loss can tick up from the held-out split even though
+    # the refit genuinely ran. Only a frozen no-movement refit is a failure.
+    ecps._assert_refit_effective(
+        "baseline",
+        {"initial_full_loss": 0.0243817, "optimized_full_loss": 0.0266164},
+        1e-9,
+    )
 
 
 def test_assert_baseline_sane_passes_on_clean_baseline():

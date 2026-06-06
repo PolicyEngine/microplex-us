@@ -245,6 +245,45 @@ class TestRegimeAwareFitGenerate:
             synthetic[["first_income_leaf", "second_income_leaf"]].notna().all().all()
         )
 
+    def test_nonnumeric_targets_do_not_require_numeric_regimes(self) -> None:
+        from microplex_us.pipelines.us import RegimeAwareDonorImputer
+
+        rng = np.random.default_rng(2026060603)
+        n = 300
+        age = rng.integers(18, 80, size=n).astype(float)
+        income = rng.normal(loc=age * 250.0, scale=1_000.0, size=n)
+        train = pd.DataFrame(
+            {
+                "age": age,
+                "self_employment_income": income,
+                "business_is_sstb": income > np.median(income),
+            }
+        )
+
+        imputer = RegimeAwareDonorImputer(
+            condition_vars=["age"],
+            target_vars=["self_employment_income", "business_is_sstb"],
+            n_estimators=25,
+        )
+        imputer.fit(train)
+
+        assert "self_employment_income" in imputer._regimes
+        assert "business_is_sstb" not in imputer._regimes
+
+        conditions = pd.DataFrame({"age": [25.0, 45.0, 65.0]})
+        synthetic = imputer.generate(conditions, seed=20260606)
+        assert list(synthetic.columns) == [
+            "age",
+            "self_employment_income",
+            "business_is_sstb",
+        ]
+        assert (
+            synthetic[["self_employment_income", "business_is_sstb"]]
+            .notna()
+            .all()
+            .all()
+        )
+
     def _fit_generate(
         self, n_train: int = 1500, n_gen: int = 2000, seed: int = 0
     ) -> np.ndarray:

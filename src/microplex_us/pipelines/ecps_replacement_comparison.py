@@ -15,6 +15,9 @@ from typing import Any
 import h5py
 import numpy as np
 
+from microplex_us.pipelines.mp_benchmark_manifest import (
+    frozen_production_pin_mismatches,
+)
 from microplex_us.pipelines.pe_native_loss import (
     classify_pe_native_target_family,
     loss_arrays_from_inputs,
@@ -286,6 +289,7 @@ def build_sound_ecps_replacement_comparison(
     baseline_sanity_mode: str = "msre",
     max_baseline_unweighted_msre: float = 2.0,
     benchmark_manifest_path: str | Path | None = None,
+    enforce_production_pins: bool = True,
 ) -> dict[str, Any]:
     """Build a release-contract eCPS comparison payload.
 
@@ -591,6 +595,8 @@ def build_sound_ecps_replacement_comparison(
         baseline_sanity=baseline_sanity,
         score_summary=score_summary,
     )
+    if enforce_production_pins:
+        _assert_certificate_uses_frozen_production_pins(frozen_baseline_certificate)
     benchmark_manifest = (
         _assert_certificate_matches_benchmark_manifest(
             frozen_baseline_certificate,
@@ -1921,6 +1927,20 @@ def _assert_certificate_matches_benchmark_manifest(
     }
 
 
+def _assert_certificate_uses_frozen_production_pins(
+    certificate: dict[str, Any],
+) -> None:
+    evidence = _benchmark_manifest_evidence(certificate)
+    mismatches = frozen_production_pin_mismatches(evidence)
+    if not mismatches:
+        return
+    details = ", ".join(str(item["field"]) for item in mismatches)
+    raise ComparisonGateError(
+        "Comparison does not use the release-pinned production eCPS "
+        f"baseline/target surface; mismatched pins: {details}"
+    )
+
+
 def _benchmark_manifest_evidence(payload: dict[str, Any]) -> dict[str, Any]:
     return {
         field: _first_nested_path_value(payload, paths)
@@ -2122,6 +2142,15 @@ def main(argv: list[str] | None = None) -> int:
         default=1e-9,
         help="Minimum loss reduction required by the refit-effectiveness gate.",
     )
+    parser.add_argument(
+        "--allow-noncanonical-production-pins",
+        action="store_true",
+        help=(
+            "Allow an experimental comparison to emit a frozen-production "
+            "certificate with noncanonical baseline/target pins. Release gates "
+            "still reject it."
+        ),
+    )
     args = parser.parse_args(argv)
 
     output_dir = Path(args.output_dir).expanduser()
@@ -2161,6 +2190,7 @@ def main(argv: list[str] | None = None) -> int:
         baseline_sanity_mode=args.baseline_sanity_mode,
         max_baseline_unweighted_msre=args.max_baseline_unweighted_msre,
         benchmark_manifest_path=args.benchmark_manifest,
+        enforce_production_pins=not args.allow_noncanonical_production_pins,
     )
     print(str(written))
     return 0

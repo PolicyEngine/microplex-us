@@ -10,9 +10,7 @@ The required/forbidden column diff here mirrors the one inside
 ``_column_contract_gate`` in ``mp300k_artifact_gates`` (``required
 - present`` and ``forbidden & present``) -- but that gate only runs deep
 in the slow artifact path. This module surfaces the same check as a
-one-line local command and the first, cheap CI job. It also reuses that
-module's ``_h5_top_level_columns`` helper for H5 parsing so the two cannot
-read columns differently.
+one-line local command and the first, cheap CI job.
 
 The contract (``ecps_export_contract.json``) defines three categories:
 
@@ -22,8 +20,8 @@ The contract (``ecps_export_contract.json``) defines three categories:
 - ``forbidden`` -- transient takeup-input columns eCPS drops and MP must
   not export.
 
-Heavy imports (``h5py``, via the gate helper) are deferred so importing
-this module and running the ``--columns-json`` path stay cheap.
+Heavy imports (``h5py``) are deferred so importing this module and running
+the ``--columns-json`` path stay cheap.
 
 Usage::
 
@@ -355,39 +353,18 @@ def load_contract(path: Path) -> dict:
     return contract
 
 
-def _gate_h5_top_level_columns():
-    """Return the artifact gate's ``_h5_top_level_columns`` helper.
-
-    Loaded from the sibling module *by file path* (not by package import)
-    so neither importing this module nor running it as a script pulls the
-    heavy ``microplex_us`` package ``__init__`` (and ``microplex`` /
-    torch). ``h5py`` is imported only as a side effect of executing the
-    gate module here, on the H5 path. The module is registered in
-    ``sys.modules`` before execution so its dataclasses resolve.
-    """
-    import importlib.util
-
-    module_name = "_mp300k_artifact_gates_for_columns"
-    cached = sys.modules.get(module_name)
-    if cached is not None:
-        return cached._h5_top_level_columns
-
-    gate_path = Path(__file__).with_name("mp300k_artifact_gates.py")
-    spec = importlib.util.spec_from_file_location(module_name, gate_path)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[module_name] = module
-    spec.loader.exec_module(module)
-    return module._h5_top_level_columns
-
-
 def _columns_from_h5(h5_path: Path) -> set[str]:
     """Return top-level base column names from an exported H5.
 
-    Reuses the artifact-gate helper so H5 parsing stays identical. Columns
-    may be datasets named ``<column>`` or groups ``<column>/<period>``;
-    both collapse to the base name.
+    Columns may be datasets named ``<column>`` or groups ``<column>/<period>``;
+    both collapse to the base name. This intentionally duplicates the tiny
+    parser used by the artifact gate so the fast column CI can run without
+    importing the full Microplex stack.
     """
-    return _gate_h5_top_level_columns()(h5_path)
+    import h5py
+
+    with h5py.File(h5_path, "r") as handle:
+        return {name.split("/")[0] for name in handle.keys()}
 
 
 def _columns_from_json(json_path: Path) -> set[str]:

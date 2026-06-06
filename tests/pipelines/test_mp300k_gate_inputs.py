@@ -12,6 +12,10 @@ import numpy as np
 from microplex_us.pipelines.mp300k_artifact_gates import (
     write_mp300k_artifact_gate_report,
 )
+from microplex_us.pipelines.mp_benchmark_manifest import (
+    FROZEN_PRODUCTION_ECPS_BASELINE_SHA256,
+    FROZEN_PRODUCTION_ECPS_TARGET_DB_SHA256,
+)
 from microplex_us.pipelines.mp300k_gate_inputs import (
     main,
     package_mp300k_gate_inputs,
@@ -91,17 +95,17 @@ def _write_benchmark_manifest(path: Path) -> None:
                 "certificate_type": "frozen_production_ecps_baseline",
                 "period": 2024,
                 "target_profile": "pe_native_broad",
-                "target_scope": "national",
+                "target_scope": "all",
                 "target_surface": {
                     "target_profile": "pe_native_broad",
-                    "target_scope": "national",
+                    "target_scope": "all",
                     "target_count": 150,
                     "target_names_sha256": "d" * 64,
                 },
                 "scoring_config": {"sha256": "e" * 64},
                 "baseline_dataset": {
                     "path": "/tmp/enhanced_cps_2024.h5",
-                    "sha256": "a" * 64,
+                    "sha256": FROZEN_PRODUCTION_ECPS_BASELINE_SHA256,
                 },
                 "policyengine_us_data": {
                     "repo": "PolicyEngine/policyengine-us-data",
@@ -110,7 +114,7 @@ def _write_benchmark_manifest(path: Path) -> None:
                 "policyengine_us": {"version": "1.587.0"},
                 "target_db": {
                     "path": "/tmp/policyengine_targets.db",
-                    "sha256": "c" * 64,
+                    "sha256": FROZEN_PRODUCTION_ECPS_TARGET_DB_SHA256,
                 },
             }
         )
@@ -202,11 +206,11 @@ def _sound_ecps_comparison_payload() -> dict[str, object]:
             "period": 2024,
             "baseline_dataset": {
                 "path": "/tmp/enhanced_cps_2024.h5",
-                "sha256": "a" * 64,
+                "sha256": FROZEN_PRODUCTION_ECPS_BASELINE_SHA256,
             },
             "target_db": {
                 "path": "/tmp/policyengine_targets.db",
-                "sha256": "c" * 64,
+                "sha256": FROZEN_PRODUCTION_ECPS_TARGET_DB_SHA256,
             },
             "policyengine_us_data": {
                 "repo": "PolicyEngine/policyengine-us-data",
@@ -215,7 +219,7 @@ def _sound_ecps_comparison_payload() -> dict[str, object]:
             "policyengine_us": {"version": "1.587.0"},
             "target_surface": {
                 "target_profile": "pe_native_broad",
-                "target_scope": "national",
+                "target_scope": "all",
                 "target_count": 150,
                 "target_names_sha256": "d" * 64,
             },

@@ -13,6 +13,10 @@ from typing import Any, Literal
 import h5py
 import numpy as np
 
+from microplex_us.pipelines.mp_benchmark_manifest import (
+    frozen_production_pin_mismatches,
+)
+
 GateStatus = Literal["pass", "fail", "unmeasured"]
 
 _ENTITY_ID_ARRAYS = {
@@ -1511,6 +1515,8 @@ def _frozen_baseline_certificate_summary(
                 }
             )
 
+    mismatches.extend(frozen_production_pin_mismatches(evidence_values))
+
     return {
         "passed": not missing and not mismatches,
         "certificate_type": certificate.get("certificate_type"),
@@ -2213,6 +2219,34 @@ def _benchmark_manifest_gate(
                 },
             ),
             descriptor,
+        )
+    pin_mismatches = frozen_production_pin_mismatches(evidence["present"])
+    if pin_mismatches:
+        return (
+            _gate(
+                "fail",
+                (
+                    "frozen microsimulation benchmark manifest does not use "
+                    "the release-pinned production eCPS baseline and all-target "
+                    "surface"
+                ),
+                metrics={
+                    "required_evidence_count": len(
+                        _REQUIRED_BENCHMARK_MANIFEST_EVIDENCE
+                    ),
+                    "present_evidence_count": len(evidence["present"]),
+                    "production_pin_mismatch_count": len(pin_mismatches),
+                },
+                details={
+                    **descriptor,
+                    "present_evidence": evidence["present"],
+                    "production_pin_mismatches": pin_mismatches,
+                },
+            ),
+            {
+                **descriptor,
+                "production_pin_mismatches": pin_mismatches,
+            },
         )
     return (
         _gate(

@@ -582,12 +582,20 @@ PUF_SUPPORT_CLONE_IRS_DETAIL_COLLAPSE_VARIABLES: tuple[str, ...] = tuple(
     )
 )
 
+PUF_SUPPORT_CLONE_CPS_MEASURED_OVERLAP_VARIABLES: tuple[str, ...] = (
+    "social_security",
+)
+PUF_SUPPORT_CLONE_DONOR_ONLY_COLLAPSE_EXCLUDED_VARIABLES: tuple[str, ...] = (
+    "employment_income_before_lsr",
+)
 PUF_SUPPORT_CLONE_COLLAPSE_OVERLAP_VARIABLES: tuple[str, ...] = tuple(
-    dict.fromkeys(
+    variable
+    for variable in dict.fromkeys(
         PUF_SUPPORT_CLONE_IMPUTED_VARIABLES
         + PUF_SUPPORT_CLONE_SPECIAL_VARIABLES
         + ("wage_income", "dividend_income", "capital_gains")
     )
+    if variable not in PUF_SUPPORT_CLONE_CPS_MEASURED_OVERLAP_VARIABLES
 )
 
 
@@ -6772,6 +6780,9 @@ class USMicroplexPipeline:
             identity_override = set(
                 cps_passthrough_summary.get("identity_reconciled_variables", ())
             )
+            donor_only_collapse_variables = (
+                integrated_set - preclone_columns
+            ) - set(PUF_SUPPORT_CLONE_DONOR_ONLY_COLLAPSE_EXCLUDED_VARIABLES)
             irs_detail_override = (
                 integrated_set
                 & set(self.config.puf_support_clone_collapse_irs_detail_variables)
@@ -6783,7 +6794,7 @@ class USMicroplexPipeline:
                 & preclone_columns
             )
             collapse_candidates = (
-                (integrated_set - preclone_columns)
+                donor_only_collapse_variables
                 | both_halves_override
                 | passthrough_override
                 | identity_override
@@ -6822,6 +6833,12 @@ class USMicroplexPipeline:
             "clone_donor_only_variable_count": int(len(donor_only_variables)),
             "overlap_variables": overlap_variables,
             "donor_only_variables": donor_only_variables,
+            "donor_only_collapse_excluded_variables": sorted(
+                (integrated_set - preclone_columns)
+                & set(PUF_SUPPORT_CLONE_DONOR_ONLY_COLLAPSE_EXCLUDED_VARIABLES)
+            )
+            if output_mode == "collapse_to_scaffold"
+            else [],
             "both_halves_override_variables": sorted(both_halves_override),
             "irs_detail_collapse_override_variables": sorted(irs_detail_override)
             if output_mode == "collapse_to_scaffold"

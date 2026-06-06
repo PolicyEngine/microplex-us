@@ -13,7 +13,7 @@ authors = [
 ]
 requires-python = ">=3.13"
 dependencies = [
-    "microplex[calibrate] @ git+https://github.com/PolicyEngine/microplex.git@1e0627182f9df40aacd7043c96956c2895bf9d30",
+    "microplex[calibrate] @ git+https://github.com/PolicyEngine/microplex.git@90f21d2b2048ed810cde9240f8d03d5bfc1565fc",
     "duckdb>=1.2",
     "h5py>=3.10",
     "requests>=2.31",
@@ -35,7 +35,7 @@ hf = [
     "huggingface_hub>=0.24",
 ]
 policyengine = [
-    "microimpute==3.1.1; python_full_version >= '3.12' and python_full_version < '3.15'",
+    "microimpute @ git+https://github.com/PolicyEngine/microimpute.git@90be828eb442c48ee86bb91bb83a75da4b0f0f89 ; python_full_version >= '3.12' and python_full_version < '3.15'",
     "policyengine-us==1.715.2; python_version >= '3.11' and python_version < '3.15'",
     "spm-calculator>=0.3.1",
     # Standalone tax-unit construction engine (the extraction of eCPS's
@@ -85,6 +85,7 @@ allow-direct-references = true
 [tool.hatch.build.targets.wheel.force-include]
 "src/microplex_us/pipelines/pe_native_scores.py" = "microplex_us/pipelines/pe_native_scores.py"
 "src/microplex_us/pipelines/ecps_export_contract.json" = "microplex_us/pipelines/ecps_export_contract.json"
+"src/microplex_us/specs/us-2024.yaml" = "microplex_us/specs/us-2024.yaml"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

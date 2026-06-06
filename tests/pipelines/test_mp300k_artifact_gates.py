@@ -112,8 +112,17 @@ def _write_benchmark_manifest(path: Path) -> None:
         json.dumps(
             {
                 "schema_version": 1,
+                "certificate_type": "frozen_production_ecps_baseline",
                 "period": 2024,
                 "target_profile": "pe_native_broad",
+                "target_scope": "national",
+                "target_surface": {
+                    "target_profile": "pe_native_broad",
+                    "target_scope": "national",
+                    "target_count": 150,
+                    "target_names_sha256": "d" * 64,
+                },
+                "scoring_config": {"sha256": "e" * 64},
                 "baseline_dataset": {
                     "path": "/tmp/enhanced_cps_2024.h5",
                     "sha256": "a" * 64,
@@ -239,6 +248,7 @@ def _sound_ecps_comparison_payload(
                 "repo": "PolicyEngine/policyengine-us-data",
                 "commit": "b" * 40,
             },
+            "policyengine_us": {"version": "1.587.0"},
             "target_surface": {
                 "target_profile": "pe_native_broad",
                 "target_scope": "national",
@@ -351,10 +361,17 @@ def test_benchmark_manifest_gate_requires_pinned_release_evidence(tmp_path):
     assert record["summary"]["status"] == "failed"
     assert benchmark_gate["status"] == "fail"
     assert benchmark_gate["details"]["missing_evidence"] == [
+        "certificate_type",
+        "period",
         "baseline_dataset.path",
         "baseline_dataset.sha256",
         "policyengine_us_data.commit",
         "policyengine_us.version",
+        "target_surface.target_profile",
+        "target_surface.target_scope",
+        "target_surface.target_count",
+        "target_surface.target_names_sha256",
+        "scoring_config.sha256",
         "target_db.path",
         "target_db.sha256",
     ]
@@ -462,6 +479,93 @@ def test_ecps_comparison_gate_rejects_benchmark_certificate_mismatch(tmp_path):
             "certificate_value": "f" * 64,
         }
     ]
+
+
+@pytest.mark.parametrize(
+    ("mutate_certificate", "expected_field"),
+    [
+        (
+            lambda certificate: certificate.update(
+                {"certificate_type": "live_recomputed_ecps_baseline"}
+            ),
+            "certificate_type",
+        ),
+        (lambda certificate: certificate.update({"period": 2025}), "period"),
+        (
+            lambda certificate: certificate["policyengine_us"].update(
+                {"version": "1.999.0"}
+            ),
+            "policyengine_us.version",
+        ),
+        (
+            lambda certificate: certificate["target_surface"].update(
+                {"target_profile": "pe_native_narrow"}
+            ),
+            "target_surface.target_profile",
+        ),
+        (
+            lambda certificate: certificate["target_surface"].update(
+                {"target_scope": "state"}
+            ),
+            "target_surface.target_scope",
+        ),
+        (
+            lambda certificate: certificate["target_surface"].update(
+                {"target_count": 149}
+            ),
+            "target_surface.target_count",
+        ),
+        (
+            lambda certificate: certificate["target_surface"].update(
+                {"target_names_sha256": "f" * 64}
+            ),
+            "target_surface.target_names_sha256",
+        ),
+        (
+            lambda certificate: certificate["scoring_config"].update(
+                {"sha256": "f" * 64}
+            ),
+            "scoring_config.sha256",
+        ),
+    ],
+)
+def test_ecps_comparison_gate_rejects_stale_frozen_surface_certificate(
+    tmp_path,
+    mutate_certificate,
+    expected_field,
+):
+    artifact_dir = tmp_path / "artifact"
+    artifact_dir.mkdir()
+    _write_contract_policyengine_dataset(artifact_dir / "candidate.h5")
+    baseline_dataset = _write_contract_policyengine_dataset(tmp_path / "baseline.h5")
+    benchmark_manifest = tmp_path / "benchmark_manifest.json"
+    _write_benchmark_manifest(benchmark_manifest)
+    _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
+    payload = _sound_ecps_comparison_payload(candidate_loss=0.10)
+    mutate_certificate(payload["frozen_ecps_baseline_certificate"])
+
+    report_path = write_mp300k_artifact_gate_report(
+        artifact_dir,
+        ecps_comparison_payload=payload,
+        arch_coverage_payload=_arch_coverage_payload(),
+        runtime_smoke_payload={"runtime_ratio": 1.0},
+        benchmark_manifest_path=benchmark_manifest,
+        compute_native_scores=False,
+        update_manifest=False,
+    )
+
+    record = json.loads(report_path.read_text())
+    ecps_gate = record["gates"]["ecps_comparison"]
+    certificate_details = ecps_gate["details"]["frozen_ecps_baseline_certificate"]
+    mismatch_fields = {
+        mismatch["field"] for mismatch in certificate_details["mismatches"]
+    }
+
+    assert record["summary"]["status"] == "failed"
+    assert ecps_gate["status"] == "fail"
+    assert expected_field in (
+        mismatch_fields | set(certificate_details["missing_evidence"])
+    )
 
 
 def test_core_benchmark_floor_accepts_aca_enrollment_family_alias(tmp_path):

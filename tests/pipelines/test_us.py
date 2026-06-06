@@ -4202,6 +4202,7 @@ class TestUSMicroplexPipeline:
                 "person_id": [30, 40],
                 "household_id": [3, 4],
                 "age": [45, 62],
+                us_pipeline_module.PUF_SUPPORT_CLONE_SOURCE_ROW_ID_COLUMN: [0, 1],
                 "self_employment_income": [-250.0, 500.0],
                 "taxable_interest_income": [10.0, 20.0],
                 "partnership_s_corp_income": [-700.0, 1_200.0],
@@ -4249,6 +4250,12 @@ class TestUSMicroplexPipeline:
         assert summary["overlap_collapse_override_variables"] == [
             "self_employment_income",
         ]
+        assert summary["source_row_alignment"] == {
+            "enabled": True,
+            "column": us_pipeline_module.PUF_SUPPORT_CLONE_SOURCE_ROW_ID_COLUMN,
+            "row_count": 2,
+            "clone_was_reordered": False,
+        }
 
     def test_finalize_puf_support_clone_preserves_puf_tax_details_by_default(
         self,
@@ -4292,6 +4299,7 @@ class TestUSMicroplexPipeline:
                 "person_id": [30, 40],
                 "household_id": [3, 4],
                 "age": [45, 62],
+                us_pipeline_module.PUF_SUPPORT_CLONE_SOURCE_ROW_ID_COLUMN: [0, 1],
                 "employment_income": [90_000.0, 20_000.0],
                 "self_employment_income": [-4_000.0, 8_000.0],
                 "long_term_capital_gains": [50_000.0, -1_000.0],
@@ -4390,6 +4398,55 @@ class TestUSMicroplexPipeline:
             "taxable_pension_income",
             "taxable_unemployment_compensation",
         }
+        assert summary["source_row_alignment"]["clone_was_reordered"] is False
+
+    def test_finalize_puf_support_clone_aligns_shuffled_clone_by_source_row_id(
+        self,
+    ):
+        pipeline = USMicroplexPipeline(
+            USMicroplexBuildConfig(
+                synthesis_backend="seed",
+                puf_support_clone_enabled=True,
+                puf_support_clone_output_mode="collapse_to_scaffold",
+                puf_support_clone_both_halves_override_variables=(),
+            )
+        )
+        original = pd.DataFrame(
+            {
+                "person_id": [10, 20],
+                "household_id": [1, 2],
+                "age": [45, 62],
+                "self_employment_income": [75.0, 50.0],
+            }
+        )
+        clone = pd.DataFrame(
+            {
+                "person_id": [40, 30],
+                "household_id": [4, 3],
+                "age": [62, 45],
+                us_pipeline_module.PUF_SUPPORT_CLONE_SOURCE_ROW_ID_COLUMN: [1, 0],
+                "self_employment_income": [500.0, -250.0],
+            }
+        )
+
+        result, summary = pipeline._finalize_puf_support_clone_frame(
+            original=original,
+            imputed_clone=clone,
+            donor_source_name="irs_soi_puf_2024",
+            integrated_variables=["self_employment_income"],
+            preclone_columns=set(original.columns),
+            donor_seed_columns=set(clone.columns),
+            donor_observed=set(clone.columns),
+        )
+
+        assert result["person_id"].tolist() == [10, 20]
+        assert result["self_employment_income"].tolist() == [-250.0, 500.0]
+        assert summary["source_row_alignment"] == {
+            "enabled": True,
+            "column": us_pipeline_module.PUF_SUPPORT_CLONE_SOURCE_ROW_ID_COLUMN,
+            "row_count": 2,
+            "clone_was_reordered": True,
+        }
 
     def test_finalize_puf_support_clone_can_scale_tax_details_to_cps_totals(
         self,
@@ -4426,6 +4483,7 @@ class TestUSMicroplexPipeline:
                 "person_id": [30, 40],
                 "household_id": [3, 4],
                 "age": [45, 62],
+                us_pipeline_module.PUF_SUPPORT_CLONE_SOURCE_ROW_ID_COLUMN: [0, 1],
                 "taxable_interest_income": [1_000.0, 0.0],
                 "tax_exempt_interest_income": [500.0, 0.0],
                 "qualified_dividend_income": [20.0, 0.0],

@@ -35,13 +35,26 @@ def test_build_mp_benchmark_manifest_pins_release_inputs(tmp_path):
         target_db_path=target_db,
         period=2024,
         target_profile="pe_native_broad",
+        target_scope="national",
+        target_count=150,
+        target_names_sha256="d" * 64,
+        scoring_config_sha256="e" * 64,
         policyengine_us_data_commit="b" * 40,
         policyengine_us_version="1.587.0",
     )
 
     assert manifest["schema_version"] == 1
+    assert manifest["certificate_type"] == "frozen_production_ecps_baseline"
     assert manifest["period"] == 2024
     assert manifest["target_profile"] == "pe_native_broad"
+    assert manifest["target_scope"] == "national"
+    assert manifest["target_surface"] == {
+        "target_profile": "pe_native_broad",
+        "target_scope": "national",
+        "target_count": 150,
+        "target_names_sha256": "d" * 64,
+    }
+    assert manifest["scoring_config"] == {"sha256": "e" * 64}
     assert manifest["baseline_dataset"]["path"] == str(baseline.resolve())
     assert manifest["baseline_dataset"]["sha256"] == _sha256(baseline_contents)
     assert manifest["target_db"]["path"] == str(target_db.resolve())
@@ -67,6 +80,14 @@ def test_main_writes_mp_benchmark_manifest(tmp_path, capsys):
             "c" * 40,
             "--policyengine-us-version",
             "1.587.0",
+            "--target-scope",
+            "national",
+            "--target-count",
+            "150",
+            "--target-names-sha256",
+            "d" * 64,
+            "--scoring-config-sha256",
+            "e" * 64,
         ]
     )
 
@@ -110,6 +131,9 @@ def test_dirty_policyengine_us_data_repo_is_rejected_unless_explicit(tmp_path):
             target_db_path=target_db,
             policyengine_us_data_repo=repo,
             policyengine_us_version="1.587.0",
+            target_count=150,
+            target_names_sha256="d" * 64,
+            scoring_config_sha256="e" * 64,
         )
 
     manifest = build_mp_benchmark_manifest(
@@ -117,6 +141,9 @@ def test_dirty_policyengine_us_data_repo_is_rejected_unless_explicit(tmp_path):
         target_db_path=target_db,
         policyengine_us_data_repo=repo,
         policyengine_us_version="1.587.0",
+        target_count=150,
+        target_names_sha256="d" * 64,
+        scoring_config_sha256="e" * 64,
         allow_dirty_policyengine_us_data=True,
     )
 

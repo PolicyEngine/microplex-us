@@ -37,6 +37,15 @@ _TARGET_NAMES = [
 ]
 
 
+@pytest.fixture(autouse=True)
+def _pin_policyengine_us_version(monkeypatch):
+    monkeypatch.setattr(
+        ecps,
+        "_installed_policyengine_us_version",
+        lambda: "1.587.0",
+    )
+
+
 def _write_minimal_policyengine_dataset(
     path: Path,
     *,
@@ -378,6 +387,11 @@ def _benchmark_manifest(
         baseline_dataset = dict(certificate["baseline_dataset"])
         target_db = dict(certificate["target_db"])
         policyengine_us_data = dict(certificate["policyengine_us_data"])
+        policyengine_us = dict(certificate["policyengine_us"])
+        certificate_type = certificate["certificate_type"]
+        period = certificate["period"]
+        target_surface = dict(certificate["target_surface"])
+        scoring_config = {"sha256": certificate["scoring_config"]["sha256"]}
     else:
         baseline_dataset = {
             "path": "/tmp/enhanced_cps_2024.h5",
@@ -391,15 +405,29 @@ def _benchmark_manifest(
             "repo": "PolicyEngine/policyengine-us-data",
             "commit": "b" * 40,
         }
+        policyengine_us = {"version": "1.587.0"}
+        certificate_type = "frozen_production_ecps_baseline"
+        period = 2024
+        target_surface = {
+            "target_profile": "pe_native_broad",
+            "target_scope": "national",
+            "target_count": 150,
+            "target_names_sha256": "d" * 64,
+        }
+        scoring_config = {"sha256": "e" * 64}
     path.write_text(
         json.dumps(
             {
                 "schema_version": 1,
-                "period": 2024,
-                "target_profile": "pe_native_broad",
+                "certificate_type": certificate_type,
+                "period": period,
+                "target_profile": target_surface["target_profile"],
+                "target_scope": target_surface["target_scope"],
+                "target_surface": target_surface,
+                "scoring_config": scoring_config,
                 "baseline_dataset": baseline_dataset,
                 "policyengine_us_data": policyengine_us_data,
-                "policyengine_us": {"version": "1.587.0"},
+                "policyengine_us": policyengine_us,
                 "target_db": target_db,
             }
         )
@@ -445,6 +473,7 @@ def test_sound_ecps_replacement_comparison_satisfies_gate_contract(
     assert certificate["baseline_dataset"]["sha256"]
     assert certificate["target_db"]["sha256"]
     assert certificate["policyengine_us_data"]["commit"]
+    assert certificate["policyengine_us"]["version"]
     assert (
         certificate["baseline_metrics"]["baseline_enhanced_cps_native_loss"]
         == (summary["baseline_enhanced_cps_native_loss"])

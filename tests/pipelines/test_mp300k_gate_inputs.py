@@ -88,8 +88,17 @@ def _write_benchmark_manifest(path: Path) -> None:
         json.dumps(
             {
                 "schema_version": 1,
+                "certificate_type": "frozen_production_ecps_baseline",
                 "period": 2024,
                 "target_profile": "pe_native_broad",
+                "target_scope": "national",
+                "target_surface": {
+                    "target_profile": "pe_native_broad",
+                    "target_scope": "national",
+                    "target_count": 150,
+                    "target_names_sha256": "d" * 64,
+                },
+                "scoring_config": {"sha256": "e" * 64},
                 "baseline_dataset": {
                     "path": "/tmp/enhanced_cps_2024.h5",
                     "sha256": "a" * 64,
@@ -199,6 +208,7 @@ def _sound_ecps_comparison_payload() -> dict[str, object]:
                 "repo": "PolicyEngine/policyengine-us-data",
                 "commit": "b" * 40,
             },
+            "policyengine_us": {"version": "1.587.0"},
             "target_surface": {
                 "target_profile": "pe_native_broad",
                 "target_scope": "national",

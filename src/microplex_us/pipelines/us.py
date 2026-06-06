@@ -155,6 +155,7 @@ from microplex_us.variables import (
 LOGGER = logging.getLogger(__name__)
 
 PUF_SUPPORT_CLONE_FLAG_COLUMN = "person_is_puf_clone"
+PUF_SUPPORT_CLONE_SOURCE_ROW_ID_COLUMN = "_puf_support_clone_source_row_id"
 
 PUF_SUPPORT_CLONE_IMPUTED_VARIABLES: tuple[str, ...] = (
     "employment_income",
@@ -6250,6 +6251,10 @@ class USMicroplexPipeline:
     def _prepare_puf_support_clone_frame(self, original: pd.DataFrame) -> pd.DataFrame:
         """Create a zero-stored-weight PUF clone frame from CPS support rows."""
         clone = original.copy()
+        clone[PUF_SUPPORT_CLONE_SOURCE_ROW_ID_COLUMN] = np.arange(
+            len(clone),
+            dtype=np.int64,
+        )
         structural_id_columns = {"person_id", *ENTITY_ID_COLUMNS.values()}
         for column in sorted(structural_id_columns & set(clone.columns)):
             series = clone[column]
@@ -6713,7 +6718,52 @@ class USMicroplexPipeline:
 
         output_mode = self.config.puf_support_clone_output_mode
         collapse_copy_variables: list[str] = []
+        source_row_alignment: dict[str, Any] = {
+            "enabled": False,
+            "column": PUF_SUPPORT_CLONE_SOURCE_ROW_ID_COLUMN,
+        }
         if output_mode == "collapse_to_scaffold":
+            if PUF_SUPPORT_CLONE_SOURCE_ROW_ID_COLUMN not in clone.columns:
+                raise ValueError(
+                    "PUF support clone collapse requires "
+                    f"{PUF_SUPPORT_CLONE_SOURCE_ROW_ID_COLUMN}"
+                )
+            source_row_id = pd.to_numeric(
+                clone[PUF_SUPPORT_CLONE_SOURCE_ROW_ID_COLUMN],
+                errors="coerce",
+            )
+            if source_row_id.isna().any():
+                raise ValueError(
+                    "PUF support clone source-row ids must be complete before collapse"
+                )
+            source_row_index = source_row_id.astype(np.int64)
+            if source_row_index.duplicated().any():
+                raise ValueError(
+                    "PUF support clone source-row ids must be unique before collapse"
+                )
+            expected_index = pd.Index(range(len(original)), dtype=np.int64)
+            if not set(source_row_index.to_numpy()).issubset(set(expected_index)):
+                raise ValueError(
+                    "PUF support clone source-row ids are outside the CPS scaffold"
+                )
+            aligned_clone = clone.assign(
+                **{PUF_SUPPORT_CLONE_SOURCE_ROW_ID_COLUMN: source_row_index}
+            ).set_index(PUF_SUPPORT_CLONE_SOURCE_ROW_ID_COLUMN, drop=False)
+            aligned_clone = aligned_clone.reindex(expected_index)
+            if aligned_clone.isna().all(axis=1).any():
+                raise ValueError(
+                    "PUF support clone source-row ids do not cover the CPS scaffold"
+                )
+            source_row_alignment = {
+                "enabled": True,
+                "column": PUF_SUPPORT_CLONE_SOURCE_ROW_ID_COLUMN,
+                "row_count": int(len(aligned_clone)),
+                "clone_was_reordered": bool(
+                    not source_row_index.reset_index(drop=True).equals(
+                        pd.Series(range(len(source_row_index)), dtype=np.int64)
+                    )
+                ),
+            }
             passthrough_override = set(
                 cps_passthrough_summary.get("passthrough_variables", ())
             )
@@ -6739,12 +6789,14 @@ class USMicroplexPipeline:
                 | overlap_collapse_override
             ) - set(generated_entity_id_columns)
             for variable in sorted(collapse_candidates):
-                if variable in clone.columns:
-                    original[variable] = clone[variable].to_numpy(copy=True)
+                if variable in aligned_clone.columns:
+                    original[variable] = aligned_clone[variable].to_numpy(copy=True)
                     collapse_copy_variables.append(variable)
             combined = original.reset_index(drop=True)
             emitted_clone_row_count = 0
         else:
+            if PUF_SUPPORT_CLONE_SOURCE_ROW_ID_COLUMN in clone.columns:
+                clone = clone.drop(columns=[PUF_SUPPORT_CLONE_SOURCE_ROW_ID_COLUMN])
             for column in sorted(set(clone.columns) - set(original.columns)):
                 original[column] = 0.0
             for column in sorted(set(original.columns) - set(clone.columns)):
@@ -6778,6 +6830,7 @@ class USMicroplexPipeline:
             "collapse_copy_variables": collapse_copy_variables,
             "cps_only_refresh": cps_refresh_summary,
             "cps_measured_total_passthrough": cps_passthrough_summary,
+            "source_row_alignment": source_row_alignment,
             "dropped_generated_entity_id_columns": generated_entity_id_columns,
             "variable_surface": {
                 "ecps_imputed_variables": list(PUF_SUPPORT_CLONE_IMPUTED_VARIABLES),
@@ -6828,6 +6881,7 @@ class USMicroplexPipeline:
             "is_head",
             "is_spouse",
             "is_dependent",
+            PUF_SUPPORT_CLONE_SOURCE_ROW_ID_COLUMN,
         }
         rng = np.random.default_rng(self.config.random_seed)
         _emit_us_pipeline_progress(

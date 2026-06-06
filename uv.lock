@@ -1124,7 +1124,7 @@ wheels = [
 
 [[package]]
 name = "microimpute"
-version = "3.1.0"
+version = "3.1.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "joblib" },
@@ -1141,9 +1141,9 @@ dependencies = [
     { name = "statsmodels" },
     { name = "tqdm" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/71/e4/d9f5f06eaab4cd09d7700190da784a16d7e57e95802db8542658f97bb7ef/microimpute-3.1.0.tar.gz", hash = "sha256:1e7d0f69e99390127755ef10db94cfa5d91029b1075e6a1c51a1cc6168e15336", size = 145868, upload-time = "2026-06-06T06:44:14.005Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/a0/a0/15e25e78b7fa48d100f52d210290f2ba5820ebc47e4859748a7d89a3cae9/microimpute-3.1.1.tar.gz", hash = "sha256:70aa5bd28e7cef254695b8317c0f88e11e39ea204e0f6362cb33a94163438c3e", size = 146197, upload-time = "2026-06-06T09:54:07.848Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/1f/82/1d4ae0872aab0bafdb167bf4de6fa232dd599bc710425e8875e20ab23149/microimpute-3.1.0-py3-none-any.whl", hash = "sha256:4e4fcd21e9c4b1c5928075ba23858b4df47bdecba97fe2ae6b8540027ca68184", size = 127161, upload-time = "2026-06-06T06:44:12.867Z" },
+    { url = "https://files.pythonhosted.org/packages/7f/d9/2b1ae246461f88388e2a43ff29f0f3477ac89cc52b11abaf775089b7553d/microimpute-3.1.1-py3-none-any.whl", hash = "sha256:c6a8fcb2ab129486fce48299cf89901b12632d69c0483251bae5f8d68a0d326b", size = 127432, upload-time = "2026-06-06T09:54:06.717Z" },
 ]
 
 [[package]]
@@ -1211,7 +1211,7 @@ requires-dist = [
     { name = "h5py", specifier = ">=3.10" },
     { name = "huggingface-hub", marker = "extra == 'hf'", specifier = ">=0.24" },
     { name = "jupyter-book", marker = "extra == 'docs'", specifier = ">=0.15,<0.16" },
-    { name = "microimpute", marker = "python_full_version >= '3.12' and python_full_version < '3.15' and extra == 'policyengine'", specifier = "==3.1.0" },
+    { name = "microimpute", marker = "python_full_version >= '3.12' and python_full_version < '3.15' and extra == 'policyengine'", specifier = "==3.1.1" },
     { name = "microplex", extras = ["calibrate"], git = "https://github.com/PolicyEngine/microplex.git?rev=1e0627182f9df40aacd7043c96956c2895bf9d30" },
     { name = "microunit", marker = "extra == 'policyengine'", specifier = ">=0.1.0" },
     { name = "policyengine-us", marker = "python_full_version >= '3.11' and python_full_version < '3.15' and extra == 'policyengine'", specifier = "==1.715.2" },

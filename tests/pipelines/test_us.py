@@ -3600,6 +3600,8 @@ class TestUSMicroplexPipeline:
             USMicroplexBuildConfig(
                 n_synthetic=4,
                 donor_imputer_backend="regime_aware",
+                donor_imputer_qrf_n_estimators=77,
+                donor_imputer_qrf_max_train_samples=1234,
             )
         )
         regime_pipeline._build_donor_imputer(
@@ -3619,6 +3621,8 @@ class TestUSMicroplexPipeline:
         )
 
         assert "nonnegative_vars" not in captured["regime_aware"]
+        assert captured["regime_aware"]["n_estimators"] == 77
+        assert captured["regime_aware"]["max_train_samples"] == 1234
         assert captured["zi_qrf"]["nonnegative_vars"] == set()
         assert captured["zi_qrf"]["zero_inflated_vars"] == {
             "partnership_s_corp_income",

@@ -2186,6 +2186,7 @@ class USMicroplexBuildConfig:
     donor_imputer_hidden_dim: int = 32
     donor_imputer_backend: Literal["maf", "qrf", "zi_qrf", "regime_aware"] = "maf"
     donor_imputer_qrf_n_estimators: int = 100
+    donor_imputer_qrf_max_train_samples: int | None = 50_000
     donor_imputer_qrf_zero_threshold: float = 0.05
     donor_imputer_condition_selection: Literal[
         "all_shared",
@@ -6012,6 +6013,7 @@ class USMicroplexPipeline:
                 condition_vars=condition_vars,
                 target_vars=list(target_vars),
                 n_estimators=self.config.donor_imputer_qrf_n_estimators,
+                max_train_samples=self.config.donor_imputer_qrf_max_train_samples,
                 seed=self.config.random_seed,
             )
         zero_inflated_vars = (

@@ -178,18 +178,42 @@ class RegimeAwareDonorImputer:
         condition_vars: list[str],
         target_vars: list[str],
         n_estimators: int = 100,
+        max_train_samples: int | None = 50_000,
         classifier_type: str = "hist_gb",
         seed: int = 42,
     ) -> None:
         self.condition_vars = list(condition_vars)
         self.target_vars = list(target_vars)
         self.n_estimators = int(n_estimators)
+        if max_train_samples is not None and int(max_train_samples) < 1:
+            raise ValueError("max_train_samples must be a positive integer")
+        self.max_train_samples = (
+            None if max_train_samples is None else int(max_train_samples)
+        )
         self.classifier_type = str(classifier_type)
         self.seed = int(seed)
         self._fitted: dict[str, Any] = {}
         self._fitted_columns: tuple[str, ...] = ()
         self._predictor_columns: tuple[str, ...] = ()
         self._regimes: dict[str, str] = {}
+
+    def _configured_qrf_class(self, qrf_class: type[Any]) -> type[Any]:
+        n_estimators = self.n_estimators
+        max_train_samples = self.max_train_samples
+
+        class ConfiguredQRF(qrf_class):
+            def __init__(self, *args: Any, **kwargs: Any) -> None:
+                if max_train_samples is not None:
+                    kwargs.setdefault("max_train_samples", max_train_samples)
+                super().__init__(*args, **kwargs)
+
+            def fit(self, *args: Any, **kwargs: Any) -> Any:
+                kwargs.setdefault("n_estimators", n_estimators)
+                kwargs.setdefault("n_jobs", -1)
+                return super().fit(*args, **kwargs)
+
+        ConfiguredQRF.__name__ = "ConfiguredRegimeAwareQRF"
+        return ConfiguredQRF
 
     def fit(
         self,
@@ -234,7 +258,7 @@ class RegimeAwareDonorImputer:
             return self
 
         wrapper = ZeroInflatedImputer(
-            base_imputer_class=QRF,
+            base_imputer_class=self._configured_qrf_class(QRF),
             base_imputer_kwargs={},
             classifier_type=self.classifier_type,
             sequential=True,

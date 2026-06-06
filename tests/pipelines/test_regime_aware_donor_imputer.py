@@ -120,6 +120,41 @@ class TestRegimeAwareBackendFactory:
 class TestRegimeAwareFitGenerate:
     """Fit/generate contract and tripartite-specific guarantees."""
 
+    def test_qrf_budget_reaches_microimpute_base(self, monkeypatch) -> None:
+        from microplex_us.pipelines.us import RegimeAwareDonorImputer
+
+        captured: dict[str, object] = {}
+
+        class FakeQRF:
+            def __init__(self, *args, **kwargs):
+                captured["init_args"] = args
+                captured["init_kwargs"] = kwargs
+
+            def fit(self, *args, **kwargs):
+                captured["fit_args"] = args
+                captured["fit_kwargs"] = kwargs
+                return self
+
+        monkeypatch.setattr("microimpute.models.qrf.QRF", FakeQRF)
+
+        train = pd.DataFrame(
+            {
+                "age": [25.0, 35.0, 45.0, 55.0] * 10,
+                "income_leaf": [100.0, 200.0, 300.0, 400.0] * 10,
+            }
+        )
+        imputer = RegimeAwareDonorImputer(
+            condition_vars=["age"],
+            target_vars=["income_leaf"],
+            n_estimators=7,
+            max_train_samples=17,
+        )
+        imputer.fit(train)
+
+        assert captured["init_kwargs"]["max_train_samples"] == 17
+        assert captured["fit_kwargs"]["n_estimators"] == 7
+        assert captured["fit_kwargs"]["n_jobs"] == -1
+
     def test_multi_target_fit_uses_one_chained_zero_inflated_imputer(self) -> None:
         from microplex_us.pipelines.us import RegimeAwareDonorImputer
 

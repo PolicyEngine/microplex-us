@@ -5761,6 +5761,28 @@ class TestUSMicroplexPipeline:
             950.0,
         ]
 
+    def test_augment_policyengine_person_inputs_preserves_zero_employment_income(
+        self,
+    ):
+        pipeline = USMicroplexPipeline(USMicroplexBuildConfig())
+        persons = pd.DataFrame(
+            {
+                "age": [45, 50],
+                "sex": [1, 2],
+                "income": [50_000.0, 75_000.0],
+                "employment_income": [0.0, 20_000.0],
+                "wage_income": [50_000.0, 25_000.0],
+                "self_employment_income": [0.0, 0.0],
+            }
+        )
+
+        augmented = pipeline._augment_policyengine_person_inputs(persons)
+
+        assert augmented["employment_income_before_lsr"].tolist() == [
+            0.0,
+            20_000.0,
+        ]
+
     def test_augment_policyengine_person_inputs_prefers_signed_business_losses(
         self,
     ):

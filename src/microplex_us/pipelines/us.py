@@ -559,6 +559,36 @@ PUF_SUPPORT_CLONE_OVERRIDDEN_VARIABLES: tuple[str, ...] = (
 
 PUF_SUPPORT_CLONE_SPECIAL_VARIABLES: tuple[str, ...] = ("weeks_unemployed",)
 
+PUF_SUPPORT_CLONE_IRS_DETAIL_COLLAPSE_VARIABLES: tuple[str, ...] = tuple(
+    dict.fromkeys(
+        (
+            "taxable_interest_income",
+            "tax_exempt_interest_income",
+            "interest_income",
+            "qualified_dividend_income",
+            "non_qualified_dividend_income",
+            "ordinary_dividend_income",
+            "dividend_income",
+            "taxable_pension_income",
+            "tax_exempt_pension_income",
+            "taxable_private_pension_income",
+            "tax_exempt_private_pension_income",
+            "pension_income",
+            "taxable_unemployment_compensation",
+            "unemployment_compensation",
+        )
+        + PUF_SUPPORT_CLONE_OVERRIDDEN_VARIABLES
+    )
+)
+
+PUF_SUPPORT_CLONE_COLLAPSE_OVERLAP_VARIABLES: tuple[str, ...] = tuple(
+    dict.fromkeys(
+        PUF_SUPPORT_CLONE_IMPUTED_VARIABLES
+        + PUF_SUPPORT_CLONE_SPECIAL_VARIABLES
+        + ("wage_income", "dividend_income", "capital_gains")
+    )
+)
+
 
 @lru_cache(maxsize=1)
 def _default_block_geography() -> BlockGeography:
@@ -2182,6 +2212,13 @@ class USMicroplexBuildConfig:
     puf_support_clone_both_halves_override_variables: tuple[str, ...] = (
         PUF_SUPPORT_CLONE_OVERRIDDEN_VARIABLES
     )
+    puf_support_clone_collapse_irs_detail_variables: tuple[str, ...] = (
+        PUF_SUPPORT_CLONE_IRS_DETAIL_COLLAPSE_VARIABLES
+    )
+    puf_support_clone_collapse_overlap_variables: tuple[str, ...] = (
+        PUF_SUPPORT_CLONE_COLLAPSE_OVERLAP_VARIABLES
+    )
+    puf_support_clone_scale_tax_details_to_cps_totals: bool = False
     puf_support_clone_refresh_cps_only_fields: bool = True
     puf_support_clone_cps_refresh_variables: tuple[str, ...] = (
         PUF_SUPPORT_CLONE_CPS_REFRESH_VARIABLES
@@ -6381,16 +6418,36 @@ class USMicroplexPipeline:
         integrated_variables: Iterable[str],
         preclone_columns: set[str],
     ) -> tuple[pd.DataFrame, dict[str, Any]]:
-        """Anchor copied PUF tax-detail leaves to CPS-reported income totals."""
+        """Optionally anchor copied PUF leaves, then keep leaf identities intact."""
         integrated_set = set(integrated_variables)
         result = clone.copy()
         passthrough_variables: list[str] = []
         dividend_scaled = False
+        scaling_enabled = bool(
+            self.config.puf_support_clone_scale_tax_details_to_cps_totals
+        )
+
+        if not scaling_enabled:
+            identity_variables = (
+                self._reconcile_puf_support_clone_tax_detail_identities(
+                    original=original,
+                    clone=result,
+                    integrated_variables=integrated_set,
+                )
+            )
+            return result, {
+                "enabled": False,
+                "passthrough_variables": [],
+                "dividend_components_scaled_to_cps_total": False,
+                "identity_reconciled_variables": identity_variables,
+            }
 
         for target, aliases in PUF_SUPPORT_CLONE_CPS_DIRECT_PASSTHROUGH_ALIASES.items():
             if target not in result.columns or target not in integrated_set:
                 continue
-            source = next((alias for alias in aliases if alias in original.columns), None)
+            source = next(
+                (alias for alias in aliases if alias in original.columns), None
+            )
             if source is None:
                 continue
             result[target] = (
@@ -6400,9 +6457,11 @@ class USMicroplexPipeline:
             )
             passthrough_variables.append(target)
 
-        for components, total_alias, fallback_first_share in (
-            PUF_SUPPORT_CLONE_CPS_SPLIT_TOTALS
-        ):
+        for (
+            components,
+            total_alias,
+            fallback_first_share,
+        ) in PUF_SUPPORT_CLONE_CPS_SPLIT_TOTALS:
             if total_alias not in original.columns:
                 continue
             if not all(column in result.columns for column in components):
@@ -6435,9 +6494,9 @@ class USMicroplexPipeline:
                 / component_total.loc[positive_component_total]
             ).clip(lower=0.0, upper=1.0)
             result[components[0]] = (cps_total * first_share).to_numpy(copy=True)
-            result[components[1]] = (
-                cps_total * (1.0 - first_share)
-            ).to_numpy(copy=True)
+            result[components[1]] = (cps_total * (1.0 - first_share)).to_numpy(
+                copy=True
+            )
             if total_alias == "pension_income":
                 if "taxable_private_pension_income" in result.columns:
                     result["taxable_private_pension_income"] = result[
@@ -6504,10 +6563,78 @@ class USMicroplexPipeline:
                 ]
             )
 
+        identity_variables = self._reconcile_puf_support_clone_tax_detail_identities(
+            original=original,
+            clone=result,
+            integrated_variables=integrated_set,
+        )
         return result, {
+            "enabled": True,
             "passthrough_variables": sorted(set(passthrough_variables)),
             "dividend_components_scaled_to_cps_total": dividend_scaled,
+            "identity_reconciled_variables": identity_variables,
         }
+
+    def _reconcile_puf_support_clone_tax_detail_identities(
+        self,
+        *,
+        original: pd.DataFrame,
+        clone: pd.DataFrame,
+        integrated_variables: set[str],
+    ) -> list[str]:
+        """Keep PUF tax leaves and their parent totals consistent before collapse."""
+        reconciled: list[str] = []
+
+        def numeric(column: str) -> pd.Series:
+            return pd.to_numeric(clone[column], errors="coerce").fillna(0.0)
+
+        def assign_if_available(column: str, values: pd.Series) -> None:
+            if column not in clone.columns and column not in original.columns:
+                return
+            clone[column] = values.to_numpy(copy=True)
+            reconciled.append(column)
+
+        interest_components = ("taxable_interest_income", "tax_exempt_interest_income")
+        if set(interest_components) & integrated_variables and all(
+            column in clone.columns for column in interest_components
+        ):
+            assign_if_available(
+                "interest_income",
+                numeric("taxable_interest_income")
+                + numeric("tax_exempt_interest_income"),
+            )
+
+        dividend_components = (
+            "qualified_dividend_income",
+            "non_qualified_dividend_income",
+        )
+        if set(dividend_components) & integrated_variables and all(
+            column in clone.columns for column in dividend_components
+        ):
+            dividend_total = numeric("qualified_dividend_income") + numeric(
+                "non_qualified_dividend_income"
+            )
+            assign_if_available("ordinary_dividend_income", dividend_total)
+            assign_if_available("dividend_income", dividend_total)
+
+        pension_components = ("taxable_pension_income", "tax_exempt_pension_income")
+        if set(pension_components) & integrated_variables and all(
+            column in clone.columns for column in pension_components
+        ):
+            taxable_pension = numeric("taxable_pension_income")
+            tax_exempt_pension = numeric("tax_exempt_pension_income")
+            assign_if_available("taxable_private_pension_income", taxable_pension)
+            assign_if_available("tax_exempt_private_pension_income", tax_exempt_pension)
+            assign_if_available("pension_income", taxable_pension + tax_exempt_pension)
+
+        if "taxable_unemployment_compensation" in integrated_variables:
+            if "taxable_unemployment_compensation" in clone.columns:
+                assign_if_available(
+                    "unemployment_compensation",
+                    numeric("taxable_unemployment_compensation"),
+                )
+
+        return sorted(set(reconciled))
 
     def _finalize_puf_support_clone_frame(
         self,
@@ -6590,10 +6717,26 @@ class USMicroplexPipeline:
             passthrough_override = set(
                 cps_passthrough_summary.get("passthrough_variables", ())
             )
+            identity_override = set(
+                cps_passthrough_summary.get("identity_reconciled_variables", ())
+            )
+            irs_detail_override = (
+                integrated_set
+                & set(self.config.puf_support_clone_collapse_irs_detail_variables)
+                & preclone_columns
+            )
+            overlap_collapse_override = (
+                integrated_set
+                & set(self.config.puf_support_clone_collapse_overlap_variables)
+                & preclone_columns
+            )
             collapse_candidates = (
                 (integrated_set - preclone_columns)
                 | both_halves_override
                 | passthrough_override
+                | identity_override
+                | irs_detail_override
+                | overlap_collapse_override
             ) - set(generated_entity_id_columns)
             for variable in sorted(collapse_candidates):
                 if variable in clone.columns:
@@ -6626,6 +6769,12 @@ class USMicroplexPipeline:
             "overlap_variables": overlap_variables,
             "donor_only_variables": donor_only_variables,
             "both_halves_override_variables": sorted(both_halves_override),
+            "irs_detail_collapse_override_variables": sorted(irs_detail_override)
+            if output_mode == "collapse_to_scaffold"
+            else [],
+            "overlap_collapse_override_variables": sorted(overlap_collapse_override)
+            if output_mode == "collapse_to_scaffold"
+            else [],
             "collapse_copy_variables": collapse_copy_variables,
             "cps_only_refresh": cps_refresh_summary,
             "cps_measured_total_passthrough": cps_passthrough_summary,

@@ -622,6 +622,96 @@ def test_sound_ecps_replacement_comparison_skips_exact_rescore_by_default(
     assert payload["score"]["score_source"] == "refit_loss_matrix"
 
 
+def test_sound_ecps_replacement_comparison_enforces_benchmark_manifest(
+    monkeypatch,
+    tmp_path,
+):
+    candidate = _write_minimal_policyengine_dataset(tmp_path / "candidate.h5")
+    baseline = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    targets_db = tmp_path / "policyengine_targets.db"
+    targets_db.write_bytes(b"pinned target database")
+    scorer_repo = _write_clean_git_repo(tmp_path / "policyengine-us-data")
+    monkeypatch.setattr(ecps, "_extract_pe_native_loss_inputs", _fake_loss_inputs)
+    monkeypatch.setattr(ecps, "compute_us_pe_native_support_audit", _fake_support_audit)
+
+    bootstrap = ecps.build_sound_ecps_replacement_comparison(
+        candidate_dataset_path=candidate,
+        baseline_dataset_path=baseline,
+        output_dir=tmp_path / "bootstrap",
+        optimizer_max_iter=50,
+        policyengine_targets_db_path=targets_db,
+        policyengine_us_data_repo=scorer_repo,
+    )
+    benchmark_manifest = tmp_path / "benchmark_manifest.json"
+    _benchmark_manifest(
+        benchmark_manifest,
+        certificate=bootstrap["frozen_ecps_baseline_certificate"],
+    )
+
+    payload = ecps.build_sound_ecps_replacement_comparison(
+        candidate_dataset_path=candidate,
+        baseline_dataset_path=baseline,
+        output_dir=tmp_path / "comparison",
+        optimizer_max_iter=50,
+        policyengine_targets_db_path=targets_db,
+        policyengine_us_data_repo=scorer_repo,
+        benchmark_manifest_path=benchmark_manifest,
+    )
+
+    assert payload["benchmark_manifest"]["certificate_match"]["status"] == "passed"
+    assert (
+        payload["benchmark_manifest"]["certificate_match"]["checked_evidence"][
+            "target_surface.target_names_sha256"
+        ]
+        == bootstrap["frozen_ecps_baseline_certificate"]["target_surface"][
+            "target_names_sha256"
+        ]
+    )
+
+
+def test_sound_ecps_replacement_comparison_rejects_benchmark_manifest_mismatch(
+    monkeypatch,
+    tmp_path,
+):
+    candidate = _write_minimal_policyengine_dataset(tmp_path / "candidate.h5")
+    baseline = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    targets_db = tmp_path / "policyengine_targets.db"
+    targets_db.write_bytes(b"pinned target database")
+    scorer_repo = _write_clean_git_repo(tmp_path / "policyengine-us-data")
+    monkeypatch.setattr(ecps, "_extract_pe_native_loss_inputs", _fake_loss_inputs)
+    monkeypatch.setattr(ecps, "compute_us_pe_native_support_audit", _fake_support_audit)
+
+    bootstrap = ecps.build_sound_ecps_replacement_comparison(
+        candidate_dataset_path=candidate,
+        baseline_dataset_path=baseline,
+        output_dir=tmp_path / "bootstrap",
+        optimizer_max_iter=50,
+        policyengine_targets_db_path=targets_db,
+        policyengine_us_data_repo=scorer_repo,
+    )
+    benchmark_manifest = tmp_path / "benchmark_manifest.json"
+    _benchmark_manifest(
+        benchmark_manifest,
+        certificate=bootstrap["frozen_ecps_baseline_certificate"],
+    )
+    manifest = json.loads(benchmark_manifest.read_text())
+    manifest["target_surface"]["target_names_sha256"] = "f" * 64
+    benchmark_manifest.write_text(json.dumps(manifest, indent=2, sort_keys=True))
+
+    with pytest.raises(ecps.ComparisonGateError) as excinfo:
+        ecps.build_sound_ecps_replacement_comparison(
+            candidate_dataset_path=candidate,
+            baseline_dataset_path=baseline,
+            output_dir=tmp_path / "comparison",
+            optimizer_max_iter=50,
+            policyengine_targets_db_path=targets_db,
+            policyengine_us_data_repo=scorer_repo,
+            benchmark_manifest_path=benchmark_manifest,
+        )
+
+    assert "target_surface.target_names_sha256" in str(excinfo.value)
+
+
 def test_sound_ecps_replacement_comparison_writes_target_diagnostics_sidecar(
     monkeypatch,
     tmp_path,

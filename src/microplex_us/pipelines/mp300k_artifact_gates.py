@@ -218,6 +218,14 @@ def build_mp300k_artifact_gate_report(
         baseline_dataset=baseline_dataset,
         artifact_size_ratio_threshold=artifact_size_ratio_threshold,
     )
+    benchmark_gate, benchmark_descriptor = _benchmark_manifest_gate(
+        benchmark_manifest_path
+    )
+    benchmark_evidence = (
+        dict(benchmark_descriptor.get("pinned_evidence") or {})
+        if isinstance(benchmark_descriptor, dict)
+        else {}
+    )
     resolved_ecps_comparison = _resolve_ecps_comparison_payload(
         ecps_comparison_payload,
         candidate_dataset=candidate_dataset,
@@ -227,7 +235,10 @@ def build_mp300k_artifact_gate_report(
         policyengine_us_data_repo=policyengine_us_data_repo,
         policyengine_us_data_python=policyengine_us_data_python,
     )
-    ecps_comparison_gate = _ecps_comparison_gate(resolved_ecps_comparison)
+    ecps_comparison_gate = _ecps_comparison_gate(
+        resolved_ecps_comparison,
+        benchmark_evidence=benchmark_evidence,
+    )
     arch_coverage_gate = _arch_target_coverage_gate(
         arch_coverage_payload,
         expected_period=period,
@@ -246,9 +257,6 @@ def build_mp300k_artifact_gate_report(
     source_weight_diagnostics_gate = _source_weight_diagnostics_gate(
         resolved_source_weight_diagnostics,
         max_support_weight_share=max_support_weight_share,
-    )
-    benchmark_gate, benchmark_descriptor = _benchmark_manifest_gate(
-        benchmark_manifest_path
     )
     gates = {
         "candidate_artifact": candidate_gate,
@@ -479,9 +487,7 @@ def _column_contract_gate(
         excluded=excluded,
     )
     satisfied_count = len(required) - len(diff.missing_required)
-    contract_share = (
-        float(satisfied_count / len(required)) if required else None
-    )
+    contract_share = float(satisfied_count / len(required)) if required else None
     metrics = {
         "period": int(period),
         "candidate_column_count": len(candidate_column_set),
@@ -979,6 +985,8 @@ def _resolve_ecps_comparison_payload(
 
 def _ecps_comparison_gate(
     ecps_comparison_payload: dict[str, Any] | None,
+    *,
+    benchmark_evidence: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if ecps_comparison_payload is None:
         return _gate(
@@ -1013,6 +1021,7 @@ def _ecps_comparison_gate(
     contract = _ecps_comparison_contract_summary(
         ecps_comparison_payload,
         summary,
+        benchmark_evidence=benchmark_evidence,
     )
     details.update(contract["details"])
     missing_requirements = list(contract["missing_requirements"])
@@ -1090,6 +1099,8 @@ def _ecps_comparison_summary(payload: Any) -> dict[str, Any]:
 def _ecps_comparison_contract_summary(
     payload: Any,
     summary: dict[str, Any],
+    *,
+    benchmark_evidence: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     candidate_households = _first_nested_present(
         payload,
@@ -1173,6 +1184,14 @@ def _ecps_comparison_contract_summary(
     )
     if ecps_refit_recovery is not None:
         ecps_refit_recovery = bool(ecps_refit_recovery)
+    ecps_refit_effective = _first_nested_present(
+        payload,
+        summary,
+        "ecps_refit_effective_passed",
+        "baseline_refit_effective_passed",
+    )
+    if ecps_refit_effective is not None:
+        ecps_refit_effective = bool(ecps_refit_effective)
 
     holdout_target_fraction = _first_nested_present(
         payload,
@@ -1193,12 +1212,18 @@ def _ecps_comparison_contract_summary(
 
     protected_summary = _protected_family_floor_summary(payload, summary)
     core_benchmark_summary = _core_benchmark_family_floor_summary(payload, summary)
+    frozen_baseline_summary = _frozen_baseline_certificate_summary(
+        payload,
+        summary,
+        benchmark_evidence=benchmark_evidence,
+    )
 
     requirements = {
         "matched_household_count": matched_household_count is True,
         "symmetric_refit": symmetric_refit is True,
         "refit_objective_matches_scoring": objective_identity is True,
-        "ecps_refit_recovery": ecps_refit_recovery is True,
+        "ecps_refit_effective": ecps_refit_effective is True,
+        "frozen_ecps_baseline_certificate": frozen_baseline_summary["passed"] is True,
         "holdout_target_split": has_holdout_targets,
         "protected_family_floors": protected_summary["passed"] is True,
         "core_benchmark_family_floors": core_benchmark_summary["passed"] is True,
@@ -1216,11 +1241,214 @@ def _ecps_comparison_contract_summary(
             "score_candidate_only": score_candidate_only,
             "refit_objective_matches_scoring": objective_identity,
             "ecps_refit_recovery_passed": ecps_refit_recovery,
+            "ecps_refit_effective_passed": ecps_refit_effective,
+            "frozen_ecps_baseline_certificate": frozen_baseline_summary,
             "holdout_targets": holdout_targets,
             "protected_family_floor": protected_summary,
             "core_benchmark_family_floor": core_benchmark_summary,
         },
     }
+
+
+def _frozen_baseline_certificate_summary(
+    payload: Any,
+    summary: dict[str, Any],
+    *,
+    benchmark_evidence: dict[str, Any] | None,
+) -> dict[str, Any]:
+    certificate = _find_frozen_baseline_certificate(payload)
+    if not isinstance(certificate, dict):
+        return {
+            "passed": False,
+            "missing_evidence": ["frozen_ecps_baseline_certificate"],
+            "mismatches": [],
+        }
+
+    missing: list[str] = []
+    mismatches: list[dict[str, Any]] = []
+    schema_version = certificate.get("schema_version")
+    if schema_version != 1:
+        mismatches.append(
+            {
+                "field": "schema_version",
+                "expected": 1,
+                "actual": schema_version,
+            }
+        )
+
+    evidence_values = {
+        "baseline_dataset.sha256": _first_nested_path_value(
+            certificate,
+            (
+                ("baseline_dataset", "sha256"),
+                ("enhanced_cps", "sha256"),
+                ("baseline_dataset_sha256",),
+                ("enhanced_cps_sha256",),
+            ),
+        ),
+        "target_db.sha256": _first_nested_path_value(
+            certificate,
+            (
+                ("target_db", "sha256"),
+                ("targets_db", "sha256"),
+                ("policyengine_targets_db", "sha256"),
+                ("target_db_sha256",),
+                ("policyengine_targets_db_sha256",),
+            ),
+        ),
+        "policyengine_us_data.commit": _first_nested_path_value(
+            certificate,
+            (
+                ("policyengine_us_data", "commit"),
+                ("policyengine_us_data", "commit_sha"),
+                ("policyengine_us_data_commit",),
+                ("policyengine_us_data_commit_sha",),
+            ),
+        ),
+        "scoring_config.sha256": _first_nested_path_value(
+            certificate,
+            (
+                ("scoring_config", "sha256"),
+                ("scoring_config_sha256",),
+            ),
+        ),
+        "target_surface.target_names_sha256": _first_nested_path_value(
+            certificate,
+            (
+                ("target_surface", "target_names_sha256"),
+                ("target_names_sha256",),
+            ),
+        ),
+        "target_surface.target_count": _first_nested_path_value(
+            certificate,
+            (
+                ("target_surface", "target_count"),
+                ("target_count",),
+            ),
+        ),
+        "baseline_metrics.baseline_enhanced_cps_native_loss": (
+            _certificate_metric(
+                certificate,
+                "baseline_enhanced_cps_native_loss",
+            )
+        ),
+    }
+    for evidence_name, value in evidence_values.items():
+        if not _valid_certificate_evidence_value(evidence_name, value):
+            missing.append(evidence_name)
+
+    for metric_name in (
+        "baseline_enhanced_cps_native_loss",
+        "baseline_holdout_loss",
+        "baseline_unweighted_msre",
+    ):
+        summary_value = summary.get(metric_name)
+        certificate_value = _certificate_metric(certificate, metric_name)
+        if summary_value is None or certificate_value is None:
+            continue
+        if not _float_equal(summary_value, certificate_value):
+            mismatches.append(
+                {
+                    "field": f"baseline_metrics.{metric_name}",
+                    "summary_value": summary_value,
+                    "certificate_value": certificate_value,
+                }
+            )
+
+    for evidence_name in (
+        "baseline_dataset.sha256",
+        "target_db.sha256",
+        "policyengine_us_data.commit",
+    ):
+        expected_value = (benchmark_evidence or {}).get(evidence_name)
+        certificate_value = evidence_values.get(evidence_name)
+        if expected_value is None or certificate_value is None:
+            continue
+        if str(expected_value) != str(certificate_value):
+            mismatches.append(
+                {
+                    "field": evidence_name,
+                    "benchmark_manifest_value": expected_value,
+                    "certificate_value": certificate_value,
+                }
+            )
+
+    return {
+        "passed": not missing and not mismatches,
+        "certificate_type": certificate.get("certificate_type"),
+        "period": certificate.get("period"),
+        "missing_evidence": missing,
+        "mismatches": mismatches,
+        "baseline_dataset_sha256": evidence_values.get("baseline_dataset.sha256"),
+        "target_db_sha256": evidence_values.get("target_db.sha256"),
+        "policyengine_us_data_commit": evidence_values.get(
+            "policyengine_us_data.commit"
+        ),
+        "scoring_config_sha256": evidence_values.get("scoring_config.sha256"),
+        "target_names_sha256": evidence_values.get(
+            "target_surface.target_names_sha256"
+        ),
+        "target_count": evidence_values.get("target_surface.target_count"),
+    }
+
+
+def _find_frozen_baseline_certificate(payload: Any) -> Any:
+    if not isinstance(payload, dict):
+        return None
+    for key in (
+        "frozen_ecps_baseline_certificate",
+        "baseline_certificate",
+        "certified_baseline",
+    ):
+        value = payload.get(key)
+        if isinstance(value, dict):
+            return value
+    metadata = payload.get("metadata")
+    if isinstance(metadata, dict):
+        value = metadata.get("frozen_ecps_baseline_certificate")
+        if isinstance(value, dict):
+            return value
+    return None
+
+
+def _certificate_metric(certificate: dict[str, Any], metric_name: str) -> Any:
+    return _first_nested_path_value(
+        certificate,
+        (
+            ("baseline_metrics", metric_name),
+            (metric_name,),
+        ),
+    )
+
+
+def _valid_certificate_evidence_value(name: str, value: Any) -> bool:
+    if name == "target_surface.target_count":
+        try:
+            return int(value) > 0
+        except (TypeError, ValueError):
+            return False
+    if name.endswith(".sha256"):
+        return (
+            isinstance(value, str)
+            and len(value) == 64
+            and bool(_HEX_RE.fullmatch(value))
+        )
+    if name.endswith(".commit"):
+        return (
+            isinstance(value, str)
+            and 7 <= len(value) <= 40
+            and bool(_HEX_RE.fullmatch(value))
+        )
+    if name.startswith("baseline_metrics."):
+        try:
+            return np.isfinite(float(value))
+        except (TypeError, ValueError):
+            return False
+    return value is not None
+
+
+def _float_equal(left: Any, right: Any, *, tolerance: float = 1e-12) -> bool:
+    return abs(float(left) - float(right)) <= tolerance
 
 
 def _first_nested_present(
@@ -1801,6 +2029,11 @@ def _benchmark_manifest_gate(
             descriptor,
         )
     evidence = _benchmark_manifest_evidence(payload)
+    descriptor = {
+        **descriptor,
+        "pinned_evidence": evidence["present"],
+        "missing_evidence": evidence["missing"],
+    }
     if evidence["missing"]:
         return (
             _gate(

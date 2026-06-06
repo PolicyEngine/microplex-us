@@ -1088,6 +1088,10 @@ def _ecps_comparison_gate(
             "n_targets_kept": summary.get("n_targets_kept"),
             "matched_household_count": contract["matched_household_count"],
             "holdout_target_fraction": contract["holdout_target_fraction"],
+            "candidate_holdout_loss": contract["candidate_holdout_loss"],
+            "baseline_holdout_loss": contract["baseline_holdout_loss"],
+            "candidate_unweighted_msre": contract["candidate_unweighted_msre"],
+            "baseline_unweighted_msre": contract["baseline_unweighted_msre"],
         },
         details=details,
     )
@@ -1244,6 +1248,38 @@ def _ecps_comparison_contract_summary(
     elif holdout_targets is not None:
         has_holdout_targets = int(holdout_targets) > 0
 
+    candidate_holdout_loss = _first_nested_present(
+        payload,
+        summary,
+        "candidate_holdout_loss",
+    )
+    baseline_holdout_loss = _first_nested_present(
+        payload,
+        summary,
+        "baseline_holdout_loss",
+    )
+    holdout_loss_beats_baseline = _loss_strictly_beats(
+        candidate_holdout_loss, baseline_holdout_loss
+    )
+
+    candidate_unweighted_msre = _first_nested_present(
+        payload,
+        summary,
+        "candidate_unweighted_msre",
+        "candidate_msre",
+        "candidate_mean_unweighted_msre",
+    )
+    baseline_unweighted_msre = _first_nested_present(
+        payload,
+        summary,
+        "baseline_unweighted_msre",
+        "baseline_msre",
+        "baseline_mean_unweighted_msre",
+    )
+    unweighted_msre_beats_baseline = _loss_strictly_beats(
+        candidate_unweighted_msre, baseline_unweighted_msre
+    )
+
     protected_summary = _protected_family_floor_summary(payload, summary)
     core_benchmark_summary = _core_benchmark_family_floor_summary(payload, summary)
     frozen_baseline_summary = _frozen_baseline_certificate_summary(
@@ -1260,12 +1296,18 @@ def _ecps_comparison_contract_summary(
         "ecps_refit_effective": ecps_refit_effective is True,
         "frozen_ecps_baseline_certificate": frozen_baseline_summary["passed"] is True,
         "holdout_target_split": has_holdout_targets,
+        "holdout_loss_beats_baseline": holdout_loss_beats_baseline is True,
+        "unweighted_msre_beats_baseline": (unweighted_msre_beats_baseline is True),
         "protected_family_floors": protected_summary["passed"] is True,
         "core_benchmark_family_floors": core_benchmark_summary["passed"] is True,
     }
     return {
         "matched_household_count": matched_household_count,
         "holdout_target_fraction": holdout_target_fraction,
+        "candidate_holdout_loss": candidate_holdout_loss,
+        "baseline_holdout_loss": baseline_holdout_loss,
+        "candidate_unweighted_msre": candidate_unweighted_msre,
+        "baseline_unweighted_msre": baseline_unweighted_msre,
         "missing_requirements": [
             key for key, passed in requirements.items() if not passed
         ],
@@ -1279,6 +1321,12 @@ def _ecps_comparison_contract_summary(
             "ecps_refit_effective_passed": ecps_refit_effective,
             "frozen_ecps_baseline_certificate": frozen_baseline_summary,
             "holdout_targets": holdout_targets,
+            "candidate_holdout_loss": candidate_holdout_loss,
+            "baseline_holdout_loss": baseline_holdout_loss,
+            "holdout_loss_beats_baseline": holdout_loss_beats_baseline,
+            "candidate_unweighted_msre": candidate_unweighted_msre,
+            "baseline_unweighted_msre": baseline_unweighted_msre,
+            "unweighted_msre_beats_baseline": unweighted_msre_beats_baseline,
             "protected_family_floor": protected_summary,
             "core_benchmark_family_floor": core_benchmark_summary,
         },
@@ -1549,6 +1597,19 @@ def _valid_certificate_evidence_value(name: str, value: Any) -> bool:
 
 def _float_equal(left: Any, right: Any, *, tolerance: float = 1e-12) -> bool:
     return abs(float(left) - float(right)) <= tolerance
+
+
+def _loss_strictly_beats(candidate: Any, baseline: Any) -> bool | None:
+    if candidate is None or baseline is None:
+        return None
+    try:
+        candidate_value = float(candidate)
+        baseline_value = float(baseline)
+    except (TypeError, ValueError):
+        return None
+    if not np.isfinite(candidate_value) or not np.isfinite(baseline_value):
+        return None
+    return candidate_value < baseline_value
 
 
 def _first_nested_present(

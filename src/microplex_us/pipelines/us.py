@@ -11736,15 +11736,23 @@ class USMicroplexPipeline:
             - known_nonemployment
         ).clip(lower=0.0)
 
-        result["employment_income_before_lsr"] = (
-            first_nonzero_or_present(
-                "employment_income_before_lsr", "employment_income", "wage_income"
+        if "employment_income_before_lsr" in result.columns:
+            result["employment_income_before_lsr"] = (
+                first_nonzero_or_present(
+                    "employment_income_before_lsr",
+                    "wage_income",
+                )
+                if "employment_income" not in result.columns
+                else first_present("employment_income_before_lsr")
             )
-            if has_any(
-                "employment_income_before_lsr", "employment_income", "wage_income"
+        elif "employment_income" in result.columns:
+            result["employment_income_before_lsr"] = first_present(
+                "employment_income"
             )
-            else fallback_employment_income
-        )
+        elif "wage_income" in result.columns:
+            result["employment_income_before_lsr"] = first_present("wage_income")
+        else:
+            result["employment_income_before_lsr"] = fallback_employment_income
         result["self_employment_income_before_lsr"] = signed_self_employment_income
         result["taxable_interest_income"] = taxable_interest_income
         result["tax_exempt_interest_income"] = tax_exempt_interest_income

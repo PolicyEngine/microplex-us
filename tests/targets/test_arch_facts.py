@@ -2777,7 +2777,15 @@ def test_arch_consumer_fact_jsonl_provider_maps_us_admin_source_families(
         targets_by_arch_variable["social_security_retirement_benefits"].measure
         == "social_security_retirement"
     )
+    social_security_retirement = targets_by_arch_variable[
+        "social_security_retirement_benefits"
+    ]
+    assert _target_filter_tuples(social_security_retirement) == set()
+    assert "program_payment_type" not in social_security_retirement.required_features
     assert targets_by_arch_variable["ssi_payments"].measure == "ssi"
+    ssi_payments = targets_by_arch_variable["ssi_payments"]
+    assert _target_filter_tuples(ssi_payments) == set()
+    assert "program_payment_type" not in ssi_payments.required_features
     traditional_401k = targets_by_arch_variable["traditional_401k_contributions"]
     assert traditional_401k.measure == "traditional_401k_contributions"
     assert traditional_401k.entity.value == "person"
@@ -2831,6 +2839,57 @@ def test_arch_consumer_fact_jsonl_provider_maps_medicare_part_b_premiums(
     assert target.measure == "medicare_part_b_premiums"
     assert target.entity.value == "person"
     assert target.filters == ()
+
+
+def test_arch_consumer_fact_jsonl_provider_uses_ssa_payment_type_as_variable(
+    tmp_path: Path,
+) -> None:
+    consumer_jsonl = tmp_path / "consumer_facts.jsonl"
+    payment_types = {
+        "social_security_benefits": "social_security",
+        "social_security_dependents_benefits": "social_security_dependents",
+        "social_security_disability_benefits": "social_security_disability",
+        "social_security_retirement_benefits": "social_security_retirement",
+        "social_security_survivors_benefits": "social_security_survivors",
+        "ssi_payments": "ssi",
+    }
+    rows = [
+        _consumer_fact(
+            f"ssa-{payment_type}",
+            concept="ssa.annual_oasdi_or_ssi_payment_amount",
+            domain="social_security_and_ssi_payments",
+            source_name="ssa",
+            source_table="Annual Statistical Supplement",
+            value=1_000_000_000,
+            unit="usd",
+            constraints=(
+                {
+                    "variable": "us_social_security_and_ssi.program_payment_type",
+                    "operator": "==",
+                    "value": payment_type,
+                },
+            ),
+        )
+        for payment_type in payment_types
+    ]
+    consumer_jsonl.write_text(
+        "\n".join(json.dumps(row, sort_keys=True) for row in rows) + "\n"
+    )
+
+    target_set = ArchConsumerFactJSONLTargetProvider(consumer_jsonl).load_target_set(
+        TargetQuery(period=2024)
+    )
+    targets_by_arch_variable = {
+        target.metadata["arch_variable"]: target for target in target_set.targets
+    }
+
+    assert set(targets_by_arch_variable) == set(payment_types)
+    for arch_variable, measure in payment_types.items():
+        target = targets_by_arch_variable[arch_variable]
+        assert target.measure == measure
+        assert target.metadata["variable"] == measure
+        assert _target_filter_tuples(target) == set()
+        assert "program_payment_type" not in target.required_features
 
 
 def test_arch_consumer_fact_jsonl_provider_maps_ssi_detail_targets(

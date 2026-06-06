@@ -154,6 +154,17 @@ ARCH_SELF_DOMAIN_AMOUNT_VARIABLES = frozenset(
     set(ARCH_AMOUNT_VARIABLE_ALIASES.values()) - {"adjusted_gross_income"}
 )
 
+ARCH_SSA_PAYMENT_TYPE_AMOUNT_VARIABLES = frozenset(
+    {
+        "social_security_benefits",
+        "social_security_dependents_benefits",
+        "social_security_disability_benefits",
+        "social_security_retirement_benefits",
+        "social_security_survivors_benefits",
+        "ssi_payments",
+    }
+)
+
 ARCH_IRS_SOI_ITEMIZED_DEDUCTION_AMOUNT_VARIABLES = frozenset(
     {
         "charitable_amount",
@@ -4627,6 +4638,12 @@ def arch_target_record_to_canonical_spec(
     else:
         return None
 
+    if source_variable in ARCH_SSA_PAYMENT_TYPE_AMOUNT_VARIABLES:
+        filters = [
+            target_filter
+            for target_filter in filters
+            if str(target_filter.feature) != "program_payment_type"
+        ]
     filters = list(_dedupe_target_filters(filters))
     display_label = _arch_target_display_label(record)
     metadata = {

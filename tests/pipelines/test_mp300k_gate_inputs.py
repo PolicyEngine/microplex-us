@@ -12,13 +12,13 @@ import numpy as np
 from microplex_us.pipelines.mp300k_artifact_gates import (
     write_mp300k_artifact_gate_report,
 )
-from microplex_us.pipelines.mp_benchmark_manifest import (
-    FROZEN_PRODUCTION_ECPS_BASELINE_SHA256,
-    FROZEN_PRODUCTION_ECPS_TARGET_DB_SHA256,
-)
 from microplex_us.pipelines.mp300k_gate_inputs import (
     main,
     package_mp300k_gate_inputs,
+)
+from microplex_us.pipelines.mp_benchmark_manifest import (
+    FROZEN_PRODUCTION_ECPS_BASELINE_SHA256,
+    FROZEN_PRODUCTION_ECPS_TARGET_DB_SHA256,
 )
 from microplex_us.policyengine.us import write_policyengine_us_time_period_dataset
 
@@ -103,6 +103,11 @@ def _write_benchmark_manifest(path: Path) -> None:
                     "target_names_sha256": "d" * 64,
                 },
                 "scoring_config": {"sha256": "e" * 64},
+                "baseline_metrics": {
+                    "baseline_enhanced_cps_native_loss": 0.20,
+                    "baseline_holdout_loss": 0.04,
+                    "baseline_unweighted_msre": 0.17,
+                },
                 "baseline_dataset": {
                     "path": "/tmp/enhanced_cps_2024.h5",
                     "sha256": FROZEN_PRODUCTION_ECPS_BASELINE_SHA256,

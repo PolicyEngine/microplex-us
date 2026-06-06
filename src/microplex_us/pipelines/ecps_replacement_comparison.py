@@ -116,6 +116,18 @@ _BENCHMARK_MANIFEST_EVIDENCE_PATHS: dict[str, tuple[tuple[str, ...], ...]] = {
         ("scoring_config", "sha256"),
         ("scoring_config_sha256",),
     ),
+    "baseline_metrics.baseline_enhanced_cps_native_loss": (
+        ("baseline_metrics", "baseline_enhanced_cps_native_loss"),
+        ("baseline_enhanced_cps_native_loss",),
+    ),
+    "baseline_metrics.baseline_holdout_loss": (
+        ("baseline_metrics", "baseline_holdout_loss"),
+        ("baseline_holdout_loss",),
+    ),
+    "baseline_metrics.baseline_unweighted_msre": (
+        ("baseline_metrics", "baseline_unweighted_msre"),
+        ("baseline_unweighted_msre",),
+    ),
 }
 
 
@@ -1976,6 +1988,11 @@ def _valid_benchmark_evidence_value(field: str, value: Any) -> bool:
     if field.endswith(".target_count"):
         try:
             return int(value) > 0
+        except (TypeError, ValueError):
+            return False
+    if field.startswith("baseline_metrics."):
+        try:
+            return np.isfinite(float(value))
         except (TypeError, ValueError):
             return False
     return True

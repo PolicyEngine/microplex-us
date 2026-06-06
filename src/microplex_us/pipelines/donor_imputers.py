@@ -180,6 +180,7 @@ class RegimeAwareDonorImputer:
         self.seed = int(seed)
         self._fitted: dict[str, Any] = {}
         self._fitted_columns: tuple[str, ...] = ()
+        self._predictor_columns: tuple[str, ...] = ()
         self._regimes: dict[str, str] = {}
 
     def fit(
@@ -209,12 +210,15 @@ class RegimeAwareDonorImputer:
 
         self._fitted = {}
         self._fitted_columns = ()
+        self._predictor_columns = ()
         self._regimes = {}
-        subset = (
-            data[self.condition_vars + self.target_vars]
-            .replace([np.inf, -np.inf], np.nan)
-            .dropna()
+        target_vars = tuple(dict.fromkeys(self.target_vars))
+        target_set = set(target_vars)
+        predictor_vars = tuple(
+            dict.fromkeys(var for var in self.condition_vars if var not in target_set)
         )
+        fit_columns = tuple(dict.fromkeys((*predictor_vars, *target_vars)))
+        subset = data[list(fit_columns)].replace([np.inf, -np.inf], np.nan).dropna()
         if len(subset) < 25:
             return self
 
@@ -227,10 +231,11 @@ class RegimeAwareDonorImputer:
         )
         fitted = wrapper.fit(
             subset,
-            predictors=list(self.condition_vars),
-            imputed_variables=list(self.target_vars),
+            predictors=list(predictor_vars),
+            imputed_variables=list(target_vars),
         )
-        self._fitted_columns = tuple(self.target_vars)
+        self._fitted_columns = target_vars
+        self._predictor_columns = predictor_vars
         self._fitted = {column: fitted for column in self._fitted_columns}
         self._regimes = {
             column: wrapper.get_regime(column) for column in self._fitted_columns
@@ -251,7 +256,7 @@ class RegimeAwareDonorImputer:
 
         prediction_seed = self.seed if seed is None else int(seed)
         self._reset_prediction_rngs(fitted, seed=prediction_seed)
-        preds = fitted.predict(synthetic[self.condition_vars])
+        preds = fitted.predict(synthetic[list(self._predictor_columns)])
         for column in self.target_vars:
             if column in preds.columns:
                 synthetic[column] = preds[column].to_numpy(dtype=float)

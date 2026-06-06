@@ -249,7 +249,9 @@ class RegimeAwareDonorImputer:
         self._predictor_columns = predictor_vars
         self._fitted = {column: fitted for column in self._fitted_columns}
         self._regimes = {
-            column: wrapper.get_regime(column) for column in self._fitted_columns
+            column: regime
+            for column, regime in getattr(wrapper, "_regimes", {}).items()
+            if column in target_set
         }
         return self
 

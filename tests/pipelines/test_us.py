@@ -4202,6 +4202,7 @@ class TestUSMicroplexPipeline:
                 "person_id": [30, 40],
                 "household_id": [3, 4],
                 "age": [45, 62],
+                us_pipeline_module.PUF_SUPPORT_CLONE_SOURCE_ROW_ID_COLUMN: [0, 1],
                 "self_employment_income": [-250.0, 500.0],
                 "taxable_interest_income": [10.0, 20.0],
                 "partnership_s_corp_income": [-700.0, 1_200.0],
@@ -4230,7 +4231,7 @@ class TestUSMicroplexPipeline:
         assert result["person_is_puf_clone"].tolist() == [0.0, 0.0]
         assert result["person_id"].tolist() == [10, 20]
         assert result["household_id"].tolist() == [1, 2]
-        assert result["self_employment_income"].tolist() == [75.0, 50.0]
+        assert result["self_employment_income"].tolist() == [-250.0, 500.0]
         assert result["taxable_interest_income"].tolist() == [10.0, 20.0]
         assert result["partnership_s_corp_income"].tolist() == [-700.0, 1_200.0]
         assert result["state_income_tax_paid"].tolist() == [400.0, 50.0]
@@ -4240,14 +4241,23 @@ class TestUSMicroplexPipeline:
         assert summary["emitted_clone_row_count"] == 0
         assert summary["final_row_count"] == 2
         assert summary["dropped_generated_entity_id_columns"] == ["tax_unit_id"]
-        assert "self_employment_income" not in summary["collapse_copy_variables"]
         assert summary["collapse_copy_variables"] == [
             "partnership_s_corp_income",
+            "self_employment_income",
             "state_income_tax_paid",
             "taxable_interest_income",
         ]
+        assert summary["overlap_collapse_override_variables"] == [
+            "self_employment_income",
+        ]
+        assert summary["source_row_alignment"] == {
+            "enabled": True,
+            "column": us_pipeline_module.PUF_SUPPORT_CLONE_SOURCE_ROW_ID_COLUMN,
+            "row_count": 2,
+            "clone_was_reordered": False,
+        }
 
-    def test_finalize_puf_support_clone_preserves_cps_measured_income_totals(
+    def test_finalize_puf_support_clone_preserves_puf_tax_details_by_default(
         self,
     ):
         pipeline = USMicroplexPipeline(
@@ -4263,10 +4273,15 @@ class TestUSMicroplexPipeline:
                 "person_id": [10, 20],
                 "household_id": [1, 2],
                 "age": [45, 62],
+                "employment_income": [30_000.0, 10_000.0],
+                "self_employment_income": [500.0, 250.0],
+                "long_term_capital_gains": [1_000.0, 0.0],
+                "short_term_capital_gains": [100.0, 0.0],
+                "capital_gains": [1_100.0, 0.0],
                 "interest_income": [3.0, 4.0],
                 # Regression coverage for preclone components: these may exist on
                 # the CPS scaffold already, but PUF-integrated leaves must still
-                # be scaled back to the CPS measured total.
+                # survive collapse back to the scaffold rows.
                 "taxable_interest_income": [3.0, 4.0],
                 "tax_exempt_interest_income": [3.0, 4.0],
                 "dividend_income": [10.0, 5.0],
@@ -4284,6 +4299,191 @@ class TestUSMicroplexPipeline:
                 "person_id": [30, 40],
                 "household_id": [3, 4],
                 "age": [45, 62],
+                us_pipeline_module.PUF_SUPPORT_CLONE_SOURCE_ROW_ID_COLUMN: [0, 1],
+                "employment_income": [90_000.0, 20_000.0],
+                "self_employment_income": [-4_000.0, 8_000.0],
+                "long_term_capital_gains": [50_000.0, -1_000.0],
+                "short_term_capital_gains": [2_500.0, -500.0],
+                "capital_gains": [52_500.0, -1_500.0],
+                "taxable_interest_income": [1_000.0, 0.0],
+                "tax_exempt_interest_income": [500.0, 0.0],
+                "qualified_dividend_income": [20.0, 0.0],
+                "non_qualified_dividend_income": [5.0, 0.0],
+                "ordinary_dividend_income": [25.0, 0.0],
+                "dividend_income": [25.0, 0.0],
+                "taxable_pension_income": [90.0, 0.0],
+                "tax_exempt_pension_income": [10.0, 0.0],
+                "taxable_unemployment_compensation": [600.0, 700.0],
+            }
+        )
+
+        result, summary = pipeline._finalize_puf_support_clone_frame(
+            original=original,
+            imputed_clone=clone,
+            donor_source_name="irs_soi_puf_2024",
+            integrated_variables=[
+                "taxable_interest_income",
+                "tax_exempt_interest_income",
+                "employment_income",
+                "self_employment_income",
+                "long_term_capital_gains",
+                "short_term_capital_gains",
+                "capital_gains",
+                "qualified_dividend_income",
+                "non_qualified_dividend_income",
+                "taxable_pension_income",
+                "tax_exempt_pension_income",
+                "taxable_unemployment_compensation",
+            ],
+            preclone_columns=set(original.columns),
+            donor_seed_columns=set(clone.columns),
+            donor_observed=set(clone.columns),
+        )
+
+        assert result["employment_income"].tolist() == [90_000.0, 20_000.0]
+        assert result["self_employment_income"].tolist() == [-4_000.0, 8_000.0]
+        assert result["long_term_capital_gains"].tolist() == [50_000.0, -1_000.0]
+        assert result["short_term_capital_gains"].tolist() == [2_500.0, -500.0]
+        assert result["capital_gains"].tolist() == [52_500.0, -1_500.0]
+        assert result["taxable_interest_income"].tolist() == [1_000.0, 0.0]
+        assert result["tax_exempt_interest_income"].tolist() == [500.0, 0.0]
+        assert result["interest_income"].tolist() == [1_500.0, 0.0]
+        assert result["taxable_unemployment_compensation"].tolist() == [600.0, 700.0]
+        assert result["unemployment_compensation"].tolist() == [600.0, 700.0]
+        assert result["dividend_income"].tolist() == [25.0, 0.0]
+        assert result["ordinary_dividend_income"].tolist() == [25.0, 0.0]
+        assert result["qualified_dividend_income"].tolist() == [20.0, 0.0]
+        assert result["non_qualified_dividend_income"].tolist() == [5.0, 0.0]
+        assert result["taxable_pension_income"].tolist() == [90.0, 0.0]
+        assert result["tax_exempt_pension_income"].tolist() == [10.0, 0.0]
+        assert result["pension_income"].tolist() == [100.0, 0.0]
+        passthrough = summary["cps_measured_total_passthrough"]
+        assert passthrough["enabled"] is False
+        assert passthrough["passthrough_variables"] == []
+        assert passthrough["dividend_components_scaled_to_cps_total"] is False
+        assert set(passthrough["identity_reconciled_variables"]) >= {
+            "dividend_income",
+            "interest_income",
+            "ordinary_dividend_income",
+            "pension_income",
+            "unemployment_compensation",
+        }
+        assert set(summary["collapse_copy_variables"]) >= {
+            "dividend_income",
+            "employment_income",
+            "interest_income",
+            "long_term_capital_gains",
+            "non_qualified_dividend_income",
+            "ordinary_dividend_income",
+            "pension_income",
+            "qualified_dividend_income",
+            "self_employment_income",
+            "short_term_capital_gains",
+            "tax_exempt_interest_income",
+            "tax_exempt_pension_income",
+            "taxable_interest_income",
+            "taxable_pension_income",
+            "taxable_unemployment_compensation",
+            "unemployment_compensation",
+        }
+        assert set(summary["overlap_collapse_override_variables"]) >= {
+            "capital_gains",
+            "employment_income",
+            "long_term_capital_gains",
+            "self_employment_income",
+            "short_term_capital_gains",
+            "tax_exempt_interest_income",
+            "tax_exempt_pension_income",
+            "taxable_interest_income",
+            "taxable_pension_income",
+            "taxable_unemployment_compensation",
+        }
+        assert summary["source_row_alignment"]["clone_was_reordered"] is False
+
+    def test_finalize_puf_support_clone_aligns_shuffled_clone_by_source_row_id(
+        self,
+    ):
+        pipeline = USMicroplexPipeline(
+            USMicroplexBuildConfig(
+                synthesis_backend="seed",
+                puf_support_clone_enabled=True,
+                puf_support_clone_output_mode="collapse_to_scaffold",
+                puf_support_clone_both_halves_override_variables=(),
+            )
+        )
+        original = pd.DataFrame(
+            {
+                "person_id": [10, 20],
+                "household_id": [1, 2],
+                "age": [45, 62],
+                "self_employment_income": [75.0, 50.0],
+            }
+        )
+        clone = pd.DataFrame(
+            {
+                "person_id": [40, 30],
+                "household_id": [4, 3],
+                "age": [62, 45],
+                us_pipeline_module.PUF_SUPPORT_CLONE_SOURCE_ROW_ID_COLUMN: [1, 0],
+                "self_employment_income": [500.0, -250.0],
+            }
+        )
+
+        result, summary = pipeline._finalize_puf_support_clone_frame(
+            original=original,
+            imputed_clone=clone,
+            donor_source_name="irs_soi_puf_2024",
+            integrated_variables=["self_employment_income"],
+            preclone_columns=set(original.columns),
+            donor_seed_columns=set(clone.columns),
+            donor_observed=set(clone.columns),
+        )
+
+        assert result["person_id"].tolist() == [10, 20]
+        assert result["self_employment_income"].tolist() == [-250.0, 500.0]
+        assert summary["source_row_alignment"] == {
+            "enabled": True,
+            "column": us_pipeline_module.PUF_SUPPORT_CLONE_SOURCE_ROW_ID_COLUMN,
+            "row_count": 2,
+            "clone_was_reordered": True,
+        }
+
+    def test_finalize_puf_support_clone_can_scale_tax_details_to_cps_totals(
+        self,
+    ):
+        pipeline = USMicroplexPipeline(
+            USMicroplexBuildConfig(
+                synthesis_backend="seed",
+                puf_support_clone_enabled=True,
+                puf_support_clone_output_mode="collapse_to_scaffold",
+                puf_support_clone_both_halves_override_variables=(),
+                puf_support_clone_scale_tax_details_to_cps_totals=True,
+            )
+        )
+        original = pd.DataFrame(
+            {
+                "person_id": [10, 20],
+                "household_id": [1, 2],
+                "age": [45, 62],
+                "interest_income": [3.0, 4.0],
+                "taxable_interest_income": [3.0, 4.0],
+                "tax_exempt_interest_income": [3.0, 4.0],
+                "dividend_income": [10.0, 5.0],
+                "qualified_dividend_income": [10.0, 5.0],
+                "non_qualified_dividend_income": [10.0, 5.0],
+                "pension_income": [100.0, 200.0],
+                "taxable_pension_income": [100.0, 200.0],
+                "tax_exempt_pension_income": [100.0, 200.0],
+                "unemployment_compensation": [100.0, 0.0],
+                "taxable_unemployment_compensation": [100.0, 0.0],
+            }
+        )
+        clone = pd.DataFrame(
+            {
+                "person_id": [30, 40],
+                "household_id": [3, 4],
+                "age": [45, 62],
+                us_pipeline_module.PUF_SUPPORT_CLONE_SOURCE_ROW_ID_COLUMN: [0, 1],
                 "taxable_interest_income": [1_000.0, 0.0],
                 "tax_exempt_interest_income": [500.0, 0.0],
                 "qualified_dividend_income": [20.0, 0.0],
@@ -4316,8 +4516,11 @@ class TestUSMicroplexPipeline:
 
         assert result["taxable_interest_income"].round(6).tolist() == [2.0, 2.72]
         assert result["tax_exempt_interest_income"].round(6).tolist() == [1.0, 1.28]
+        assert result["interest_income"].round(6).tolist() == [3.0, 4.0]
         assert result["taxable_unemployment_compensation"].tolist() == [100.0, 0.0]
+        assert result["unemployment_compensation"].tolist() == [100.0, 0.0]
         assert result["dividend_income"].tolist() == [10.0, 5.0]
+        assert result["ordinary_dividend_income"].tolist() == [10.0, 5.0]
         assert result["qualified_dividend_income"].round(6).tolist() == [
             8.0,
             3.9,
@@ -4334,17 +4537,25 @@ class TestUSMicroplexPipeline:
             10.0,
             82.0,
         ]
-        assert summary["cps_measured_total_passthrough"] == {
-            "passthrough_variables": [
-                "non_qualified_dividend_income",
-                "qualified_dividend_income",
-                "tax_exempt_interest_income",
-                "tax_exempt_pension_income",
-                "taxable_interest_income",
-                "taxable_pension_income",
-                "taxable_unemployment_compensation",
-            ],
-            "dividend_components_scaled_to_cps_total": True,
+        assert result["pension_income"].round(6).tolist() == [100.0, 200.0]
+        passthrough = summary["cps_measured_total_passthrough"]
+        assert passthrough["enabled"] is True
+        assert passthrough["passthrough_variables"] == [
+            "non_qualified_dividend_income",
+            "qualified_dividend_income",
+            "tax_exempt_interest_income",
+            "tax_exempt_pension_income",
+            "taxable_interest_income",
+            "taxable_pension_income",
+            "taxable_unemployment_compensation",
+        ]
+        assert passthrough["dividend_components_scaled_to_cps_total"] is True
+        assert set(passthrough["identity_reconciled_variables"]) >= {
+            "dividend_income",
+            "interest_income",
+            "ordinary_dividend_income",
+            "pension_income",
+            "unemployment_compensation",
         }
 
     def test_integrate_donor_sources_collapses_puf_support_clone_before_later_donors(
@@ -4524,7 +4735,7 @@ class TestUSMicroplexPipeline:
         assert result.index.tolist() == [0, 1]
         assert result["person_is_puf_clone"].tolist() == [0.0, 0.0]
         assert result["hh_weight"].tolist() == [100.0, 200.0]
-        assert result["self_employment_income"].tolist() == [75.0, 50.0]
+        assert result["self_employment_income"].tolist() == [-250.0, 500.0]
         assert result["taxable_interest_income"].tolist() == [10.0, 20.0]
         assert sorted(result["state_income_tax_paid"].tolist()) == [50.0, 400.0]
         assert integration["puf_support_clone_summary"]["output_mode"] == (

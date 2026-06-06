@@ -113,6 +113,14 @@ _FORBIDDEN_SOURCE_DIAGNOSTIC_SUFFIXES = (
     "_imputation_source",
 )
 _REQUIRED_BENCHMARK_MANIFEST_EVIDENCE = {
+    "certificate_type": (
+        ("certificate_type",),
+        ("frozen_ecps_baseline_certificate", "certificate_type"),
+    ),
+    "period": (
+        ("period",),
+        ("target_period",),
+    ),
     "baseline_dataset.path": (
         ("baseline_dataset", "path"),
         ("baseline_dataset_path",),
@@ -136,16 +144,38 @@ _REQUIRED_BENCHMARK_MANIFEST_EVIDENCE = {
         ("policyengine_us", "version"),
         ("policyengine_us_version",),
     ),
+    "target_surface.target_profile": (
+        ("target_surface", "target_profile"),
+        ("target_profile",),
+    ),
+    "target_surface.target_scope": (
+        ("target_surface", "target_scope"),
+        ("target_scope",),
+        ("target_scope_filter",),
+    ),
+    "target_surface.target_count": (
+        ("target_surface", "target_count"),
+        ("target_count",),
+    ),
+    "target_surface.target_names_sha256": (
+        ("target_surface", "target_names_sha256"),
+        ("target_names_sha256",),
+    ),
+    "scoring_config.sha256": (
+        ("scoring_config", "sha256"),
+        ("scoring_config_sha256",),
+    ),
     "target_db.path": (
         ("target_db", "path"),
         ("target_db_path",),
         ("targets_db", "path"),
-        ("policyengine_targets_db",),
+        ("policyengine_targets_db", "path"),
     ),
     "target_db.sha256": (
         ("target_db", "sha256"),
         ("target_db_sha256",),
         ("targets_db", "sha256"),
+        ("policyengine_targets_db", "sha256"),
         ("policyengine_targets_db_sha256",),
     ),
 }
@@ -238,6 +268,7 @@ def build_mp300k_artifact_gate_report(
     ecps_comparison_gate = _ecps_comparison_gate(
         resolved_ecps_comparison,
         benchmark_evidence=benchmark_evidence,
+        expected_period=period,
     )
     arch_coverage_gate = _arch_target_coverage_gate(
         arch_coverage_payload,
@@ -987,6 +1018,7 @@ def _ecps_comparison_gate(
     ecps_comparison_payload: dict[str, Any] | None,
     *,
     benchmark_evidence: dict[str, Any] | None = None,
+    expected_period: int,
 ) -> dict[str, Any]:
     if ecps_comparison_payload is None:
         return _gate(
@@ -1022,6 +1054,7 @@ def _ecps_comparison_gate(
         ecps_comparison_payload,
         summary,
         benchmark_evidence=benchmark_evidence,
+        expected_period=expected_period,
     )
     details.update(contract["details"])
     missing_requirements = list(contract["missing_requirements"])
@@ -1101,6 +1134,7 @@ def _ecps_comparison_contract_summary(
     summary: dict[str, Any],
     *,
     benchmark_evidence: dict[str, Any] | None = None,
+    expected_period: int,
 ) -> dict[str, Any]:
     candidate_households = _first_nested_present(
         payload,
@@ -1216,6 +1250,7 @@ def _ecps_comparison_contract_summary(
         payload,
         summary,
         benchmark_evidence=benchmark_evidence,
+        expected_period=expected_period,
     )
 
     requirements = {
@@ -1255,6 +1290,7 @@ def _frozen_baseline_certificate_summary(
     summary: dict[str, Any],
     *,
     benchmark_evidence: dict[str, Any] | None,
+    expected_period: int,
 ) -> dict[str, Any]:
     certificate = _find_frozen_baseline_certificate(payload)
     if not isinstance(certificate, dict):
@@ -1275,8 +1311,32 @@ def _frozen_baseline_certificate_summary(
                 "actual": schema_version,
             }
         )
+    certificate_type = certificate.get("certificate_type")
+    if certificate_type != "frozen_production_ecps_baseline":
+        mismatches.append(
+            {
+                "field": "certificate_type",
+                "expected": "frozen_production_ecps_baseline",
+                "actual": certificate_type,
+            }
+        )
+    certificate_period = certificate.get("period")
+    try:
+        certificate_period_int = int(certificate_period)
+    except (TypeError, ValueError):
+        certificate_period_int = None
+    if certificate_period_int != int(expected_period):
+        mismatches.append(
+            {
+                "field": "period",
+                "expected": int(expected_period),
+                "actual": certificate_period,
+            }
+        )
 
     evidence_values = {
+        "certificate_type": certificate_type,
+        "period": certificate_period,
         "baseline_dataset.sha256": _first_nested_path_value(
             certificate,
             (
@@ -1303,6 +1363,28 @@ def _frozen_baseline_certificate_summary(
                 ("policyengine_us_data", "commit_sha"),
                 ("policyengine_us_data_commit",),
                 ("policyengine_us_data_commit_sha",),
+            ),
+        ),
+        "policyengine_us.version": _first_nested_path_value(
+            certificate,
+            (
+                ("policyengine_us", "version"),
+                ("policyengine_us_version",),
+            ),
+        ),
+        "target_surface.target_profile": _first_nested_path_value(
+            certificate,
+            (
+                ("target_surface", "target_profile"),
+                ("target_profile",),
+            ),
+        ),
+        "target_surface.target_scope": _first_nested_path_value(
+            certificate,
+            (
+                ("target_surface", "target_scope"),
+                ("target_scope",),
+                ("target_scope_filter",),
             ),
         ),
         "scoring_config.sha256": _first_nested_path_value(
@@ -1356,9 +1438,17 @@ def _frozen_baseline_certificate_summary(
             )
 
     for evidence_name in (
+        "certificate_type",
+        "period",
         "baseline_dataset.sha256",
         "target_db.sha256",
         "policyengine_us_data.commit",
+        "policyengine_us.version",
+        "target_surface.target_profile",
+        "target_surface.target_scope",
+        "target_surface.target_count",
+        "target_surface.target_names_sha256",
+        "scoring_config.sha256",
     ):
         expected_value = (benchmark_evidence or {}).get(evidence_name)
         certificate_value = evidence_values.get(evidence_name)
@@ -1384,7 +1474,10 @@ def _frozen_baseline_certificate_summary(
         "policyengine_us_data_commit": evidence_values.get(
             "policyengine_us_data.commit"
         ),
+        "policyengine_us_version": evidence_values.get("policyengine_us.version"),
         "scoring_config_sha256": evidence_values.get("scoring_config.sha256"),
+        "target_profile": evidence_values.get("target_surface.target_profile"),
+        "target_scope": evidence_values.get("target_surface.target_scope"),
         "target_names_sha256": evidence_values.get(
             "target_surface.target_names_sha256"
         ),
@@ -1422,11 +1515,18 @@ def _certificate_metric(certificate: dict[str, Any], metric_name: str) -> Any:
 
 
 def _valid_certificate_evidence_value(name: str, value: Any) -> bool:
-    if name == "target_surface.target_count":
+    if name in {"period", "target_surface.target_count"}:
         try:
             return int(value) > 0
         except (TypeError, ValueError):
             return False
+    if name == "certificate_type":
+        return value == "frozen_production_ecps_baseline"
+    if name.endswith(".version") or name in {
+        "target_surface.target_profile",
+        "target_surface.target_scope",
+    }:
+        return isinstance(value, str) and bool(value)
     if name.endswith(".sha256"):
         return (
             isinstance(value, str)
@@ -2103,6 +2203,13 @@ def _first_nested_path_value(
 
 
 def _valid_benchmark_evidence_value(name: str, value: Any) -> bool:
+    if name in {"period", "target_surface.target_count"}:
+        try:
+            return int(value) > 0
+        except (TypeError, ValueError):
+            return False
+    if name == "certificate_type":
+        return value == "frozen_production_ecps_baseline"
     if not isinstance(value, str) or not value:
         return False
     if name.endswith(".sha256"):

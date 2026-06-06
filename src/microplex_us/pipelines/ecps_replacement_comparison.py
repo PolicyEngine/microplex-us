@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.metadata
 import json
 import subprocess
 from pathlib import Path
@@ -526,6 +527,7 @@ def build_sound_ecps_replacement_comparison(
         baseline_dataset_path=baseline_path,
         policyengine_targets_db_path=resolved_targets_db,
         policyengine_us_data_repo=policyengine_us_data_repo,
+        policyengine_us_version=_installed_policyengine_us_version(),
         period=period,
         target_names=target_names,
         target_scope=target_scope,
@@ -1728,6 +1730,7 @@ def _frozen_ecps_baseline_certificate(
     baseline_dataset_path: Path,
     policyengine_targets_db_path: Path | None,
     policyengine_us_data_repo: str | Path | None,
+    policyengine_us_version: str,
     period: int,
     target_names: list[str],
     target_scope: str,
@@ -1787,6 +1790,7 @@ def _frozen_ecps_baseline_certificate(
             else None
         ),
         "policyengine_us_data": _git_repo_descriptor(policyengine_us_data_repo),
+        "policyengine_us": {"version": str(policyengine_us_version)},
         "target_surface": {
             "target_profile": "pe_native_broad",
             "target_scope": str(target_scope),
@@ -1800,6 +1804,13 @@ def _frozen_ecps_baseline_certificate(
         "baseline_metrics": baseline_metrics,
         "baseline_sanity": dict(baseline_sanity),
     }
+
+
+def _installed_policyengine_us_version() -> str:
+    try:
+        return importlib.metadata.version("policyengine-us")
+    except importlib.metadata.PackageNotFoundError as exc:
+        raise ValueError("policyengine-us is not installed") from exc
 
 
 def _git_repo_descriptor(repo_path: str | Path | None) -> dict[str, Any] | None:

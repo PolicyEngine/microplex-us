@@ -20,6 +20,11 @@ def build_mp_benchmark_manifest(
     target_db_path: str | Path,
     period: int = 2024,
     target_profile: str = "pe_native_broad",
+    target_scope: str = "all",
+    target_count: int,
+    target_names_sha256: str,
+    scoring_config_sha256: str,
+    certificate_type: str = "frozen_production_ecps_baseline",
     policyengine_us_data_repo: str | Path | None = None,
     policyengine_us_data_commit: str | None = None,
     policyengine_us_version: str | None = None,
@@ -42,9 +47,18 @@ def build_mp_benchmark_manifest(
     version = policyengine_us_version or _installed_policyengine_us_version()
     return {
         "schema_version": 1,
+        "certificate_type": str(certificate_type),
         "generated_at": datetime.now(UTC).isoformat(),
         "period": int(period),
         "target_profile": str(target_profile),
+        "target_scope": str(target_scope),
+        "target_surface": {
+            "target_profile": str(target_profile),
+            "target_scope": str(target_scope),
+            "target_count": int(target_count),
+            "target_names_sha256": str(target_names_sha256),
+        },
+        "scoring_config": {"sha256": str(scoring_config_sha256)},
         "baseline_dataset": baseline_dataset,
         "policyengine_us_data": repo_descriptor,
         "policyengine_us": {"version": version},
@@ -142,6 +156,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output-json", required=True)
     parser.add_argument("--period", type=int, default=2024)
     parser.add_argument("--target-profile", default="pe_native_broad")
+    parser.add_argument("--target-scope", default="all")
+    parser.add_argument("--target-count", type=int, required=True)
+    parser.add_argument("--target-names-sha256", required=True)
+    parser.add_argument("--scoring-config-sha256", required=True)
+    parser.add_argument(
+        "--certificate-type",
+        default="frozen_production_ecps_baseline",
+    )
     parser.add_argument("--policyengine-us-data-repo")
     parser.add_argument("--policyengine-us-data-commit")
     parser.add_argument("--policyengine-us-version")
@@ -161,6 +183,11 @@ def main(argv: list[str] | None = None) -> int:
         target_db_path=args.target_db,
         period=args.period,
         target_profile=args.target_profile,
+        target_scope=args.target_scope,
+        target_count=args.target_count,
+        target_names_sha256=args.target_names_sha256,
+        scoring_config_sha256=args.scoring_config_sha256,
+        certificate_type=args.certificate_type,
         policyengine_us_data_repo=args.policyengine_us_data_repo,
         policyengine_us_data_commit=args.policyengine_us_data_commit,
         policyengine_us_version=args.policyengine_us_version,

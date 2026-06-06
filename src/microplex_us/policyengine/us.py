@@ -26,7 +26,10 @@ from microplex.targets import (
 )
 
 from microplex_us.microdata_roles import POLICYENGINE_US_TAKEUP_INPUT_VARIABLES
-from microplex_us.policyengine.target_profiles import PolicyEngineUSTargetCell
+from microplex_us.policyengine.target_profiles import (
+    PolicyEngineUSTargetCell,
+    resolve_policyengine_us_target_profile,
+)
 
 GEOGRAPHIC_CONSTRAINT_VARIABLES: set[str] = {
     "state_fips",
@@ -1062,6 +1065,20 @@ class PolicyEngineUSDBTargetProvider:
         query = query or TargetQuery()
         provider_filters = query.provider_filters
         best_period = bool(provider_filters.get("best_period", True))
+        target_cells = provider_filters.get("target_cells")
+        target_profile = provider_filters.get("calibration_target_profile") or (
+            provider_filters.get("target_profile")
+        )
+        if target_profile is not None:
+            if target_cells is not None:
+                raise ValueError(
+                    "target_profile/calibration_target_profile cannot be combined "
+                    "with explicit target_cells"
+                )
+            target_cells = [
+                cell.to_provider_filter()
+                for cell in resolve_policyengine_us_target_profile(str(target_profile))
+            ]
         canonical_targets = policyengine_db_targets_to_canonical_set(
             self.load_targets(
                 period=query.period if isinstance(query.period, int) else None,
@@ -1070,7 +1087,7 @@ class PolicyEngineUSDBTargetProvider:
                 domain_variable_values=provider_filters.get("domain_variable_values"),
                 domain_variable_is_null=provider_filters.get("domain_variable_is_null"),
                 geo_levels=provider_filters.get("geo_levels"),
-                target_cells=provider_filters.get("target_cells"),
+                target_cells=target_cells,
                 target_ids=provider_filters.get("target_ids"),
                 stratum_ids=provider_filters.get("stratum_ids"),
                 reform_id=int(provider_filters.get("reform_id", 0)),

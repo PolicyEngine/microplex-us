@@ -177,6 +177,103 @@ def _create_policyengine_targets_db(path: Path) -> None:
     conn.close()
 
 
+def _create_profile_filter_targets_db(path: Path) -> None:
+    conn = sqlite3.connect(path)
+    conn.executescript(
+        """
+        CREATE TABLE strata (
+            stratum_id INTEGER PRIMARY KEY,
+            definition_hash TEXT,
+            parent_stratum_id INTEGER
+        );
+
+        CREATE TABLE stratum_constraints (
+            stratum_id INTEGER NOT NULL,
+            constraint_variable TEXT NOT NULL,
+            operation TEXT NOT NULL,
+            value TEXT NOT NULL
+        );
+
+        CREATE TABLE targets (
+            target_id INTEGER PRIMARY KEY,
+            variable TEXT NOT NULL,
+            period INTEGER NOT NULL,
+            stratum_id INTEGER NOT NULL,
+            reform_id INTEGER NOT NULL DEFAULT 0,
+            value REAL,
+            active BOOLEAN NOT NULL DEFAULT 1,
+            tolerance REAL,
+            source TEXT,
+            notes TEXT
+        );
+
+        CREATE VIEW target_overview AS
+        SELECT
+            t.target_id,
+            t.stratum_id,
+            t.variable,
+            t.value,
+            t.period,
+            t.active,
+            'national' AS geo_level,
+            'US' AS geographic_id,
+            NULL AS domain_variable
+        FROM targets AS t;
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO strata (stratum_id, definition_hash, parent_stratum_id)
+        VALUES (?, ?, ?)
+        """,
+        (1, compute_policyengine_us_definition_hash(()), None),
+    )
+    conn.executemany(
+        """
+        INSERT INTO targets (
+            target_id,
+            variable,
+            period,
+            stratum_id,
+            reform_id,
+            value,
+            active,
+            tolerance,
+            source,
+            notes
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        [
+            (
+                20,
+                "employment_income_before_lsr",
+                2024,
+                1,
+                0,
+                8_000_000_000_000.0,
+                1,
+                5.0,
+                "BEA",
+                "Source-backed employment income",
+            ),
+            (
+                21,
+                "childcare_expenses",
+                2024,
+                1,
+                0,
+                80_000_000_000.0,
+                1,
+                5.0,
+                "synthetic",
+                "Broad profile only",
+            ),
+        ],
+    )
+    conn.commit()
+    conn.close()
+
+
 class TestPolicyEngineUSDBTargetProvider:
     def test_load_targets_includes_constraints(self, tmp_path):
         db_path = tmp_path / "policy_data.db"
@@ -249,6 +346,41 @@ class TestPolicyEngineUSDBTargetProvider:
         assert target_set.targets[1].metadata["parent_stratum_id"] == 1
         assert target_set.targets[1].metadata["constraint_count"] == 2
         assert target_set.targets[1].metadata["stratum_definition_hash"] is not None
+
+    def test_load_target_set_applies_calibration_target_profile(self, tmp_path):
+        db_path = tmp_path / "policy_data.db"
+        _create_profile_filter_targets_db(db_path)
+
+        provider = PolicyEngineUSDBTargetProvider(db_path)
+        target_set = provider.load_target_set(
+            TargetQuery(
+                period=2024,
+                provider_filters={
+                    "target_profile": "pe_native_broad",
+                    "calibration_target_profile": "pe_native_broad_source_backed",
+                },
+            )
+        )
+
+        assert [target.measure for target in target_set.targets] == [
+            "employment_income_before_lsr"
+        ]
+
+    def test_load_target_set_rejects_profile_with_explicit_cells(self, tmp_path):
+        db_path = tmp_path / "policy_data.db"
+        _create_profile_filter_targets_db(db_path)
+
+        provider = PolicyEngineUSDBTargetProvider(db_path)
+        with pytest.raises(ValueError, match="cannot be combined"):
+            provider.load_target_set(
+                TargetQuery(
+                    period=2024,
+                    provider_filters={
+                        "target_profile": "pe_native_broad",
+                        "target_cells": [{"variable": "snap"}],
+                    },
+                )
+            )
 
     def test_load_targets_supports_exact_and_null_domain_filters(self, tmp_path):
         db_path = tmp_path / "policy_data.db"

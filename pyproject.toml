@@ -13,7 +13,7 @@ authors = [
 ]
 requires-python = ">=3.13"
 dependencies = [
-    "microplex[calibrate] @ git+https://github.com/PolicyEngine/microplex.git@2e560123b407d7a2353fbb92df7d8f30a87ae50f",
+    "microplex[calibrate] @ git+https://github.com/PolicyEngine/microplex.git@c60efa5d5f0a8056b9ba0e2d84883c060881607f",
     "duckdb>=1.2",
     "h5py>=3.10",
     "requests>=2.31",

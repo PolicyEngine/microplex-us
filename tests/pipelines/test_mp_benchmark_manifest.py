@@ -41,6 +41,7 @@ def test_build_mp_benchmark_manifest_pins_release_inputs(tmp_path):
         scoring_config_sha256="e" * 64,
         policyengine_us_data_commit="b" * 40,
         policyengine_us_version="1.587.0",
+        enforce_production_pins=False,
     )
 
     assert manifest["schema_version"] == 1
@@ -88,6 +89,7 @@ def test_main_writes_mp_benchmark_manifest(tmp_path, capsys):
             "d" * 64,
             "--scoring-config-sha256",
             "e" * 64,
+            "--allow-noncanonical-production-pins",
         ]
     )
 
@@ -97,6 +99,25 @@ def test_main_writes_mp_benchmark_manifest(tmp_path, capsys):
     assert exit_code == 0
     assert printed_path == output
     assert payload["policyengine_us_data"]["commit"] == "c" * 40
+
+
+def test_build_mp_benchmark_manifest_rejects_noncanonical_release_pins(tmp_path):
+    baseline = _write_file(tmp_path / "enhanced_cps_2024.h5", b"baseline")
+    target_db = _write_file(tmp_path / "policyengine_targets.db", b"targets")
+
+    with pytest.raises(ValueError, match="release-pinned baseline/target surface"):
+        build_mp_benchmark_manifest(
+            baseline_dataset_path=baseline,
+            target_db_path=target_db,
+            period=2024,
+            target_profile="pe_native_broad",
+            target_scope="all",
+            target_count=150,
+            target_names_sha256="d" * 64,
+            scoring_config_sha256="e" * 64,
+            policyengine_us_data_commit="b" * 40,
+            policyengine_us_version="1.587.0",
+        )
 
 
 def test_dirty_policyengine_us_data_repo_is_rejected_unless_explicit(tmp_path):
@@ -134,6 +155,7 @@ def test_dirty_policyengine_us_data_repo_is_rejected_unless_explicit(tmp_path):
             target_count=150,
             target_names_sha256="d" * 64,
             scoring_config_sha256="e" * 64,
+            enforce_production_pins=False,
         )
 
     manifest = build_mp_benchmark_manifest(
@@ -145,6 +167,7 @@ def test_dirty_policyengine_us_data_repo_is_rejected_unless_explicit(tmp_path):
         target_names_sha256="d" * 64,
         scoring_config_sha256="e" * 64,
         allow_dirty_policyengine_us_data=True,
+        enforce_production_pins=False,
     )
 
     assert manifest["policyengine_us_data"]["dirty"] is True

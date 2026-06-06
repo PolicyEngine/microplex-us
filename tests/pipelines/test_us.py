@@ -4261,6 +4261,76 @@ class TestUSMicroplexPipeline:
             "clone_was_reordered": False,
         }
 
+    def test_finalize_puf_support_clone_keeps_cps_measured_income_totals(
+        self,
+    ):
+        pipeline = USMicroplexPipeline(
+            USMicroplexBuildConfig(
+                synthesis_backend="seed",
+                puf_support_clone_enabled=True,
+                puf_support_clone_output_mode="collapse_to_scaffold",
+                puf_support_clone_both_halves_override_variables=(),
+            )
+        )
+        original = pd.DataFrame(
+            {
+                "person_id": [10, 20],
+                "household_id": [1, 2],
+                "age": [70, 45],
+                "employment_income": [30_000.0, 10_000.0],
+                "wage_income": [40_000.0, 12_000.0],
+                "social_security": [18_000.0, 0.0],
+                "social_security_retirement": [18_000.0, 0.0],
+                "social_security_disability": [0.0, 0.0],
+            }
+        )
+        clone = pd.DataFrame(
+            {
+                "person_id": [30, 40],
+                "household_id": [3, 4],
+                "age": [70, 45],
+                us_pipeline_module.PUF_SUPPORT_CLONE_SOURCE_ROW_ID_COLUMN: [0, 1],
+                "employment_income": [90_000.0, 20_000.0],
+                "employment_income_before_lsr": [120_000.0, 45_000.0],
+                "social_security": [60_000.0, 25_000.0],
+                "social_security_retirement": [1_000.0, 0.0],
+                "social_security_disability": [1_000.0, 500.0],
+            }
+        )
+
+        result, summary = pipeline._finalize_puf_support_clone_frame(
+            original=original,
+            imputed_clone=clone,
+            donor_source_name="irs_soi_puf_2024",
+            integrated_variables=[
+                "employment_income",
+                "employment_income_before_lsr",
+                "social_security",
+            ],
+            preclone_columns=set(original.columns),
+            donor_seed_columns=set(clone.columns),
+            donor_observed=set(clone.columns),
+        )
+
+        assert result["employment_income"].tolist() == [90_000.0, 20_000.0]
+        assert "employment_income_before_lsr" not in result.columns
+        assert result["social_security"].tolist() == [18_000.0, 0.0]
+        assert result["social_security_retirement"].tolist() == [18_000.0, 0.0]
+        assert result["social_security_disability"].tolist() == [0.0, 0.0]
+
+        augmented = pipeline._augment_policyengine_person_inputs(result)
+
+        assert augmented["employment_income_before_lsr"].tolist() == [
+            90_000.0,
+            20_000.0,
+        ]
+        assert augmented["social_security_retirement"].tolist() == [18_000.0, 0.0]
+        assert "social_security" not in summary["collapse_copy_variables"]
+        assert "social_security" not in summary["overlap_collapse_override_variables"]
+        assert summary["donor_only_collapse_excluded_variables"] == [
+            "employment_income_before_lsr"
+        ]
+
     def test_finalize_puf_support_clone_preserves_puf_tax_details_by_default(
         self,
     ):

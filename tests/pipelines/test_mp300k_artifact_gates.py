@@ -9,6 +9,10 @@ import h5py
 import numpy as np
 import pytest
 
+from microplex_us.pipelines.mp_benchmark_manifest import (
+    FROZEN_PRODUCTION_ECPS_BASELINE_SHA256,
+    FROZEN_PRODUCTION_ECPS_TARGET_DB_SHA256,
+)
 from microplex_us.pipelines.mp300k_artifact_gates import (
     main,
     write_mp300k_artifact_gate_report,
@@ -115,17 +119,17 @@ def _write_benchmark_manifest(path: Path) -> None:
                 "certificate_type": "frozen_production_ecps_baseline",
                 "period": 2024,
                 "target_profile": "pe_native_broad",
-                "target_scope": "national",
+                "target_scope": "all",
                 "target_surface": {
                     "target_profile": "pe_native_broad",
-                    "target_scope": "national",
+                    "target_scope": "all",
                     "target_count": 150,
                     "target_names_sha256": "d" * 64,
                 },
                 "scoring_config": {"sha256": "e" * 64},
                 "baseline_dataset": {
                     "path": "/tmp/enhanced_cps_2024.h5",
-                    "sha256": "a" * 64,
+                    "sha256": FROZEN_PRODUCTION_ECPS_BASELINE_SHA256,
                 },
                 "policyengine_us_data": {
                     "repo": "PolicyEngine/policyengine-us-data",
@@ -134,7 +138,7 @@ def _write_benchmark_manifest(path: Path) -> None:
                 "policyengine_us": {"version": "1.587.0"},
                 "target_db": {
                     "path": "/tmp/policyengine_targets.db",
-                    "sha256": "c" * 64,
+                    "sha256": FROZEN_PRODUCTION_ECPS_TARGET_DB_SHA256,
                 },
             }
         )
@@ -242,11 +246,11 @@ def _sound_ecps_comparison_payload(
             "period": 2024,
             "baseline_dataset": {
                 "path": "/tmp/enhanced_cps_2024.h5",
-                "sha256": "a" * 64,
+                "sha256": FROZEN_PRODUCTION_ECPS_BASELINE_SHA256,
             },
             "target_db": {
                 "path": "/tmp/policyengine_targets.db",
-                "sha256": "c" * 64,
+                "sha256": FROZEN_PRODUCTION_ECPS_TARGET_DB_SHA256,
             },
             "policyengine_us_data": {
                 "repo": "PolicyEngine/policyengine-us-data",
@@ -255,7 +259,7 @@ def _sound_ecps_comparison_payload(
             "policyengine_us": {"version": "1.587.0"},
             "target_surface": {
                 "target_profile": "pe_native_broad",
-                "target_scope": "national",
+                "target_scope": "all",
                 "target_count": 150,
                 "target_names_sha256": "d" * 64,
             },
@@ -478,13 +482,54 @@ def test_ecps_comparison_gate_rejects_benchmark_certificate_mismatch(tmp_path):
 
     assert record["summary"]["status"] == "failed"
     assert ecps_gate["status"] == "fail"
-    assert ecps_gate["details"]["frozen_ecps_baseline_certificate"]["mismatches"] == [
-        {
-            "field": "baseline_dataset.sha256",
-            "benchmark_manifest_value": "a" * 64,
-            "certificate_value": "f" * 64,
-        }
+    mismatches = ecps_gate["details"]["frozen_ecps_baseline_certificate"][
+        "mismatches"
     ]
+    assert any(item["field"] == "baseline_dataset.sha256" for item in mismatches)
+
+
+def test_ecps_comparison_gate_rejects_self_consistent_noncanonical_pins(tmp_path):
+    artifact_dir = tmp_path / "artifact"
+    artifact_dir.mkdir()
+    _write_contract_policyengine_dataset(artifact_dir / "candidate.h5")
+    baseline_dataset = _write_contract_policyengine_dataset(tmp_path / "baseline.h5")
+    benchmark_manifest = tmp_path / "benchmark_manifest.json"
+    _write_benchmark_manifest(benchmark_manifest)
+    manifest = json.loads(benchmark_manifest.read_text())
+    manifest["baseline_dataset"]["sha256"] = "a" * 64
+    manifest["target_db"]["sha256"] = "c" * 64
+    manifest["target_scope"] = "national"
+    manifest["target_surface"]["target_scope"] = "national"
+    benchmark_manifest.write_text(json.dumps(manifest))
+    _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
+    payload = _sound_ecps_comparison_payload(candidate_loss=0.10)
+    payload["frozen_ecps_baseline_certificate"]["baseline_dataset"]["sha256"] = (
+        "a" * 64
+    )
+    payload["frozen_ecps_baseline_certificate"]["target_db"]["sha256"] = "c" * 64
+    payload["frozen_ecps_baseline_certificate"]["target_surface"][
+        "target_scope"
+    ] = "national"
+
+    report_path = write_mp300k_artifact_gate_report(
+        artifact_dir,
+        ecps_comparison_payload=payload,
+        arch_coverage_payload=_arch_coverage_payload(),
+        runtime_smoke_payload={"runtime_ratio": 1.0},
+        benchmark_manifest_path=benchmark_manifest,
+        compute_native_scores=False,
+        update_manifest=False,
+    )
+
+    record = json.loads(report_path.read_text())
+    benchmark_gate = record["gates"]["benchmark_manifest"]
+    ecps_gate = record["gates"]["ecps_comparison"]
+
+    assert record["summary"]["status"] == "failed"
+    assert benchmark_gate["status"] == "fail"
+    assert ecps_gate["status"] == "fail"
+    assert benchmark_gate["details"]["production_pin_mismatches"]
+    assert ecps_gate["details"]["frozen_ecps_baseline_certificate"]["mismatches"]
 
 
 @pytest.mark.parametrize(

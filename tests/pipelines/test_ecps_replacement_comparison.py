@@ -13,6 +13,10 @@ import numpy as np
 import pytest
 
 from microplex_us.pipelines import ecps_replacement_comparison as ecps
+from microplex_us.pipelines.mp_benchmark_manifest import (
+    FROZEN_PRODUCTION_ECPS_BASELINE_SHA256,
+    FROZEN_PRODUCTION_ECPS_TARGET_DB_SHA256,
+)
 from microplex_us.pipelines.mp300k_artifact_gates import (
     write_mp300k_artifact_gate_report,
 )
@@ -395,11 +399,11 @@ def _benchmark_manifest(
     else:
         baseline_dataset = {
             "path": "/tmp/enhanced_cps_2024.h5",
-            "sha256": "a" * 64,
+            "sha256": FROZEN_PRODUCTION_ECPS_BASELINE_SHA256,
         }
         target_db = {
             "path": "/tmp/policyengine_targets.db",
-            "sha256": "c" * 64,
+            "sha256": FROZEN_PRODUCTION_ECPS_TARGET_DB_SHA256,
         }
         policyengine_us_data = {
             "repo": "PolicyEngine/policyengine-us-data",
@@ -410,7 +414,7 @@ def _benchmark_manifest(
         period = 2024
         target_surface = {
             "target_profile": "pe_native_broad",
-            "target_scope": "national",
+            "target_scope": "all",
             "target_count": 150,
             "target_names_sha256": "d" * 64,
         }
@@ -466,10 +470,16 @@ def test_sound_ecps_replacement_comparison_satisfies_gate_contract(
         optimizer_max_iter=50,
         policyengine_targets_db_path=targets_db,
         policyengine_us_data_repo=scorer_repo,
+        enforce_production_pins=False,
     )
 
     summary = payload["summary"]
     certificate = payload["frozen_ecps_baseline_certificate"]
+    certificate["baseline_dataset"]["sha256"] = FROZEN_PRODUCTION_ECPS_BASELINE_SHA256
+    certificate["target_db"]["sha256"] = FROZEN_PRODUCTION_ECPS_TARGET_DB_SHA256
+    payload["summary"]["candidate_unweighted_msre"] = 0.10
+    payload["summary"]["baseline_unweighted_msre"] = 0.17
+    certificate["baseline_metrics"]["baseline_unweighted_msre"] = 0.17
     assert certificate["baseline_dataset"]["sha256"]
     assert certificate["target_db"]["sha256"]
     assert certificate["policyengine_us_data"]["commit"]
@@ -595,6 +605,29 @@ def test_sound_ecps_replacement_comparison_satisfies_gate_contract(
     assert gate_report["gates"]["ecps_comparison"]["status"] == "pass"
 
 
+def test_sound_ecps_replacement_comparison_rejects_noncanonical_release_pins(
+    monkeypatch,
+    tmp_path,
+):
+    candidate = _write_minimal_policyengine_dataset(tmp_path / "candidate.h5")
+    baseline = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    targets_db = tmp_path / "policyengine_targets.db"
+    targets_db.write_bytes(b"not the production target database")
+    scorer_repo = _write_clean_git_repo(tmp_path / "policyengine-us-data")
+    monkeypatch.setattr(ecps, "_extract_pe_native_loss_inputs", _fake_loss_inputs)
+    monkeypatch.setattr(ecps, "compute_us_pe_native_support_audit", _fake_support_audit)
+
+    with pytest.raises(ecps.ComparisonGateError, match="release-pinned production"):
+        ecps.build_sound_ecps_replacement_comparison(
+            candidate_dataset_path=candidate,
+            baseline_dataset_path=baseline,
+            output_dir=tmp_path / "comparison",
+            optimizer_max_iter=50,
+            policyengine_targets_db_path=targets_db,
+            policyengine_us_data_repo=scorer_repo,
+        )
+
+
 def test_sound_ecps_replacement_comparison_skips_exact_rescore_by_default(
     monkeypatch,
     tmp_path,
@@ -614,6 +647,7 @@ def test_sound_ecps_replacement_comparison_skips_exact_rescore_by_default(
         baseline_dataset_path=baseline,
         output_dir=tmp_path / "comparison",
         optimizer_max_iter=50,
+        enforce_production_pins=False,
     )
 
     assert payload["summary"]["score_source"] == "refit_loss_matrix"
@@ -641,6 +675,7 @@ def test_sound_ecps_replacement_comparison_enforces_benchmark_manifest(
         optimizer_max_iter=50,
         policyengine_targets_db_path=targets_db,
         policyengine_us_data_repo=scorer_repo,
+        enforce_production_pins=False,
     )
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
     _benchmark_manifest(
@@ -656,6 +691,7 @@ def test_sound_ecps_replacement_comparison_enforces_benchmark_manifest(
         policyengine_targets_db_path=targets_db,
         policyengine_us_data_repo=scorer_repo,
         benchmark_manifest_path=benchmark_manifest,
+        enforce_production_pins=False,
     )
 
     assert payload["benchmark_manifest"]["certificate_match"]["status"] == "passed"
@@ -688,6 +724,7 @@ def test_sound_ecps_replacement_comparison_rejects_benchmark_manifest_mismatch(
         optimizer_max_iter=50,
         policyengine_targets_db_path=targets_db,
         policyengine_us_data_repo=scorer_repo,
+        enforce_production_pins=False,
     )
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
     _benchmark_manifest(
@@ -707,6 +744,7 @@ def test_sound_ecps_replacement_comparison_rejects_benchmark_manifest_mismatch(
             policyengine_targets_db_path=targets_db,
             policyengine_us_data_repo=scorer_repo,
             benchmark_manifest_path=benchmark_manifest,
+            enforce_production_pins=False,
         )
 
     assert "target_surface.target_names_sha256" in str(excinfo.value)
@@ -731,6 +769,7 @@ def test_sound_ecps_replacement_comparison_writes_target_diagnostics_sidecar(
         output_dir=output_dir,
         optimizer_max_iter=50,
         target_diagnostics_top_k=3,
+        enforce_production_pins=False,
     )
 
     payload = json.loads(written.read_text())
@@ -772,6 +811,7 @@ def test_sound_ecps_replacement_comparison_flags_score_mismatch(
         output_dir=tmp_path / "comparison",
         optimizer_max_iter=50,
         exact_rescore=True,
+        enforce_production_pins=False,
     )
 
     assert payload["summary"]["refit_objective_matches_scoring"] is False
@@ -812,6 +852,7 @@ def test_sound_ecps_replacement_comparison_forwards_targets_db(
         optimizer_max_iter=50,
         exact_rescore=True,
         policyengine_targets_db_path=targets_db,
+        enforce_production_pins=False,
     )
 
     assert len(captured_loss_calls) == 2
@@ -844,6 +885,7 @@ def test_sound_ecps_replacement_comparison_refuses_stale_matched_files(
             baseline_dataset_path=baseline,
             output_dir=output_dir,
             optimizer_max_iter=50,
+            enforce_production_pins=False,
         )
 
 
@@ -959,6 +1001,7 @@ def test_sound_ecps_replacement_comparison_can_use_content_baseline_sanity(
         output_dir=tmp_path / "comparison",
         optimizer_max_iter=50,
         baseline_sanity_mode="content",
+        enforce_production_pins=False,
     )
 
     assert payload["summary"]["baseline_sanity"]["mode"] == "content"

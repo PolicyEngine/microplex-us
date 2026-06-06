@@ -12,6 +12,24 @@ from pathlib import Path
 from typing import Any
 
 _DEFAULT_PE_US_DATA_REPO = Path.home() / "PolicyEngine" / "policyengine-us-data"
+FROZEN_PRODUCTION_ECPS_CERTIFICATE_TYPE = "frozen_production_ecps_baseline"
+FROZEN_PRODUCTION_ECPS_PERIOD = 2024
+FROZEN_PRODUCTION_ECPS_BASELINE_SHA256 = (
+    "7af7026224f84cb6a91743fd8fa7ac506bad8c78e011fa58b6901894db4b4290"
+)
+FROZEN_PRODUCTION_ECPS_TARGET_DB_SHA256 = (
+    "5d14671156c36cd7fff680d5c4d77ec7fb2026ea866b1e12378d9e9c9fb803dc"
+)
+FROZEN_PRODUCTION_ECPS_TARGET_PROFILE = "pe_native_broad"
+FROZEN_PRODUCTION_ECPS_TARGET_SCOPE = "all"
+FROZEN_PRODUCTION_ECPS_REQUIRED_EVIDENCE = {
+    "certificate_type": FROZEN_PRODUCTION_ECPS_CERTIFICATE_TYPE,
+    "period": FROZEN_PRODUCTION_ECPS_PERIOD,
+    "baseline_dataset.sha256": FROZEN_PRODUCTION_ECPS_BASELINE_SHA256,
+    "target_db.sha256": FROZEN_PRODUCTION_ECPS_TARGET_DB_SHA256,
+    "target_surface.target_profile": FROZEN_PRODUCTION_ECPS_TARGET_PROFILE,
+    "target_surface.target_scope": FROZEN_PRODUCTION_ECPS_TARGET_SCOPE,
+}
 
 
 def build_mp_benchmark_manifest(
@@ -29,6 +47,7 @@ def build_mp_benchmark_manifest(
     policyengine_us_data_commit: str | None = None,
     policyengine_us_version: str | None = None,
     allow_dirty_policyengine_us_data: bool = False,
+    enforce_production_pins: bool = True,
 ) -> dict[str, Any]:
     """Build the frozen comparison manifest required by MP release gates."""
 
@@ -45,7 +64,7 @@ def build_mp_benchmark_manifest(
         allow_dirty=allow_dirty_policyengine_us_data,
     )
     version = policyengine_us_version or _installed_policyengine_us_version()
-    return {
+    manifest = {
         "schema_version": 1,
         "certificate_type": str(certificate_type),
         "generated_at": datetime.now(UTC).isoformat(),
@@ -64,6 +83,9 @@ def build_mp_benchmark_manifest(
         "policyengine_us": {"version": version},
         "target_db": target_db,
     }
+    if enforce_production_pins:
+        _assert_manifest_uses_frozen_production_pins(manifest)
+    return manifest
 
 
 def write_mp_benchmark_manifest(
@@ -130,6 +152,60 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def frozen_production_pin_mismatches(
+    evidence: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Return mismatches against the hard-pinned production eCPS surface."""
+
+    mismatches: list[dict[str, Any]] = []
+    certificate_type = evidence.get("certificate_type")
+    if certificate_type != FROZEN_PRODUCTION_ECPS_CERTIFICATE_TYPE:
+        return mismatches
+    for field, expected in FROZEN_PRODUCTION_ECPS_REQUIRED_EVIDENCE.items():
+        actual = evidence.get(field)
+        if actual is None:
+            continue
+        if str(actual) != str(expected):
+            mismatches.append(
+                {
+                    "field": field,
+                    "expected_production_pin": expected,
+                    "actual": actual,
+                }
+            )
+    return mismatches
+
+
+def _assert_manifest_uses_frozen_production_pins(
+    manifest: dict[str, Any],
+) -> None:
+    evidence = {
+        "certificate_type": manifest.get("certificate_type"),
+        "period": manifest.get("period"),
+        "baseline_dataset.sha256": (manifest.get("baseline_dataset") or {}).get(
+            "sha256"
+        ),
+        "target_db.sha256": (manifest.get("target_db") or {}).get("sha256"),
+        "target_surface.target_profile": (
+            manifest.get("target_surface") or {}
+        ).get("target_profile"),
+        "target_surface.target_scope": (
+            manifest.get("target_surface") or {}
+        ).get("target_scope"),
+    }
+    mismatches = frozen_production_pin_mismatches(evidence)
+    if mismatches:
+        details = ", ".join(
+            f"{item['field']}={item['actual']!r} "
+            f"(expected {item['expected_production_pin']!r})"
+            for item in mismatches
+        )
+        raise ValueError(
+            "frozen production eCPS benchmark manifest does not use the "
+            f"release-pinned baseline/target surface: {details}"
+        )
+
+
 def _git_output(repo_path: Path, *args: str) -> str:
     completed = subprocess.run(
         ["git", "-C", str(repo_path), *args],
@@ -175,6 +251,15 @@ def main(argv: list[str] | None = None) -> int:
             "in the manifest."
         ),
     )
+    parser.add_argument(
+        "--allow-noncanonical-production-pins",
+        action="store_true",
+        help=(
+            "Allow writing an experimental manifest whose frozen-production "
+            "fields do not match the canonical production eCPS baseline, target "
+            "DB, and all-target surface. Release gates still reject it."
+        ),
+    )
     args = parser.parse_args(argv)
 
     written = write_mp_benchmark_manifest(
@@ -192,6 +277,7 @@ def main(argv: list[str] | None = None) -> int:
         policyengine_us_data_commit=args.policyengine_us_data_commit,
         policyengine_us_version=args.policyengine_us_version,
         allow_dirty_policyengine_us_data=args.allow_dirty_policyengine_us_data,
+        enforce_production_pins=not args.allow_noncanonical_production_pins,
     )
     print(written)
     return 0

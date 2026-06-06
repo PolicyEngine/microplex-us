@@ -120,6 +120,36 @@ class TestRegimeAwareBackendFactory:
 class TestRegimeAwareFitGenerate:
     """Fit/generate contract and tripartite-specific guarantees."""
 
+    def test_multi_target_fit_uses_one_chained_zero_inflated_imputer(self) -> None:
+        from microplex_us.pipelines.us import RegimeAwareDonorImputer
+
+        rng = np.random.default_rng(20260606)
+        n = 300
+        age = rng.integers(18, 80, size=n).astype(float)
+        first = rng.normal(loc=age * 400.0, scale=2_000.0, size=n)
+        second = 0.75 * first + rng.normal(scale=250.0, size=n)
+        train = pd.DataFrame(
+            {
+                "age": age,
+                "first_income_leaf": first,
+                "second_income_leaf": second,
+            }
+        )
+
+        imputer = RegimeAwareDonorImputer(
+            condition_vars=["age"],
+            target_vars=["first_income_leaf", "second_income_leaf"],
+            n_estimators=25,
+        )
+        imputer.fit(train)
+
+        first_fitted = imputer._fitted["first_income_leaf"]
+        second_fitted = imputer._fitted["second_income_leaf"]
+        assert first_fitted is second_fitted
+
+        second_bundle = second_fitted._per_variable["second_income_leaf"]
+        assert second_bundle["predictors"] == ["age", "first_income_leaf"]
+
     def _fit_generate(
         self, n_train: int = 1500, n_gen: int = 2000, seed: int = 0
     ) -> np.ndarray:

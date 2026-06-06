@@ -171,8 +171,7 @@ def test_donor_imputation_blocks_keep_dividends_in_one_composition_block():
 
     assert blocks == (
         ("dividend_income", "qualified_dividend_share"),
-        ("partnership_s_corp_income",),
-        ("taxable_interest_income",),
+        ("partnership_s_corp_income", "taxable_interest_income"),
     )
 
 
@@ -218,7 +217,9 @@ def test_donor_imputation_block_specs_use_zero_inflated_matching_for_sparse_irs_
         }
     )
 
-    by_variable = {spec.model_variables[0]: spec for spec in specs}
+    by_variable = {
+        variable_name: spec for spec in specs for variable_name in spec.model_variables
+    }
     for variable_name in (
         "health_savings_account_ald",
         "self_employed_health_insurance_ald",

@@ -138,13 +138,13 @@ class ColumnwiseQRFDonorImputer:
 
 
 class RegimeAwareDonorImputer:
-    """Donor imputer that wraps `microimpute.ZeroInflatedImputer` per column.
+    """Donor imputer that wraps one chained `ZeroInflatedImputer` per block.
 
-    Each target is fit with an independent `ZeroInflatedImputer`, which
+    The whole target block is fit with one `ZeroInflatedImputer`, which
     auto-detects one of seven regimes (THREE_SIGN / ZI_POSITIVE /
     ZI_NEGATIVE / SIGN_ONLY / POSITIVE_ONLY / NEGATIVE_ONLY /
-    DEGENERATE_ZERO) from the training distribution and composes a
-    gate classifier + one or two base imputers as appropriate.
+    DEGENERATE_ZERO) for each target and composes a gate classifier + one or
+    two base imputers as appropriate.
 
     Key advantages over `ColumnwiseQRFDonorImputer`:
 
@@ -157,10 +157,12 @@ class RegimeAwareDonorImputer:
        tripartite gate routes to sign-specific base imputers that each
        see only one sign of training data.
 
-    This class is a thin columnwise adapter: one `ZeroInflatedImputer`
-    is fit per target, using `microimpute.QRF` as the base. Fit and
-    generate work column-by-column so memory scales with the single
-    largest base imputer, not with the total target count.
+    This class is a thin block adapter: the target order is passed through
+    to microimpute so target i+1 conditions on the realized imputation for
+    target i. That preserves cross-target donor relationships such as
+    income totals, losses, interest, dividends, pensions, and deduction
+    leaves instead of independently drawing each target from the same
+    original predictor surface.
     """
 
     def __init__(
@@ -177,6 +179,7 @@ class RegimeAwareDonorImputer:
         self.classifier_type = str(classifier_type)
         self.seed = int(seed)
         self._fitted: dict[str, Any] = {}
+        self._fitted_columns: tuple[str, ...] = ()
         self._regimes: dict[str, str] = {}
 
     def fit(
@@ -205,28 +208,33 @@ class RegimeAwareDonorImputer:
         from microimpute.models.zero_inflated import ZeroInflatedImputer
 
         self._fitted = {}
+        self._fitted_columns = ()
         self._regimes = {}
-        for column in self.target_vars:
-            subset = data[self.condition_vars + [column]].dropna()
-            if len(subset) < 25:
-                continue
-            # base_imputer_kwargs={} because microimpute 2.x's
-            # ZeroInflatedImputer._fit_base_single already passes
-            # log_level="ERROR" to the base, and duplicating it here
-            # raises TypeError. Upstream fix tracked.
-            wrapper = ZeroInflatedImputer(
-                base_imputer_class=QRF,
-                base_imputer_kwargs={},
-                classifier_type=self.classifier_type,
-                seed=self.seed,
-            )
-            fitted = wrapper.fit(
-                subset,
-                predictors=list(self.condition_vars),
-                imputed_variables=[column],
-            )
-            self._fitted[column] = fitted
-            self._regimes[column] = wrapper.get_regime(column)
+        subset = (
+            data[self.condition_vars + self.target_vars]
+            .replace([np.inf, -np.inf], np.nan)
+            .dropna()
+        )
+        if len(subset) < 25:
+            return self
+
+        wrapper = ZeroInflatedImputer(
+            base_imputer_class=QRF,
+            base_imputer_kwargs={},
+            classifier_type=self.classifier_type,
+            sequential=True,
+            seed=self.seed,
+        )
+        fitted = wrapper.fit(
+            subset,
+            predictors=list(self.condition_vars),
+            imputed_variables=list(self.target_vars),
+        )
+        self._fitted_columns = tuple(self.target_vars)
+        self._fitted = {column: fitted for column in self._fitted_columns}
+        self._regimes = {
+            column: wrapper.get_regime(column) for column in self._fitted_columns
+        }
         return self
 
     def generate(
@@ -235,19 +243,20 @@ class RegimeAwareDonorImputer:
         seed: int | None = None,
     ) -> pd.DataFrame:
         synthetic = conditions.copy().reset_index(drop=True)
-        master_seed = self.seed if seed is None else int(seed)
-        master_rng = np.random.default_rng(master_seed)
-        for column in self.target_vars:
-            fitted = self._fitted.get(column)
-            if fitted is None:
+        fitted = next(iter(self._fitted.values()), None)
+        if fitted is None:
+            for column in self.target_vars:
                 synthetic[column] = np.nan
-                continue
-            column_seed = int(
-                master_rng.integers(0, np.iinfo(np.int32).max, dtype=np.int64)
-            )
-            self._reset_prediction_rngs(fitted, seed=column_seed)
-            preds = fitted.predict(synthetic[self.condition_vars])
-            synthetic[column] = preds[column].to_numpy(dtype=float)
+            return synthetic
+
+        prediction_seed = self.seed if seed is None else int(seed)
+        self._reset_prediction_rngs(fitted, seed=prediction_seed)
+        preds = fitted.predict(synthetic[self.condition_vars])
+        for column in self.target_vars:
+            if column in preds.columns:
+                synthetic[column] = preds[column].to_numpy(dtype=float)
+            else:
+                synthetic[column] = np.nan
         return synthetic
 
     def _reset_prediction_rngs(

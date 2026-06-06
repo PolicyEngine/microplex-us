@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from enum import Enum
@@ -834,6 +835,66 @@ DIVIDEND_DONOR_BLOCK_SPEC = DonorImputationBlockSpec(
     restore_frame=restore_dividend_components_from_composition,
 )
 
+DONOR_CHAIN_PRIORITY: tuple[str, ...] = (
+    "income",
+    "employment_income",
+    "employment_income_before_lsr",
+    "self_employment_income",
+    "self_employment_income_before_lsr",
+    "sstb_self_employment_income",
+    "sstb_self_employment_income_before_lsr",
+    "partnership_s_corp_income",
+    "tax_unit_partnership_s_corp_income",
+    "rental_income",
+    "rental_income_positive",
+    "rental_income_negative",
+    "farm_income",
+    "farm_operations_income",
+    "taxable_interest_income",
+    "tax_exempt_interest_income",
+    "dividend_income",
+    "ordinary_dividend_income",
+    "qualified_dividend_income",
+    "non_qualified_dividend_income",
+    DIVIDEND_SHARE_COLUMN,
+    "short_term_capital_gains",
+    "long_term_capital_gains",
+    "net_capital_gains",
+    "social_security",
+    "social_security_retirement",
+    "social_security_disability",
+    "social_security_survivors",
+    "social_security_dependents",
+    "taxable_social_security",
+    "pension_income",
+    "taxable_pension_income",
+    "tax_exempt_pension_income",
+    "unemployment_compensation",
+    "taxable_unemployment_compensation",
+    "health_savings_account_ald",
+    "self_employed_health_insurance_ald",
+    "self_employed_pension_contribution_ald",
+    "self_employed_pension_contributions",
+    "traditional_401k_contributions",
+    "roth_401k_contributions",
+    "traditional_ira_contributions",
+    "roth_ira_contributions",
+    "ira_deduction",
+    "student_loan_interest",
+    "state_income_tax_paid",
+    "real_estate_tax_paid",
+    "mortgage_interest_paid",
+    "charitable_cash",
+    "charitable_noncash",
+)
+_DONOR_CHAIN_PRIORITY_INDEX = {
+    variable: index for index, variable in enumerate(DONOR_CHAIN_PRIORITY)
+}
+
+
+def _donor_chain_sort_key(variable_name: str) -> tuple[int, str]:
+    return (_DONOR_CHAIN_PRIORITY_INDEX.get(variable_name, 10_000), variable_name)
+
 
 def variable_semantic_spec_for(variable_name: str) -> VariableSemanticSpec:
     """Return semantic metadata for one variable."""
@@ -961,15 +1022,33 @@ def donor_imputation_block_specs(
     if set(DIVIDEND_COMPONENT_COLUMNS).issubset(remaining):
         block_specs.append(DIVIDEND_DONOR_BLOCK_SPEC)
         remaining.difference_update(DIVIDEND_COMPONENT_COLUMNS)
-    for variable in sorted(remaining):
+
+    grouped_variables: dict[tuple[EntityType, tuple[EntityType, ...]], list[str]] = (
+        defaultdict(list)
+    )
+    for variable in sorted(remaining, key=_donor_chain_sort_key):
         spec = variable_semantic_spec_for(variable)
+        grouped_variables[
+            (spec.native_entity, resolve_condition_entities_for_targets((variable,)))
+        ].append(variable)
+
+    for (native_entity, _), variables in sorted(
+        grouped_variables.items(),
+        key=lambda item: _donor_chain_sort_key(item[1][0]),
+    ):
+        block_variables = tuple(sorted(variables, key=_donor_chain_sort_key))
         block_specs.append(
             DonorImputationBlockSpec(
-                native_entity=spec.native_entity,
-                condition_entities=resolve_condition_entities_for_targets((variable,)),
-                model_variables=(variable,),
-                restored_variables=(variable,),
-                match_strategies={variable: spec.donor_match_strategy},
+                native_entity=native_entity,
+                condition_entities=resolve_condition_entities_for_targets(
+                    block_variables
+                ),
+                model_variables=block_variables,
+                restored_variables=block_variables,
+                match_strategies={
+                    variable: variable_semantic_spec_for(variable).donor_match_strategy
+                    for variable in block_variables
+                },
             )
         )
     return tuple(block_specs)

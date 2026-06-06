@@ -1,10 +1,17 @@
 # Next v8 pipeline run plan
 
+> Superseded for release-candidate builds as of 2026-06-06. PE-US-data PUF
+> support clone rebuilds must use `--donor-imputer-backend regime_aware`, which
+> routes through MicroImpute chained donor imputations. The older `qrf` and
+> `zi_qrf` backends remain useful only for explicit non-release experiments with
+> `puf_support_clone_enabled=False`; release-profile config now fails closed if
+> either backend is requested.
+
 ## Summary
 
 v7 (2026-04-18 12:19 PM, artifact `live_pe_us_data_rebuild_checkpoint_20260418_microcalibrate_modular`) uses the default `donor_imputer_backend="qrf"`. That path leaves `zero_inflated_vars` empty in `ColumnwiseQRFDonorImputer`, so the imputer fits no zero-classifier and the QRF runs `predict()` over all 3.37 M rows for every target column — including columns that are 99 % zero.
 
-v8 should flip to `--donor-imputer-backend zi_qrf`, which activates the `ZERO_INFLATED_POSITIVE`-whitelist path. On whitelisted columns the imputer fits a `RandomForestClassifier` zero-gate, then only invokes QRF `predict()` on rows the gate sends to the positive branch. On a 97 %-zero column this cuts QRF predict to ~3 % of rows — a large wall-clock win on donor integration.
+v8 originally planned to flip to `--donor-imputer-backend zi_qrf`, which activates the `ZERO_INFLATED_POSITIVE`-whitelist path. On whitelisted columns the imputer fits a `RandomForestClassifier` zero-gate, then only invokes QRF `predict()` on rows the gate sends to the positive branch. On a 97 %-zero column this cuts QRF predict to ~3 % of rows — a large wall-clock win on donor integration. That is no longer sufficient for MP/eCPS release candidates because it does not use MicroImpute chained imputations across related donor targets.
 
 ## What `zi_qrf` actually covers
 
@@ -38,8 +45,8 @@ uv run python -m microplex_us.pipelines.pe_us_data_rebuild_checkpoint \
   --targets-db /Users/maxghenis/PolicyEngine/policyengine-us-data-aca-agi-db/policyengine_us_data/storage/calibration/policy_data.db \
   --policyengine-us-data-repo /Users/maxghenis/PolicyEngine/policyengine-us-data \
   --calibration-backend microcalibrate \
-  --donor-imputer-backend zi_qrf \
-  --version-id microcalibrate-zi-qrf-v8 \
+  --donor-imputer-backend regime_aware \
+  --version-id microcalibrate-regime-aware-v8 \
   --n-synthetic 100000 \
   --defer-policyengine-harness \
   --defer-policyengine-native-score \

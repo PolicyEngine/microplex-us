@@ -69,7 +69,7 @@ def test_default_policyengine_us_data_rebuild_checkpoint_config_sets_pe_context(
     )
     assert config.policyengine_calibration_deferred_stage_top_family_count == 7
     assert config.policyengine_calibration_deferred_stage_top_geography_count == 4
-    assert config.donor_imputer_backend == "qrf"
+    assert config.donor_imputer_backend == "regime_aware"
     assert config.donor_imputer_condition_selection == "pe_prespecified"
     assert config.donor_imputer_excluded_variables == ()
     assert config.policyengine_baseline_dataset == "/tmp/enhanced_cps_2024.h5"
@@ -87,6 +87,23 @@ def test_default_policyengine_us_data_rebuild_checkpoint_config_sets_pe_context(
     assert config.policyengine_prefer_existing_tax_unit_ids is True
     assert config.n_synthetic == 500
     assert config.random_seed == 123
+
+
+def test_default_policyengine_us_data_rebuild_checkpoint_config_rejects_legacy_imputer_for_puf_support_clone() -> (
+    None
+):
+    try:
+        default_policyengine_us_data_rebuild_checkpoint_config(
+            policyengine_baseline_dataset="/tmp/enhanced_cps_2024.h5",
+            policyengine_targets_db="/tmp/policy_data.db",
+            donor_imputer_backend="qrf",
+        )
+    except ValueError as exc:
+        message = str(exc)
+        assert "PUF support clone rebuilds require" in message
+        assert "donor_imputer_backend='regime_aware'" in message
+    else:
+        raise AssertionError("Expected checkpoint qrf rebuild to fail")
 
 
 def test_default_policyengine_us_data_rebuild_checkpoint_config_preserves_explicit_calibration_scope() -> (
@@ -389,9 +406,12 @@ def _install_resume_stage_test_doubles(monkeypatch, artifact_root, captured) -> 
 
     class FakeResumePipeline:
         def __init__(self, config=None, *, stage_runtime_writer=None):
-            self.config = config or default_policyengine_us_data_rebuild_checkpoint_config(
-                policyengine_baseline_dataset="/tmp/enhanced_cps_2024.h5",
-                policyengine_targets_db="/tmp/policy_data.db",
+            self.config = (
+                config
+                or default_policyengine_us_data_rebuild_checkpoint_config(
+                    policyengine_baseline_dataset="/tmp/enhanced_cps_2024.h5",
+                    policyengine_targets_db="/tmp/policy_data.db",
+                )
             )
             self.stage_runtime_writer = stage_runtime_writer
             if stage_runtime_writer is not None:
@@ -811,7 +831,10 @@ def test_stage_resume_preflight_reports_missing_policyengine_bundle_member(
 ) -> None:
     artifact_root = _write_complete_resume_artifact_root(tmp_path / "run-1")
     missing_member = (
-        artifact_root / "stage_artifacts" / "06_policyengine_entities" / "persons.parquet"
+        artifact_root
+        / "stage_artifacts"
+        / "06_policyengine_entities"
+        / "persons.parquet"
     )
     missing_member.unlink()
 
@@ -822,10 +845,15 @@ def test_stage_resume_preflight_reports_missing_policyengine_bundle_member(
 
     assert not preflight.ok
     missing = {item.label: item for item in preflight.missing}
-    assert "06_policyengine_entities.pre_calibration_policyengine_entity_tables" in missing
-    assert missing[
-        "06_policyengine_entities.pre_calibration_policyengine_entity_tables"
-    ].path == missing_member
+    assert (
+        "06_policyengine_entities.pre_calibration_policyengine_entity_tables" in missing
+    )
+    assert (
+        missing[
+            "06_policyengine_entities.pre_calibration_policyengine_entity_tables"
+        ].path
+        == missing_member
+    )
 
 
 def test_run_policyengine_us_data_rebuild_checkpoint_builds_bundle_and_parity(
@@ -2304,6 +2332,7 @@ def _write_complete_resume_artifact_root(artifact_root: Path) -> Path:
                     "complete": True,
                     "lifecycleStatus": "complete",
                     "requiredOutputs": required_outputs,
+                    "missingRequiredOutputs": [],
                     "outputs": outputs,
                 }
             )

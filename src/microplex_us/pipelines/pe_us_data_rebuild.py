@@ -78,7 +78,7 @@ def default_policyengine_us_data_rebuild_config(
         policyengine_calibration_deferred_stage_min_full_oracle_capped_mean_abs_relative_error=None,
         policyengine_calibration_deferred_stage_top_family_count=7,
         policyengine_calibration_deferred_stage_top_geography_count=4,
-        donor_imputer_backend="qrf",
+        donor_imputer_backend="regime_aware",
         donor_imputer_condition_selection="pe_prespecified",
         donor_imputer_qrf_zero_threshold=0.05,
         donor_imputer_excluded_variables=(),
@@ -91,7 +91,18 @@ def default_policyengine_us_data_rebuild_config(
         ),
         policyengine_prefer_existing_tax_unit_ids=True,
     )
-    return replace(defaults, **overrides)
+    config = replace(defaults, **overrides)
+    if (
+        config.puf_support_clone_enabled
+        and config.donor_imputer_backend != "regime_aware"
+    ):
+        raise ValueError(
+            "PE-US-data PUF support clone rebuilds require "
+            "donor_imputer_backend='regime_aware' so release candidates use "
+            "MicroImpute chained donor imputations. Set "
+            "puf_support_clone_enabled=False for legacy imputer experiments."
+        )
+    return config
 
 
 def default_policyengine_us_data_rebuild_source_providers(

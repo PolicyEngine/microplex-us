@@ -87,7 +87,7 @@ def test_default_policyengine_us_data_rebuild_config_uses_incumbent_defaults() -
     )
     assert config.policyengine_calibration_deferred_stage_top_family_count == 7
     assert config.policyengine_calibration_deferred_stage_top_geography_count == 4
-    assert config.donor_imputer_backend == "qrf"
+    assert config.donor_imputer_backend == "regime_aware"
     assert config.donor_imputer_condition_selection == "pe_prespecified"
     assert config.donor_imputer_excluded_variables == ()
     assert config.puf_support_clone_enabled is True
@@ -99,6 +99,31 @@ def test_default_policyengine_us_data_rebuild_config_uses_incumbent_defaults() -
     assert config.policyengine_prefer_existing_tax_unit_ids is True
     assert config.random_seed == 123
     assert config.cps_asec_source_year == 2022
+
+
+def test_default_policyengine_us_data_rebuild_config_rejects_legacy_imputer_for_puf_support_clone() -> (
+    None
+):
+    try:
+        default_policyengine_us_data_rebuild_config(donor_imputer_backend="qrf")
+    except ValueError as exc:
+        message = str(exc)
+        assert "PUF support clone rebuilds require" in message
+        assert "donor_imputer_backend='regime_aware'" in message
+    else:
+        raise AssertionError("Expected PUF support clone qrf rebuild to fail")
+
+
+def test_default_policyengine_us_data_rebuild_config_allows_legacy_imputer_when_puf_support_clone_disabled() -> (
+    None
+):
+    config = default_policyengine_us_data_rebuild_config(
+        puf_support_clone_enabled=False,
+        donor_imputer_backend="qrf",
+    )
+
+    assert config.puf_support_clone_enabled is False
+    assert config.donor_imputer_backend == "qrf"
 
 
 def test_default_policyengine_us_data_rebuild_config_respects_calibration_support_override() -> (

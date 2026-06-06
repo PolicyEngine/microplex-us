@@ -191,6 +191,10 @@ def _sound_ecps_comparison_payload() -> dict[str, object]:
     ]
     candidate_loss = 0.1
     baseline_loss = 0.2
+    candidate_holdout_loss = 0.03
+    baseline_holdout_loss = 0.04
+    candidate_unweighted_msre = 0.10
+    baseline_unweighted_msre = 0.17
     return {
         "frozen_ecps_baseline_certificate": {
             "schema_version": 1,
@@ -218,8 +222,8 @@ def _sound_ecps_comparison_payload() -> dict[str, object]:
             "scoring_config": {"sha256": "e" * 64},
             "baseline_metrics": {
                 "baseline_enhanced_cps_native_loss": baseline_loss,
-                "baseline_holdout_loss": 0.04,
-                "baseline_unweighted_msre": 0.17,
+                "baseline_holdout_loss": baseline_holdout_loss,
+                "baseline_unweighted_msre": baseline_unweighted_msre,
             },
         },
         "summary": {
@@ -234,8 +238,10 @@ def _sound_ecps_comparison_payload() -> dict[str, object]:
             "baseline_refit_config": fit_config,
             "refit_objective_matches_scoring": True,
             "ecps_refit_effective_passed": True,
-            "baseline_holdout_loss": 0.04,
-            "baseline_unweighted_msre": 0.17,
+            "candidate_holdout_loss": candidate_holdout_loss,
+            "baseline_holdout_loss": baseline_holdout_loss,
+            "candidate_unweighted_msre": candidate_unweighted_msre,
+            "baseline_unweighted_msre": baseline_unweighted_msre,
             "holdout_target_fraction": 0.2,
             "protected_family_losses": protected_family_losses,
         },

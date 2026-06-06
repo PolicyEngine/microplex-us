@@ -195,6 +195,10 @@ def _sound_ecps_comparison_payload(
     *,
     candidate_loss: float = 0.12,
     baseline_loss: float = 0.20,
+    candidate_holdout_loss: float = 0.03,
+    baseline_holdout_loss: float = 0.04,
+    candidate_unweighted_msre: float = 0.10,
+    baseline_unweighted_msre: float = 0.17,
 ) -> dict[str, object]:
     fit_config = {
         "lambda_l0": 0.0,
@@ -258,8 +262,8 @@ def _sound_ecps_comparison_payload(
             "scoring_config": {"sha256": "e" * 64},
             "baseline_metrics": {
                 "baseline_enhanced_cps_native_loss": baseline_loss,
-                "baseline_holdout_loss": 0.04,
-                "baseline_unweighted_msre": 0.17,
+                "baseline_holdout_loss": baseline_holdout_loss,
+                "baseline_unweighted_msre": baseline_unweighted_msre,
             },
         },
         "summary": {
@@ -274,8 +278,10 @@ def _sound_ecps_comparison_payload(
             "baseline_refit_config": fit_config,
             "refit_objective_matches_scoring": True,
             "ecps_refit_effective_passed": True,
-            "baseline_holdout_loss": 0.04,
-            "baseline_unweighted_msre": 0.17,
+            "candidate_holdout_loss": candidate_holdout_loss,
+            "baseline_holdout_loss": baseline_holdout_loss,
+            "candidate_unweighted_msre": candidate_unweighted_msre,
+            "baseline_unweighted_msre": baseline_unweighted_msre,
             "holdout_target_fraction": 0.2,
             "protected_family_losses": protected_family_losses,
         },
@@ -1526,6 +1532,78 @@ def test_ecps_comparison_requires_measured_refit_objective_identity(tmp_path):
     assert ecps_gate["status"] == "fail"
     assert "refit_objective_matches_scoring" in ecps_gate["summary"]
     assert ecps_gate["details"]["refit_objective_matches_scoring"] is None
+
+
+def test_ecps_comparison_rejects_adverse_holdout_loss(tmp_path):
+    artifact_dir = tmp_path / "artifact"
+    artifact_dir.mkdir()
+    _write_contract_policyengine_dataset(artifact_dir / "candidate.h5")
+    baseline_dataset = _write_contract_policyengine_dataset(tmp_path / "baseline.h5")
+    benchmark_manifest = tmp_path / "benchmark_manifest.json"
+    _write_benchmark_manifest(benchmark_manifest)
+    _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
+    payload = _sound_ecps_comparison_payload(
+        candidate_loss=0.10,
+        baseline_loss=0.20,
+        candidate_holdout_loss=0.050,
+        baseline_holdout_loss=0.040,
+    )
+
+    report_path = write_mp300k_artifact_gate_report(
+        artifact_dir,
+        ecps_comparison_payload=payload,
+        arch_coverage_payload=_arch_coverage_payload(),
+        runtime_smoke_payload={"runtime_ratio": 1.0},
+        benchmark_manifest_path=benchmark_manifest,
+        compute_native_scores=False,
+        update_manifest=False,
+    )
+
+    record = json.loads(report_path.read_text())
+    ecps_gate = record["gates"]["ecps_comparison"]
+
+    assert record["summary"]["status"] == "failed"
+    assert ecps_gate["status"] == "fail"
+    assert "holdout_loss_beats_baseline" in ecps_gate["summary"]
+    assert ecps_gate["metrics"]["candidate_holdout_loss"] == pytest.approx(0.050)
+    assert ecps_gate["metrics"]["baseline_holdout_loss"] == pytest.approx(0.040)
+    assert ecps_gate["details"]["holdout_loss_beats_baseline"] is False
+
+
+def test_ecps_comparison_rejects_adverse_unweighted_msre(tmp_path):
+    artifact_dir = tmp_path / "artifact"
+    artifact_dir.mkdir()
+    _write_contract_policyengine_dataset(artifact_dir / "candidate.h5")
+    baseline_dataset = _write_contract_policyengine_dataset(tmp_path / "baseline.h5")
+    benchmark_manifest = tmp_path / "benchmark_manifest.json"
+    _write_benchmark_manifest(benchmark_manifest)
+    _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
+    payload = _sound_ecps_comparison_payload(
+        candidate_loss=0.10,
+        baseline_loss=0.20,
+        candidate_unweighted_msre=0.30,
+        baseline_unweighted_msre=0.17,
+    )
+
+    report_path = write_mp300k_artifact_gate_report(
+        artifact_dir,
+        ecps_comparison_payload=payload,
+        arch_coverage_payload=_arch_coverage_payload(),
+        runtime_smoke_payload={"runtime_ratio": 1.0},
+        benchmark_manifest_path=benchmark_manifest,
+        compute_native_scores=False,
+        update_manifest=False,
+    )
+
+    record = json.loads(report_path.read_text())
+    ecps_gate = record["gates"]["ecps_comparison"]
+
+    assert record["summary"]["status"] == "failed"
+    assert ecps_gate["status"] == "fail"
+    assert "unweighted_msre_beats_baseline" in ecps_gate["summary"]
+    assert ecps_gate["metrics"]["candidate_unweighted_msre"] == pytest.approx(0.30)
+    assert ecps_gate["metrics"]["baseline_unweighted_msre"] == pytest.approx(0.17)
+    assert ecps_gate["details"]["unweighted_msre_beats_baseline"] is False
 
 
 def test_runtime_gate_ignores_contradictory_producer_verdict(tmp_path):

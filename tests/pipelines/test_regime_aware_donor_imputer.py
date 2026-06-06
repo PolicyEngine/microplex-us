@@ -190,6 +190,61 @@ class TestRegimeAwareFitGenerate:
             synthetic[["first_income_leaf", "second_income_leaf"]].notna().all().all()
         )
 
+    def test_duplicate_input_columns_are_collapsed_before_microimpute(self) -> None:
+        from microplex_us.pipelines.us import RegimeAwareDonorImputer
+
+        rng = np.random.default_rng(2026060602)
+        n = 300
+        age = rng.integers(18, 80, size=n).astype(float)
+        first = rng.normal(loc=age * 300.0, scale=1_000.0, size=n)
+        second = 0.5 * first + rng.normal(scale=250.0, size=n)
+        train = pd.DataFrame(
+            np.column_stack([age, first, first, second]),
+            columns=[
+                "age",
+                "first_income_leaf",
+                "first_income_leaf",
+                "second_income_leaf",
+            ],
+        )
+        assert not train.columns.is_unique
+
+        imputer = RegimeAwareDonorImputer(
+            condition_vars=["age", "first_income_leaf"],
+            target_vars=[
+                "first_income_leaf",
+                "first_income_leaf",
+                "second_income_leaf",
+            ],
+            n_estimators=25,
+        )
+        imputer.fit(train)
+
+        assert imputer._fitted_columns == (
+            "first_income_leaf",
+            "second_income_leaf",
+        )
+        fitted = imputer._fitted["first_income_leaf"]
+        first_bundle = fitted._per_variable["first_income_leaf"]
+        second_bundle = fitted._per_variable["second_income_leaf"]
+        assert first_bundle["predictors"] == ["age"]
+        assert second_bundle["predictors"] == ["age", "first_income_leaf"]
+
+        conditions = pd.DataFrame(
+            np.column_stack([[25.0, 45.0, 65.0], [26.0, 46.0, 66.0]]),
+            columns=["age", "age"],
+        )
+        synthetic = imputer.generate(conditions, seed=20260606)
+        assert list(synthetic.columns) == [
+            "age",
+            "first_income_leaf",
+            "second_income_leaf",
+        ]
+        assert synthetic.columns.is_unique
+        assert (
+            synthetic[["first_income_leaf", "second_income_leaf"]].notna().all().all()
+        )
+
     def _fit_generate(
         self, n_train: int = 1500, n_gen: int = 2000, seed: int = 0
     ) -> np.ndarray:

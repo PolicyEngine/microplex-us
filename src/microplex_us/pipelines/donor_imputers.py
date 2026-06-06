@@ -10,6 +10,14 @@ import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 
 
+def _deduplicate_columns_preserve_first(frame: pd.DataFrame) -> pd.DataFrame:
+    """Return a frame with one column per label, keeping the first occurrence."""
+
+    if frame.columns.is_unique:
+        return frame
+    return frame.loc[:, ~frame.columns.duplicated()].copy()
+
+
 class ColumnwiseQRFDonorImputer:
     """Columnwise QRF donor imputer, optionally with zero-inflated support."""
 
@@ -218,7 +226,10 @@ class RegimeAwareDonorImputer:
             dict.fromkeys(var for var in self.condition_vars if var not in target_set)
         )
         fit_columns = tuple(dict.fromkeys((*predictor_vars, *target_vars)))
-        subset = data[list(fit_columns)].replace([np.inf, -np.inf], np.nan).dropna()
+        unique_data = _deduplicate_columns_preserve_first(data)
+        subset = (
+            unique_data[list(fit_columns)].replace([np.inf, -np.inf], np.nan).dropna()
+        )
         if len(subset) < 25:
             return self
 
@@ -247,17 +258,18 @@ class RegimeAwareDonorImputer:
         conditions: pd.DataFrame,
         seed: int | None = None,
     ) -> pd.DataFrame:
-        synthetic = conditions.copy().reset_index(drop=True)
+        synthetic = _deduplicate_columns_preserve_first(conditions).copy()
+        synthetic = synthetic.reset_index(drop=True)
         fitted = next(iter(self._fitted.values()), None)
         if fitted is None:
-            for column in self.target_vars:
+            for column in dict.fromkeys(self.target_vars):
                 synthetic[column] = np.nan
             return synthetic
 
         prediction_seed = self.seed if seed is None else int(seed)
         self._reset_prediction_rngs(fitted, seed=prediction_seed)
         preds = fitted.predict(synthetic[list(self._predictor_columns)])
-        for column in self.target_vars:
+        for column in self._fitted_columns:
             if column in preds.columns:
                 synthetic[column] = preds[column].to_numpy(dtype=float)
             else:

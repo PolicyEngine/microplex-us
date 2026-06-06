@@ -39,6 +39,9 @@ def test_build_mp_benchmark_manifest_pins_release_inputs(tmp_path):
         target_count=150,
         target_names_sha256="d" * 64,
         scoring_config_sha256="e" * 64,
+        baseline_enhanced_cps_native_loss=0.2,
+        baseline_holdout_loss=0.04,
+        baseline_unweighted_msre=0.17,
         policyengine_us_data_commit="b" * 40,
         policyengine_us_version="1.587.0",
         enforce_production_pins=False,
@@ -56,6 +59,11 @@ def test_build_mp_benchmark_manifest_pins_release_inputs(tmp_path):
         "target_names_sha256": "d" * 64,
     }
     assert manifest["scoring_config"] == {"sha256": "e" * 64}
+    assert manifest["baseline_metrics"] == {
+        "baseline_enhanced_cps_native_loss": 0.2,
+        "baseline_holdout_loss": 0.04,
+        "baseline_unweighted_msre": 0.17,
+    }
     assert manifest["baseline_dataset"]["path"] == str(baseline.resolve())
     assert manifest["baseline_dataset"]["sha256"] == _sha256(baseline_contents)
     assert manifest["target_db"]["path"] == str(target_db.resolve())
@@ -89,6 +97,12 @@ def test_main_writes_mp_benchmark_manifest(tmp_path, capsys):
             "d" * 64,
             "--scoring-config-sha256",
             "e" * 64,
+            "--baseline-enhanced-cps-native-loss",
+            "0.2",
+            "--baseline-holdout-loss",
+            "0.04",
+            "--baseline-unweighted-msre",
+            "0.17",
             "--allow-noncanonical-production-pins",
         ]
     )
@@ -115,8 +129,28 @@ def test_build_mp_benchmark_manifest_rejects_noncanonical_release_pins(tmp_path)
             target_count=150,
             target_names_sha256="d" * 64,
             scoring_config_sha256="e" * 64,
+            baseline_enhanced_cps_native_loss=0.2,
+            baseline_holdout_loss=0.04,
+            baseline_unweighted_msre=0.17,
             policyengine_us_data_commit="b" * 40,
             policyengine_us_version="1.587.0",
+        )
+
+
+def test_build_mp_benchmark_manifest_requires_baseline_metrics(tmp_path):
+    baseline = _write_file(tmp_path / "enhanced_cps_2024.h5", b"baseline")
+    target_db = _write_file(tmp_path / "policyengine_targets.db", b"targets")
+
+    with pytest.raises(ValueError, match="pin baseline metrics"):
+        build_mp_benchmark_manifest(
+            baseline_dataset_path=baseline,
+            target_db_path=target_db,
+            target_count=150,
+            target_names_sha256="d" * 64,
+            scoring_config_sha256="e" * 64,
+            policyengine_us_data_commit="b" * 40,
+            policyengine_us_version="1.587.0",
+            enforce_production_pins=False,
         )
 
 
@@ -155,6 +189,9 @@ def test_dirty_policyengine_us_data_repo_is_rejected_unless_explicit(tmp_path):
             target_count=150,
             target_names_sha256="d" * 64,
             scoring_config_sha256="e" * 64,
+            baseline_enhanced_cps_native_loss=0.2,
+            baseline_holdout_loss=0.04,
+            baseline_unweighted_msre=0.17,
             enforce_production_pins=False,
         )
 
@@ -166,6 +203,9 @@ def test_dirty_policyengine_us_data_repo_is_rejected_unless_explicit(tmp_path):
         target_count=150,
         target_names_sha256="d" * 64,
         scoring_config_sha256="e" * 64,
+        baseline_enhanced_cps_native_loss=0.2,
+        baseline_holdout_loss=0.04,
+        baseline_unweighted_msre=0.17,
         allow_dirty_policyengine_us_data=True,
         enforce_production_pins=False,
     )

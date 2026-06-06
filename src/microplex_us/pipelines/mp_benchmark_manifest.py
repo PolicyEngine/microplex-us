@@ -42,6 +42,9 @@ def build_mp_benchmark_manifest(
     target_count: int,
     target_names_sha256: str,
     scoring_config_sha256: str,
+    baseline_enhanced_cps_native_loss: float | None = None,
+    baseline_holdout_loss: float | None = None,
+    baseline_unweighted_msre: float | None = None,
     certificate_type: str = "frozen_production_ecps_baseline",
     policyengine_us_data_repo: str | Path | None = None,
     policyengine_us_data_commit: str | None = None,
@@ -64,6 +67,12 @@ def build_mp_benchmark_manifest(
         allow_dirty=allow_dirty_policyengine_us_data,
     )
     version = policyengine_us_version or _installed_policyengine_us_version()
+    baseline_metrics = _baseline_metrics_descriptor(
+        certificate_type=certificate_type,
+        baseline_enhanced_cps_native_loss=baseline_enhanced_cps_native_loss,
+        baseline_holdout_loss=baseline_holdout_loss,
+        baseline_unweighted_msre=baseline_unweighted_msre,
+    )
     manifest = {
         "schema_version": 1,
         "certificate_type": str(certificate_type),
@@ -78,6 +87,7 @@ def build_mp_benchmark_manifest(
             "target_names_sha256": str(target_names_sha256),
         },
         "scoring_config": {"sha256": str(scoring_config_sha256)},
+        "baseline_metrics": baseline_metrics,
         "baseline_dataset": baseline_dataset,
         "policyengine_us_data": repo_descriptor,
         "policyengine_us": {"version": version},
@@ -86,6 +96,35 @@ def build_mp_benchmark_manifest(
     if enforce_production_pins:
         _assert_manifest_uses_frozen_production_pins(manifest)
     return manifest
+
+
+def _baseline_metrics_descriptor(
+    *,
+    certificate_type: str,
+    baseline_enhanced_cps_native_loss: float | None,
+    baseline_holdout_loss: float | None,
+    baseline_unweighted_msre: float | None,
+) -> dict[str, float]:
+    metric_values = {
+        "baseline_enhanced_cps_native_loss": baseline_enhanced_cps_native_loss,
+        "baseline_holdout_loss": baseline_holdout_loss,
+        "baseline_unweighted_msre": baseline_unweighted_msre,
+    }
+    missing = [
+        name
+        for name, value in metric_values.items()
+        if value is None
+    ]
+    if missing and certificate_type == FROZEN_PRODUCTION_ECPS_CERTIFICATE_TYPE:
+        raise ValueError(
+            "frozen production eCPS benchmark manifests must pin baseline "
+            "metrics: " + ", ".join(missing)
+        )
+    return {
+        name: float(value)
+        for name, value in metric_values.items()
+        if value is not None
+    }
 
 
 def write_mp_benchmark_manifest(
@@ -236,6 +275,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--target-count", type=int, required=True)
     parser.add_argument("--target-names-sha256", required=True)
     parser.add_argument("--scoring-config-sha256", required=True)
+    parser.add_argument("--baseline-enhanced-cps-native-loss", type=float, required=True)
+    parser.add_argument("--baseline-holdout-loss", type=float, required=True)
+    parser.add_argument("--baseline-unweighted-msre", type=float, required=True)
     parser.add_argument(
         "--certificate-type",
         default="frozen_production_ecps_baseline",
@@ -272,6 +314,9 @@ def main(argv: list[str] | None = None) -> int:
         target_count=args.target_count,
         target_names_sha256=args.target_names_sha256,
         scoring_config_sha256=args.scoring_config_sha256,
+        baseline_enhanced_cps_native_loss=args.baseline_enhanced_cps_native_loss,
+        baseline_holdout_loss=args.baseline_holdout_loss,
+        baseline_unweighted_msre=args.baseline_unweighted_msre,
         certificate_type=args.certificate_type,
         policyengine_us_data_repo=args.policyengine_us_data_repo,
         policyengine_us_data_commit=args.policyengine_us_data_commit,

@@ -169,6 +169,18 @@ _REQUIRED_BENCHMARK_MANIFEST_EVIDENCE = {
         ("scoring_config", "sha256"),
         ("scoring_config_sha256",),
     ),
+    "baseline_metrics.baseline_enhanced_cps_native_loss": (
+        ("baseline_metrics", "baseline_enhanced_cps_native_loss"),
+        ("baseline_enhanced_cps_native_loss",),
+    ),
+    "baseline_metrics.baseline_holdout_loss": (
+        ("baseline_metrics", "baseline_holdout_loss"),
+        ("baseline_holdout_loss",),
+    ),
+    "baseline_metrics.baseline_unweighted_msre": (
+        ("baseline_metrics", "baseline_unweighted_msre"),
+        ("baseline_unweighted_msre",),
+    ),
     "target_db.path": (
         ("target_db", "path"),
         ("target_db_path",),
@@ -1466,6 +1478,12 @@ def _frozen_baseline_certificate_summary(
                 "baseline_enhanced_cps_native_loss",
             )
         ),
+        "baseline_metrics.baseline_holdout_loss": (
+            _certificate_metric(certificate, "baseline_holdout_loss")
+        ),
+        "baseline_metrics.baseline_unweighted_msre": (
+            _certificate_metric(certificate, "baseline_unweighted_msre")
+        ),
     }
     for evidence_name, value in evidence_values.items():
         if not _valid_certificate_evidence_value(evidence_name, value):
@@ -1501,6 +1519,9 @@ def _frozen_baseline_certificate_summary(
         "target_surface.target_count",
         "target_surface.target_names_sha256",
         "scoring_config.sha256",
+        "baseline_metrics.baseline_enhanced_cps_native_loss",
+        "baseline_metrics.baseline_holdout_loss",
+        "baseline_metrics.baseline_unweighted_msre",
     ):
         expected_value = (benchmark_evidence or {}).get(evidence_name)
         certificate_value = evidence_values.get(evidence_name)
@@ -2305,6 +2326,11 @@ def _valid_benchmark_evidence_value(name: str, value: Any) -> bool:
             return False
     if name == "certificate_type":
         return value == "frozen_production_ecps_baseline"
+    if name.startswith("baseline_metrics."):
+        try:
+            return np.isfinite(float(value))
+        except (TypeError, ValueError):
+            return False
     if not isinstance(value, str) or not value:
         return False
     if name.endswith(".sha256"):

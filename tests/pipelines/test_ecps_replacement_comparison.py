@@ -13,12 +13,12 @@ import numpy as np
 import pytest
 
 from microplex_us.pipelines import ecps_replacement_comparison as ecps
+from microplex_us.pipelines.mp300k_artifact_gates import (
+    write_mp300k_artifact_gate_report,
+)
 from microplex_us.pipelines.mp_benchmark_manifest import (
     FROZEN_PRODUCTION_ECPS_BASELINE_SHA256,
     FROZEN_PRODUCTION_ECPS_TARGET_DB_SHA256,
-)
-from microplex_us.pipelines.mp300k_artifact_gates import (
-    write_mp300k_artifact_gate_report,
 )
 from microplex_us.pipelines.pe_native_loss import build_pe_native_loss_arrays
 from microplex_us.policyengine.us import write_policyengine_us_time_period_dataset
@@ -396,6 +396,7 @@ def _benchmark_manifest(
         period = certificate["period"]
         target_surface = dict(certificate["target_surface"])
         scoring_config = {"sha256": certificate["scoring_config"]["sha256"]}
+        baseline_metrics = dict(certificate["baseline_metrics"])
     else:
         baseline_dataset = {
             "path": "/tmp/enhanced_cps_2024.h5",
@@ -419,6 +420,11 @@ def _benchmark_manifest(
             "target_names_sha256": "d" * 64,
         }
         scoring_config = {"sha256": "e" * 64}
+        baseline_metrics = {
+            "baseline_enhanced_cps_native_loss": 0.20,
+            "baseline_holdout_loss": 0.04,
+            "baseline_unweighted_msre": 0.17,
+        }
     path.write_text(
         json.dumps(
             {
@@ -429,6 +435,7 @@ def _benchmark_manifest(
                 "target_scope": target_surface["target_scope"],
                 "target_surface": target_surface,
                 "scoring_config": scoring_config,
+                "baseline_metrics": baseline_metrics,
                 "baseline_dataset": baseline_dataset,
                 "policyengine_us_data": policyengine_us_data,
                 "policyengine_us": policyengine_us,
@@ -748,6 +755,51 @@ def test_sound_ecps_replacement_comparison_rejects_benchmark_manifest_mismatch(
         )
 
     assert "target_surface.target_names_sha256" in str(excinfo.value)
+
+
+def test_sound_ecps_replacement_comparison_rejects_benchmark_metric_mismatch(
+    monkeypatch,
+    tmp_path,
+):
+    candidate = _write_minimal_policyengine_dataset(tmp_path / "candidate.h5")
+    baseline = _write_minimal_policyengine_dataset(tmp_path / "baseline.h5")
+    targets_db = tmp_path / "policyengine_targets.db"
+    targets_db.write_bytes(b"pinned target database")
+    scorer_repo = _write_clean_git_repo(tmp_path / "policyengine-us-data")
+    monkeypatch.setattr(ecps, "_extract_pe_native_loss_inputs", _fake_loss_inputs)
+    monkeypatch.setattr(ecps, "compute_us_pe_native_support_audit", _fake_support_audit)
+
+    bootstrap = ecps.build_sound_ecps_replacement_comparison(
+        candidate_dataset_path=candidate,
+        baseline_dataset_path=baseline,
+        output_dir=tmp_path / "bootstrap",
+        optimizer_max_iter=50,
+        policyengine_targets_db_path=targets_db,
+        policyengine_us_data_repo=scorer_repo,
+        enforce_production_pins=False,
+    )
+    benchmark_manifest = tmp_path / "benchmark_manifest.json"
+    _benchmark_manifest(
+        benchmark_manifest,
+        certificate=bootstrap["frozen_ecps_baseline_certificate"],
+    )
+    manifest = json.loads(benchmark_manifest.read_text())
+    manifest["baseline_metrics"]["baseline_holdout_loss"] = 999.0
+    benchmark_manifest.write_text(json.dumps(manifest, indent=2, sort_keys=True))
+
+    with pytest.raises(ecps.ComparisonGateError) as excinfo:
+        ecps.build_sound_ecps_replacement_comparison(
+            candidate_dataset_path=candidate,
+            baseline_dataset_path=baseline,
+            output_dir=tmp_path / "comparison",
+            optimizer_max_iter=50,
+            policyengine_targets_db_path=targets_db,
+            policyengine_us_data_repo=scorer_repo,
+            benchmark_manifest_path=benchmark_manifest,
+            enforce_production_pins=False,
+        )
+
+    assert "baseline_metrics.baseline_holdout_loss" in str(excinfo.value)
 
 
 def test_sound_ecps_replacement_comparison_writes_target_diagnostics_sidecar(

@@ -9,13 +9,13 @@ import h5py
 import numpy as np
 import pytest
 
-from microplex_us.pipelines.mp_benchmark_manifest import (
-    FROZEN_PRODUCTION_ECPS_BASELINE_SHA256,
-    FROZEN_PRODUCTION_ECPS_TARGET_DB_SHA256,
-)
 from microplex_us.pipelines.mp300k_artifact_gates import (
     main,
     write_mp300k_artifact_gate_report,
+)
+from microplex_us.pipelines.mp_benchmark_manifest import (
+    FROZEN_PRODUCTION_ECPS_BASELINE_SHA256,
+    FROZEN_PRODUCTION_ECPS_TARGET_DB_SHA256,
 )
 from microplex_us.policyengine.us import write_policyengine_us_time_period_dataset
 
@@ -127,6 +127,11 @@ def _write_benchmark_manifest(path: Path) -> None:
                     "target_names_sha256": "d" * 64,
                 },
                 "scoring_config": {"sha256": "e" * 64},
+                "baseline_metrics": {
+                    "baseline_enhanced_cps_native_loss": 0.20,
+                    "baseline_holdout_loss": 0.04,
+                    "baseline_unweighted_msre": 0.17,
+                },
                 "baseline_dataset": {
                     "path": "/tmp/enhanced_cps_2024.h5",
                     "sha256": FROZEN_PRODUCTION_ECPS_BASELINE_SHA256,
@@ -382,6 +387,9 @@ def test_benchmark_manifest_gate_requires_pinned_release_evidence(tmp_path):
         "target_surface.target_count",
         "target_surface.target_names_sha256",
         "scoring_config.sha256",
+        "baseline_metrics.baseline_enhanced_cps_native_loss",
+        "baseline_metrics.baseline_holdout_loss",
+        "baseline_metrics.baseline_unweighted_msre",
         "target_db.path",
         "target_db.sha256",
     ]
@@ -447,13 +455,19 @@ def test_ecps_comparison_gate_rejects_baseline_certificate_metric_drift(tmp_path
 
     assert record["summary"]["status"] == "failed"
     assert ecps_gate["status"] == "fail"
-    assert ecps_gate["details"]["frozen_ecps_baseline_certificate"]["mismatches"] == [
-        {
-            "field": "baseline_metrics.baseline_enhanced_cps_native_loss",
-            "summary_value": 0.2,
-            "certificate_value": 0.05,
-        }
+    mismatches = ecps_gate["details"]["frozen_ecps_baseline_certificate"][
+        "mismatches"
     ]
+    assert {
+        "field": "baseline_metrics.baseline_enhanced_cps_native_loss",
+        "summary_value": 0.2,
+        "certificate_value": 0.05,
+    } in mismatches
+    assert {
+        "field": "baseline_metrics.baseline_enhanced_cps_native_loss",
+        "benchmark_manifest_value": 0.2,
+        "certificate_value": 0.05,
+    } in mismatches
 
 
 def test_ecps_comparison_gate_rejects_benchmark_certificate_mismatch(tmp_path):
@@ -486,6 +500,43 @@ def test_ecps_comparison_gate_rejects_benchmark_certificate_mismatch(tmp_path):
         "mismatches"
     ]
     assert any(item["field"] == "baseline_dataset.sha256" for item in mismatches)
+
+
+def test_ecps_comparison_gate_rejects_benchmark_metric_mismatch(tmp_path):
+    artifact_dir = tmp_path / "artifact"
+    artifact_dir.mkdir()
+    _write_contract_policyengine_dataset(artifact_dir / "candidate.h5")
+    baseline_dataset = _write_contract_policyengine_dataset(tmp_path / "baseline.h5")
+    benchmark_manifest = tmp_path / "benchmark_manifest.json"
+    _write_benchmark_manifest(benchmark_manifest)
+    manifest = json.loads(benchmark_manifest.read_text())
+    manifest["baseline_metrics"]["baseline_unweighted_msre"] = 999.0
+    benchmark_manifest.write_text(json.dumps(manifest))
+    _write_artifact_manifest(artifact_dir, baseline_dataset=baseline_dataset)
+    payload = _sound_ecps_comparison_payload(candidate_loss=0.10)
+
+    report_path = write_mp300k_artifact_gate_report(
+        artifact_dir,
+        ecps_comparison_payload=payload,
+        arch_coverage_payload=_arch_coverage_payload(),
+        runtime_smoke_payload={"runtime_ratio": 1.0},
+        benchmark_manifest_path=benchmark_manifest,
+        compute_native_scores=False,
+        update_manifest=False,
+    )
+
+    record = json.loads(report_path.read_text())
+    ecps_gate = record["gates"]["ecps_comparison"]
+
+    assert record["summary"]["status"] == "failed"
+    assert ecps_gate["status"] == "fail"
+    mismatches = ecps_gate["details"]["frozen_ecps_baseline_certificate"][
+        "mismatches"
+    ]
+    assert any(
+        item["field"] == "baseline_metrics.baseline_unweighted_msre"
+        for item in mismatches
+    )
 
 
 def test_ecps_comparison_gate_rejects_self_consistent_noncanonical_pins(tmp_path):

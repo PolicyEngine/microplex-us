@@ -35,7 +35,7 @@ hf = [
     "huggingface_hub>=0.24",
 ]
 policyengine = [
-    "microimpute @ git+https://github.com/PolicyEngine/microimpute.git@27d23090dcf04c2c30ae369b0a209e27eb3659f0 ; python_full_version >= '3.12' and python_full_version < '3.15'",
+    "microimpute==3.1.0; python_full_version >= '3.12' and python_full_version < '3.15'",
     "policyengine-us==1.715.2; python_version >= '3.11' and python_version < '3.15'",
     "spm-calculator>=0.3.1",
     # Standalone tax-unit construction engine (the extraction of eCPS's

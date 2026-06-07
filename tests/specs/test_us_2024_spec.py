@@ -1,10 +1,17 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
 from importlib.resources import files
 from pathlib import Path
 
-from microplex.spec import DEMOGRAPHICS_TOKEN, ImputationOrder, SpineMethod, load_spec
+from microplex.spec import (
+    DEMOGRAPHICS_TOKEN,
+    ImputationOrder,
+    SpineMethod,
+    VariableOperationKind,
+    load_spec,
+)
 
 from microplex_us.pipelines.us import (
     PUF_SUPPORT_CLONE_IMPUTED_VARIABLES,
@@ -141,6 +148,44 @@ def test_us_2024_spec_declares_provenance_for_every_required_export() -> None:
                 assert "POLICYENGINE_US_EXPORT_VARIABLES" not in symbol_tokens, (
                     f"{name}.{system}.code"
                 )
+        assert variable.mp_spec.operation is not None, f"{name}.mp_spec.operation"
+
+
+def test_us_2024_spec_operation_kinds_make_python_provenance_temporary() -> None:
+    spec = _spec()
+
+    operation_counts = Counter(
+        variable.mp_spec.operation.kind for variable in spec.variables.values()
+    )
+
+    assert operation_counts == {
+        VariableOperationKind.OPEN_DECISION: 116,
+        VariableOperationKind.IMPUTE: 100,
+        VariableOperationKind.PASSTHROUGH: 31,
+        VariableOperationKind.RERANDOMIZE_TAKEUP: 13,
+        VariableOperationKind.STRUCTURAL_EXPORT: 12,
+        VariableOperationKind.ENCODE_GEOID: 5,
+        VariableOperationKind.DERIVE: 1,
+    }
+
+    puf_imputed = {
+        name
+        for name, variable in spec.variables.items()
+        if variable.role and variable.role.startswith("puf_imputed")
+    }
+    assert puf_imputed
+    assert {
+        spec.variables[name].mp_spec.operation.source
+        for name in puf_imputed
+    } == {"puf"}
+
+    unresolved = [
+        name
+        for name, variable in spec.variables.items()
+        if variable.mp_spec.operation.kind is VariableOperationKind.OPEN_DECISION
+    ]
+    assert len(unresolved) == 116
+    assert "net_worth" in unresolved
 
 
 def test_us_2024_spec_covers_manifest_gap_families() -> None:

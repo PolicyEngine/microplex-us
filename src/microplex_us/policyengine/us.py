@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
@@ -18,8 +19,10 @@ from microplex.calibration import LinearConstraint
 from microplex.core import EntityType
 from microplex.targets import (
     TargetAggregation,
+    TargetConstraintCompilationResult,
     TargetFilter,
     TargetQuery,
+    TargetReweightingConstraint,
     TargetSet,
     TargetSpec,
     apply_target_query,
@@ -268,6 +271,12 @@ class PolicyEngineUSVariableMaterializationResult:
     bindings: dict[str, PolicyEngineUSVariableBinding]
     materialized_variables: tuple[str, ...] = ()
     failed_variables: dict[str, str] = field(default_factory=dict)
+
+
+PolicyEngineUSSimulationModifierHandler = Callable[
+    ...,
+    PolicyEngineUSEntityTableBundle,
+]
 
 
 DEFAULT_POLICYENGINE_US_VARIABLE_BINDINGS: dict[str, PolicyEngineUSVariableBinding] = {
@@ -1675,6 +1684,317 @@ def compile_policyengine_us_household_linear_constraints(
         )
 
     return tuple(compiled)
+
+
+@dataclass
+class PolicyEngineUSSimulationTargetCompiler:
+    """Compile simulator-dependent PE-US targets into sparse calibration rows."""
+
+    period: int
+    dataset_year: int | None = None
+    simulation_cls: Any | None = None
+    microsimulation_kwargs: dict[str, Any] | None = None
+    temp_dir: str | Path | None = None
+    direct_override_variables: tuple[str, ...] = ()
+    batch_size: int | None = None
+    force_materialize_variables: set[str] | tuple[str, ...] | None = None
+    modifier_handlers: Mapping[str, PolicyEngineUSSimulationModifierHandler] = field(
+        default_factory=dict
+    )
+
+    def compile_simulation_target_constraints(
+        self,
+        *,
+        targets: Sequence[TargetSpec],
+        entity_frames: Mapping[EntityType, pd.DataFrame],
+        entity_weight_indexes: Mapping[EntityType, pd.Series | np.ndarray],
+    ) -> TargetConstraintCompilationResult:
+        """Compile PE-materialized target rows required by Microplex core."""
+        target_list = tuple(targets)
+        if not target_list:
+            return TargetConstraintCompilationResult(constraints=())
+
+        tables = _policyengine_us_tables_from_entity_frames(entity_frames)
+        household_weight_indexes = _policyengine_us_household_weight_indexes(
+            entity_weight_indexes,
+            household_count=len(tables.households),
+        )
+        tables, supported_targets, skipped_targets = self._apply_modifiers(
+            tables=tables,
+            targets=target_list,
+        )
+        if not supported_targets:
+            return TargetConstraintCompilationResult(
+                constraints=(),
+                skipped_targets=tuple(skipped_targets),
+            )
+
+        bindings = infer_policyengine_us_variable_bindings(tables)
+        force_materialize_variables = {
+            *set(self.force_materialize_variables or ()),
+            *_policyengine_us_forced_materialization_features(supported_targets),
+        }
+        variables_to_materialize = policyengine_us_variables_to_materialize(
+            list(supported_targets),
+            bindings,
+            force_materialize_variables=force_materialize_variables,
+        )
+        materialization = materialize_policyengine_us_variables_safely(
+            tables,
+            variables=tuple(sorted(variables_to_materialize)),
+            period=self.period,
+            dataset_year=self.dataset_year,
+            simulation_cls=self.simulation_cls,
+            microsimulation_kwargs=self.microsimulation_kwargs,
+            temp_dir=self.temp_dir,
+            direct_override_variables=self.direct_override_variables,
+            batch_size=self.batch_size,
+        )
+        materialized_tables = materialization.tables
+        materialized_bindings = {
+            **bindings,
+            **infer_policyengine_us_variable_bindings(materialized_tables),
+            **materialization.bindings,
+        }
+
+        compilable_targets: list[TargetSpec] = []
+        for target in supported_targets:
+            missing_features = [
+                feature
+                for feature in target.required_features
+                if feature not in materialized_bindings
+            ]
+            failed_features = sorted(
+                set(target.required_features) & set(materialization.failed_variables)
+            )
+            if failed_features:
+                skipped_targets.append(
+                    (
+                        target.name,
+                        "policyengine_us_materialization_failed:"
+                        + ",".join(failed_features),
+                    )
+                )
+                continue
+            if missing_features:
+                skipped_targets.append(
+                    (
+                        target.name,
+                        "missing_features_after_policyengine_us_materialization:"
+                        + ",".join(sorted(missing_features)),
+                    )
+                )
+                continue
+            compilable_targets.append(target)
+
+        if not compilable_targets:
+            return TargetConstraintCompilationResult(
+                constraints=(),
+                skipped_targets=tuple(skipped_targets),
+            )
+
+        dense_constraints = compile_policyengine_us_household_linear_constraints(
+            compilable_targets,
+            materialized_tables,
+            variable_bindings=materialized_bindings,
+        )
+        sparse_constraints = tuple(
+            _policyengine_us_linear_constraint_to_target_reweighting_constraint(
+                target=target,
+                constraint=constraint,
+                household_weight_indexes=household_weight_indexes,
+            )
+            for target, constraint in zip(
+                compilable_targets,
+                dense_constraints,
+                strict=True,
+            )
+        )
+        return TargetConstraintCompilationResult(
+            constraints=sparse_constraints,
+            skipped_targets=tuple(skipped_targets),
+        )
+
+    def _apply_modifiers(
+        self,
+        *,
+        tables: PolicyEngineUSEntityTableBundle,
+        targets: Sequence[TargetSpec],
+    ) -> tuple[
+        PolicyEngineUSEntityTableBundle,
+        tuple[TargetSpec, ...],
+        list[tuple[str, str]],
+    ]:
+        handlers = {
+            "policyengine_us_materialize": _identity_policyengine_us_sim_modifier,
+            **dict(self.modifier_handlers),
+        }
+        supported_targets: list[TargetSpec] = []
+        skipped_targets: list[tuple[str, str]] = []
+        for target in targets:
+            missing_handlers = [
+                modifier_name
+                for modifier_name in target.sim_modifier_names
+                if modifier_name not in handlers
+            ]
+            if missing_handlers:
+                skipped_targets.append(
+                    (
+                        target.name,
+                        "missing_policyengine_us_sim_modifier_handler:"
+                        + ",".join(missing_handlers),
+                    )
+                )
+                continue
+            supported_targets.append(target)
+
+        working_tables = _copy_policyengine_us_entity_tables(tables)
+        modifier_names = tuple(
+            dict.fromkeys(
+                modifier_name
+                for target in supported_targets
+                for modifier_name in target.sim_modifier_names
+            )
+        )
+        for modifier_name in modifier_names:
+            relevant_targets = tuple(
+                target
+                for target in supported_targets
+                if modifier_name in target.sim_modifier_names
+            )
+            parameters = tuple(
+                modifier.parameters
+                for target in relevant_targets
+                for modifier in target.sim_modifiers
+                if modifier.name == modifier_name
+            )
+            handler = handlers[modifier_name]
+            working_tables = handler(
+                working_tables,
+                targets=relevant_targets,
+                parameters=parameters,
+            )
+            if not isinstance(working_tables, PolicyEngineUSEntityTableBundle):
+                raise TypeError(
+                    f"PolicyEngine US sim modifier '{modifier_name}' must return "
+                    "PolicyEngineUSEntityTableBundle"
+                )
+        return working_tables, tuple(supported_targets), skipped_targets
+
+
+def _identity_policyengine_us_sim_modifier(
+    tables: PolicyEngineUSEntityTableBundle,
+    *,
+    targets: Sequence[TargetSpec],
+    parameters: Sequence[Mapping[str, Any]],
+) -> PolicyEngineUSEntityTableBundle:
+    del targets, parameters
+    return tables
+
+
+def _policyengine_us_forced_materialization_features(
+    targets: Sequence[TargetSpec],
+) -> set[str]:
+    forced_features: set[str] = set()
+    for target in targets:
+        for modifier in target.sim_modifiers:
+            if modifier.name != "policyengine_us_materialize":
+                continue
+            raw_features = modifier.parameters.get("features")
+            if raw_features is None:
+                forced_features.update(target.required_features)
+                continue
+            if isinstance(raw_features, str):
+                forced_features.add(raw_features)
+            else:
+                forced_features.update(str(feature) for feature in raw_features)
+    return forced_features
+
+
+def _policyengine_us_tables_from_entity_frames(
+    entity_frames: Mapping[EntityType, pd.DataFrame],
+) -> PolicyEngineUSEntityTableBundle:
+    households = entity_frames.get(EntityType.HOUSEHOLD)
+    if households is None:
+        raise ValueError(
+            "PolicyEngineUSSimulationTargetCompiler requires a household table"
+        )
+    return PolicyEngineUSEntityTableBundle(
+        households=households.copy(),
+        persons=_copy_optional_entity_frame(entity_frames, EntityType.PERSON),
+        tax_units=_copy_optional_entity_frame(entity_frames, EntityType.TAX_UNIT),
+        spm_units=_copy_optional_entity_frame(entity_frames, EntityType.SPM_UNIT),
+        families=_copy_optional_entity_frame(entity_frames, EntityType.FAMILY),
+    )
+
+
+def _copy_optional_entity_frame(
+    entity_frames: Mapping[EntityType, pd.DataFrame],
+    entity: EntityType,
+) -> pd.DataFrame | None:
+    frame = entity_frames.get(entity)
+    return None if frame is None else frame.copy()
+
+
+def _policyengine_us_household_weight_indexes(
+    entity_weight_indexes: Mapping[EntityType, pd.Series | np.ndarray],
+    *,
+    household_count: int,
+) -> np.ndarray:
+    raw_indexes = entity_weight_indexes.get(EntityType.HOUSEHOLD)
+    if raw_indexes is None:
+        raise ValueError(
+            "PolicyEngineUSSimulationTargetCompiler requires household weight indexes"
+        )
+    indexes = np.asarray(raw_indexes, dtype=int)
+    if indexes.ndim != 1 or len(indexes) != household_count:
+        raise ValueError(
+            "Household weight indexes must be one-dimensional and aligned to "
+            f"{household_count} households"
+        )
+    return indexes
+
+
+def _policyengine_us_linear_constraint_to_target_reweighting_constraint(
+    *,
+    target: TargetSpec,
+    constraint: LinearConstraint,
+    household_weight_indexes: np.ndarray,
+) -> TargetReweightingConstraint:
+    coefficients = np.asarray(constraint.coefficients, dtype=float)
+    if coefficients.ndim != 1 or len(coefficients) != len(household_weight_indexes):
+        raise ValueError(
+            f"Compiled constraint '{constraint.name}' has {len(coefficients)} "
+            f"coefficients for {len(household_weight_indexes)} household weights"
+        )
+    if not np.isfinite(coefficients).all():
+        raise ValueError(f"Compiled constraint '{constraint.name}' has nonfinite values")
+
+    active = coefficients != 0.0
+    active_indexes = household_weight_indexes[active]
+    active_coefficients = coefficients[active]
+    if len(active_indexes):
+        grouped = (
+            pd.Series(active_coefficients, index=active_indexes, dtype=float)
+            .groupby(level=0)
+            .sum()
+        )
+        active_indexes = grouped.index.to_numpy(dtype=int)
+        active_coefficients = grouped.to_numpy(dtype=float)
+
+    metadata = {
+        **dict(target.metadata),
+        "compiled_by": "policyengine_us_simulation_target_compiler",
+        "sim_modifier_names": target.sim_modifier_names,
+    }
+    return TargetReweightingConstraint(
+        name=target.name,
+        entity=target.entity,
+        weight_indexes=active_indexes,
+        coefficients=active_coefficients,
+        target=constraint.target,
+        metadata=metadata,
+    )
 
 
 class PolicyEngineUSMicrosimulationAdapter:

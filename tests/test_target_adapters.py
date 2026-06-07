@@ -58,3 +58,40 @@ class TestPolicyEngineTargetAdapters:
         assert canonical.entity is EntityType.SPM_UNIT
         assert canonical.aggregation is TargetAggregation.SUM
         assert canonical.measure == "snap"
+
+    def test_calculated_output_targets_require_policyengine_materialization(self):
+        target = PolicyEngineUSDBTarget(
+            target_id=3,
+            variable="snap",
+            period=2024,
+            stratum_id=1,
+            reform_id=0,
+            value=10_000.0,
+            active=True,
+        )
+
+        canonical = policyengine_db_target_to_canonical_spec(target)
+
+        assert canonical.sim_modifier_names == ("policyengine_us_materialize",)
+        assert canonical.sim_modifiers[0].parameters == {"features": ["snap"]}
+
+    def test_takeup_input_constraints_require_rerandomized_takeup_handler(self):
+        target = PolicyEngineUSDBTarget(
+            target_id=4,
+            variable="household_count",
+            period=2024,
+            stratum_id=1,
+            reform_id=0,
+            value=10_000.0,
+            active=True,
+            constraints=(
+                PolicyEngineUSConstraint("takes_up_snap_if_eligible", "==", "1"),
+            ),
+        )
+
+        canonical = policyengine_db_target_to_canonical_spec(target)
+
+        assert canonical.sim_modifier_names == ("rerandomize_takeup",)
+        assert canonical.sim_modifiers[0].parameters == {
+            "features": ["takes_up_snap_if_eligible"]
+        }

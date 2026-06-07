@@ -1,0 +1,54 @@
+name: Content Package Contract
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  validate-content-package:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: microplex-us
+    steps:
+      - name: Check out microplex-us
+        uses: actions/checkout@v4
+        with:
+          path: microplex-us
+
+      - name: Check out Microplex core
+        uses: actions/checkout@v4
+        with:
+          repository: PolicyEngine/microplex
+          ref: 5a1ea5e107334f45e850678774efc0c613dce250
+          path: microplex
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Reject Python files
+        run: |
+          if find . -name '*.py' -print -quit | grep -q .; then
+            find . -name '*.py' -print
+            exit 1
+          fi
+
+      - name: Validate YAML and JSON contract
+        run: |
+          PYTHONPATH="../microplex/src:src" uv run --no-project --python 3.13 \
+            --with pydantic --with pyyaml \
+            python -m microplex.content_package \
+            --package microplex_us \
+            --spec specs/us-2024.yaml \
+            --contract manifests/ecps_export_contract.json \
+            --src-root src/microplex_us

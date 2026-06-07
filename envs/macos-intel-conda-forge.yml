@@ -1,8 +1,0 @@
-name: microplex-us-intel
-channels:
-  - conda-forge
-  - nodefaults
-dependencies:
-  - python=3.13
-  - pytorch=2.11.*
-  - pip

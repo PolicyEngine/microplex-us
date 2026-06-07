@@ -12,8 +12,8 @@ sources:
 
 spine:
   base: cps_asec
-  method: clone
-  clone: { seed: 20260529 }
+  method: support_spine
+  support: { seed: 20260529 }
   halves:
     - { name: cps_keep, keep: all }
     - { name: synthetic_puf, strip_to: [demographics] }
@@ -519,14 +519,14 @@ variables:
         symbol: BlockGeography
       notes: Manifest flagged possible encoding/export divergence; exporter must preserve eCPS-compatible widths.
     mp_spec:
-      method: GeoCloner/exporter derived geography with eCPS-compatible encoding
+      method: geography assignment/exporter derived geography with eCPS-compatible encoding
       operation:
         kind: encode_geoid
         source: geography
         encoding: S15
       code:
       - path: src/microplex_us/specs/us-2024.yaml
-        summary: Temporary declaration for future GeoCloner/exporter rules.
+        summary: Temporary declaration for future geography assignment/exporter rules.
   bond_assets:
     entity: person
     role: sipp_asset_source_imputed
@@ -773,14 +773,14 @@ variables:
         symbol: BlockGeography
       notes: Manifest flagged possible encoding/export divergence; exporter must preserve eCPS-compatible widths.
     mp_spec:
-      method: GeoCloner/exporter derived geography with eCPS-compatible encoding
+      method: geography assignment/exporter derived geography with eCPS-compatible encoding
       operation:
         kind: encode_geoid
         source: geography
         encoding: S4
       code:
       - path: src/microplex_us/specs/us-2024.yaml
-        summary: Temporary declaration for future GeoCloner/exporter rules.
+        summary: Temporary declaration for future geography assignment/exporter rules.
   count_under_18:
     entity: person
     role: cps_passthrough_or_constructed
@@ -876,14 +876,14 @@ variables:
         symbol: BlockGeography
       notes: Manifest flagged possible encoding/export divergence; exporter must preserve eCPS-compatible widths.
     mp_spec:
-      method: GeoCloner/exporter derived geography with eCPS-compatible encoding
+      method: geography assignment/exporter derived geography with eCPS-compatible encoding
       operation:
         kind: encode_geoid
         source: geography
         encoding: S5
       code:
       - path: src/microplex_us/specs/us-2024.yaml
-        summary: Temporary declaration for future GeoCloner/exporter rules.
+        summary: Temporary declaration for future geography assignment/exporter rules.
   cps_race:
     entity: person
     role: cps_passthrough_or_constructed
@@ -2598,14 +2598,14 @@ variables:
         symbol: BlockGeography
       notes: Manifest flagged possible encoding/export divergence; exporter must preserve eCPS-compatible widths.
     mp_spec:
-      method: GeoCloner/exporter derived geography with eCPS-compatible encoding
+      method: geography assignment/exporter derived geography with eCPS-compatible encoding
       operation:
         kind: derive
         transform: geography_in_nyc
         depends_on: [county_fips]
       code:
       - path: src/microplex_us/specs/us-2024.yaml
-        summary: Temporary declaration for future GeoCloner/exporter rules.
+        summary: Temporary declaration for future geography assignment/exporter rules.
   investment_income_elected_form_4952:
     entity: person
     role: puf_imputed_overridden
@@ -6718,14 +6718,14 @@ variables:
         symbol: BlockGeography
       notes: Manifest flagged possible encoding/export divergence; exporter must preserve eCPS-compatible widths.
     mp_spec:
-      method: GeoCloner/exporter derived geography with eCPS-compatible encoding
+      method: geography assignment/exporter derived geography with eCPS-compatible encoding
       operation:
         kind: encode_geoid
         source: geography
         encoding: S2
       code:
       - path: src/microplex_us/specs/us-2024.yaml
-        summary: Temporary declaration for future GeoCloner/exporter rules.
+        summary: Temporary declaration for future geography assignment/exporter rules.
   stock_assets:
     entity: person
     role: sipp_asset_source_imputed
@@ -7671,14 +7671,14 @@ variables:
         symbol: BlockGeography
       notes: Manifest flagged possible encoding/export divergence; exporter must preserve eCPS-compatible widths.
     mp_spec:
-      method: GeoCloner/exporter derived geography with eCPS-compatible encoding
+      method: geography assignment/exporter derived geography with eCPS-compatible encoding
       operation:
         kind: encode_geoid
         source: geography
         encoding: S11
       code:
       - path: src/microplex_us/specs/us-2024.yaml
-        summary: Temporary declaration for future GeoCloner/exporter rules.
+        summary: Temporary declaration for future geography assignment/exporter rules.
   traditional_401k_contributions:
     entity: person
     role: cps_passthrough_or_constructed

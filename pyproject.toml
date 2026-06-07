@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "microplex-us"
 version = "0.2.0"
-description = "US-specific adapters, pipelines, and PolicyEngine integration for microplex"
+description = "US declarative content package for Microplex"
 readme = "README.md"
 license = "MIT"
 authors = [
@@ -13,98 +13,14 @@ authors = [
 ]
 requires-python = ">=3.13"
 dependencies = [
-    "microplex[calibrate] @ git+https://github.com/PolicyEngine/microplex.git@490c717b36a5ef1721b01b7dceaddbc0372c6a0a",
-    "duckdb>=1.2",
-    "h5py>=3.10",
-    "requests>=2.31",
-]
-
-[project.optional-dependencies]
-dev = [
-    "pytest>=7.0",
-    "ruff>=0.1",
-]
-docs = [
-    "jupyter-book>=0.15,<0.16",
-    "standard-imghdr>=3.13; python_version >= '3.13'",
-]
-r2 = [
-    "boto3>=1.34",
-]
-hf = [
-    "huggingface_hub>=0.24",
-]
-policyengine = [
-    "microimpute @ git+https://github.com/PolicyEngine/microimpute.git@90be828eb442c48ee86bb91bb83a75da4b0f0f89 ; python_full_version >= '3.12' and python_full_version < '3.15'",
-    "policyengine-us==1.715.2; python_version >= '3.11' and python_version < '3.15'",
-    "spm-calculator>=0.3.1",
-    # Standalone tax-unit construction engine (the extraction of eCPS's
-    # tax-unit logic), used by the PolicyEngine pipeline to reconstruct tax
-    # units from CPS-like person frames (issue #113).
-    "microunit>=0.1.0",
+    "microplex @ git+https://github.com/PolicyEngine/microplex.git@5a1ea5e107334f45e850678774efc0c613dce250",
 ]
 
 [project.urls]
 Repository = "https://github.com/PolicyEngine/microplex-us"
-
-[project.scripts]
-microplex-us-arch-target-coverage = "microplex_us.targets.arch:main_coverage"
-microplex-us-arch-target-gaps = "microplex_us.targets.arch:main_gaps"
-microplex-us-arch-target-parity = "microplex_us.targets.arch:main_parity"
-microplex-us-arch-target-refresh = "microplex_us.targets.arch:main_refresh"
-microplex-us-arch-target-smoke = "microplex_us.targets.arch:main_smoke"
-microplex-us-build-aca-ptc-multipliers = "microplex_us.targets.aca_ptc:main"
-microplex-us-backfill-pe-native-audit = "microplex_us.pipelines.backfill_pe_native_audit:main"
-microplex-us-backfill-pe-native-scores = "microplex_us.pipelines.backfill_pe_native_scores:main"
-microplex-us-check-export-columns = "microplex_us.pipelines.check_export_columns:main"
-microplex-us-check-site-snapshot = "microplex_us.pipelines.check_site_snapshot:main"
-microplex-us-compact-policyengine-dataset = "microplex_us.pipelines.compact_policyengine_dataset:main"
-microplex-us-mp300k-artifact-gates = "microplex_us.pipelines.mp300k_artifact_gates:main"
-microplex-us-package-mp300k-gate-inputs = "microplex_us.pipelines.mp300k_gate_inputs:main"
-microplex-us-pe-dataset-readiness = "microplex_us.pipelines.pe_us_dataset_readiness:main"
-microplex-us-dashboard = "microplex_us.pipelines.dashboard:main"
-microplex-us-ecps-replacement-comparison = "microplex_us.pipelines.ecps_replacement_comparison:main"
-microplex-us-mp-benchmark-manifest = "microplex_us.pipelines.mp_benchmark_manifest:main"
-microplex-us-pe-native-calibration-benchmark = "microplex_us.pipelines.pe_native_calibration_benchmark:main"
-microplex-us-pe-native-target-diagnostics = "microplex_us.pipelines.pe_native_scores:main_target_diagnostics"
-microplex-us-publish-hf-artifacts = "microplex_us.pipelines.hf_artifacts:main"
-microplex-us-smoke-hf-artifact = "microplex_us.pipelines.hf_artifacts:main_smoke"
-microplex-us-r2-archive-artifact = "microplex_us.pipelines.r2_artifacts:main"
-microplex-us-reweight-cd-age-targets = "microplex_us.pipelines.cd_age_reweighting:main"
-microplex-us-score-pe-native-loss = "microplex_us.pipelines.pe_native_scores:main"
-microplex-us-stage9-replay = "microplex_us.pipelines.stage9_replay:main"
-microplex-us-write-transparency-sidecars = "microplex_us.pipelines.transparency_sidecars:main"
-microplex-us-version-bump-benchmark = "microplex_us.pipelines.version_benchmark:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/microplex_us"]
 
 [tool.hatch.metadata]
 allow-direct-references = true
-
-[tool.hatch.build.targets.wheel.force-include]
-"src/microplex_us/pipelines/pe_native_scores.py" = "microplex_us/pipelines/pe_native_scores.py"
-"src/microplex_us/pipelines/ecps_export_contract.json" = "microplex_us/pipelines/ecps_export_contract.json"
-"src/microplex_us/pipelines/frozen_production_ecps_2024_benchmark_manifest.json" = "microplex_us/pipelines/frozen_production_ecps_2024_benchmark_manifest.json"
-"src/microplex_us/specs/us-2024.yaml" = "microplex_us/specs/us-2024.yaml"
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = ["test_*.py"]
-addopts = "-v --tb=short"
-
-[tool.ruff]
-line-length = 88
-target-version = "py310"
-
-[tool.ruff.lint]
-select = ["E", "F", "I", "N", "W", "UP"]
-ignore = [
-    "E501",
-    "N803",
-    "N806",
-]
-
-[tool.ruff.lint.per-file-ignores]
-"examples/**/*.py" = ["E402"]
-"tests/**/*.py" = ["E402", "N802"]

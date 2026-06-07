@@ -9,12 +9,16 @@ from microplex.targets import (
     TargetAggregation,
     TargetFilter,
     TargetSet,
+    TargetSimulationModifier,
 )
 from microplex.targets import (
     TargetSpec as CanonicalTargetSpec,
 )
 
-from microplex_us.microdata_roles import policyengine_us_variable_role
+from microplex_us.microdata_roles import (
+    PolicyEngineUSVariableRole,
+    policyengine_us_variable_role,
+)
 from microplex_us.policyengine.us import (
     PolicyEngineUSConstraint,
     PolicyEngineUSDBTarget,
@@ -72,6 +76,10 @@ def policyengine_db_target_to_canonical_spec(
         tolerance=target.tolerance,
         source=target.source,
         description=target.notes,
+        sim_modifiers=_policyengine_db_target_sim_modifiers(
+            target=target,
+            model_variable=model_variable,
+        ),
         metadata={
             "target_id": target.target_id,
             "variable": target.variable,
@@ -107,18 +115,71 @@ def _policyengine_db_target_measure_variable(target: PolicyEngineUSDBTarget) -> 
     return target.variable
 
 
+def _policyengine_db_target_sim_modifiers(
+    *,
+    target: PolicyEngineUSDBTarget,
+    model_variable: str,
+) -> tuple[TargetSimulationModifier, ...]:
+    features = tuple(
+        dict.fromkeys(
+            (
+                model_variable,
+                *(
+                    _policyengine_db_constraint_feature(target, constraint)
+                    for constraint in target.constraints
+                ),
+            )
+        )
+    )
+    calculated_features = sorted(
+        feature
+        for feature in features
+        if policyengine_us_variable_role(feature)
+        is PolicyEngineUSVariableRole.CALCULATED_OUTPUT
+    )
+    takeup_features = sorted(
+        feature
+        for feature in features
+        if policyengine_us_variable_role(feature) is PolicyEngineUSVariableRole.TAKEUP_INPUT
+    )
+
+    modifiers: list[TargetSimulationModifier] = []
+    if calculated_features:
+        modifiers.append(
+            TargetSimulationModifier(
+                "policyengine_us_materialize",
+                parameters={"features": calculated_features},
+            )
+        )
+    if takeup_features:
+        modifiers.append(
+            TargetSimulationModifier(
+                "rerandomize_takeup",
+                parameters={"features": takeup_features},
+            )
+        )
+    return tuple(modifiers)
+
+
 def _policyengine_db_constraint_to_target_filter(
     target: PolicyEngineUSDBTarget,
     constraint: PolicyEngineUSConstraint,
 ) -> TargetFilter:
-    feature = constraint.variable
-    if feature == "aca_ptc" and _policyengine_db_target_uses_aca_ptc(target):
-        feature = POLICYENGINE_US_ACTUAL_ACA_PTC_VARIABLE
     return TargetFilter(
-        feature=feature,
+        feature=_policyengine_db_constraint_feature(target, constraint),
         operator=constraint.operation,
         value=constraint.value,
     )
+
+
+def _policyengine_db_constraint_feature(
+    target: PolicyEngineUSDBTarget,
+    constraint: PolicyEngineUSConstraint,
+) -> str:
+    feature = constraint.variable
+    if feature == "aca_ptc" and _policyengine_db_target_uses_aca_ptc(target):
+        return POLICYENGINE_US_ACTUAL_ACA_PTC_VARIABLE
+    return feature
 
 
 def policyengine_db_targets_to_canonical_set(

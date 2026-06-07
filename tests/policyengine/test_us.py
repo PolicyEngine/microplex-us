@@ -17,6 +17,7 @@ from microplex.targets import (
     TargetFilter,
     TargetProvider,
     TargetQuery,
+    TargetSimulationModifier,
     TargetSpec,
 )
 
@@ -30,9 +31,11 @@ from microplex_us.policyengine.us import (
     PolicyEngineUSEntityTableBundle,
     PolicyEngineUSMicrosimulationAdapter,
     PolicyEngineUSQuantityTarget,
+    PolicyEngineUSSimulationTargetCompiler,
     PolicyEngineUSStratum,
     PolicyEngineUSTargetValidationError,
     PolicyEngineUSVariableBinding,
+    PolicyEngineUSVariableMaterializationResult,
     build_policyengine_us_export_column_names,
     build_policyengine_us_export_variable_maps,
     build_policyengine_us_time_period_arrays,
@@ -1249,6 +1252,7 @@ class TestPolicyEngineUSConstraintCompilation:
         np.testing.assert_allclose(constraints[0].coefficients, np.array([100.0, 0.0]))
         np.testing.assert_allclose(constraints[1].coefficients, np.array([1.0, 0.0]))
 
+
     def test_amount_targets_align_tax_unit_constraints_before_household_aggregation(
         self,
     ):
@@ -1829,6 +1833,207 @@ class TestPolicyEngineUSConstraintCompilation:
             result.tables.households["b"].to_numpy(dtype=float),
             np.array([2.0]),
         )
+
+
+class TestPolicyEngineUSSimulationTargetCompiler:
+    def test_missing_modifier_handler_skips_target(self):
+        households = pd.DataFrame({"household_id": [1, 2], "weight": [1.0, 1.0]})
+        spm_units = pd.DataFrame(
+            {
+                "spm_unit_id": [100, 200],
+                "household_id": [1, 2],
+            }
+        )
+        target = TargetSpec(
+            name="snap_takeup",
+            entity=EntityType.SPM_UNIT,
+            value=10.0,
+            period=2024,
+            measure="snap",
+            sim_modifiers=(TargetSimulationModifier("rerandomize_takeup"),),
+        )
+
+        result = PolicyEngineUSSimulationTargetCompiler(
+            period=2024
+        ).compile_simulation_target_constraints(
+            targets=(target,),
+            entity_frames={
+                EntityType.HOUSEHOLD: households,
+                EntityType.SPM_UNIT: spm_units,
+            },
+            entity_weight_indexes={EntityType.HOUSEHOLD: np.array([0, 1])},
+        )
+
+        assert result.constraints == ()
+        assert result.skipped_targets == (
+            (
+                "snap_takeup",
+                "missing_policyengine_us_sim_modifier_handler:rerandomize_takeup",
+            ),
+        )
+
+    def test_materializes_calculated_output_before_sparse_constraint(
+        self,
+        monkeypatch,
+    ):
+        households = pd.DataFrame({"household_id": [1, 2], "weight": [1.0, 1.0]})
+        spm_units = pd.DataFrame(
+            {
+                "spm_unit_id": [100, 200],
+                "household_id": [1, 2],
+                "snap": [999.0, 999.0],
+            }
+        )
+
+        def fake_materialize(
+            tables,
+            *,
+            variables,
+            period,
+            **kwargs,
+        ):
+            del kwargs
+            assert variables == ("snap",)
+            assert period == 2024
+            return PolicyEngineUSVariableMaterializationResult(
+                tables=PolicyEngineUSEntityTableBundle(
+                    households=tables.households.copy(),
+                    spm_units=tables.spm_units.assign(snap=[3.0, 0.0]),
+                ),
+                bindings={
+                    "snap": PolicyEngineUSVariableBinding(
+                        entity=EntityType.SPM_UNIT,
+                        column="snap",
+                    )
+                },
+                materialized_variables=("snap",),
+            )
+
+        monkeypatch.setattr(
+            "microplex_us.policyengine.us.materialize_policyengine_us_variables_safely",
+            fake_materialize,
+        )
+
+        target = TargetSpec(
+            name="snap_total",
+            entity=EntityType.SPM_UNIT,
+            value=10.0,
+            period=2024,
+            measure="snap",
+            sim_modifiers=(TargetSimulationModifier("policyengine_us_materialize"),),
+        )
+        result = PolicyEngineUSSimulationTargetCompiler(
+            period=2024
+        ).compile_simulation_target_constraints(
+            targets=(target,),
+            entity_frames={
+                EntityType.HOUSEHOLD: households,
+                EntityType.SPM_UNIT: spm_units,
+            },
+            entity_weight_indexes={EntityType.HOUSEHOLD: np.array([0, 1])},
+        )
+
+        assert result.skipped_targets == ()
+        constraint = result.constraints[0]
+        assert constraint.name == "snap_total"
+        assert constraint.weight_indexes.tolist() == [0]
+        assert constraint.coefficients.tolist() == [3.0]
+        assert constraint.target == 10.0
+        assert (
+            constraint.metadata["compiled_by"]
+            == "policyengine_us_simulation_target_compiler"
+        )
+
+    def test_modifier_handler_runs_before_materialization(self, monkeypatch):
+        households = pd.DataFrame({"household_id": [1, 2], "weight": [1.0, 1.0]})
+        spm_units = pd.DataFrame(
+            {
+                "spm_unit_id": [100, 200],
+                "household_id": [1, 2],
+            }
+        )
+        calls: list[tuple[str, ...]] = []
+
+        def rerandomize_takeup(tables, *, targets, parameters):
+            calls.append(tuple(target.name for target in targets))
+            assert parameters == ({"features": ["takes_up_snap_if_eligible"]},)
+            return PolicyEngineUSEntityTableBundle(
+                households=tables.households.copy(),
+                spm_units=tables.spm_units.assign(
+                    takes_up_snap_if_eligible=[True, False]
+                ),
+            )
+
+        def fake_materialize(
+            tables,
+            *,
+            variables,
+            period,
+            **kwargs,
+        ):
+            del kwargs
+            assert variables == ("snap",)
+            assert period == 2024
+            assert tables.spm_units["takes_up_snap_if_eligible"].tolist() == [
+                True,
+                False,
+            ]
+            return PolicyEngineUSVariableMaterializationResult(
+                tables=PolicyEngineUSEntityTableBundle(
+                    households=tables.households.copy(),
+                    spm_units=tables.spm_units.assign(snap=[5.0, 7.0]),
+                ),
+                bindings={
+                    "snap": PolicyEngineUSVariableBinding(
+                        entity=EntityType.SPM_UNIT,
+                        column="snap",
+                    )
+                },
+                materialized_variables=("snap",),
+            )
+
+        monkeypatch.setattr(
+            "microplex_us.policyengine.us.materialize_policyengine_us_variables_safely",
+            fake_materialize,
+        )
+        target = TargetSpec(
+            name="snap_takeup_total",
+            entity=EntityType.SPM_UNIT,
+            value=10.0,
+            period=2024,
+            measure="snap",
+            filters=(
+                TargetFilter("takes_up_snap_if_eligible", "==", True),
+            ),
+            sim_modifiers=(
+                TargetSimulationModifier(
+                    "rerandomize_takeup",
+                    parameters={"features": ["takes_up_snap_if_eligible"]},
+                ),
+                TargetSimulationModifier(
+                    "policyengine_us_materialize",
+                    parameters={"features": ["snap"]},
+                ),
+            ),
+        )
+
+        result = PolicyEngineUSSimulationTargetCompiler(
+            period=2024,
+            modifier_handlers={"rerandomize_takeup": rerandomize_takeup},
+        ).compile_simulation_target_constraints(
+            targets=(target,),
+            entity_frames={
+                EntityType.HOUSEHOLD: households,
+                EntityType.SPM_UNIT: spm_units,
+            },
+            entity_weight_indexes={EntityType.HOUSEHOLD: np.array([0, 1])},
+        )
+
+        assert calls == [("snap_takeup_total",)]
+        assert result.skipped_targets == ()
+        constraint = result.constraints[0]
+        assert constraint.weight_indexes.tolist() == [0]
+        assert constraint.coefficients.tolist() == [5.0]
 
 
 class TestPolicyEngineUSProjection:

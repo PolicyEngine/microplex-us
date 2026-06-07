@@ -26,7 +26,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: PolicyEngine/microplex
-          ref: main
+          ref: 773106e3a159a0417ed15025b507ab05c0b93b5d
           path: microplex
 
       - name: Check out microunit

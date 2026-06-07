@@ -277,6 +277,9 @@ variables:
         spec replaces the imperative path.'
     mp_spec:
       method: contract-required variable pending exact declarative source rule
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: This temporary variables block declares the intended contract surface.
@@ -305,6 +308,10 @@ variables:
         summary: Documents legacy defaults where the support-clone path leaves a column empty.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -333,6 +340,10 @@ variables:
       notes: MP legacy keeps CPS values for same-name non-overridden columns; this is explicitly called out for known collisions.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -360,6 +371,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -388,6 +402,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -415,6 +432,10 @@ variables:
         symbol: POLICYENGINE_US_EXPORT_DEFAULTS
     mp_spec:
       method: source=scf donor imputation/support variable
+      operation:
+        kind: impute
+        source: scf
+        imputation_step: scf_source_impute
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary variable provenance; concrete source-imputation step still pending.
@@ -439,6 +460,10 @@ variables:
         symbol: POLICYENGINE_US_EXPORT_DEFAULTS
     mp_spec:
       method: source=scf donor imputation/support variable
+      operation:
+        kind: impute
+        source: scf
+        imputation_step: scf_source_impute
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary variable provenance; concrete source-imputation step still pending.
@@ -462,6 +487,10 @@ variables:
         symbol: SIPPSourceProvider / SIPPAssetsSourceProvider
     mp_spec:
       method: source=sipp asset donor imputation
+      operation:
+        kind: impute
+        source: sipp
+        imputation_step: sipp_source_impute
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration for future SourceRegistry-backed source-imputation step.
@@ -491,6 +520,10 @@ variables:
       notes: Manifest flagged possible encoding/export divergence; exporter must preserve eCPS-compatible widths.
     mp_spec:
       method: GeoCloner/exporter derived geography with eCPS-compatible encoding
+      operation:
+        kind: encode_geoid
+        source: geography
+        encoding: S15
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration for future GeoCloner/exporter rules.
@@ -514,6 +547,10 @@ variables:
         symbol: SIPPSourceProvider / SIPPAssetsSourceProvider
     mp_spec:
       method: source=sipp asset donor imputation
+      operation:
+        kind: impute
+        source: sipp
+        imputation_step: sipp_source_impute
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration for future SourceRegistry-backed source-imputation step.
@@ -540,6 +577,10 @@ variables:
         summary: Documents legacy defaults where the support-clone path leaves a column empty.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -567,6 +608,10 @@ variables:
         summary: Documents legacy defaults where the support-clone path leaves a column empty.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -594,6 +639,10 @@ variables:
         summary: Documents legacy defaults where the support-clone path leaves a column empty.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -621,6 +670,10 @@ variables:
         summary: Documents legacy defaults where the support-clone path leaves a column empty.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -652,6 +705,9 @@ variables:
         spec replaces the imperative path.'
     mp_spec:
       method: contract-required variable pending exact declarative source rule
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: This temporary variables block declares the intended contract surface.
@@ -684,6 +740,9 @@ variables:
         spec replaces the imperative path.'
     mp_spec:
       method: contract-required variable pending exact declarative source rule
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: This temporary variables block declares the intended contract surface.
@@ -715,6 +774,10 @@ variables:
       notes: Manifest flagged possible encoding/export divergence; exporter must preserve eCPS-compatible widths.
     mp_spec:
       method: GeoCloner/exporter derived geography with eCPS-compatible encoding
+      operation:
+        kind: encode_geoid
+        source: geography
+        encoding: S4
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration for future GeoCloner/exporter rules.
@@ -745,6 +808,9 @@ variables:
         spec replaces the imperative path.'
     mp_spec:
       method: contract-required variable pending exact declarative source rule
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: This temporary variables block declares the intended contract surface.
@@ -777,6 +843,9 @@ variables:
         spec replaces the imperative path.'
     mp_spec:
       method: contract-required variable pending exact declarative source rule
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: This temporary variables block declares the intended contract surface.
@@ -808,6 +877,10 @@ variables:
       notes: Manifest flagged possible encoding/export divergence; exporter must preserve eCPS-compatible widths.
     mp_spec:
       method: GeoCloner/exporter derived geography with eCPS-compatible encoding
+      operation:
+        kind: encode_geoid
+        source: geography
+        encoding: S5
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration for future GeoCloner/exporter rules.
@@ -838,6 +911,9 @@ variables:
         spec replaces the imperative path.'
     mp_spec:
       method: contract-required variable pending exact declarative source rule
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: This temporary variables block declares the intended contract surface.
@@ -865,6 +941,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -893,6 +972,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -921,6 +1003,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -949,6 +1034,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -977,6 +1065,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -1005,6 +1096,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -1033,6 +1127,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -1066,6 +1163,9 @@ variables:
         spec replaces the imperative path.'
     mp_spec:
       method: contract-required variable pending exact declarative source rule
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: This temporary variables block declares the intended contract surface.
@@ -1094,6 +1194,10 @@ variables:
         summary: Documents legacy defaults where the support-clone path leaves a column empty.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -1125,6 +1229,9 @@ variables:
         spec replaces the imperative path.'
     mp_spec:
       method: contract-required variable pending exact declarative source rule
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: This temporary variables block declares the intended contract surface.
@@ -1153,6 +1260,10 @@ variables:
         summary: Documents legacy defaults where the support-clone path leaves a column empty.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -1184,6 +1295,9 @@ variables:
         spec replaces the imperative path.'
     mp_spec:
       method: contract-required variable pending exact declarative source rule
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: This temporary variables block declares the intended contract surface.
@@ -1216,6 +1330,9 @@ variables:
         spec replaces the imperative path.'
     mp_spec:
       method: contract-required variable pending exact declarative source rule
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: This temporary variables block declares the intended contract surface.
@@ -1244,6 +1361,10 @@ variables:
         summary: Documents legacy defaults where the support-clone path leaves a column empty.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -1271,6 +1392,10 @@ variables:
         summary: Documents legacy defaults where the support-clone path leaves a column empty.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -1292,6 +1417,8 @@ variables:
         symbol: POLICYENGINE_US_STRUCTURAL_EXPORT_COLUMNS
     mp_spec:
       method: exporter structural entity/link column
+      operation:
+        kind: structural_export
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Structural columns must be asserted by strict stage/export manifests.
@@ -1318,6 +1445,10 @@ variables:
         summary: Documents legacy defaults where the support-clone path leaves a column empty.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -1345,6 +1476,10 @@ variables:
         summary: Documents legacy defaults where the support-clone path leaves a column empty.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -1372,6 +1507,10 @@ variables:
         summary: Documents legacy defaults where the support-clone path leaves a column empty.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -1399,6 +1538,10 @@ variables:
         summary: Documents legacy defaults where the support-clone path leaves a column empty.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -1426,6 +1569,10 @@ variables:
         summary: Documents legacy defaults where the support-clone path leaves a column empty.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -1457,6 +1604,9 @@ variables:
         spec replaces the imperative path.'
     mp_spec:
       method: contract-required variable pending exact declarative source rule
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: This temporary variables block declares the intended contract surface.
@@ -1484,6 +1634,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -1512,6 +1665,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -1540,6 +1696,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -1568,6 +1727,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -1596,6 +1758,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -1624,6 +1789,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -1650,6 +1818,10 @@ variables:
         symbol: POLICYENGINE_US_EXPORT_DEFAULTS / POLICYENGINE_US_LEGACY_CONTRACT_VARIABLE_ENTITIES
     mp_spec:
       method: passthrough/derive from CPS current-health coverage source columns
+      operation:
+        kind: passthrough
+        source: cps_asec
+        source_column: has_champva_health_coverage_at_interview
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; SourceRegistry CPS loader should own the concrete recode.
@@ -1677,6 +1849,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -1703,6 +1878,10 @@ variables:
         symbol: POLICYENGINE_US_EXPORT_DEFAULTS / POLICYENGINE_US_LEGACY_CONTRACT_VARIABLE_ENTITIES
     mp_spec:
       method: passthrough/derive from CPS current-health coverage source columns
+      operation:
+        kind: passthrough
+        source: cps_asec
+        source_column: has_esi
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; SourceRegistry CPS loader should own the concrete recode.
@@ -1730,6 +1909,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -1756,6 +1938,10 @@ variables:
         symbol: POLICYENGINE_US_EXPORT_DEFAULTS / POLICYENGINE_US_LEGACY_CONTRACT_VARIABLE_ENTITIES
     mp_spec:
       method: passthrough/derive from CPS current-health coverage source columns
+      operation:
+        kind: passthrough
+        source: cps_asec
+        source_column: has_indian_health_service_coverage_at_interview
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; SourceRegistry CPS loader should own the concrete recode.
@@ -1783,6 +1969,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -1809,6 +1998,10 @@ variables:
         symbol: POLICYENGINE_US_EXPORT_DEFAULTS / POLICYENGINE_US_LEGACY_CONTRACT_VARIABLE_ENTITIES
     mp_spec:
       method: passthrough/derive from CPS current-health coverage source columns
+      operation:
+        kind: passthrough
+        source: cps_asec
+        source_column: has_marketplace_health_coverage
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; SourceRegistry CPS loader should own the concrete recode.
@@ -1834,6 +2027,10 @@ variables:
         symbol: POLICYENGINE_US_EXPORT_DEFAULTS / POLICYENGINE_US_LEGACY_CONTRACT_VARIABLE_ENTITIES
     mp_spec:
       method: passthrough/derive from CPS current-health coverage source columns
+      operation:
+        kind: passthrough
+        source: cps_asec
+        source_column: has_marketplace_health_coverage_at_interview
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; SourceRegistry CPS loader should own the concrete recode.
@@ -1859,6 +2056,10 @@ variables:
         symbol: POLICYENGINE_US_EXPORT_DEFAULTS / POLICYENGINE_US_LEGACY_CONTRACT_VARIABLE_ENTITIES
     mp_spec:
       method: passthrough/derive from CPS current-health coverage source columns
+      operation:
+        kind: passthrough
+        source: cps_asec
+        source_column: has_medicaid_health_coverage_at_interview
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; SourceRegistry CPS loader should own the concrete recode.
@@ -1886,6 +2087,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -1912,6 +2116,10 @@ variables:
         symbol: POLICYENGINE_US_EXPORT_DEFAULTS / POLICYENGINE_US_LEGACY_CONTRACT_VARIABLE_ENTITIES
     mp_spec:
       method: passthrough/derive from CPS current-health coverage source columns
+      operation:
+        kind: passthrough
+        source: cps_asec
+        source_column: has_non_marketplace_direct_purchase_health_coverage_at_interview
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; SourceRegistry CPS loader should own the concrete recode.
@@ -1937,6 +2145,10 @@ variables:
         symbol: POLICYENGINE_US_EXPORT_DEFAULTS / POLICYENGINE_US_LEGACY_CONTRACT_VARIABLE_ENTITIES
     mp_spec:
       method: passthrough/derive from CPS current-health coverage source columns
+      operation:
+        kind: passthrough
+        source: cps_asec
+        source_column: has_other_means_tested_health_coverage_at_interview
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; SourceRegistry CPS loader should own the concrete recode.
@@ -1964,6 +2176,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -1990,6 +2205,10 @@ variables:
         symbol: POLICYENGINE_US_EXPORT_DEFAULTS / POLICYENGINE_US_LEGACY_CONTRACT_VARIABLE_ENTITIES
     mp_spec:
       method: passthrough/derive from CPS current-health coverage source columns
+      operation:
+        kind: passthrough
+        source: cps_asec
+        source_column: has_tricare_health_coverage_at_interview
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; SourceRegistry CPS loader should own the concrete recode.
@@ -2015,6 +2234,10 @@ variables:
         symbol: POLICYENGINE_US_EXPORT_DEFAULTS / POLICYENGINE_US_LEGACY_CONTRACT_VARIABLE_ENTITIES
     mp_spec:
       method: passthrough/derive from CPS current-health coverage source columns
+      operation:
+        kind: passthrough
+        source: cps_asec
+        source_column: has_va_health_coverage_at_interview
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; SourceRegistry CPS loader should own the concrete recode.
@@ -2042,6 +2265,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -2075,6 +2301,9 @@ variables:
         spec replaces the imperative path.'
     mp_spec:
       method: contract-required variable pending exact declarative source rule
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: This temporary variables block declares the intended contract surface.
@@ -2103,6 +2332,10 @@ variables:
         summary: Documents legacy defaults where the support-clone path leaves a column empty.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -2130,6 +2363,10 @@ variables:
         summary: Documents legacy defaults where the support-clone path leaves a column empty.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -2159,6 +2396,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -2187,6 +2427,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -2210,6 +2453,8 @@ variables:
         symbol: POLICYENGINE_US_STRUCTURAL_EXPORT_COLUMNS
     mp_spec:
       method: exporter structural entity/link column
+      operation:
+        kind: structural_export
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Structural columns must be asserted by strict stage/export manifests.
@@ -2235,6 +2480,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -2263,6 +2511,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -2286,6 +2537,8 @@ variables:
         symbol: POLICYENGINE_US_STRUCTURAL_EXPORT_COLUMNS
     mp_spec:
       method: exporter structural entity/link column
+      operation:
+        kind: structural_export
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Structural columns must be asserted by strict stage/export manifests.
@@ -2311,6 +2564,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -2343,6 +2599,10 @@ variables:
       notes: Manifest flagged possible encoding/export divergence; exporter must preserve eCPS-compatible widths.
     mp_spec:
       method: GeoCloner/exporter derived geography with eCPS-compatible encoding
+      operation:
+        kind: derive
+        transform: geography_in_nyc
+        depends_on: [county_fips]
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration for future GeoCloner/exporter rules.
@@ -2369,6 +2629,10 @@ variables:
         summary: Documents legacy defaults where the support-clone path leaves a column empty.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -2396,6 +2660,10 @@ variables:
         summary: Documents legacy defaults where the support-clone path leaves a column empty.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -2425,6 +2693,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -2453,6 +2724,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -2486,6 +2760,9 @@ variables:
         spec replaces the imperative path.'
     mp_spec:
       method: contract-required variable pending exact declarative source rule
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: This temporary variables block declares the intended contract surface.
@@ -2513,6 +2790,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -2541,6 +2821,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -2569,6 +2852,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -2602,6 +2888,9 @@ variables:
         spec replaces the imperative path.'
     mp_spec:
       method: contract-required variable pending exact declarative source rule
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: This temporary variables block declares the intended contract surface.
@@ -2629,6 +2918,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -2662,6 +2954,9 @@ variables:
         spec replaces the imperative path.'
     mp_spec:
       method: contract-required variable pending exact declarative source rule
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: This temporary variables block declares the intended contract surface.
@@ -2694,6 +2989,9 @@ variables:
         spec replaces the imperative path.'
     mp_spec:
       method: contract-required variable pending exact declarative source rule
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: This temporary variables block declares the intended contract surface.
@@ -2721,6 +3019,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -2749,6 +3050,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -2777,6 +3081,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -2805,6 +3112,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -2838,6 +3148,9 @@ variables:
         spec replaces the imperative path.'
     mp_spec:
       method: contract-required variable pending exact declarative source rule
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: This temporary variables block declares the intended contract surface.
@@ -2870,6 +3183,9 @@ variables:
         spec replaces the imperative path.'
     mp_spec:
       method: contract-required variable pending exact declarative source rule
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: This temporary variables block declares the intended contract surface.
@@ -2897,6 +3213,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -2925,6 +3244,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -2958,6 +3280,9 @@ variables:
         spec replaces the imperative path.'
     mp_spec:
       method: contract-required variable pending exact declarative source rule
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: This temporary variables block declares the intended contract surface.
@@ -2985,6 +3310,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -3013,6 +3341,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -3046,6 +3377,9 @@ variables:
         spec replaces the imperative path.'
     mp_spec:
       method: contract-required variable pending exact declarative source rule
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: This temporary variables block declares the intended contract surface.
@@ -3074,6 +3408,10 @@ variables:
         summary: Documents legacy defaults where the support-clone path leaves a column empty.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -3095,6 +3433,8 @@ variables:
         symbol: POLICYENGINE_US_STRUCTURAL_EXPORT_COLUMNS
     mp_spec:
       method: exporter structural entity/link column
+      operation:
+        kind: structural_export
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Structural columns must be asserted by strict stage/export manifests.
@@ -3120,6 +3460,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -3149,6 +3492,10 @@ variables:
         summary: Documents legacy defaults where the support-clone path leaves a column empty.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -3176,6 +3523,9 @@ variables:
       notes: Claude handoff found both incumbents direct-impute net_worth; component derivation is new work.
     mp_spec:
       method: 'OPEN: direct SCF impute now, component-derived later only after component panel is complete'
+      operation:
+        kind: open_decision
+        notes: Direct SCF impute now unless Max chooses component-derived net worth.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary variable provenance records Max/Claude decision point.
@@ -3204,6 +3554,10 @@ variables:
         summary: Documents legacy defaults where the support-clone path leaves a column empty.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -3231,6 +3585,10 @@ variables:
         summary: Documents legacy defaults where the support-clone path leaves a column empty.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -3258,6 +3616,10 @@ variables:
         summary: Documents legacy defaults where the support-clone path leaves a column empty.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -3292,6 +3654,9 @@ variables:
         spec replaces the imperative path.'
     mp_spec:
       method: contract-required variable pending exact declarative source rule
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: This temporary variables block declares the intended contract surface.
@@ -3319,6 +3684,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -3352,6 +3720,9 @@ variables:
         spec replaces the imperative path.'
     mp_spec:
       method: contract-required variable pending exact declarative source rule
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: This temporary variables block declares the intended contract surface.
@@ -3384,6 +3755,9 @@ variables:
         spec replaces the imperative path.'
     mp_spec:
       method: contract-required variable pending exact declarative source rule
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: This temporary variables block declares the intended contract surface.
@@ -3412,6 +3786,10 @@ variables:
         summary: Documents legacy defaults where the support-clone path leaves a column empty.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -3439,6 +3817,10 @@ variables:
         summary: Documents legacy defaults where the support-clone path leaves a column empty.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -3466,6 +3848,10 @@ variables:
         summary: Documents legacy defaults where the support-clone path leaves a column empty.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -3487,6 +3873,8 @@ variables:
         symbol: POLICYENGINE_US_STRUCTURAL_EXPORT_COLUMNS
     mp_spec:
       method: exporter structural entity/link column
+      operation:
+        kind: structural_export
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Structural columns must be asserted by strict stage/export manifests.
@@ -3507,6 +3895,8 @@ variables:
         symbol: POLICYENGINE_US_STRUCTURAL_EXPORT_COLUMNS
     mp_spec:
       method: exporter structural entity/link column
+      operation:
+        kind: structural_export
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Structural columns must be asserted by strict stage/export manifests.
@@ -3527,6 +3917,8 @@ variables:
         symbol: POLICYENGINE_US_STRUCTURAL_EXPORT_COLUMNS
     mp_spec:
       method: exporter structural entity/link column
+      operation:
+        kind: structural_export
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Structural columns must be asserted by strict stage/export manifests.
@@ -3547,6 +3939,8 @@ variables:
         symbol: POLICYENGINE_US_STRUCTURAL_EXPORT_COLUMNS
     mp_spec:
       method: exporter structural entity/link column
+      operation:
+        kind: structural_export
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Structural columns must be asserted by strict stage/export manifests.
@@ -3567,6 +3961,8 @@ variables:
         symbol: POLICYENGINE_US_STRUCTURAL_EXPORT_COLUMNS
     mp_spec:
       method: exporter structural entity/link column
+      operation:
+        kind: structural_export
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Structural columns must be asserted by strict stage/export manifests.
@@ -3587,6 +3983,8 @@ variables:
         symbol: POLICYENGINE_US_STRUCTURAL_EXPORT_COLUMNS
     mp_spec:
       method: exporter structural entity/link column
+      operation:
+        kind: structural_export
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Structural columns must be asserted by strict stage/export manifests.
@@ -3612,6 +4010,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -3640,6 +4041,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -3669,6 +4073,10 @@ variables:
         summary: Documents legacy defaults where the support-clone path leaves a column empty.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -3696,6 +4104,10 @@ variables:
         summary: Documents legacy defaults where the support-clone path leaves a column empty.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -3723,6 +4135,10 @@ variables:
         summary: Documents legacy defaults where the support-clone path leaves a column empty.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -3750,6 +4166,10 @@ variables:
         summary: Documents legacy defaults where the support-clone path leaves a column empty.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -3781,6 +4201,9 @@ variables:
         spec replaces the imperative path.'
     mp_spec:
       method: contract-required variable pending exact declarative source rule
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: This temporary variables block declares the intended contract surface.
@@ -3813,6 +4236,9 @@ variables:
         spec replaces the imperative path.'
     mp_spec:
       method: contract-required variable pending exact declarative source rule
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: This temporary variables block declares the intended contract surface.
@@ -3845,6 +4271,9 @@ variables:
         spec replaces the imperative path.'
     mp_spec:
       method: contract-required variable pending exact declarative source rule
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: This temporary variables block declares the intended contract surface.
@@ -3872,6 +4301,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -3902,6 +4334,10 @@ variables:
       notes: MP legacy keeps CPS values for same-name non-overridden columns; this is explicitly called out for known collisions.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -3930,6 +4366,10 @@ variables:
         summary: Documents legacy defaults where the support-clone path leaves a column empty.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -3954,6 +4394,10 @@ variables:
         symbol: POLICYENGINE_US_EXPORT_DEFAULTS / POLICYENGINE_US_LEGACY_CONTRACT_VARIABLE_ENTITIES
     mp_spec:
       method: passthrough/derive from CPS current-health coverage source columns
+      operation:
+        kind: passthrough
+        source: cps_asec
+        source_column: reported_has_champva_health_coverage_at_interview
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; SourceRegistry CPS loader should own the concrete recode.
@@ -3979,6 +4423,10 @@ variables:
         symbol: POLICYENGINE_US_EXPORT_DEFAULTS / POLICYENGINE_US_LEGACY_CONTRACT_VARIABLE_ENTITIES
     mp_spec:
       method: passthrough/derive from CPS current-health coverage source columns
+      operation:
+        kind: passthrough
+        source: cps_asec
+        source_column: reported_has_chip_health_coverage_at_interview
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; SourceRegistry CPS loader should own the concrete recode.
@@ -4004,6 +4452,10 @@ variables:
         symbol: POLICYENGINE_US_EXPORT_DEFAULTS / POLICYENGINE_US_LEGACY_CONTRACT_VARIABLE_ENTITIES
     mp_spec:
       method: passthrough/derive from CPS current-health coverage source columns
+      operation:
+        kind: passthrough
+        source: cps_asec
+        source_column: reported_has_direct_purchase_health_coverage_at_interview
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; SourceRegistry CPS loader should own the concrete recode.
@@ -4029,6 +4481,10 @@ variables:
         symbol: POLICYENGINE_US_EXPORT_DEFAULTS / POLICYENGINE_US_LEGACY_CONTRACT_VARIABLE_ENTITIES
     mp_spec:
       method: passthrough/derive from CPS current-health coverage source columns
+      operation:
+        kind: passthrough
+        source: cps_asec
+        source_column: reported_has_employer_sponsored_health_coverage_at_interview
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; SourceRegistry CPS loader should own the concrete recode.
@@ -4054,6 +4510,10 @@ variables:
         symbol: POLICYENGINE_US_EXPORT_DEFAULTS / POLICYENGINE_US_LEGACY_CONTRACT_VARIABLE_ENTITIES
     mp_spec:
       method: passthrough/derive from CPS current-health coverage source columns
+      operation:
+        kind: passthrough
+        source: cps_asec
+        source_column: reported_has_indian_health_service_coverage_at_interview
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; SourceRegistry CPS loader should own the concrete recode.
@@ -4079,6 +4539,10 @@ variables:
         symbol: POLICYENGINE_US_EXPORT_DEFAULTS / POLICYENGINE_US_LEGACY_CONTRACT_VARIABLE_ENTITIES
     mp_spec:
       method: passthrough/derive from CPS current-health coverage source columns
+      operation:
+        kind: passthrough
+        source: cps_asec
+        source_column: reported_has_marketplace_health_coverage_at_interview
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; SourceRegistry CPS loader should own the concrete recode.
@@ -4104,6 +4568,10 @@ variables:
         symbol: POLICYENGINE_US_EXPORT_DEFAULTS / POLICYENGINE_US_LEGACY_CONTRACT_VARIABLE_ENTITIES
     mp_spec:
       method: passthrough/derive from CPS current-health coverage source columns
+      operation:
+        kind: passthrough
+        source: cps_asec
+        source_column: reported_has_means_tested_health_coverage_at_interview
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; SourceRegistry CPS loader should own the concrete recode.
@@ -4129,6 +4597,10 @@ variables:
         symbol: POLICYENGINE_US_EXPORT_DEFAULTS / POLICYENGINE_US_LEGACY_CONTRACT_VARIABLE_ENTITIES
     mp_spec:
       method: passthrough/derive from CPS current-health coverage source columns
+      operation:
+        kind: passthrough
+        source: cps_asec
+        source_column: reported_has_medicaid_health_coverage_at_interview
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; SourceRegistry CPS loader should own the concrete recode.
@@ -4154,6 +4626,10 @@ variables:
         symbol: POLICYENGINE_US_EXPORT_DEFAULTS / POLICYENGINE_US_LEGACY_CONTRACT_VARIABLE_ENTITIES
     mp_spec:
       method: passthrough/derive from CPS current-health coverage source columns
+      operation:
+        kind: passthrough
+        source: cps_asec
+        source_column: reported_has_medicare_health_coverage_at_interview
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; SourceRegistry CPS loader should own the concrete recode.
@@ -4179,6 +4655,10 @@ variables:
         symbol: POLICYENGINE_US_EXPORT_DEFAULTS / POLICYENGINE_US_LEGACY_CONTRACT_VARIABLE_ENTITIES
     mp_spec:
       method: passthrough/derive from CPS current-health coverage source columns
+      operation:
+        kind: passthrough
+        source: cps_asec
+        source_column: reported_has_multiple_health_coverage_at_interview
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; SourceRegistry CPS loader should own the concrete recode.
@@ -4204,6 +4684,10 @@ variables:
         symbol: POLICYENGINE_US_EXPORT_DEFAULTS / POLICYENGINE_US_LEGACY_CONTRACT_VARIABLE_ENTITIES
     mp_spec:
       method: passthrough/derive from CPS current-health coverage source columns
+      operation:
+        kind: passthrough
+        source: cps_asec
+        source_column: reported_has_non_marketplace_direct_purchase_health_coverage_at_interview
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; SourceRegistry CPS loader should own the concrete recode.
@@ -4229,6 +4713,10 @@ variables:
         symbol: POLICYENGINE_US_EXPORT_DEFAULTS / POLICYENGINE_US_LEGACY_CONTRACT_VARIABLE_ENTITIES
     mp_spec:
       method: passthrough/derive from CPS current-health coverage source columns
+      operation:
+        kind: passthrough
+        source: cps_asec
+        source_column: reported_has_other_means_tested_health_coverage_at_interview
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; SourceRegistry CPS loader should own the concrete recode.
@@ -4254,6 +4742,10 @@ variables:
         symbol: POLICYENGINE_US_EXPORT_DEFAULTS / POLICYENGINE_US_LEGACY_CONTRACT_VARIABLE_ENTITIES
     mp_spec:
       method: passthrough/derive from CPS current-health coverage source columns
+      operation:
+        kind: passthrough
+        source: cps_asec
+        source_column: reported_has_private_health_coverage_at_interview
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; SourceRegistry CPS loader should own the concrete recode.
@@ -4279,6 +4771,10 @@ variables:
         symbol: POLICYENGINE_US_EXPORT_DEFAULTS / POLICYENGINE_US_LEGACY_CONTRACT_VARIABLE_ENTITIES
     mp_spec:
       method: passthrough/derive from CPS current-health coverage source columns
+      operation:
+        kind: passthrough
+        source: cps_asec
+        source_column: reported_has_public_health_coverage_at_interview
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; SourceRegistry CPS loader should own the concrete recode.
@@ -4304,6 +4800,10 @@ variables:
         symbol: POLICYENGINE_US_EXPORT_DEFAULTS / POLICYENGINE_US_LEGACY_CONTRACT_VARIABLE_ENTITIES
     mp_spec:
       method: passthrough/derive from CPS current-health coverage source columns
+      operation:
+        kind: passthrough
+        source: cps_asec
+        source_column: reported_has_subsidized_marketplace_health_coverage_at_interview
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; SourceRegistry CPS loader should own the concrete recode.
@@ -4329,6 +4829,10 @@ variables:
         symbol: POLICYENGINE_US_EXPORT_DEFAULTS / POLICYENGINE_US_LEGACY_CONTRACT_VARIABLE_ENTITIES
     mp_spec:
       method: passthrough/derive from CPS current-health coverage source columns
+      operation:
+        kind: passthrough
+        source: cps_asec
+        source_column: reported_has_tricare_health_coverage_at_interview
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; SourceRegistry CPS loader should own the concrete recode.
@@ -4354,6 +4858,10 @@ variables:
         symbol: POLICYENGINE_US_EXPORT_DEFAULTS / POLICYENGINE_US_LEGACY_CONTRACT_VARIABLE_ENTITIES
     mp_spec:
       method: passthrough/derive from CPS current-health coverage source columns
+      operation:
+        kind: passthrough
+        source: cps_asec
+        source_column: reported_has_unsubsidized_marketplace_health_coverage_at_interview
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; SourceRegistry CPS loader should own the concrete recode.
@@ -4379,6 +4887,10 @@ variables:
         symbol: POLICYENGINE_US_EXPORT_DEFAULTS / POLICYENGINE_US_LEGACY_CONTRACT_VARIABLE_ENTITIES
     mp_spec:
       method: passthrough/derive from CPS current-health coverage source columns
+      operation:
+        kind: passthrough
+        source: cps_asec
+        source_column: reported_has_va_health_coverage_at_interview
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; SourceRegistry CPS loader should own the concrete recode.
@@ -4404,6 +4916,10 @@ variables:
         symbol: POLICYENGINE_US_EXPORT_DEFAULTS / POLICYENGINE_US_LEGACY_CONTRACT_VARIABLE_ENTITIES
     mp_spec:
       method: passthrough/derive from CPS current-health coverage source columns
+      operation:
+        kind: passthrough
+        source: cps_asec
+        source_column: reported_is_insured_at_interview
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; SourceRegistry CPS loader should own the concrete recode.
@@ -4429,6 +4945,10 @@ variables:
         symbol: POLICYENGINE_US_EXPORT_DEFAULTS / POLICYENGINE_US_LEGACY_CONTRACT_VARIABLE_ENTITIES
     mp_spec:
       method: passthrough/derive from CPS current-health coverage source columns
+      operation:
+        kind: passthrough
+        source: cps_asec
+        source_column: reported_is_uninsured_at_interview
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; SourceRegistry CPS loader should own the concrete recode.
@@ -4454,6 +4974,10 @@ variables:
         symbol: POLICYENGINE_US_EXPORT_DEFAULTS / POLICYENGINE_US_LEGACY_CONTRACT_VARIABLE_ENTITIES
     mp_spec:
       method: passthrough/derive from CPS current-health coverage source columns
+      operation:
+        kind: passthrough
+        source: cps_asec
+        source_column: reported_owns_employer_sponsored_health_insurance_at_interview
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; SourceRegistry CPS loader should own the concrete recode.
@@ -4486,6 +5010,9 @@ variables:
         spec replaces the imperative path.'
     mp_spec:
       method: contract-required variable pending exact declarative source rule
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: This temporary variables block declares the intended contract surface.
@@ -4518,6 +5045,9 @@ variables:
         spec replaces the imperative path.'
     mp_spec:
       method: contract-required variable pending exact declarative source rule
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: This temporary variables block declares the intended contract surface.
@@ -4550,6 +5080,9 @@ variables:
         spec replaces the imperative path.'
     mp_spec:
       method: contract-required variable pending exact declarative source rule
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: This temporary variables block declares the intended contract surface.
@@ -4582,6 +5115,9 @@ variables:
         spec replaces the imperative path.'
     mp_spec:
       method: contract-required variable pending exact declarative source rule
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: This temporary variables block declares the intended contract surface.
@@ -4609,6 +5145,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -4638,6 +5177,10 @@ variables:
         summary: Documents legacy defaults where the support-clone path leaves a column empty.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -4672,6 +5215,10 @@ variables:
         parity.
     mp_spec:
       method: source=scf component donor imputation plus net-worth reconciliation
+      operation:
+        kind: impute
+        source: scf
+        imputation_step: scf_source_impute
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary contract declaration; concrete SCF block still needs declarative SourceRegistry wiring.
@@ -4707,6 +5254,10 @@ variables:
         parity.
     mp_spec:
       method: source=scf component donor imputation plus net-worth reconciliation
+      operation:
+        kind: impute
+        source: scf
+        imputation_step: scf_source_impute
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary contract declaration; concrete SCF block still needs declarative SourceRegistry wiring.
@@ -4742,6 +5293,10 @@ variables:
         parity.
     mp_spec:
       method: source=scf component donor imputation plus net-worth reconciliation
+      operation:
+        kind: impute
+        source: scf
+        imputation_step: scf_source_impute
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary contract declaration; concrete SCF block still needs declarative SourceRegistry wiring.
@@ -4777,6 +5332,10 @@ variables:
         parity.
     mp_spec:
       method: source=scf component donor imputation plus net-worth reconciliation
+      operation:
+        kind: impute
+        source: scf
+        imputation_step: scf_source_impute
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary contract declaration; concrete SCF block still needs declarative SourceRegistry wiring.
@@ -4812,6 +5371,10 @@ variables:
         parity.
     mp_spec:
       method: source=scf component donor imputation plus net-worth reconciliation
+      operation:
+        kind: impute
+        source: scf
+        imputation_step: scf_source_impute
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary contract declaration; concrete SCF block still needs declarative SourceRegistry wiring.
@@ -4847,6 +5410,10 @@ variables:
         parity.
     mp_spec:
       method: source=scf component donor imputation plus net-worth reconciliation
+      operation:
+        kind: impute
+        source: scf
+        imputation_step: scf_source_impute
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary contract declaration; concrete SCF block still needs declarative SourceRegistry wiring.
@@ -4882,6 +5449,10 @@ variables:
         parity.
     mp_spec:
       method: source=scf component donor imputation plus net-worth reconciliation
+      operation:
+        kind: impute
+        source: scf
+        imputation_step: scf_source_impute
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary contract declaration; concrete SCF block still needs declarative SourceRegistry wiring.
@@ -4917,6 +5488,10 @@ variables:
         parity.
     mp_spec:
       method: source=scf component donor imputation plus net-worth reconciliation
+      operation:
+        kind: impute
+        source: scf
+        imputation_step: scf_source_impute
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary contract declaration; concrete SCF block still needs declarative SourceRegistry wiring.
@@ -4952,6 +5527,10 @@ variables:
         parity.
     mp_spec:
       method: source=scf component donor imputation plus net-worth reconciliation
+      operation:
+        kind: impute
+        source: scf
+        imputation_step: scf_source_impute
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary contract declaration; concrete SCF block still needs declarative SourceRegistry wiring.
@@ -4987,6 +5566,10 @@ variables:
         parity.
     mp_spec:
       method: source=scf component donor imputation plus net-worth reconciliation
+      operation:
+        kind: impute
+        source: scf
+        imputation_step: scf_source_impute
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary contract declaration; concrete SCF block still needs declarative SourceRegistry wiring.
@@ -5022,6 +5605,10 @@ variables:
         parity.
     mp_spec:
       method: source=scf component donor imputation plus net-worth reconciliation
+      operation:
+        kind: impute
+        source: scf
+        imputation_step: scf_source_impute
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary contract declaration; concrete SCF block still needs declarative SourceRegistry wiring.
@@ -5057,6 +5644,10 @@ variables:
         parity.
     mp_spec:
       method: source=scf component donor imputation plus net-worth reconciliation
+      operation:
+        kind: impute
+        source: scf
+        imputation_step: scf_source_impute
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary contract declaration; concrete SCF block still needs declarative SourceRegistry wiring.
@@ -5092,6 +5683,10 @@ variables:
         parity.
     mp_spec:
       method: source=scf component donor imputation plus net-worth reconciliation
+      operation:
+        kind: impute
+        source: scf
+        imputation_step: scf_source_impute
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary contract declaration; concrete SCF block still needs declarative SourceRegistry wiring.
@@ -5127,6 +5722,10 @@ variables:
         parity.
     mp_spec:
       method: source=scf component donor imputation plus net-worth reconciliation
+      operation:
+        kind: impute
+        source: scf
+        imputation_step: scf_source_impute
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary contract declaration; concrete SCF block still needs declarative SourceRegistry wiring.
@@ -5162,6 +5761,10 @@ variables:
         parity.
     mp_spec:
       method: source=scf component donor imputation plus net-worth reconciliation
+      operation:
+        kind: impute
+        source: scf
+        imputation_step: scf_source_impute
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary contract declaration; concrete SCF block still needs declarative SourceRegistry wiring.
@@ -5197,6 +5800,10 @@ variables:
         parity.
     mp_spec:
       method: source=scf component donor imputation plus net-worth reconciliation
+      operation:
+        kind: impute
+        source: scf
+        imputation_step: scf_source_impute
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary contract declaration; concrete SCF block still needs declarative SourceRegistry wiring.
@@ -5232,6 +5839,10 @@ variables:
         parity.
     mp_spec:
       method: source=scf component donor imputation plus net-worth reconciliation
+      operation:
+        kind: impute
+        source: scf
+        imputation_step: scf_source_impute
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary contract declaration; concrete SCF block still needs declarative SourceRegistry wiring.
@@ -5267,6 +5878,10 @@ variables:
         parity.
     mp_spec:
       method: source=scf component donor imputation plus net-worth reconciliation
+      operation:
+        kind: impute
+        source: scf
+        imputation_step: scf_source_impute
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary contract declaration; concrete SCF block still needs declarative SourceRegistry wiring.
@@ -5302,6 +5917,10 @@ variables:
         parity.
     mp_spec:
       method: source=scf component donor imputation plus net-worth reconciliation
+      operation:
+        kind: impute
+        source: scf
+        imputation_step: scf_source_impute
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary contract declaration; concrete SCF block still needs declarative SourceRegistry wiring.
@@ -5329,6 +5948,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -5357,6 +5979,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -5385,6 +6010,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -5413,6 +6041,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -5446,6 +6077,9 @@ variables:
         spec replaces the imperative path.'
     mp_spec:
       method: contract-required variable pending exact declarative source rule
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: This temporary variables block declares the intended contract surface.
@@ -5478,6 +6112,9 @@ variables:
         spec replaces the imperative path.'
     mp_spec:
       method: contract-required variable pending exact declarative source rule
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: This temporary variables block declares the intended contract surface.
@@ -5510,6 +6147,9 @@ variables:
         spec replaces the imperative path.'
     mp_spec:
       method: contract-required variable pending exact declarative source rule
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: This temporary variables block declares the intended contract surface.
@@ -5537,6 +6177,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -5566,6 +6209,10 @@ variables:
         summary: Documents legacy defaults where the support-clone path leaves a column empty.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -5593,6 +6240,10 @@ variables:
         summary: Documents legacy defaults where the support-clone path leaves a column empty.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -5624,6 +6275,9 @@ variables:
         spec replaces the imperative path.'
     mp_spec:
       method: contract-required variable pending exact declarative source rule
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: This temporary variables block declares the intended contract surface.
@@ -5656,6 +6310,9 @@ variables:
         spec replaces the imperative path.'
     mp_spec:
       method: contract-required variable pending exact declarative source rule
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: This temporary variables block declares the intended contract surface.
@@ -5688,6 +6345,9 @@ variables:
         spec replaces the imperative path.'
     mp_spec:
       method: contract-required variable pending exact declarative source rule
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: This temporary variables block declares the intended contract surface.
@@ -5720,6 +6380,9 @@ variables:
         spec replaces the imperative path.'
     mp_spec:
       method: contract-required variable pending exact declarative source rule
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: This temporary variables block declares the intended contract surface.
@@ -5747,6 +6410,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -5780,6 +6446,9 @@ variables:
         spec replaces the imperative path.'
     mp_spec:
       method: contract-required variable pending exact declarative source rule
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: This temporary variables block declares the intended contract surface.
@@ -5802,6 +6471,8 @@ variables:
         symbol: POLICYENGINE_US_STRUCTURAL_EXPORT_COLUMNS
     mp_spec:
       method: exporter structural entity/link column
+      operation:
+        kind: structural_export
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Structural columns must be asserted by strict stage/export manifests.
@@ -5827,6 +6498,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -5855,6 +6529,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -5883,6 +6560,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -5912,6 +6592,10 @@ variables:
         summary: Documents legacy defaults where the support-clone path leaves a column empty.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -5939,6 +6623,10 @@ variables:
         summary: Documents legacy defaults where the support-clone path leaves a column empty.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -5966,6 +6654,10 @@ variables:
         summary: Documents legacy defaults where the support-clone path leaves a column empty.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -5993,6 +6685,10 @@ variables:
         summary: Documents legacy defaults where the support-clone path leaves a column empty.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -6023,6 +6719,10 @@ variables:
       notes: Manifest flagged possible encoding/export divergence; exporter must preserve eCPS-compatible widths.
     mp_spec:
       method: GeoCloner/exporter derived geography with eCPS-compatible encoding
+      operation:
+        kind: encode_geoid
+        source: geography
+        encoding: S2
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration for future GeoCloner/exporter rules.
@@ -6046,6 +6746,10 @@ variables:
         symbol: SIPPSourceProvider / SIPPAssetsSourceProvider
     mp_spec:
       method: source=sipp asset donor imputation
+      operation:
+        kind: impute
+        source: sipp
+        imputation_step: sipp_source_impute
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration for future SourceRegistry-backed source-imputation step.
@@ -6071,6 +6775,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -6100,6 +6807,10 @@ variables:
         summary: Documents legacy defaults where the support-clone path leaves a column empty.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -6131,6 +6842,9 @@ variables:
         spec replaces the imperative path.'
     mp_spec:
       method: contract-required variable pending exact declarative source rule
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: This temporary variables block declares the intended contract surface.
@@ -6156,6 +6870,9 @@ variables:
         summary: Legacy pipeline materialization of deterministic takeup inputs.
     mp_spec:
       method: rerandomized_takeup handler or deterministic takeup transform
+      operation:
+        kind: rerandomize_takeup
+        handler: policyengine_us_takeup
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration until takeup transforms are fully serialized.
@@ -6180,6 +6897,9 @@ variables:
         summary: Legacy pipeline materialization of deterministic takeup inputs.
     mp_spec:
       method: rerandomized_takeup handler or deterministic takeup transform
+      operation:
+        kind: rerandomize_takeup
+        handler: policyengine_us_takeup
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration until takeup transforms are fully serialized.
@@ -6204,6 +6924,9 @@ variables:
         summary: Legacy pipeline materialization of deterministic takeup inputs.
     mp_spec:
       method: rerandomized_takeup handler or deterministic takeup transform
+      operation:
+        kind: rerandomize_takeup
+        handler: policyengine_us_takeup
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration until takeup transforms are fully serialized.
@@ -6228,6 +6951,9 @@ variables:
         summary: Legacy pipeline materialization of deterministic takeup inputs.
     mp_spec:
       method: rerandomized_takeup handler or deterministic takeup transform
+      operation:
+        kind: rerandomize_takeup
+        handler: policyengine_us_takeup
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration until takeup transforms are fully serialized.
@@ -6252,6 +6978,9 @@ variables:
         summary: Legacy pipeline materialization of deterministic takeup inputs.
     mp_spec:
       method: rerandomized_takeup handler or deterministic takeup transform
+      operation:
+        kind: rerandomize_takeup
+        handler: policyengine_us_takeup
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration until takeup transforms are fully serialized.
@@ -6276,6 +7005,9 @@ variables:
         summary: Legacy pipeline materialization of deterministic takeup inputs.
     mp_spec:
       method: rerandomized_takeup handler or deterministic takeup transform
+      operation:
+        kind: rerandomize_takeup
+        handler: policyengine_us_takeup
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration until takeup transforms are fully serialized.
@@ -6300,6 +7032,9 @@ variables:
         summary: Legacy pipeline materialization of deterministic takeup inputs.
     mp_spec:
       method: rerandomized_takeup handler or deterministic takeup transform
+      operation:
+        kind: rerandomize_takeup
+        handler: policyengine_us_takeup
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration until takeup transforms are fully serialized.
@@ -6324,6 +7059,9 @@ variables:
         summary: Legacy pipeline materialization of deterministic takeup inputs.
     mp_spec:
       method: rerandomized_takeup handler or deterministic takeup transform
+      operation:
+        kind: rerandomize_takeup
+        handler: policyengine_us_takeup
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration until takeup transforms are fully serialized.
@@ -6348,6 +7086,9 @@ variables:
         summary: Legacy pipeline materialization of deterministic takeup inputs.
     mp_spec:
       method: rerandomized_takeup handler or deterministic takeup transform
+      operation:
+        kind: rerandomize_takeup
+        handler: policyengine_us_takeup
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration until takeup transforms are fully serialized.
@@ -6372,6 +7113,9 @@ variables:
         summary: Legacy pipeline materialization of deterministic takeup inputs.
     mp_spec:
       method: rerandomized_takeup handler or deterministic takeup transform
+      operation:
+        kind: rerandomize_takeup
+        handler: policyengine_us_takeup
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration until takeup transforms are fully serialized.
@@ -6396,6 +7140,9 @@ variables:
         summary: Legacy pipeline materialization of deterministic takeup inputs.
     mp_spec:
       method: rerandomized_takeup handler or deterministic takeup transform
+      operation:
+        kind: rerandomize_takeup
+        handler: policyengine_us_takeup
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration until takeup transforms are fully serialized.
@@ -6422,6 +7169,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -6450,6 +7200,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -6479,6 +7232,10 @@ variables:
         summary: Documents legacy defaults where the support-clone path leaves a column empty.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -6505,6 +7262,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -6538,6 +7298,9 @@ variables:
         spec replaces the imperative path.'
     mp_spec:
       method: contract-required variable pending exact declarative source rule
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: This temporary variables block declares the intended contract surface.
@@ -6565,6 +7328,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -6588,6 +7354,8 @@ variables:
         symbol: POLICYENGINE_US_STRUCTURAL_EXPORT_COLUMNS
     mp_spec:
       method: exporter structural entity/link column
+      operation:
+        kind: structural_export
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Structural columns must be asserted by strict stage/export manifests.
@@ -6613,6 +7381,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -6641,6 +7412,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -6670,6 +7444,10 @@ variables:
         summary: Documents legacy defaults where the support-clone path leaves a column empty.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -6697,6 +7475,10 @@ variables:
         summary: Documents legacy defaults where the support-clone path leaves a column empty.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -6728,6 +7510,9 @@ variables:
         spec replaces the imperative path.'
     mp_spec:
       method: contract-required variable pending exact declarative source rule
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: This temporary variables block declares the intended contract surface.
@@ -6755,6 +7540,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -6783,6 +7571,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -6811,6 +7602,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -6844,6 +7638,9 @@ variables:
         spec replaces the imperative path.'
     mp_spec:
       method: contract-required variable pending exact declarative source rule
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: This temporary variables block declares the intended contract surface.
@@ -6875,6 +7672,10 @@ variables:
       notes: Manifest flagged possible encoding/export divergence; exporter must preserve eCPS-compatible widths.
     mp_spec:
       method: GeoCloner/exporter derived geography with eCPS-compatible encoding
+      operation:
+        kind: encode_geoid
+        source: geography
+        encoding: S11
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration for future GeoCloner/exporter rules.
@@ -6905,6 +7706,9 @@ variables:
         spec replaces the imperative path.'
     mp_spec:
       method: contract-required variable pending exact declarative source rule
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: This temporary variables block declares the intended contract surface.
@@ -6937,6 +7741,9 @@ variables:
         spec replaces the imperative path.'
     mp_spec:
       method: contract-required variable pending exact declarative source rule
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: This temporary variables block declares the intended contract surface.
@@ -6965,6 +7772,10 @@ variables:
         summary: Documents legacy defaults where the support-clone path leaves a column empty.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -6996,6 +7807,9 @@ variables:
         spec replaces the imperative path.'
     mp_spec:
       method: contract-required variable pending exact declarative source rule
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: This temporary variables block declares the intended contract surface.
@@ -7023,6 +7837,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -7052,6 +7869,10 @@ variables:
         summary: Documents legacy defaults where the support-clone path leaves a column empty.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -7083,6 +7904,9 @@ variables:
         spec replaces the imperative path.'
     mp_spec:
       method: contract-required variable pending exact declarative source rule
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: This temporary variables block declares the intended contract surface.
@@ -7111,6 +7935,10 @@ variables:
         summary: Documents legacy defaults where the support-clone path leaves a column empty.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -7138,6 +7966,10 @@ variables:
         summary: Documents legacy defaults where the support-clone path leaves a column empty.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -7164,6 +7996,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -7193,6 +8028,10 @@ variables:
         summary: Documents legacy defaults where the support-clone path leaves a column empty.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -7219,6 +8058,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -7248,6 +8090,10 @@ variables:
         summary: Documents legacy defaults where the support-clone path leaves a column empty.
     mp_spec:
       method: required special transform/glue, not just a default
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and/or temporary variable provenance.
@@ -7275,6 +8121,9 @@ variables:
       notes: Default-only parity is not sufficient for numeric/behavioral parity unless eCPS also defaults this surface.
     mp_spec:
       method: passthrough/derive/default decision pending exact source classification
+      operation:
+        kind: open_decision
+        notes: Exact passthrough, derive, or default rule still needs SourceRegistry classification.
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration; this row prevents silent omission from the spec.
@@ -7301,6 +8150,9 @@ variables:
         summary: Legacy pipeline materialization of deterministic takeup inputs.
     mp_spec:
       method: rerandomized_takeup handler or deterministic takeup transform
+      operation:
+        kind: rerandomize_takeup
+        handler: policyengine_us_takeup
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration until takeup transforms are fully serialized.
@@ -7325,6 +8177,9 @@ variables:
         summary: Legacy pipeline materialization of deterministic takeup inputs.
     mp_spec:
       method: rerandomized_takeup handler or deterministic takeup transform
+      operation:
+        kind: rerandomize_takeup
+        handler: policyengine_us_takeup
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Temporary declaration until takeup transforms are fully serialized.
@@ -7348,6 +8203,10 @@ variables:
         symbol: PUF_SUPPORT_CLONE_IMPUTED_VARIABLES / PUF_SUPPORT_CLONE_OVERRIDDEN_VARIABLES / PUF_SUPPORT_CLONE_SPECIAL_VARIABLES
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and temporary variable provenance.
@@ -7374,6 +8233,10 @@ variables:
       notes: MP legacy keeps CPS values for same-name non-overridden columns; this is explicitly called out for known collisions.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and temporary variable provenance.
@@ -7400,6 +8263,10 @@ variables:
       notes: MP legacy keeps CPS values for same-name non-overridden columns; this is explicitly called out for known collisions.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and temporary variable provenance.
@@ -7425,6 +8292,10 @@ variables:
         symbol: PUF_SUPPORT_CLONE_IMPUTED_VARIABLES / PUF_SUPPORT_CLONE_OVERRIDDEN_VARIABLES / PUF_SUPPORT_CLONE_SPECIAL_VARIABLES
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and temporary variable provenance.
@@ -7450,6 +8321,10 @@ variables:
         symbol: PUF_SUPPORT_CLONE_IMPUTED_VARIABLES / PUF_SUPPORT_CLONE_OVERRIDDEN_VARIABLES / PUF_SUPPORT_CLONE_SPECIAL_VARIABLES
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and temporary variable provenance.
@@ -7475,6 +8350,10 @@ variables:
         symbol: PUF_SUPPORT_CLONE_IMPUTED_VARIABLES / PUF_SUPPORT_CLONE_OVERRIDDEN_VARIABLES / PUF_SUPPORT_CLONE_SPECIAL_VARIABLES
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and temporary variable provenance.
@@ -7500,6 +8379,10 @@ variables:
         symbol: PUF_SUPPORT_CLONE_IMPUTED_VARIABLES / PUF_SUPPORT_CLONE_OVERRIDDEN_VARIABLES / PUF_SUPPORT_CLONE_SPECIAL_VARIABLES
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and temporary variable provenance.
@@ -7526,6 +8409,10 @@ variables:
       notes: MP legacy keeps CPS values for same-name non-overridden columns; this is explicitly called out for known collisions.
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and temporary variable provenance.
@@ -7551,6 +8438,10 @@ variables:
         symbol: PUF_SUPPORT_CLONE_IMPUTED_VARIABLES / PUF_SUPPORT_CLONE_OVERRIDDEN_VARIABLES / PUF_SUPPORT_CLONE_SPECIAL_VARIABLES
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and temporary variable provenance.
@@ -7576,6 +8467,10 @@ variables:
         symbol: PUF_SUPPORT_CLONE_IMPUTED_VARIABLES / PUF_SUPPORT_CLONE_OVERRIDDEN_VARIABLES / PUF_SUPPORT_CLONE_SPECIAL_VARIABLES
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and temporary variable provenance.
@@ -7601,6 +8496,10 @@ variables:
         symbol: PUF_SUPPORT_CLONE_IMPUTED_VARIABLES / PUF_SUPPORT_CLONE_OVERRIDDEN_VARIABLES / PUF_SUPPORT_CLONE_SPECIAL_VARIABLES
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and temporary variable provenance.
@@ -7626,6 +8525,10 @@ variables:
         symbol: PUF_SUPPORT_CLONE_IMPUTED_VARIABLES / PUF_SUPPORT_CLONE_OVERRIDDEN_VARIABLES / PUF_SUPPORT_CLONE_SPECIAL_VARIABLES
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and temporary variable provenance.
@@ -7651,6 +8554,10 @@ variables:
         symbol: PUF_SUPPORT_CLONE_IMPUTED_VARIABLES / PUF_SUPPORT_CLONE_OVERRIDDEN_VARIABLES / PUF_SUPPORT_CLONE_SPECIAL_VARIABLES
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and temporary variable provenance.
@@ -7676,6 +8583,10 @@ variables:
         symbol: PUF_SUPPORT_CLONE_IMPUTED_VARIABLES / PUF_SUPPORT_CLONE_OVERRIDDEN_VARIABLES / PUF_SUPPORT_CLONE_SPECIAL_VARIABLES
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and temporary variable provenance.
@@ -7701,6 +8612,10 @@ variables:
         symbol: PUF_SUPPORT_CLONE_IMPUTED_VARIABLES / PUF_SUPPORT_CLONE_OVERRIDDEN_VARIABLES / PUF_SUPPORT_CLONE_SPECIAL_VARIABLES
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and temporary variable provenance.
@@ -7726,6 +8641,10 @@ variables:
         symbol: PUF_SUPPORT_CLONE_IMPUTED_VARIABLES / PUF_SUPPORT_CLONE_OVERRIDDEN_VARIABLES / PUF_SUPPORT_CLONE_SPECIAL_VARIABLES
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and temporary variable provenance.
@@ -7751,6 +8670,10 @@ variables:
         symbol: PUF_SUPPORT_CLONE_IMPUTED_VARIABLES / PUF_SUPPORT_CLONE_OVERRIDDEN_VARIABLES / PUF_SUPPORT_CLONE_SPECIAL_VARIABLES
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and temporary variable provenance.
@@ -7776,6 +8699,10 @@ variables:
         symbol: PUF_SUPPORT_CLONE_IMPUTED_VARIABLES / PUF_SUPPORT_CLONE_OVERRIDDEN_VARIABLES / PUF_SUPPORT_CLONE_SPECIAL_VARIABLES
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and temporary variable provenance.
@@ -7801,6 +8728,10 @@ variables:
         symbol: PUF_SUPPORT_CLONE_IMPUTED_VARIABLES / PUF_SUPPORT_CLONE_OVERRIDDEN_VARIABLES / PUF_SUPPORT_CLONE_SPECIAL_VARIABLES
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and temporary variable provenance.
@@ -7826,6 +8757,10 @@ variables:
         symbol: PUF_SUPPORT_CLONE_IMPUTED_VARIABLES / PUF_SUPPORT_CLONE_OVERRIDDEN_VARIABLES / PUF_SUPPORT_CLONE_SPECIAL_VARIABLES
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and temporary variable provenance.
@@ -7851,6 +8786,10 @@ variables:
         symbol: PUF_SUPPORT_CLONE_IMPUTED_VARIABLES / PUF_SUPPORT_CLONE_OVERRIDDEN_VARIABLES / PUF_SUPPORT_CLONE_SPECIAL_VARIABLES
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and temporary variable provenance.
@@ -7876,6 +8815,10 @@ variables:
         symbol: PUF_SUPPORT_CLONE_IMPUTED_VARIABLES / PUF_SUPPORT_CLONE_OVERRIDDEN_VARIABLES / PUF_SUPPORT_CLONE_SPECIAL_VARIABLES
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and temporary variable provenance.
@@ -7901,6 +8844,10 @@ variables:
         symbol: PUF_SUPPORT_CLONE_IMPUTED_VARIABLES / PUF_SUPPORT_CLONE_OVERRIDDEN_VARIABLES / PUF_SUPPORT_CLONE_SPECIAL_VARIABLES
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and temporary variable provenance.
@@ -7926,6 +8873,10 @@ variables:
         symbol: PUF_SUPPORT_CLONE_IMPUTED_VARIABLES / PUF_SUPPORT_CLONE_OVERRIDDEN_VARIABLES / PUF_SUPPORT_CLONE_SPECIAL_VARIABLES
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and temporary variable provenance.
@@ -7951,6 +8902,10 @@ variables:
         symbol: PUF_SUPPORT_CLONE_IMPUTED_VARIABLES / PUF_SUPPORT_CLONE_OVERRIDDEN_VARIABLES / PUF_SUPPORT_CLONE_SPECIAL_VARIABLES
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and temporary variable provenance.
@@ -7976,6 +8931,10 @@ variables:
         symbol: PUF_SUPPORT_CLONE_IMPUTED_VARIABLES / PUF_SUPPORT_CLONE_OVERRIDDEN_VARIABLES / PUF_SUPPORT_CLONE_SPECIAL_VARIABLES
     mp_spec:
       method: declared PUF imputation step
+      operation:
+        kind: impute
+        source: puf
+        imputation_step: puf_support_clone
       code:
       - path: src/microplex_us/specs/us-2024.yaml
         summary: Listed in imputation.vars and temporary variable provenance.

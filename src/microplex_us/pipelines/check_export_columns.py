@@ -48,6 +48,7 @@ from typing import Any
 
 # Path to the committed contract shipped alongside this module.
 DEFAULT_CONTRACT_PATH = Path(__file__).with_name("ecps_export_contract.json")
+DEFAULT_SPEC_PATH = Path(__file__).resolve().parents[1] / "specs" / "us-2024.yaml"
 
 SIGNED_NUMERIC_SUPPORT_COLUMNS = frozenset(
     {
@@ -111,6 +112,28 @@ class SupportDiff:
     def ok(self) -> bool:
         """True when every eCPS-populated column has candidate support."""
         return not self.issues
+
+
+@dataclass
+class SpecVariableManifestDiff:
+    """Result of checking ``spec.variables`` against the frozen contract."""
+
+    spec_path: str
+    required_contract_count: int
+    declared_imputation_count: int
+    variable_manifest_count: int
+    missing_required: list[str]
+    missing_declared_imputation: list[str]
+    extra_variables: list[str]
+
+    @property
+    def ok(self) -> bool:
+        """True when the manifest exactly covers required and declared vars."""
+        return not (
+            self.missing_required
+            or self.missing_declared_imputation
+            or self.extra_variables
+        )
 
 
 def compute_column_diff(
@@ -226,6 +249,49 @@ def compute_support_diff(
         baseline_populated_columns=baseline_populated_columns,
         baseline_filler_columns=baseline_filler_columns,
         exempt_columns=sorted(exempt & set(required_columns)),
+    )
+
+
+def compute_spec_variable_manifest_diff(
+    *,
+    contract: dict,
+    spec_path: Path = DEFAULT_SPEC_PATH,
+) -> SpecVariableManifestDiff:
+    """Compare ``spec.variables`` with required exports and declared imputations."""
+    import yaml
+
+    payload = yaml.safe_load(spec_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError(f"Spec {spec_path} must be a YAML mapping.")
+    raw_variables = payload.get("variables")
+    if not isinstance(raw_variables, dict):
+        raise ValueError(f"Spec {spec_path} is missing a variables mapping.")
+    raw_imputation = payload.get("imputation", [])
+    if not isinstance(raw_imputation, list):
+        raise ValueError(f"Spec {spec_path} imputation section must be a list.")
+
+    required = {str(column) for column in contract["required"]}
+    declared_imputation: set[str] = set()
+    for index, step in enumerate(raw_imputation):
+        if not isinstance(step, dict):
+            raise ValueError(f"Spec {spec_path} imputation step {index} is not a map.")
+        raw_vars = step.get("vars", [])
+        if not isinstance(raw_vars, list):
+            raise ValueError(
+                f"Spec {spec_path} imputation step {index} vars must be a list."
+            )
+        declared_imputation.update(str(variable) for variable in raw_vars)
+
+    variables = {str(variable) for variable in raw_variables}
+    expected = required | declared_imputation
+    return SpecVariableManifestDiff(
+        spec_path=str(spec_path),
+        required_contract_count=len(required),
+        declared_imputation_count=len(declared_imputation),
+        variable_manifest_count=len(variables),
+        missing_required=sorted(required - variables),
+        missing_declared_imputation=sorted(declared_imputation - variables),
+        extra_variables=sorted(variables - expected),
     )
 
 
@@ -416,6 +482,7 @@ def _format_report(
     n_required: int,
     n_forbidden: int,
     support_diff: SupportDiff | None = None,
+    spec_diff: SpecVariableManifestDiff | None = None,
 ) -> str:
     """Build a human-readable report for the diff."""
     lines = [
@@ -452,7 +519,29 @@ def _format_report(
                 ),
             ]
         )
-    ok = diff.ok and (support_diff is None or support_diff.ok)
+    if spec_diff is not None:
+        lines.extend(
+            [
+                "",
+                "  spec variable manifest:",
+                f"    spec:                         {spec_diff.spec_path}",
+                f"    required contract variables:  {spec_diff.required_contract_count}",
+                f"    declared imputation variables: {spec_diff.declared_imputation_count}",
+                f"    spec.variables count:         {spec_diff.variable_manifest_count}",
+                f"    missing_required ({len(spec_diff.missing_required)}):",
+                *_bullet_lines(spec_diff.missing_required),
+                "    missing_declared_imputation "
+                f"({len(spec_diff.missing_declared_imputation)}):",
+                *_bullet_lines(spec_diff.missing_declared_imputation),
+                f"    extra_variables ({len(spec_diff.extra_variables)}):",
+                *_bullet_lines(spec_diff.extra_variables),
+            ]
+        )
+    ok = (
+        diff.ok
+        and (support_diff is None or support_diff.ok)
+        and (spec_diff is None or spec_diff.ok)
+    )
     lines.extend(["", "  RESULT: " + ("PASS" if ok else "FAIL")])
     return "\n".join(lines)
 
@@ -521,6 +610,20 @@ def main(argv: list[str] | None = None) -> int:
         metavar="FILE",
         default=str(DEFAULT_CONTRACT_PATH),
         help="Override the contract JSON (default: committed contract).",
+    )
+    parser.add_argument(
+        "--spec",
+        metavar="FILE",
+        help=(
+            "Spec YAML whose variables block must cover the contract and "
+            "declared imputation vars. Defaults to the committed US spec when "
+            "using the committed contract."
+        ),
+    )
+    parser.add_argument(
+        "--skip-spec-variable-manifest",
+        action="store_true",
+        help="Skip the spec.variables manifest coverage check.",
     )
     parser.add_argument(
         "--support-baseline",
@@ -593,6 +696,21 @@ def main(argv: list[str] | None = None) -> int:
         optional=optional,
         excluded=excluded,
     )
+    contract_path = Path(args.contract).resolve()
+    spec_path = None
+    if not args.skip_spec_variable_manifest:
+        if args.spec:
+            spec_path = Path(args.spec)
+        elif contract_path == DEFAULT_CONTRACT_PATH.resolve():
+            spec_path = DEFAULT_SPEC_PATH
+    spec_diff = (
+        None
+        if spec_path is None
+        else compute_spec_variable_manifest_diff(
+            contract=contract,
+            spec_path=Path(spec_path),
+        )
+    )
     support_diff = None
     if args.support_baseline:
         support_exempt = set(contract.get("support_exemptions", [])) | set(
@@ -619,9 +737,18 @@ def main(argv: list[str] | None = None) -> int:
             n_required=len(required),
             n_forbidden=len(forbidden),
             support_diff=support_diff,
+            spec_diff=spec_diff,
         )
     )
-    return 0 if diff.ok and (support_diff is None or support_diff.ok) else 1
+    return (
+        0
+        if (
+            diff.ok
+            and (support_diff is None or support_diff.ok)
+            and (spec_diff is None or spec_diff.ok)
+        )
+        else 1
+    )
 
 
 if __name__ == "__main__":

@@ -519,6 +519,7 @@ def _column_contract_gate(
     from microplex_us.pipelines.check_export_columns import (
         DEFAULT_CONTRACT_PATH,
         compute_column_diff,
+        compute_spec_variable_manifest_diff,
         load_contract,
     )
 
@@ -535,6 +536,7 @@ def _column_contract_gate(
         optional=optional,
         excluded=excluded,
     )
+    spec_diff = compute_spec_variable_manifest_diff(contract=contract)
     satisfied_count = len(required) - len(diff.missing_required)
     contract_share = float(satisfied_count / len(required)) if required else None
     metrics = {
@@ -553,23 +555,37 @@ def _column_contract_gate(
         # informational, matching check_export_columns.
         "extra_candidate_column_count": len(diff.extra_unknown),
         "column_contract_share": contract_share,
+        "spec_variable_manifest_count": spec_diff.variable_manifest_count,
+        "spec_required_contract_column_count": spec_diff.required_contract_count,
+        "spec_declared_imputation_variable_count": spec_diff.declared_imputation_count,
+        "spec_missing_required_column_count": len(spec_diff.missing_required),
+        "spec_missing_declared_imputation_count": len(
+            spec_diff.missing_declared_imputation
+        ),
+        "spec_extra_variable_count": len(spec_diff.extra_variables),
     }
     details = {
         "missing_contract_columns": diff.missing_required,
         "forbidden_present_columns": diff.forbidden_present,
         "extra_unknown_columns": diff.extra_unknown,
         "extra_candidate_columns": diff.extra_unknown,
+        "spec_variable_manifest": {
+            "spec_path": spec_diff.spec_path,
+            "missing_required": spec_diff.missing_required,
+            "missing_declared_imputation": spec_diff.missing_declared_imputation,
+            "extra_variables": spec_diff.extra_variables,
+        },
     }
-    if diff.missing_required or diff.forbidden_present:
+    if diff.missing_required or diff.forbidden_present or not spec_diff.ok:
         return _gate(
             "fail",
-            "candidate H5 leaf-input column set violates the frozen eCPS contract",
+            "candidate H5 leaf-input column set or spec manifest violates the frozen eCPS contract",
             metrics=metrics,
             details=details,
         )
     return _gate(
         "pass",
-        "candidate H5 leaf-input column set satisfies the frozen eCPS contract",
+        "candidate H5 leaf-input column set and spec manifest satisfy the frozen eCPS contract",
         metrics=metrics,
         details=details,
     )

@@ -30,7 +30,9 @@ sys.modules["check_export_columns"] = cec
 _spec.loader.exec_module(cec)
 
 DEFAULT_CONTRACT_PATH = cec.DEFAULT_CONTRACT_PATH
+DEFAULT_SPEC_PATH = cec.DEFAULT_SPEC_PATH
 compute_column_diff = cec.compute_column_diff
+compute_spec_variable_manifest_diff = cec.compute_spec_variable_manifest_diff
 load_contract = cec.load_contract
 main = cec.main
 
@@ -444,6 +446,45 @@ def test_main_entity_tables_path_uses_schema_columns(
     assert rc == 0
 
 
+def test_main_explicit_spec_variable_manifest_failure_returns_one(
+    tmp_path,
+    contract_path,
+):
+    spec_path = tmp_path / "spec.yaml"
+    spec_path.write_text(
+        """
+meta: {country: us, model_year: 2024}
+imputation:
+  - onto: synthetic_puf
+    from: puf
+    vars: [employment_income]
+variables:
+  age:
+    mp_spec: {method: passthrough}
+  snap:
+    mp_spec: {method: passthrough}
+""",
+        encoding="utf-8",
+    )
+
+    cols_path = _write_json(
+        tmp_path / "cols.json",
+        ["age", "snap", "employment_income"],
+    )
+    rc = main(
+        [
+            "--columns-json",
+            str(cols_path),
+            "--contract",
+            str(contract_path),
+            "--spec",
+            str(spec_path),
+        ]
+    )
+
+    assert rc == 1
+
+
 def test_main_requires_exactly_one_input(tmp_path, contract_path):
     # Neither input -> argparse error (SystemExit code 2).
     with pytest.raises(SystemExit) as exc:
@@ -497,6 +538,53 @@ def test_load_contract_rejects_missing_keys(tmp_path):
         load_contract(bad)
 
 
+def test_spec_variable_manifest_diff_covers_committed_spec():
+    diff = compute_spec_variable_manifest_diff(
+        contract=load_contract(DEFAULT_CONTRACT_PATH),
+        spec_path=DEFAULT_SPEC_PATH,
+    )
+
+    assert diff.ok
+    assert diff.required_contract_count == 252
+    assert diff.declared_imputation_count == 76
+    assert diff.variable_manifest_count == 278
+    assert diff.missing_required == []
+    assert diff.missing_declared_imputation == []
+    assert diff.extra_variables == []
+
+
+def test_spec_variable_manifest_diff_flags_missing_required_and_imputation(tmp_path):
+    contract = {
+        "required": ["age", "snap"],
+        "forbidden": [],
+        "ecps_internal_optional": [],
+    }
+    spec_path = tmp_path / "spec.yaml"
+    spec_path.write_text(
+        """
+meta: {country: us, model_year: 2024}
+imputation:
+  - onto: synthetic_puf
+    from: puf
+    vars: [employment_income]
+variables:
+  age:
+    mp_spec: {method: passthrough}
+""",
+        encoding="utf-8",
+    )
+
+    diff = compute_spec_variable_manifest_diff(
+        contract=contract,
+        spec_path=spec_path,
+    )
+
+    assert diff.ok is False
+    assert diff.missing_required == ["snap"]
+    assert diff.missing_declared_imputation == ["employment_income"]
+    assert diff.extra_variables == []
+
+
 def test_committed_contract_parses_with_expected_categories():
     contract = load_contract(DEFAULT_CONTRACT_PATH)
     for key in (
@@ -548,12 +636,14 @@ def test_committed_contract_parses_with_expected_categories():
     assert excl == {"weeks_worked"}
 
 
-def test_committed_clean_fixture_passes_committed_contract():
+def test_committed_clean_fixture_passes_committed_contract(capsys):
     # The CI fixture must be a clean, passing set against the real
     # contract so the green CI path proves the gate passes on good data.
     fixture = Path(__file__).parent / "fixtures" / "ecps_clean_columns.json"
     rc = main(["--columns-json", str(fixture)])
+    report = capsys.readouterr().out
     assert rc == 0
+    assert "spec variable manifest" in report
 
 
 def test_committed_contract_covers_every_baseline_column():

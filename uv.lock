@@ -1145,7 +1145,7 @@ dependencies = [
 [[package]]
 name = "microplex"
 version = "0.2.0"
-source = { git = "https://github.com/PolicyEngine/microplex.git?rev=773106e3a159a0417ed15025b507ab05c0b93b5d#773106e3a159a0417ed15025b507ab05c0b93b5d" }
+source = { git = "https://github.com/PolicyEngine/microplex.git?rev=cad505289da23e1e7a5eded3c67a248cd8d1b8e4#cad505289da23e1e7a5eded3c67a248cd8d1b8e4" }
 dependencies = [
     { name = "httpx" },
     { name = "huggingface-hub" },
@@ -1209,7 +1209,7 @@ requires-dist = [
     { name = "huggingface-hub", marker = "extra == 'hf'", specifier = ">=0.24" },
     { name = "jupyter-book", marker = "extra == 'docs'", specifier = ">=0.15,<0.16" },
     { name = "microimpute", marker = "python_full_version >= '3.12' and python_full_version < '3.15' and extra == 'policyengine'", git = "https://github.com/PolicyEngine/microimpute.git?rev=90be828eb442c48ee86bb91bb83a75da4b0f0f89" },
-    { name = "microplex", extras = ["calibrate"], git = "https://github.com/PolicyEngine/microplex.git?rev=773106e3a159a0417ed15025b507ab05c0b93b5d" },
+    { name = "microplex", extras = ["calibrate"], git = "https://github.com/PolicyEngine/microplex.git?rev=cad505289da23e1e7a5eded3c67a248cd8d1b8e4" },
     { name = "microunit", marker = "extra == 'policyengine'", specifier = ">=0.1.0" },
     { name = "policyengine-us", marker = "python_full_version >= '3.11' and python_full_version < '3.15' and extra == 'policyengine'", specifier = "==1.715.2" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0" },

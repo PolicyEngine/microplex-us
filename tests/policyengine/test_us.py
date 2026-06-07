@@ -1252,7 +1252,6 @@ class TestPolicyEngineUSConstraintCompilation:
         np.testing.assert_allclose(constraints[0].coefficients, np.array([100.0, 0.0]))
         np.testing.assert_allclose(constraints[1].coefficients, np.array([1.0, 0.0]))
 
-
     def test_amount_targets_align_tax_unit_constraints_before_household_aggregation(
         self,
     ):
@@ -1850,7 +1849,7 @@ class TestPolicyEngineUSSimulationTargetCompiler:
             value=10.0,
             period=2024,
             measure="snap",
-            sim_modifiers=(TargetSimulationModifier("rerandomize_takeup"),),
+            sim_modifiers=(TargetSimulationModifier("unknown_modifier"),),
         )
 
         result = PolicyEngineUSSimulationTargetCompiler(
@@ -1868,7 +1867,101 @@ class TestPolicyEngineUSSimulationTargetCompiler:
         assert result.skipped_targets == (
             (
                 "snap_takeup",
-                "missing_policyengine_us_sim_modifier_handler:rerandomize_takeup",
+                "missing_policyengine_us_sim_modifier_handler:unknown_modifier",
+            ),
+        )
+
+    def test_default_rerandomized_takeup_handler_compiles_sparse_constraint(
+        self,
+        monkeypatch,
+    ):
+        households = pd.DataFrame({"household_id": [1, 2], "weight": [1.0, 1.0]})
+        spm_units = pd.DataFrame(
+            {
+                "spm_unit_id": [100, 200],
+                "household_id": [1, 2],
+            }
+        )
+
+        monkeypatch.setattr(
+            "microplex_us.policyengine.takeup._load_microplex_takeup_rate",
+            lambda variable_name, year: (
+                1.0 if variable_name == "snap" and year == 2024 else 0.0
+            ),
+        )
+        target = TargetSpec(
+            name="snap_takeup_units",
+            entity=EntityType.SPM_UNIT,
+            value=2.0,
+            period=2024,
+            aggregation=TargetAggregation.COUNT,
+            filters=(TargetFilter("takes_up_snap_if_eligible", "==", True),),
+            sim_modifiers=(
+                TargetSimulationModifier(
+                    "rerandomize_takeup",
+                    parameters={"features": ["takes_up_snap_if_eligible"]},
+                ),
+            ),
+        )
+
+        result = PolicyEngineUSSimulationTargetCompiler(
+            period=2024
+        ).compile_simulation_target_constraints(
+            targets=(target,),
+            entity_frames={
+                EntityType.HOUSEHOLD: households,
+                EntityType.SPM_UNIT: spm_units,
+            },
+            entity_weight_indexes={EntityType.HOUSEHOLD: np.array([0, 1])},
+        )
+
+        assert result.skipped_targets == ()
+        constraint = result.constraints[0]
+        assert constraint.name == "snap_takeup_units"
+        assert constraint.weight_indexes.tolist() == [0, 1]
+        assert constraint.coefficients.tolist() == [1.0, 1.0]
+        assert constraint.target == 2.0
+
+    def test_default_rerandomized_takeup_handler_skips_unsupported_feature(self):
+        households = pd.DataFrame({"household_id": [1, 2], "weight": [1.0, 1.0]})
+        persons = pd.DataFrame(
+            {
+                "person_id": [10, 20],
+                "household_id": [1, 2],
+            }
+        )
+        target = TargetSpec(
+            name="medicare_takeup_people",
+            entity=EntityType.PERSON,
+            value=1.0,
+            period=2024,
+            aggregation=TargetAggregation.COUNT,
+            filters=(TargetFilter("takes_up_medicare_if_eligible", "==", True),),
+            sim_modifiers=(
+                TargetSimulationModifier(
+                    "rerandomize_takeup",
+                    parameters={"features": ["takes_up_medicare_if_eligible"]},
+                ),
+            ),
+        )
+
+        result = PolicyEngineUSSimulationTargetCompiler(
+            period=2024
+        ).compile_simulation_target_constraints(
+            targets=(target,),
+            entity_frames={
+                EntityType.HOUSEHOLD: households,
+                EntityType.PERSON: persons,
+            },
+            entity_weight_indexes={EntityType.HOUSEHOLD: np.array([0, 1])},
+        )
+
+        assert result.constraints == ()
+        assert result.skipped_targets == (
+            (
+                "medicare_takeup_people",
+                "policyengine_us_rerandomize_takeup_unsupported_features:"
+                "takes_up_medicare_if_eligible",
             ),
         )
 
@@ -2002,9 +2095,7 @@ class TestPolicyEngineUSSimulationTargetCompiler:
             value=10.0,
             period=2024,
             measure="snap",
-            filters=(
-                TargetFilter("takes_up_snap_if_eligible", "==", True),
-            ),
+            filters=(TargetFilter("takes_up_snap_if_eligible", "==", True),),
             sim_modifiers=(
                 TargetSimulationModifier(
                     "rerandomize_takeup",

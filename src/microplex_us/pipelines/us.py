@@ -109,6 +109,28 @@ from microplex_us.policyengine.comparison import (
     evaluate_policyengine_us_target_set,
     slice_policyengine_us_target_evaluation_report,
 )
+from microplex_us.policyengine.takeup import (
+    DEFAULT_MEDICAID_TAKEUP_RATE,
+    DEFAULT_PREGNANCY_RATE,
+    DEFAULT_VOLUNTARY_FILING_RATE,
+    EITC_TAKEUP_CHILD_COUNT_HELPER_COLUMN,
+    VOLUNTARY_FILING_AGE_HEAD_HELPER_COLUMN,
+    VOLUNTARY_FILING_WAGE_INCOME_HELPER_COLUMN,
+    WIC_TAKEUP_CATEGORY_BREASTFEEDING,
+    WIC_TAKEUP_CATEGORY_CHILD,
+    WIC_TAKEUP_CATEGORY_INFANT,
+    WIC_TAKEUP_CATEGORY_NONE,
+    WIC_TAKEUP_CATEGORY_POSTPARTUM,
+    WIC_TAKEUP_CATEGORY_PREGNANT,
+    _load_microplex_eitc_takeup_rates,
+    _load_microplex_medicaid_takeup_rates,
+    _load_microplex_pregnancy_rates,
+    _load_microplex_takeup_rate,
+    _load_microplex_voluntary_filing_rates,
+    _load_microplex_wic_nutritional_risk_rates,
+    _load_microplex_wic_takeup_rates,
+    _microplex_seeded_rng,
+)
 from microplex_us.policyengine.target_profiles import (
     PolicyEngineUSTargetCell,
     resolve_policyengine_us_target_profile,
@@ -301,202 +323,6 @@ PUF_SUPPORT_CLONE_CPS_REFRESH_VARIABLES: tuple[str, ...] = (
     "is_union_member_or_covered",
 )
 
-DEFAULT_ACA_TAKEUP_RATE = 0.672
-DEFAULT_DC_PTC_TAKEUP_RATE = 0.32
-DEFAULT_EARLY_HEAD_START_TAKEUP_RATE = 0.09
-DEFAULT_EITC_TAKEUP_RATES_BY_CHILDREN = {0: 0.65, 1: 0.86, 2: 0.85, 3: 0.85}
-DEFAULT_HEAD_START_TAKEUP_RATE = 0.30
-DEFAULT_MEDICAID_TAKEUP_RATE = 0.93
-DEFAULT_MEDICAID_TAKEUP_RATES_BY_STATE = {
-    "AK": 0.88,
-    "AL": 0.92,
-    "AR": 0.79,
-    "AZ": 0.95,
-    "CA": 0.78,
-    "CO": 0.99,
-    "CT": 0.89,
-    "DC": 0.99,
-    "DE": 0.86,
-    "FL": 0.98,
-    "GA": 0.73,
-    "HI": 0.88,
-    "IA": 0.84,
-    "ID": 0.78,
-    "IL": 0.85,
-    "IN": 0.99,
-    "KS": 0.92,
-    "KY": 0.87,
-    "LA": 0.79,
-    "MA": 0.94,
-    "MD": 0.95,
-    "ME": 0.92,
-    "MI": 0.91,
-    "MN": 0.89,
-    "MO": 0.89,
-    "MS": 0.75,
-    "MT": 0.83,
-    "NC": 0.94,
-    "ND": 0.91,
-    "NE": 0.79,
-    "NH": 0.84,
-    "NJ": 0.74,
-    "NM": 0.84,
-    "NV": 0.93,
-    "NY": 0.86,
-    "OH": 0.82,
-    "OK": 0.77,
-    "OR": 0.92,
-    "PA": 0.64,
-    "RI": 0.94,
-    "SC": 0.93,
-    "SD": 0.88,
-    "TN": 0.92,
-    "TX": 0.76,
-    "UT": 0.53,
-    "VA": 0.82,
-    "VT": 0.93,
-    "WA": 0.98,
-    "WI": 0.91,
-    "WV": 0.83,
-    "WY": 0.70,
-}
-DEFAULT_SNAP_TAKEUP_RATE = 0.82
-DEFAULT_TANF_TAKEUP_RATE = 0.22
-DEFAULT_VOLUNTARY_FILING_RATE = 0.05
-DEFAULT_VOLUNTARY_FILING_RATES = {
-    "no_children": {
-        "zero": {"under_65": 0.20, "age_65_plus": 0.05},
-        "low": {"under_65": 0.24, "age_65_plus": 0.04},
-        "medium": {"under_65": 0.0, "age_65_plus": 0.0},
-        "high": {"under_65": 0.0, "age_65_plus": 0.005},
-    },
-    "with_children": {
-        "zero": {"under_65": 0.50, "age_65_plus": 0.075},
-        "low": {"under_65": 0.60, "age_65_plus": 0.06},
-        "medium": {"under_65": 0.0, "age_65_plus": 0.0},
-        "high": {"under_65": 0.025, "age_65_plus": 0.0037},
-    },
-}
-WIC_TAKEUP_CATEGORY_PREGNANT = "PREGNANT"
-WIC_TAKEUP_CATEGORY_POSTPARTUM = "POSTPARTUM"
-WIC_TAKEUP_CATEGORY_BREASTFEEDING = "BREASTFEEDING"
-WIC_TAKEUP_CATEGORY_INFANT = "INFANT"
-WIC_TAKEUP_CATEGORY_CHILD = "CHILD"
-WIC_TAKEUP_CATEGORY_NONE = "NONE"
-DEFAULT_WIC_TAKEUP_RATES = {
-    WIC_TAKEUP_CATEGORY_PREGNANT: 0.456,
-    WIC_TAKEUP_CATEGORY_POSTPARTUM: 0.689,
-    WIC_TAKEUP_CATEGORY_BREASTFEEDING: 0.663,
-    WIC_TAKEUP_CATEGORY_INFANT: 0.784,
-    WIC_TAKEUP_CATEGORY_CHILD: 0.460,
-    WIC_TAKEUP_CATEGORY_NONE: 0.0,
-}
-DEFAULT_WIC_NUTRITIONAL_RISK_RATES = {
-    WIC_TAKEUP_CATEGORY_PREGNANT: 0.913,
-    WIC_TAKEUP_CATEGORY_POSTPARTUM: 0.933,
-    WIC_TAKEUP_CATEGORY_BREASTFEEDING: 0.889,
-    WIC_TAKEUP_CATEGORY_INFANT: 0.950,
-    WIC_TAKEUP_CATEGORY_CHILD: 0.752,
-    WIC_TAKEUP_CATEGORY_NONE: 0.0,
-}
-DEFAULT_PREGNANCY_RATE = 0.041
-EITC_TAKEUP_CHILD_COUNT_HELPER_COLUMN = "_mp_eitc_child_count_for_takeup"
-VOLUNTARY_FILING_AGE_HEAD_HELPER_COLUMN = "_mp_voluntary_filing_age_head"
-VOLUNTARY_FILING_WAGE_INCOME_HELPER_COLUMN = "_mp_voluntary_filing_wage_income"
-
-
-def _stable_string_hash(value: str) -> np.uint64:
-    """Deterministic string hash for reproducible MP stochastic inputs."""
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", "overflow encountered", RuntimeWarning)
-        hashed = np.uint64(0)
-        for byte in value.encode("utf-8"):
-            hashed = hashed * np.uint64(31) + np.uint64(byte)
-        hashed = hashed ^ (hashed >> np.uint64(33))
-        hashed = hashed * np.uint64(0xFF51AFD7ED558CCD)
-        hashed = hashed ^ (hashed >> np.uint64(33))
-    return hashed
-
-
-def _microplex_seeded_rng(
-    variable_name: str,
-    *,
-    salt: str | None = None,
-) -> np.random.Generator:
-    key = variable_name if salt is None else f"{variable_name}:{salt}"
-    seed = int(_stable_string_hash(key)) % (2**63)
-    return np.random.default_rng(seed=seed)
-
-
-def _load_microplex_takeup_rate(variable_name: str, year: int) -> float:
-    """Load MP-owned scalar take-up assumptions for PE dataset inputs."""
-    if variable_name == "aca":
-        return DEFAULT_ACA_TAKEUP_RATE
-    if variable_name == "dc_ptc":
-        return DEFAULT_DC_PTC_TAKEUP_RATE
-    if variable_name == "early_head_start":
-        return DEFAULT_EARLY_HEAD_START_TAKEUP_RATE
-    if variable_name == "head_start":
-        return 0.40 if year <= 2020 else DEFAULT_HEAD_START_TAKEUP_RATE
-    if variable_name == "snap":
-        return DEFAULT_SNAP_TAKEUP_RATE
-    if variable_name == "tanf":
-        return DEFAULT_TANF_TAKEUP_RATE
-    raise KeyError(f"Unknown Microplex take-up rate: {variable_name!r}")
-
-
-def _load_microplex_medicaid_takeup_rates(year: int) -> dict[str, float]:
-    """Load MP-owned Medicaid take-up rates by state abbreviation."""
-    _ = year
-    return dict(DEFAULT_MEDICAID_TAKEUP_RATES_BY_STATE)
-
-
-def _load_microplex_eitc_takeup_rates(year: int) -> dict[int, float]:
-    """Load MP-owned EITC take-up rates by capped qualifying-child count."""
-    _ = year
-    return dict(DEFAULT_EITC_TAKEUP_RATES_BY_CHILDREN)
-
-
-def _load_microplex_voluntary_filing_rates(year: int) -> dict:
-    """Load MP-owned voluntary filing rate table."""
-    _ = year
-    return {
-        children: {wage: dict(age_rates) for wage, age_rates in wage_rates.items()}
-        for children, wage_rates in DEFAULT_VOLUNTARY_FILING_RATES.items()
-    }
-
-
-def _load_microplex_wic_takeup_rates(year: int) -> dict[str, float]:
-    """Load MP-owned WIC take-up rates by demographic category."""
-    _ = year
-    return dict(DEFAULT_WIC_TAKEUP_RATES)
-
-
-def _load_microplex_wic_nutritional_risk_rates(year: int) -> dict[str, float]:
-    """Load MP-owned WIC nutritional-risk rates by demographic category."""
-    _ = year
-    return dict(DEFAULT_WIC_NUTRITIONAL_RISK_RATES)
-
-
-def _load_microplex_pregnancy_rates(year: int) -> dict[str, float]:
-    """Load pregnancy rates by state abbreviation, matching PE-US-data when present."""
-    _ = year
-    try:
-        from policyengine_us_data.db.etl_pregnancy import (
-            get_state_pregnancy_rates,
-        )
-
-        rates = get_state_pregnancy_rates()
-    except Exception:
-        LOGGER.warning(
-            "Failed to load state pregnancy rates; using national fallback",
-            exc_info=True,
-        )
-        return {}
-
-    return {str(state).upper(): float(rate) for state, rate in rates.items()}
-
-
 PUF_SUPPORT_CLONE_OVERRIDDEN_VARIABLES: tuple[str, ...] = (
     "partnership_s_corp_income",
     "interest_deduction",
@@ -582,9 +408,7 @@ PUF_SUPPORT_CLONE_IRS_DETAIL_COLLAPSE_VARIABLES: tuple[str, ...] = tuple(
     )
 )
 
-PUF_SUPPORT_CLONE_CPS_MEASURED_OVERLAP_VARIABLES: tuple[str, ...] = (
-    "social_security",
-)
+PUF_SUPPORT_CLONE_CPS_MEASURED_OVERLAP_VARIABLES: tuple[str, ...] = ("social_security",)
 PUF_SUPPORT_CLONE_DONOR_ONLY_COLLAPSE_EXCLUDED_VARIABLES: tuple[str, ...] = (
     "employment_income_before_lsr",
 )
@@ -6780,9 +6604,9 @@ class USMicroplexPipeline:
             identity_override = set(
                 cps_passthrough_summary.get("identity_reconciled_variables", ())
             )
-            donor_only_collapse_variables = (
-                integrated_set - preclone_columns
-            ) - set(PUF_SUPPORT_CLONE_DONOR_ONLY_COLLAPSE_EXCLUDED_VARIABLES)
+            donor_only_collapse_variables = (integrated_set - preclone_columns) - set(
+                PUF_SUPPORT_CLONE_DONOR_ONLY_COLLAPSE_EXCLUDED_VARIABLES
+            )
             irs_detail_override = (
                 integrated_set
                 & set(self.config.puf_support_clone_collapse_irs_detail_variables)
@@ -11746,9 +11570,7 @@ class USMicroplexPipeline:
                 else first_present("employment_income_before_lsr")
             )
         elif "employment_income" in result.columns:
-            result["employment_income_before_lsr"] = first_present(
-                "employment_income"
-            )
+            result["employment_income_before_lsr"] = first_present("employment_income")
         elif "wage_income" in result.columns:
             result["employment_income_before_lsr"] = first_present("wage_income")
         else:

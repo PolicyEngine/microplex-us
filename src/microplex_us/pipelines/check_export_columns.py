@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -258,31 +259,13 @@ def compute_spec_variable_manifest_diff(
     spec_path: Path = DEFAULT_SPEC_PATH,
 ) -> SpecVariableManifestDiff:
     """Compare ``spec.variables`` with required exports and declared imputations."""
-    import yaml
-
-    payload = yaml.safe_load(spec_path.read_text(encoding="utf-8"))
-    if not isinstance(payload, dict):
-        raise ValueError(f"Spec {spec_path} must be a YAML mapping.")
-    raw_variables = payload.get("variables")
-    if not isinstance(raw_variables, dict):
+    text = spec_path.read_text(encoding="utf-8")
+    variables = _parse_top_level_mapping_keys(text, "variables")
+    if not variables:
         raise ValueError(f"Spec {spec_path} is missing a variables mapping.")
-    raw_imputation = payload.get("imputation", [])
-    if not isinstance(raw_imputation, list):
-        raise ValueError(f"Spec {spec_path} imputation section must be a list.")
 
     required = {str(column) for column in contract["required"]}
-    declared_imputation: set[str] = set()
-    for index, step in enumerate(raw_imputation):
-        if not isinstance(step, dict):
-            raise ValueError(f"Spec {spec_path} imputation step {index} is not a map.")
-        raw_vars = step.get("vars", [])
-        if not isinstance(raw_vars, list):
-            raise ValueError(
-                f"Spec {spec_path} imputation step {index} vars must be a list."
-            )
-        declared_imputation.update(str(variable) for variable in raw_vars)
-
-    variables = {str(variable) for variable in raw_variables}
+    declared_imputation = _parse_imputation_vars(text)
     expected = required | declared_imputation
     return SpecVariableManifestDiff(
         spec_path=str(spec_path),
@@ -293,6 +276,86 @@ def compute_spec_variable_manifest_diff(
         missing_declared_imputation=sorted(declared_imputation - variables),
         extra_variables=sorted(variables - expected),
     )
+
+
+def _top_level_section_lines(text: str, section: str) -> list[str]:
+    """Return lines in a simple top-level YAML section.
+
+    This module is intentionally importable with only the column-parity
+    job's minimal dependencies, so the fast manifest gate avoids PyYAML.
+    The parser only needs the committed spec's shape: top-level sections,
+    mapping keys under ``variables:``, and imputation ``vars`` lists.
+    """
+    section_header = f"{section}:"
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        if line.strip() == section_header and not line.startswith((" ", "\t")):
+            body: list[str] = []
+            for candidate in lines[index + 1 :]:
+                stripped = candidate.strip()
+                if (
+                    stripped
+                    and not candidate.startswith((" ", "\t"))
+                    and re.match(r"^[A-Za-z_][A-Za-z0-9_-]*:", stripped)
+                ):
+                    break
+                body.append(candidate)
+            return body
+    return []
+
+
+def _parse_top_level_mapping_keys(text: str, section: str) -> set[str]:
+    """Parse direct mapping keys from a top-level section."""
+    keys: set[str] = set()
+    for line in _top_level_section_lines(text, section):
+        match = re.match(r"^  ([A-Za-z_][A-Za-z0-9_]*):(?:\s|$)", line)
+        if match:
+            keys.add(match.group(1))
+    return keys
+
+
+def _parse_inline_list(raw: str) -> list[str]:
+    """Parse the simple YAML inline list form used in tests."""
+    stripped = raw.strip()
+    if not stripped.startswith("[") or not stripped.endswith("]"):
+        return []
+    body = stripped[1:-1].strip()
+    if not body:
+        return []
+    return [
+        item.strip().strip("'\"")
+        for item in body.split(",")
+        if item.strip().strip("'\"")
+    ]
+
+
+def _parse_imputation_vars(text: str) -> set[str]:
+    """Parse variable names from imputation step ``vars`` lists."""
+    variables: set[str] = set()
+    in_vars_block = False
+    for line in _top_level_section_lines(text, "imputation"):
+        if re.match(r"^  -\s", line):
+            in_vars_block = False
+
+        inline_match = re.match(r"^    vars:\s*(\[.*\])\s*$", line)
+        if inline_match:
+            variables.update(_parse_inline_list(inline_match.group(1)))
+            in_vars_block = False
+            continue
+
+        if re.match(r"^    vars:\s*$", line):
+            in_vars_block = True
+            continue
+
+        if in_vars_block:
+            item_match = re.match(r"^      -\s+([A-Za-z_][A-Za-z0-9_]*)\s*$", line)
+            if item_match:
+                variables.add(item_match.group(1))
+                continue
+            if re.match(r"^    [A-Za-z_][A-Za-z0-9_-]*:", line):
+                in_vars_block = False
+
+    return variables
 
 
 def _h5_column_values(

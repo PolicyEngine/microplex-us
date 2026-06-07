@@ -29,6 +29,9 @@ from microplex.targets import (
 )
 
 from microplex_us.microdata_roles import POLICYENGINE_US_TAKEUP_INPUT_VARIABLES
+from microplex_us.policyengine.takeup import (
+    rerandomize_policyengine_us_takeup_frames,
+)
 from microplex_us.policyengine.target_profiles import (
     PolicyEngineUSTargetCell,
     resolve_policyengine_us_target_profile,
@@ -277,6 +280,10 @@ PolicyEngineUSSimulationModifierHandler = Callable[
     ...,
     PolicyEngineUSEntityTableBundle,
 ]
+
+
+class PolicyEngineUSSimulationModifierSkipError(ValueError):
+    """Raised when a simulator modifier should fail closed for target rows."""
 
 
 DEFAULT_POLICYENGINE_US_VARIABLE_BINDINGS: dict[str, PolicyEngineUSVariableBinding] = {
@@ -1825,8 +1832,22 @@ class PolicyEngineUSSimulationTargetCompiler:
         tuple[TargetSpec, ...],
         list[tuple[str, str]],
     ]:
+        def rerandomize_takeup_handler(
+            tables: PolicyEngineUSEntityTableBundle,
+            *,
+            targets: Sequence[TargetSpec],
+            parameters: Sequence[Mapping[str, Any]],
+        ) -> PolicyEngineUSEntityTableBundle:
+            return _rerandomize_policyengine_us_takeup_sim_modifier(
+                tables,
+                targets=targets,
+                parameters=parameters,
+                year=self.dataset_year or self.period,
+            )
+
         handlers = {
             "policyengine_us_materialize": _identity_policyengine_us_sim_modifier,
+            "rerandomize_takeup": rerandomize_takeup_handler,
             **dict(self.modifier_handlers),
         }
         supported_targets: list[TargetSpec] = []
@@ -1862,6 +1883,8 @@ class PolicyEngineUSSimulationTargetCompiler:
                 for target in supported_targets
                 if modifier_name in target.sim_modifier_names
             )
+            if not relevant_targets:
+                continue
             parameters = tuple(
                 modifier.parameters
                 for target in relevant_targets
@@ -1869,11 +1892,23 @@ class PolicyEngineUSSimulationTargetCompiler:
                 if modifier.name == modifier_name
             )
             handler = handlers[modifier_name]
-            working_tables = handler(
-                working_tables,
-                targets=relevant_targets,
-                parameters=parameters,
-            )
+            try:
+                working_tables = handler(
+                    working_tables,
+                    targets=relevant_targets,
+                    parameters=parameters,
+                )
+            except PolicyEngineUSSimulationModifierSkipError as exc:
+                skipped_targets.extend(
+                    (target.name, str(exc)) for target in relevant_targets
+                )
+                skipped_names = {target.name for target in relevant_targets}
+                supported_targets = [
+                    target
+                    for target in supported_targets
+                    if target.name not in skipped_names
+                ]
+                continue
             if not isinstance(working_tables, PolicyEngineUSEntityTableBundle):
                 raise TypeError(
                     f"PolicyEngine US sim modifier '{modifier_name}' must return "
@@ -1890,6 +1925,68 @@ def _identity_policyengine_us_sim_modifier(
 ) -> PolicyEngineUSEntityTableBundle:
     del targets, parameters
     return tables
+
+
+def _rerandomize_policyengine_us_takeup_sim_modifier(
+    tables: PolicyEngineUSEntityTableBundle,
+    *,
+    targets: Sequence[TargetSpec],
+    parameters: Sequence[Mapping[str, Any]],
+    year: int,
+) -> PolicyEngineUSEntityTableBundle:
+    features = _policyengine_us_takeup_features_from_modifier_parameters(
+        targets=targets,
+        parameters=parameters,
+    )
+    persons, tax_units, spm_units, unsupported = (
+        rerandomize_policyengine_us_takeup_frames(
+            persons=tables.persons,
+            tax_units=tables.tax_units,
+            spm_units=tables.spm_units,
+            features=features,
+            year=year,
+        )
+    )
+    if unsupported:
+        raise PolicyEngineUSSimulationModifierSkipError(
+            "policyengine_us_rerandomize_takeup_unsupported_features:"
+            + ",".join(unsupported)
+        )
+    return PolicyEngineUSEntityTableBundle(
+        households=tables.households,
+        persons=persons,
+        tax_units=tax_units,
+        spm_units=spm_units,
+        families=tables.families,
+        marital_units=tables.marital_units,
+    )
+
+
+def _policyengine_us_takeup_features_from_modifier_parameters(
+    *,
+    targets: Sequence[TargetSpec],
+    parameters: Sequence[Mapping[str, Any]],
+) -> tuple[str, ...]:
+    features: list[str] = []
+    for parameter in parameters:
+        raw_features = parameter.get("features")
+        if raw_features is None:
+            continue
+        if isinstance(raw_features, str):
+            features.append(raw_features)
+        else:
+            features.extend(str(feature) for feature in raw_features)
+    if features:
+        return tuple(dict.fromkeys(features))
+
+    inferred: list[str] = []
+    for target in targets:
+        inferred.extend(
+            feature
+            for feature in target.required_features
+            if feature in POLICYENGINE_US_TAKEUP_INPUT_VARIABLES
+        )
+    return tuple(dict.fromkeys(inferred))
 
 
 def _policyengine_us_forced_materialization_features(
@@ -1968,7 +2065,9 @@ def _policyengine_us_linear_constraint_to_target_reweighting_constraint(
             f"coefficients for {len(household_weight_indexes)} household weights"
         )
     if not np.isfinite(coefficients).all():
-        raise ValueError(f"Compiled constraint '{constraint.name}' has nonfinite values")
+        raise ValueError(
+            f"Compiled constraint '{constraint.name}' has nonfinite values"
+        )
 
     active = coefficients != 0.0
     active_indexes = household_weight_indexes[active]

@@ -7,8 +7,8 @@ positive and negative training rows, which allows predictions to land
 in the interior band (``max(train_negatives)``, ``min(train_positives)``)
 — a region no real record occupies.
 
-v9 upgrades to `microimpute.models.ZeroInflatedImputer`, which at fit
-time auto-detects the three-sign regime per target and routes
+v9 upgrades to canonical `microimpute.Imputer`, which at fit time
+auto-detects the three-sign regime per target and routes
 predictions through separate positive and negative QRFs. The
 interior-band gap becomes a structural guarantee, not a statistical
 averaging hope.
@@ -20,7 +20,7 @@ unchanged for regression comparison.
 Tests pin:
 
 1. The new backend value resolves through the factory to a donor
-   imputer that uses ZeroInflatedImputer internally.
+   imputer that uses canonical regime-gated microimpute internally.
 2. On a three-sign training fixture, predictions preserve negatives
    (as v8's `y != 0` fix already does).
 3. On the same fixture, predictions NEVER land in the interior band
@@ -36,7 +36,9 @@ import pytest
 
 pytest.importorskip("quantile_forest")
 pytest.importorskip("microimpute")
-pytest.importorskip("microimpute.models.zero_inflated")
+
+from microimpute import Imputer as CanonicalMicroImputer
+from microimpute.models.regime_gated import REGIME_THREE_SIGN
 
 
 def _three_sign_frame_with_gap(n: int = 1500, seed: int = 0) -> pd.DataFrame:
@@ -88,6 +90,11 @@ def _count_interior_violations(
 
 class TestRegimeAwareDonorImputerClassExists:
     """The new donor imputer must be importable from microplex_us.pipelines.us."""
+
+    def test_canonical_microimpute_api_is_required(self) -> None:
+        imputer = CanonicalMicroImputer()
+        assert imputer.signregime is True
+        assert REGIME_THREE_SIGN == "THREE_SIGN"
 
     def test_importable_from_us_module(self) -> None:
         from microplex_us.pipelines.us import RegimeAwareDonorImputer
@@ -155,7 +162,7 @@ class TestRegimeAwareFitGenerate:
         assert captured["fit_kwargs"]["n_estimators"] == 7
         assert captured["fit_kwargs"]["n_jobs"] == -1
 
-    def test_multi_target_fit_uses_one_chained_zero_inflated_imputer(self) -> None:
+    def test_multi_target_fit_uses_one_chained_regime_gated_imputer(self) -> None:
         from microplex_us.pipelines.us import RegimeAwareDonorImputer
 
         rng = np.random.default_rng(20260606)

@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -48,6 +49,7 @@ from typing import Any
 
 # Path to the committed contract shipped alongside this module.
 DEFAULT_CONTRACT_PATH = Path(__file__).with_name("ecps_export_contract.json")
+DEFAULT_SPEC_PATH = Path(__file__).resolve().parents[1] / "specs" / "us-2024.yaml"
 
 SIGNED_NUMERIC_SUPPORT_COLUMNS = frozenset(
     {
@@ -111,6 +113,28 @@ class SupportDiff:
     def ok(self) -> bool:
         """True when every eCPS-populated column has candidate support."""
         return not self.issues
+
+
+@dataclass
+class SpecVariableManifestDiff:
+    """Result of checking ``spec.variables`` against the frozen contract."""
+
+    spec_path: str
+    required_contract_count: int
+    declared_imputation_count: int
+    variable_manifest_count: int
+    missing_required: list[str]
+    missing_declared_imputation: list[str]
+    extra_variables: list[str]
+
+    @property
+    def ok(self) -> bool:
+        """True when the manifest exactly covers required and declared vars."""
+        return not (
+            self.missing_required
+            or self.missing_declared_imputation
+            or self.extra_variables
+        )
 
 
 def compute_column_diff(
@@ -227,6 +251,138 @@ def compute_support_diff(
         baseline_filler_columns=baseline_filler_columns,
         exempt_columns=sorted(exempt & set(required_columns)),
     )
+
+
+def compute_spec_variable_manifest_diff(
+    *,
+    contract: dict,
+    spec_path: Path = DEFAULT_SPEC_PATH,
+) -> SpecVariableManifestDiff:
+    """Compare ``spec.variables`` with required exports and declared imputations."""
+    text = spec_path.read_text(encoding="utf-8")
+    variables = _parse_top_level_mapping_keys(text, "variables")
+    if not variables:
+        raise ValueError(f"Spec {spec_path} is missing a variables mapping.")
+
+    required = {str(column) for column in contract["required"]}
+    declared_imputation = _parse_imputation_vars(text)
+    expected = required | declared_imputation
+    return SpecVariableManifestDiff(
+        spec_path=str(spec_path),
+        required_contract_count=len(required),
+        declared_imputation_count=len(declared_imputation),
+        variable_manifest_count=len(variables),
+        missing_required=sorted(required - variables),
+        missing_declared_imputation=sorted(declared_imputation - variables),
+        extra_variables=sorted(variables - expected),
+    )
+
+
+def _top_level_section_lines(text: str, section: str) -> list[str]:
+    """Return lines in a simple top-level YAML section.
+
+    This module is intentionally importable with only the column-parity
+    job's minimal dependencies, so the fast manifest gate avoids PyYAML.
+    The parser only needs the committed spec's shape: top-level sections,
+    mapping keys under ``variables:``, and imputation ``vars`` lists.
+    """
+    section_header = f"{section}:"
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        if line.strip() == section_header and not line.startswith((" ", "\t")):
+            body: list[str] = []
+            for candidate in lines[index + 1 :]:
+                stripped = candidate.strip()
+                if (
+                    stripped
+                    and not candidate.startswith((" ", "\t"))
+                    and re.match(r"^[A-Za-z_][A-Za-z0-9_-]*:", stripped)
+                ):
+                    break
+                body.append(candidate)
+            return body
+    return []
+
+
+def _parse_top_level_mapping_keys(text: str, section: str) -> set[str]:
+    """Parse direct mapping keys from a top-level section."""
+    keys: set[str] = set()
+    for line in _top_level_section_lines(text, section):
+        match = re.match(r"^  ([A-Za-z_][A-Za-z0-9_]*):(?:\s|$)", line)
+        if match:
+            keys.add(match.group(1))
+    return keys
+
+
+def _parse_inline_list(raw: str) -> list[str]:
+    """Parse the simple YAML inline list form used in tests."""
+    stripped = raw.strip()
+    if not stripped.startswith("[") or not stripped.endswith("]"):
+        return []
+    body = stripped[1:-1].strip()
+    if not body:
+        return []
+    return [
+        parsed
+        for item in body.split(",")
+        if (parsed := _parse_simple_yaml_scalar(item)) is not None
+    ]
+
+
+def _parse_simple_yaml_scalar(raw: str) -> str | None:
+    """Parse a simple YAML scalar variable name with optional inline comment."""
+    value = raw.strip()
+    quote: str | None = None
+    unquoted = []
+    for index, char in enumerate(value):
+        if char in {"'", '"'}:
+            if quote is None:
+                quote = char
+            elif quote == char:
+                quote = None
+        if char == "#" and quote is None and (index == 0 or value[index - 1].isspace()):
+            break
+        unquoted.append(char)
+    value = "".join(unquoted).strip()
+    if (
+        len(value) >= 2
+        and value[0] == value[-1]
+        and value[0] in {"'", '"'}
+    ):
+        value = value[1:-1].strip()
+    if re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", value):
+        return value
+    return None
+
+
+def _parse_imputation_vars(text: str) -> set[str]:
+    """Parse variable names from imputation step ``vars`` lists."""
+    variables: set[str] = set()
+    in_vars_block = False
+    for line in _top_level_section_lines(text, "imputation"):
+        if re.match(r"^  -\s", line):
+            in_vars_block = False
+
+        inline_match = re.match(r"^    vars:\s*(\[.*\])(?:\s+#.*)?$", line)
+        if inline_match:
+            variables.update(_parse_inline_list(inline_match.group(1)))
+            in_vars_block = False
+            continue
+
+        if re.match(r"^    vars:\s*$", line):
+            in_vars_block = True
+            continue
+
+        if in_vars_block:
+            item_match = re.match(r"^      -\s+(.+?)\s*$", line)
+            if item_match:
+                if parsed := _parse_simple_yaml_scalar(item_match.group(1)):
+                    variables.add(parsed)
+                continue
+            if re.match(r"^    [A-Za-z_][A-Za-z0-9_-]*:", line):
+                in_vars_block = False
+
+    return variables
 
 
 def _h5_column_values(
@@ -416,6 +572,7 @@ def _format_report(
     n_required: int,
     n_forbidden: int,
     support_diff: SupportDiff | None = None,
+    spec_diff: SpecVariableManifestDiff | None = None,
 ) -> str:
     """Build a human-readable report for the diff."""
     lines = [
@@ -452,7 +609,29 @@ def _format_report(
                 ),
             ]
         )
-    ok = diff.ok and (support_diff is None or support_diff.ok)
+    if spec_diff is not None:
+        lines.extend(
+            [
+                "",
+                "  spec variable manifest:",
+                f"    spec:                         {spec_diff.spec_path}",
+                f"    required contract variables:  {spec_diff.required_contract_count}",
+                f"    declared imputation variables: {spec_diff.declared_imputation_count}",
+                f"    spec.variables count:         {spec_diff.variable_manifest_count}",
+                f"    missing_required ({len(spec_diff.missing_required)}):",
+                *_bullet_lines(spec_diff.missing_required),
+                "    missing_declared_imputation "
+                f"({len(spec_diff.missing_declared_imputation)}):",
+                *_bullet_lines(spec_diff.missing_declared_imputation),
+                f"    extra_variables ({len(spec_diff.extra_variables)}):",
+                *_bullet_lines(spec_diff.extra_variables),
+            ]
+        )
+    ok = (
+        diff.ok
+        and (support_diff is None or support_diff.ok)
+        and (spec_diff is None or spec_diff.ok)
+    )
     lines.extend(["", "  RESULT: " + ("PASS" if ok else "FAIL")])
     return "\n".join(lines)
 
@@ -521,6 +700,20 @@ def main(argv: list[str] | None = None) -> int:
         metavar="FILE",
         default=str(DEFAULT_CONTRACT_PATH),
         help="Override the contract JSON (default: committed contract).",
+    )
+    parser.add_argument(
+        "--spec",
+        metavar="FILE",
+        help=(
+            "Spec YAML whose variables block must cover the contract and "
+            "declared imputation vars. Defaults to the committed US spec when "
+            "using the committed contract."
+        ),
+    )
+    parser.add_argument(
+        "--skip-spec-variable-manifest",
+        action="store_true",
+        help="Skip the spec.variables manifest coverage check.",
     )
     parser.add_argument(
         "--support-baseline",
@@ -593,6 +786,21 @@ def main(argv: list[str] | None = None) -> int:
         optional=optional,
         excluded=excluded,
     )
+    contract_path = Path(args.contract).resolve()
+    spec_path = None
+    if not args.skip_spec_variable_manifest:
+        if args.spec:
+            spec_path = Path(args.spec)
+        elif contract_path == DEFAULT_CONTRACT_PATH.resolve():
+            spec_path = DEFAULT_SPEC_PATH
+    spec_diff = (
+        None
+        if spec_path is None
+        else compute_spec_variable_manifest_diff(
+            contract=contract,
+            spec_path=Path(spec_path),
+        )
+    )
     support_diff = None
     if args.support_baseline:
         support_exempt = set(contract.get("support_exemptions", [])) | set(
@@ -619,9 +827,18 @@ def main(argv: list[str] | None = None) -> int:
             n_required=len(required),
             n_forbidden=len(forbidden),
             support_diff=support_diff,
+            spec_diff=spec_diff,
         )
     )
-    return 0 if diff.ok and (support_diff is None or support_diff.ok) else 1
+    return (
+        0
+        if (
+            diff.ok
+            and (support_diff is None or support_diff.ok)
+            and (spec_diff is None or spec_diff.ok)
+        )
+        else 1
+    )
 
 
 if __name__ == "__main__":

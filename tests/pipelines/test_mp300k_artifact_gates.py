@@ -1008,6 +1008,7 @@ def test_column_contract_gate_reports_extra_candidate_columns(tmp_path):
     assert record["summary"]["status"] == "passed"
     assert column_gate["status"] == "pass"
     assert column_gate["metrics"]["extra_unknown_column_count"] == 1
+    assert column_gate["metrics"]["spec_variable_manifest_count"] == 278
     assert column_gate["details"]["extra_unknown_columns"] == ["filing_status"]
 
 

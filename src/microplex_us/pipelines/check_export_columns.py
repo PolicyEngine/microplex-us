@@ -323,10 +323,36 @@ def _parse_inline_list(raw: str) -> list[str]:
     if not body:
         return []
     return [
-        item.strip().strip("'\"")
+        parsed
         for item in body.split(",")
-        if item.strip().strip("'\"")
+        if (parsed := _parse_simple_yaml_scalar(item)) is not None
     ]
+
+
+def _parse_simple_yaml_scalar(raw: str) -> str | None:
+    """Parse a simple YAML scalar variable name with optional inline comment."""
+    value = raw.strip()
+    quote: str | None = None
+    unquoted = []
+    for index, char in enumerate(value):
+        if char in {"'", '"'}:
+            if quote is None:
+                quote = char
+            elif quote == char:
+                quote = None
+        if char == "#" and quote is None and (index == 0 or value[index - 1].isspace()):
+            break
+        unquoted.append(char)
+    value = "".join(unquoted).strip()
+    if (
+        len(value) >= 2
+        and value[0] == value[-1]
+        and value[0] in {"'", '"'}
+    ):
+        value = value[1:-1].strip()
+    if re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", value):
+        return value
+    return None
 
 
 def _parse_imputation_vars(text: str) -> set[str]:
@@ -337,7 +363,7 @@ def _parse_imputation_vars(text: str) -> set[str]:
         if re.match(r"^  -\s", line):
             in_vars_block = False
 
-        inline_match = re.match(r"^    vars:\s*(\[.*\])\s*$", line)
+        inline_match = re.match(r"^    vars:\s*(\[.*\])(?:\s+#.*)?$", line)
         if inline_match:
             variables.update(_parse_inline_list(inline_match.group(1)))
             in_vars_block = False
@@ -348,9 +374,10 @@ def _parse_imputation_vars(text: str) -> set[str]:
             continue
 
         if in_vars_block:
-            item_match = re.match(r"^      -\s+([A-Za-z_][A-Za-z0-9_]*)\s*$", line)
+            item_match = re.match(r"^      -\s+(.+?)\s*$", line)
             if item_match:
-                variables.add(item_match.group(1))
+                if parsed := _parse_simple_yaml_scalar(item_match.group(1)):
+                    variables.add(parsed)
                 continue
             if re.match(r"^    [A-Za-z_][A-Za-z0-9_-]*:", line):
                 in_vars_block = False

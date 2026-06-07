@@ -585,6 +585,49 @@ variables:
     assert diff.extra_variables == []
 
 
+def test_spec_variable_manifest_diff_counts_quoted_and_commented_imputation_vars(
+    tmp_path,
+):
+    contract = {
+        "required": ["age"],
+        "forbidden": [],
+        "ecps_internal_optional": [],
+    }
+    spec_path = tmp_path / "spec.yaml"
+    spec_path.write_text(
+        """
+meta: {country: us, model_year: 2024}
+imputation:
+  - onto: synthetic_puf
+    from: puf
+    vars:
+      - "employment_income"  # PUF override
+      - 'rental_income'
+  - onto: cps_keep
+    from: puf
+    vars: [self_employment_income, "social_security"]  # inline form
+variables:
+  age:
+    mp_spec: {method: passthrough}
+""",
+        encoding="utf-8",
+    )
+
+    diff = compute_spec_variable_manifest_diff(
+        contract=contract,
+        spec_path=spec_path,
+    )
+
+    assert diff.ok is False
+    assert diff.declared_imputation_count == 4
+    assert diff.missing_declared_imputation == [
+        "employment_income",
+        "rental_income",
+        "self_employment_income",
+        "social_security",
+    ]
+
+
 def test_committed_contract_parses_with_expected_categories():
     contract = load_contract(DEFAULT_CONTRACT_PATH)
     for key in (

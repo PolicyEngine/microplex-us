@@ -81,9 +81,9 @@ class ColumnwiseQRFDonorImputer:
                 # v7 bug that blanked the negative tail of capital
                 # gains, partnership income, farm income, etc. The
                 # `!= 0` label is the minimal fix; the full upgrade to
-                # `microimpute.ZeroInflatedImputer` (regime-aware
-                # tripartite routing with separate positive / negative
-                # QRFs) is tracked as a follow-up.
+                # the canonical regime-aware `microimpute.Imputer`
+                # (tripartite routing with separate positive / negative
+                # QRFs).
                 zero_model = RandomForestClassifier(
                     n_estimators=max(50, self.n_estimators // 2),
                     random_state=42,
@@ -146,9 +146,9 @@ class ColumnwiseQRFDonorImputer:
 
 
 class RegimeAwareDonorImputer:
-    """Donor imputer that wraps one chained `ZeroInflatedImputer` per block.
+    """Donor imputer that wraps one chained canonical `microimpute.Imputer` block.
 
-    The whole target block is fit with one `ZeroInflatedImputer`, which
+    The whole target block is fit with one regime-gated `microimpute.Imputer`, which
     auto-detects one of seven regimes (THREE_SIGN / ZI_POSITIVE /
     ZI_NEGATIVE / SIGN_ONLY / POSITIVE_ONLY / NEGATIVE_ONLY /
     DEGENERATE_ZERO) for each target and composes a gate classifier + one or
@@ -227,9 +227,9 @@ class RegimeAwareDonorImputer:
     ) -> RegimeAwareDonorImputer:
         del weight_col, epochs, batch_size, learning_rate, verbose
 
-        if importlib.util.find_spec("microimpute.models.zero_inflated") is None:
+        if importlib.util.find_spec("microimpute.models.regime_gated") is None:
             raise ImportError(
-                "microimpute with microimpute.models.zero_inflated is required "
+                "microimpute with the canonical regime-gated Imputer is required "
                 "for donor_imputer_backend='regime_aware'."
             )
         if importlib.util.find_spec("quantile_forest") is None:
@@ -237,8 +237,8 @@ class RegimeAwareDonorImputer:
                 "quantile-forest is required for the RegimeAwareDonorImputer base QRF."
             )
 
+        from microimpute import Imputer as MicroImputer
         from microimpute.models.qrf import QRF
-        from microimpute.models.zero_inflated import ZeroInflatedImputer
 
         self._fitted = {}
         self._fitted_columns = ()
@@ -257,12 +257,13 @@ class RegimeAwareDonorImputer:
         if len(subset) < 25:
             return self
 
-        wrapper = ZeroInflatedImputer(
+        wrapper = MicroImputer(
             base_imputer_class=self._configured_qrf_class(QRF),
             base_imputer_kwargs={},
             classifier_type=self.classifier_type,
-            sequential=True,
+            signregime=True,
             seed=self.seed,
+            log_level="WARNING",
         )
         fitted = wrapper.fit(
             subset,
@@ -272,9 +273,10 @@ class RegimeAwareDonorImputer:
         self._fitted_columns = target_vars
         self._predictor_columns = predictor_vars
         self._fitted = {column: fitted for column in self._fitted_columns}
+        regimes = getattr(fitted, "regimes_", getattr(wrapper, "_regimes", {}))
         self._regimes = {
             column: regime
-            for column, regime in getattr(wrapper, "_regimes", {}).items()
+            for column, regime in regimes.items()
             if column in target_set
         }
         return self

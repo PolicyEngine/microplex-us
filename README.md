@@ -1,82 +1,32 @@
 # microplex-us
 
-US-specific survey adapters, calibration targets, pipelines, and PolicyEngine integration
-built on top of the generic `microplex` engine.
+`microplex-us` is the US content package for Microplex. It ships declarative
+specs and manifests only; Microplex owns the execution engine, microimpute owns
+donor imputation, and microcalibrate owns calibration.
 
-## Installation
+## Package Contents
 
-Use the install script so platform-specific dependency handling stays explicit:
+- `src/microplex_us/specs/us-2024.yaml`: US 2024 construction spec.
+- `src/microplex_us/manifests/ecps_export_contract.json`: frozen eCPS export
+  column contract.
+- `src/microplex_us/manifests/frozen_production_ecps_2024_benchmark_manifest.json`:
+  pinned production-eCPS benchmark certificate metadata.
+- `src/microplex_us/manifests/pe_source_impute_blocks.json`: source-imputation
+  block declarations.
+- `src/microplex_us/manifests/puf.json`: PUF source manifest.
 
-```bash
-./scripts/install.sh --prod
-```
+## Construction Order
 
-For development on Apple Silicon macOS or Linux:
+1. Load ASEC/CPS and PUF sources.
+2. Build the seeded 50/50 ASEC+PUF support spine.
+3. Assign atomic census geography within the lowest available CPS geography.
+4. Run SCF, SIPP, and ACS source imputations on the resolved support universe.
+5. Apply declared transforms and target construction.
+6. Calibrate through Microplex's microcalibrate adapter.
+7. Export the PolicyEngine-compatible dataset.
 
-```bash
-./scripts/install.sh --dev
-```
+## Validation
 
-Production macOS installs require Apple Silicon (`arm64`). Intel macOS
-(`x86_64`) is supported only for development/testing through conda-forge:
-
-```bash
-./scripts/install.sh --dev-intel-mac
-```
-
-See [developer testing environments](./envs/README.md) for details.
-
-## Docs
-
-- [Docs index](./docs/README.md)
-- [Architecture](./docs/architecture.md)
-- [Canonical pipeline stages](./docs/pipeline-stages.md)
-- [Stage contracts and manifests](./docs/stage-contracts.md)
-- [API reference](./docs/api.md)
-- [Source semantics](./docs/source-semantics.md)
-- [Imputation conditioning contract](./docs/imputation-conditioning-contract.md)
-- [Benchmarking](./docs/benchmarking.md)
-- [Methodology ledger](./docs/methodology-ledger.md)
-- [PolicyEngine oracle compatibility path](./docs/policyengine-oracle-compatibility.md)
-- [PE construction parity](./docs/pe-construction-parity.md)
-- [Superseding `policyengine-us-data`](./docs/superseding-policyengine-us-data.md)
-- [Hugging Face artifact publishing](./docs/huggingface-artifact-publishing.md)
-
-## Diagnostics dashboard
-
-The static dashboard in `dashboard/` loads the full PE-native per-target
-diagnostic JSON written by:
-
-```bash
-microplex-us-pe-native-target-diagnostics \
-  --from-dataset /path/to/enhanced_cps_2024.h5 \
-  --to-dataset /path/to/policyengine_us.h5 \
-  --policyengine-targets-db /path/to/policy_data.db \
-  --output-path artifacts/pe_native_target_diagnostics_current.json
-```
-
-The dashboard uses the exported PolicyEngine design tokens from
-`@policyengine/config/theme.css`; run `python scripts/sync_policyengine_theme.py --check`
-to verify the local browser-readable token copy is still synced.
-When a PolicyEngine target DB is available, the JSON annotates PE-native legacy
-labels with structured target IDs and flags legacy-only gaps.
-
-## Current focus
-
-`microplex-us` is being built as a library-first US runtime with
-`policyengine-us` as the shared measurement operator and
-`policyengine-us-data` as the incumbent comparator, not as the thing we are
-trying to clone wholesale:
-
-- canonical source and target metadata
-- PE-US-compatible export
-- full-target benchmarking against the active targets DB
-- run registry and DuckDB index for frontier analysis
-
-The architecture is still evolving, so the docs are deliberately technical and
-operational rather than paper-like.
-
-Method-level decomposable-family bakeoffs now live in the sibling eval repo:
-`/Users/maxghenis/PolicyEngine/microplex-evals`. `microplex-us` should keep the
-runtime helpers and pipeline-adjacent diagnostics, not the long-lived eval
-orchestration and artifact curation.
+The generic Microplex content-package check validates that the spec loads, the
+variable manifest covers the frozen eCPS contract plus declared imputation
+surface, and the package contains no runtime Python files.

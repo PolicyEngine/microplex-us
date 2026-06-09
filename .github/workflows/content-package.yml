@@ -25,7 +25,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: PolicyEngine/microplex
-          ref: 5a1ea5e107334f45e850678774efc0c613dce250
+          ref: 1ee026ff2e91c8d1223f370d2a12b90eb5551f96
           path: microplex
 
       - name: Set up Python

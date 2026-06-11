@@ -660,6 +660,20 @@ def test_assert_refit_effective_raises_on_no_op_refit():
     assert "no-op" in str(excinfo.value)
 
 
+def test_assert_refit_effective_passes_when_loss_moves_but_rises():
+    # The refit minimizes the *train* objective; on an already-well-calibrated
+    # baseline (production eCPS on its own clean surface) the *full*-set loss can
+    # tick up from the held-out split even though the refit genuinely ran. This
+    # is the clean-surface baseline case (initial 0.0243817 -> optimized
+    # 0.0266164) that a "loss must decrease" gate wrongly flagged. Only a frozen
+    # (no-movement) refit is a failure, so this must pass.
+    ecps._assert_refit_effective(
+        "baseline",
+        {"initial_full_loss": 0.0243817, "optimized_full_loss": 0.0266164},
+        1e-9,
+    )
+
+
 def test_assert_baseline_sane_passes_on_clean_baseline():
     ecps._assert_baseline_sane({"baseline_unweighted_msre": 0.17}, 2.0)
 

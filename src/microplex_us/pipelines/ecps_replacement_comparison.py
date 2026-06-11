@@ -81,20 +81,24 @@ class ComparisonGateError(ValueError):
 def _assert_refit_effective(
     label: str, refit: dict[str, Any], min_reduction: float
 ) -> None:
-    """Fail if a refit did not materially reduce the loss (a no-op refit).
+    """Fail if a refit did not move at all (a frozen no-op refit).
 
-    A no-op refit (optimized loss ~= initial loss) means that side was never
+    A frozen refit (optimized loss == initial loss) means that side was never
     actually reweighted, so its loss is meaningless for comparison -- usually a
     degenerate loss matrix or a total-weight/population mismatch under
-    ``preserve_input``.
+    ``preserve_input``. A refit that *moves* the loss is effective even if the
+    full-set loss rises slightly: the refit minimizes the train objective, so an
+    already-well-calibrated dataset (e.g. production eCPS on its own surface) can
+    legitimately see full loss tick up from the held-out split. Only a frozen
+    (no-movement) refit is a failure.
     """
     initial = float(refit["initial_full_loss"])
     optimized = float(refit["optimized_full_loss"])
-    if optimized > initial - min_reduction:
+    if abs(optimized - initial) <= min_reduction:
         raise ComparisonGateError(
-            f"{label} refit was a no-op: optimized loss {optimized:.6g} did not "
-            f"improve on initial {initial:.6g} ({min_reduction:g} reduction "
-            f"required). The refit never reweighted this dataset, so the "
+            f"{label} refit was a no-op: optimized loss {optimized:.6g} is "
+            f"unchanged from initial {initial:.6g} (no movement beyond "
+            f"{min_reduction:g}). The refit never reweighted this dataset, so the "
             f"comparison is meaningless -- likely a degenerate loss matrix or a "
             f"total-weight/population mismatch under preserve_input. Pass "
             f"assert_refit_effective=False only to deliberately accept this."

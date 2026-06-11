@@ -72,6 +72,7 @@ from microplex_us.pipelines.check_export_columns import (
 )
 from microplex_us.pipelines.donor_imputers import (
     ColumnwiseQRFDonorImputer,
+    MicroimputeDonorImputer,
     RegimeAwareDonorImputer,
 )
 from microplex_us.pipelines.pe_l0 import (
@@ -144,6 +145,7 @@ from microplex_us.variables import (
     DonorMatchStrategy,
     VariableSupportFamily,
     donor_imputation_block_specs,
+    donor_imputation_chain_block_spec,
     normalize_dividend_columns,
     normalize_social_security_columns,
     prune_redundant_variables,
@@ -2153,7 +2155,9 @@ class USMicroplexBuildConfig:
     donor_imputer_learning_rate: float = 1e-3
     donor_imputer_n_layers: int = 2
     donor_imputer_hidden_dim: int = 32
-    donor_imputer_backend: Literal["maf", "qrf", "zi_qrf", "regime_aware"] = "maf"
+    donor_imputer_backend: Literal[
+        "microimpute", "maf", "qrf", "zi_qrf", "regime_aware"
+    ] = "microimpute"
     donor_imputer_qrf_n_estimators: int = 100
     donor_imputer_qrf_zero_threshold: float = 0.05
     donor_imputer_condition_selection: Literal[
@@ -5950,7 +5954,7 @@ class USMicroplexPipeline:
         *,
         condition_vars: list[str],
         target_vars: tuple[str, ...],
-    ) -> Synthesizer | ColumnwiseQRFDonorImputer:
+    ) -> Synthesizer | ColumnwiseQRFDonorImputer | MicroimputeDonorImputer:
         backend = self.config.donor_imputer_backend
         if backend == "maf":
             return Synthesizer(
@@ -5969,6 +5973,23 @@ class USMicroplexPipeline:
             for variable, support_family in support_families.items()
             if support_family is VariableSupportFamily.BOUNDED_SHARE
         }
+        if backend == "microimpute":
+            # Canonical chained imputer: regime detection and zero-inflation
+            # handling are intrinsic, so the support-family-derived
+            # zero_inflated_vars/nonnegative_vars are passed only for interface
+            # symmetry and ignored by the adapter.
+            zero_inflated_vars = {
+                variable
+                for variable, support_family in support_families.items()
+                if support_family is VariableSupportFamily.SUPPORT_SENSITIVE
+            }
+            return MicroimputeDonorImputer(
+                condition_vars=condition_vars,
+                target_vars=list(target_vars),
+                zero_inflated_vars=zero_inflated_vars,
+                nonnegative_vars=nonnegative_vars,
+                seed=self.config.random_seed,
+            )
         if backend == "regime_aware":
             return RegimeAwareDonorImputer(
                 condition_vars=condition_vars,

@@ -290,3 +290,140 @@ class RegimeAwareDonorImputer:
                 seed=child_seed,
                 visited=visited,
             )
+
+
+class MicroimputeDonorImputer:
+    """Donor imputer backed by microimpute's canonical chained ``Imputer``.
+
+    Unlike ``ColumnwiseQRFDonorImputer`` and ``RegimeAwareDonorImputer`` -
+    which fit one independent model per target - this adapter fits the
+    entire donor-target block as ONE sequentially chained call. microimpute's
+    ``Imputer`` (regime-gated, QRF-based) imputes the targets in the order
+    they are listed in ``target_vars``: each target conditions on the
+    original predictors plus the targets imputed before it, preserving the
+    cross-variable joint structure (e.g. capital losses conditioned on the
+    already-imputed wage/income spine).
+
+    Mirrors the interface of the other donor imputers so the block engine can
+    swap it in transparently:
+
+    - ``__init__(*, condition_vars, target_vars, zero_inflated_vars=None,
+      seed=...)``
+    - ``.fit(data, weight_col=None, **kwargs)``
+    - ``.generate(conditions, seed=None) -> pd.DataFrame``
+
+    ``zero_inflated_vars`` is accepted for interface symmetry but is not
+    needed: microimpute's ``Imputer`` auto-detects each target's sign regime
+    (THREE_SIGN / ZI_POSITIVE / ZI_NEGATIVE / SIGN_ONLY / POSITIVE_ONLY /
+    NEGATIVE_ONLY / DEGENERATE_ZERO) from the training distribution, so
+    zero-inflation handling is intrinsic rather than configured per column.
+    MAF-only fit kwargs (``epochs``/``batch_size``/``learning_rate``/
+    ``verbose``) are accepted and ignored via ``**kwargs``.
+    """
+
+    def __init__(
+        self,
+        *,
+        condition_vars: list[str],
+        target_vars: list[str],
+        zero_inflated_vars: set[str] | None = None,
+        nonnegative_vars: set[str] | None = None,
+        seed: int = 42,
+        classifier_type: str = "hist_gb",
+    ) -> None:
+        # zero_inflated_vars / nonnegative_vars are part of the shared donor
+        # imputer interface but are not used here: regime detection is
+        # intrinsic to microimpute's Imputer (see class docstring).
+        del zero_inflated_vars, nonnegative_vars
+        self.condition_vars = list(condition_vars)
+        self.target_vars = list(target_vars)
+        self.seed = int(seed)
+        self.classifier_type = str(classifier_type)
+        self._fitted: Any = None
+
+    def fit(
+        self,
+        data: pd.DataFrame,
+        *,
+        weight_col: str | None = "weight",
+        epochs: int | None = None,
+        batch_size: int | None = None,
+        learning_rate: float | None = None,
+        verbose: bool = False,
+    ) -> MicroimputeDonorImputer:
+        # MAF-only knobs are accepted for interface symmetry and ignored.
+        del epochs, batch_size, learning_rate, verbose
+
+        if importlib.util.find_spec("microimpute") is None:
+            raise ImportError(
+                "microimpute is required for donor_imputer_backend='microimpute'."
+            )
+        from microimpute import Imputer
+
+        columns = list(self.condition_vars) + list(self.target_vars)
+        if weight_col is not None and weight_col in data.columns:
+            columns = columns + [weight_col]
+        # Chained-equations fitting needs one consistent training frame, so
+        # drop rows with any missing predictor/target/weight value listwise
+        # rather than per column. This mirrors the dropna() the columnwise
+        # imputer applies per target, but keeps a single aligned design
+        # matrix across the whole chain.
+        present_columns = [column for column in columns if column in data.columns]
+        fit_frame = data[present_columns].replace([np.inf, -np.inf], np.nan).dropna()
+
+        effective_weight_col = (
+            weight_col
+            if weight_col is not None and weight_col in fit_frame.columns
+            else None
+        )
+        if effective_weight_col is not None:
+            positive = fit_frame[effective_weight_col] > 0
+            fit_frame = fit_frame.loc[positive]
+
+        # Construct the Imputer with the effective seed so prediction draws
+        # (which read the fitted result's RNG, seeded from this value) are
+        # reproducible.
+        imputer = Imputer(
+            seed=self.seed,
+            classifier_type=self.classifier_type,
+            log_level="ERROR",
+        )
+        self._fitted = imputer.fit(
+            X_train=fit_frame,
+            predictors=list(self.condition_vars),
+            imputed_variables=list(self.target_vars),
+            weight_col=effective_weight_col,
+        )
+        return self
+
+    def generate(
+        self,
+        conditions: pd.DataFrame,
+        seed: int | None = None,
+    ) -> pd.DataFrame:
+        synthetic = conditions.copy().reset_index(drop=True)
+        if self._fitted is None:
+            for variable in self.target_vars:
+                synthetic[variable] = np.nan
+            return synthetic
+
+        # Re-seed the fitted result's prediction RNG so a caller-supplied
+        # seed makes generate reproducible (the engine passes a fixed seed).
+        effective_seed = self.seed if seed is None else int(seed)
+        if hasattr(self._fitted, "_rng"):
+            self._fitted._rng = np.random.default_rng(effective_seed)
+
+        predictions = self._fitted.predict(
+            synthetic[self.condition_vars].copy()
+        )
+        if isinstance(predictions, dict):
+            predictions = next(iter(predictions.values()))
+        predictions = predictions.reset_index(drop=True)
+        for variable in self.target_vars:
+            if variable in predictions.columns:
+                synthetic[variable] = pd.to_numeric(
+                    predictions[variable], errors="coerce"
+                ).to_numpy(dtype=float)
+            else:
+                synthetic[variable] = np.nan
+        return synthetic

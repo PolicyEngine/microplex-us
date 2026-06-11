@@ -985,6 +985,269 @@ def donor_imputation_blocks(
     )
 
 
+# Suffixes/tokens that mark a target as an adjustment, deduction, credit, or
+# loss - economically *downstream* of the income that drives it, so it should
+# be imputed late in the chain (conditioned on the already-imputed income
+# spine). Derived from the naming conventions in VARIABLE_SEMANTIC_SPECS.
+_DONOR_CHAIN_DEDUCTION_SUFFIXES: tuple[str, ...] = (
+    "_ald",  # above-the-line deductions (IRA/HSA/SEP/SE health, etc.)
+    "_deduction",
+    "_paid",  # itemized paid amounts (mortgage interest, real estate tax)
+    "_interest",  # student_loan_interest
+    "_debt",  # SCF debt leaves are liabilities, downstream of assets
+    "_share",  # qualified_dividend_share is a ratio derived from a total
+    "_negative",  # rental_income_negative is the loss leg
+)
+_DONOR_CHAIN_DEDUCTION_NAMES: frozenset[str] = frozenset(
+    {
+        "charitable_cash",
+        "charitable_noncash",
+        "state_income_tax_paid",
+        "real_estate_tax_paid",
+        "mortgage_interest_paid",
+        "ira_deduction",
+    }
+)
+
+
+def _donor_chain_conditioner_reference_counts() -> dict[str, int]:
+    """Count how often each variable is named as another target's conditioner.
+
+    A donor target that many other targets prefer to condition on is part of
+    the income/AGI spine and should be imputed early so later targets can
+    chain on its already-imputed value. We read this purely from the existing
+    ``preferred_condition_vars`` / supplemental / challenger metadata rather
+    than hand-maintaining a spine list.
+    """
+    counts: dict[str, int] = {}
+    for spec in VARIABLE_SEMANTIC_SPECS.values():
+        referenced = (
+            spec.preferred_condition_vars
+            + spec.supplemental_shared_condition_vars
+            + spec.challenger_shared_condition_vars
+        )
+        for variable in referenced:
+            counts[variable] = counts.get(variable, 0) + 1
+    return counts
+
+
+def _donor_chain_tier(variable_name: str, *, reference_counts: dict[str, int]) -> int:
+    """Coarse economic tier for chain ordering (lower imputes earlier)."""
+    spec = variable_semantic_spec_for(variable_name)
+    # Tier 0: structural geo/anchor predictors (state/tenure). These are
+    # rarely donor targets, but if present they pin geography first.
+    if variable_name in {"state_fips", "state", "tenure"}:
+        return 0
+    # Tier 3: adjustments / deductions / credits / losses - downstream of the
+    # income that drives them.
+    if variable_name in _DONOR_CHAIN_DEDUCTION_NAMES or any(
+        variable_name.endswith(suffix) for suffix in _DONOR_CHAIN_DEDUCTION_SUFFIXES
+    ):
+        return 3
+    # Tier 1: the income spine - variables other targets condition on.
+    if reference_counts.get(variable_name, 0) > 0:
+        return 1
+    # Tier 2: remaining income / receipt magnitudes (dividends, interest,
+    # pensions, partnership/S-corp, social security, benefits, asset leaves).
+    _ = spec
+    return 2
+
+
+def donor_imputation_chain_order(variable_names: Iterable[str]) -> tuple[str, ...]:
+    """Order donor targets "spine first" for sequential chained imputation.
+
+    Income/AGI-driving variables (those other targets prefer to condition on,
+    plus geography) are imputed first; dependent deductions, credits, and
+    losses last. Within a tier, more-referenced (larger, more upstream)
+    variables come first, then a stable alphabetical tiebreak so the order is
+    deterministic. The dividend composition pair is kept contiguous in its
+    declared order.
+    """
+    requested = list(dict.fromkeys(variable_names))
+    reference_counts = _donor_chain_conditioner_reference_counts()
+
+    def sort_key(variable_name: str) -> tuple[int, int, str]:
+        return (
+            _donor_chain_tier(variable_name, reference_counts=reference_counts),
+            -reference_counts.get(variable_name, 0),
+            variable_name,
+        )
+
+    return tuple(sorted(requested, key=sort_key))
+
+
+def _build_donor_chain_block(
+    *,
+    native_entity: EntityType,
+    variable_names: Iterable[str],
+) -> DonorImputationBlockSpec:
+    """Build one chained donor block for a set of same-native-entity targets.
+
+    ``model_variables`` is the "spine first" chain order (see
+    ``donor_imputation_chain_order``). When both dividend components are
+    present in this group, they are modelled compositionally - as
+    ``dividend_income`` plus ``qualified_dividend_share`` - exactly as
+    ``DIVIDEND_DONOR_BLOCK_SPEC`` does, kept contiguous in their declared
+    order, and reconstructed back to the component columns on restore.
+
+    Because every target in the group shares ``native_entity``, projection
+    onto that entity preserves each variable's grain (no grain change versus
+    the legacy per-variable blocks); only the modelling is consolidated into
+    one chained call.
+    """
+    requested = list(dict.fromkeys(variable_names))
+    ordered = list(donor_imputation_chain_order(requested))
+
+    models_dividends_compositionally = set(DIVIDEND_COMPONENT_COLUMNS).issubset(
+        set(requested)
+    )
+
+    model_variables: list[str] = []
+    restored_variables: list[str] = []
+    inserted_dividend_block = False
+    for variable in ordered:
+        if models_dividends_compositionally and variable in DIVIDEND_COMPONENT_COLUMNS:
+            # Splice the dividend composition pair in (once), contiguous and
+            # in declared order, where the first component would have landed.
+            if not inserted_dividend_block:
+                model_variables.extend(DIVIDEND_COMPOSITION_MODEL_COLUMNS)
+                restored_variables.extend(DIVIDEND_COMPONENT_COLUMNS)
+                inserted_dividend_block = True
+            continue
+        model_variables.append(variable)
+        restored_variables.append(variable)
+
+    # All targets in this group share ``native_entity``, so the condition
+    # policy is that entity's allowed conditioners. Resolve over the requested
+    # group targets (not ``model_variables``) so the dividend reparametrization
+    # column ``qualified_dividend_share`` - which has a different native entity
+    # - does not narrow the PERSON group's conditioning surface (the legacy
+    # DIVIDEND_DONOR_BLOCK_SPEC allowed PERSON/HOUSEHOLD/TAX_UNIT conditioning).
+    condition_entities = resolve_condition_entities_for_targets(requested)
+
+    match_strategies = {
+        variable: variable_semantic_spec_for(variable).donor_match_strategy
+        for variable in model_variables
+    }
+
+    return DonorImputationBlockSpec(
+        native_entity=native_entity,
+        condition_entities=condition_entities,
+        model_variables=tuple(model_variables),
+        restored_variables=tuple(restored_variables),
+        match_strategies=match_strategies,
+        prepare_frame=(
+            add_dividend_composition_features
+            if models_dividends_compositionally
+            else None
+        ),
+        restore_frame=(
+            restore_dividend_components_from_composition
+            if models_dividends_compositionally
+            else None
+        ),
+    )
+
+
+def _group_donor_targets_by_native_entity(
+    variable_names: Iterable[str],
+) -> "list[tuple[EntityType, list[str]]]":
+    """Group donor targets by their semantic native entity, deterministically.
+
+    Returns ``(native_entity, [variables])`` pairs. Groups are ordered by the
+    entity's position in ``EntityType`` so the block sequence is stable across
+    runs. The dividend components are always assigned to the PERSON group
+    (their native entity) so the compositional reparametrization stays intact.
+    """
+    requested = list(dict.fromkeys(variable_names))
+    groups: dict[EntityType, list[str]] = {}
+    for variable in requested:
+        native_entity = variable_semantic_spec_for(variable).native_entity
+        groups.setdefault(native_entity, []).append(variable)
+    entity_order = {entity: index for index, entity in enumerate(EntityType)}
+    return [
+        (native_entity, groups[native_entity])
+        for native_entity in sorted(
+            groups, key=lambda entity: entity_order.get(entity, len(entity_order))
+        )
+    ]
+
+
+def donor_imputation_chain_block_specs(
+    variable_names: Iterable[str],
+) -> tuple[DonorImputationBlockSpec, ...]:
+    """Plan chained donor blocks: one per native-entity group.
+
+    Targets are grouped by their semantic native entity (PERSON / TAX_UNIT /
+    SPM_UNIT / HOUSEHOLD / ...) and each group becomes ONE
+    ``DonorImputationBlockSpec`` whose ``model_variables`` is the group's
+    "spine first" chain order. microimpute's ``Imputer`` then chains the
+    group's targets in a single fit, while each block keeps its own entity
+    grain - so there is no projection-grain change versus the legacy
+    per-variable blocks; only the modelling is consolidated.
+
+    For the PUF donor this is typically ~1-3 blocks (e.g. a PERSON income
+    chain plus a TAX_UNIT deduction chain).
+    """
+    return tuple(
+        _build_donor_chain_block(
+            native_entity=native_entity,
+            variable_names=group_variables,
+        )
+        for native_entity, group_variables in _group_donor_targets_by_native_entity(
+            variable_names
+        )
+    )
+
+
+def donor_imputation_chain_block_spec(
+    variable_names: Iterable[str],
+) -> DonorImputationBlockSpec:
+    """Build a single consolidated chained donor block over all targets.
+
+    Kept for API symmetry and unit testing of the chain-order / dividend
+    splicing logic. The pipeline uses the plural
+    ``donor_imputation_chain_block_specs`` (one block per native-entity group)
+    so that each block preserves its own grain; this single-block form forces
+    one block and therefore resolves ``native_entity`` as the broadest shared
+    entity across all targets, which can change grain for mixed-entity sets.
+    """
+    requested = list(dict.fromkeys(variable_names))
+    native_entity = _resolve_chain_native_entity(requested)
+    return _build_donor_chain_block(
+        native_entity=native_entity,
+        variable_names=requested,
+    )
+
+
+def _resolve_chain_native_entity(model_variables: Iterable[str]) -> EntityType:
+    """Pick the broadest native entity that can host a whole chain block.
+
+    Used only by the single-block ``donor_imputation_chain_block_spec`` helper.
+    PERSON-native targets can be hosted on PERSON; when the block mixes PERSON
+    with a coarser entity (e.g. TAX_UNIT deductions), fall back to the entity
+    that is a valid conditioning entity for every target so projection stays
+    well-defined.
+    """
+    entities = {
+        variable_semantic_spec_for(variable).native_entity
+        for variable in model_variables
+    }
+    if not entities:
+        return EntityType.PERSON
+    if len(entities) == 1:
+        return next(iter(entities))
+    shared = resolve_condition_entities_for_targets(model_variables)
+    # Prefer the finest shared entity that is not the catch-all RECORD entity.
+    record_entity = getattr(EntityType, "RECORD", None)
+    for entity in shared:
+        if entity is not record_entity and entity in entities:
+            return entity
+    if EntityType.HOUSEHOLD in shared:
+        return EntityType.HOUSEHOLD
+    return next(iter(shared)) if shared else EntityType.PERSON
+
+
 def apply_donor_variable_semantics(
     frame: pd.DataFrame,
     variable_names: Iterable[str],

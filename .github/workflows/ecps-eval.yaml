@@ -1,0 +1,151 @@
+name: eCPS-replacement eval
+
+# Runs the *sound* Microplex-vs-eCPS comparison automatically so it no longer
+# has to be driven by hand. The heavy lifting lives in scripts/run_ecps_eval.py
+# (so this YAML stays thin and the gate logic is unit-tested); this workflow
+# only wires up triggers, credentials, the runner, and artifact upload.
+#
+# Compute choice: at matched-N (~41k households) the comparison ran ~20-30 min
+# on CPU locally, so a standard ubuntu-latest runner with a generous timeout is
+# used for simplicity. Building a *candidate* from scratch is GPU-heavy and is
+# intentionally out of scope here; if that is ever needed, a Modal path would be
+# required (see the stubbed modal-build job at the bottom).
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate:
+        description: "Candidate Microplex H5 (local path, http(s):// URI, or hf://repo/file)"
+        required: true
+        type: string
+      baseline_source:
+        description: "Baseline eCPS source (local path, or 'latest' for latest published eCPS)"
+        required: false
+        default: "latest published eCPS"
+        type: string
+  schedule:
+    # Weekly, Mondays at 09:00 UTC.
+    - cron: "0 9 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ecps-eval-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  ecps-eval:
+    runs-on: ubuntu-latest
+    # The comparison ran ~20-30 min at matched-N locally; allow generous slack
+    # for download + cold caches.
+    timeout-minutes: 180
+    defaults:
+      run:
+        working-directory: microplex-us
+    steps:
+      - name: Check out microplex-us
+        uses: actions/checkout@v4
+        with:
+          path: microplex-us
+
+      - name: Check out core microplex
+        uses: actions/checkout@v4
+        with:
+          repository: PolicyEngine/microplex
+          ref: main
+          path: microplex
+
+      - name: Check out microunit
+        uses: actions/checkout@v4
+        with:
+          repository: PolicyEngine/microunit
+          ref: main
+          path: microunit
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.14"
+          working-directory: microplex-us
+
+      - name: Resolve inputs
+        id: inputs
+        env:
+          # On the weekly schedule there is no candidate input; fall back to the
+          # latest published Enhanced CPS so the eval still runs end to end.
+          CANDIDATE_INPUT: ${{ github.event.inputs.candidate }}
+          BASELINE_INPUT: ${{ github.event.inputs.baseline_source }}
+        run: |
+          candidate="${CANDIDATE_INPUT:-hf://policyengine/policyengine-us-data/enhanced_cps_2024.h5}"
+          baseline="${BASELINE_INPUT:-latest published eCPS}"
+          echo "candidate=$candidate" >> "$GITHUB_OUTPUT"
+          echo "baseline=$baseline" >> "$GITHUB_OUTPUT"
+
+      - name: Run sound eCPS-replacement eval
+        env:
+          HUGGING_FACE_TOKEN: ${{ secrets.HUGGING_FACE_TOKEN }}
+        run: |
+          uv run --extra dev --extra policyengine \
+            --with huggingface_hub \
+            --with-editable ../microplex \
+            python scripts/run_ecps_eval.py \
+              --candidate "${{ steps.inputs.outputs.candidate }}" \
+              --baseline-source "${{ steps.inputs.outputs.baseline }}" \
+              --work-dir eval_work \
+              --output-dir comparison_output
+
+      - name: Upload comparison artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ecps-replacement-comparison
+          # Paths are relative to the job working-directory (microplex-us).
+          path: microplex-us/comparison_output/**
+          if-no-files-found: warn
+          retention-days: 30
+
+  # --------------------------------------------------------------------------- #
+  # STUB: full candidate BUILD (GPU) via Modal.
+  #
+  # The job above benchmarks an *existing* candidate H5 on CPU. If a candidate
+  # ever needs to be BUILT from scratch (GPU-heavy synthesis/calibration), that
+  # work would run on Modal rather than a GitHub runner. This job is a
+  # deliberately disabled placeholder showing exactly where that plugs in,
+  # mirroring the Modal auth pattern in policyengine-us-data
+  # (.github/workflows/local_area_publish.yaml and reusable_test.yaml:
+  # MODAL_TOKEN_ID / MODAL_TOKEN_SECRET, `pip install modal`, `modal run ...`).
+  #
+  # To enable: flip `if: false` to a real condition, add the MODAL_TOKEN_ID /
+  # MODAL_TOKEN_SECRET repo secrets, point the final step at the Modal entry
+  # point that builds the candidate, then feed its output H5 into ecps-eval.
+  # --------------------------------------------------------------------------- #
+  modal-build:
+    if: false # disabled placeholder; see comment above
+    runs-on: ubuntu-latest
+    timeout-minutes: 480
+    permissions:
+      contents: read
+    env:
+      HUGGING_FACE_TOKEN: ${{ secrets.HUGGING_FACE_TOKEN }}
+      MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+      MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install Modal CLI
+        run: pip install modal
+      - name: Build candidate on Modal (GPU)
+        run: |
+          echo "STUB: invoke the Modal candidate build here, e.g."
+          echo "  modal run modal_app/build_candidate.py --output candidate.h5"
+          exit 1
